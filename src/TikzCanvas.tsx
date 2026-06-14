@@ -866,7 +866,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
   // -- grid pattern --
   function renderGrid() {
     if (!showGrid) return null;
-    const lines: JSX.Element[] = [];
+    const lines: React.ReactElement[] = [];
     for (let x = 0; x <= canvasWidth; x += GRID_SIZE) {
       lines.push(
         <line
@@ -897,7 +897,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
   }
 
   // -- tool buttons --
-  const tools: { id: ToolType; icon: JSX.Element; label: string; key: string }[] = [
+  const tools: { id: ToolType; icon: React.ReactElement; label: string; key: string }[] = [
     { id: "select", icon: <MousePointer2 size={16} />, label: "Select", key: "V" },
     { id: "pan", icon: <Hand size={16} />, label: "Pan", key: "H" },
     { id: "rect", icon: <Square size={16} />, label: "Rectangle", key: "R" },
