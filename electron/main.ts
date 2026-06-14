@@ -161,6 +161,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  registerTerminalIpc();
   ipcMain.handle("project:get-welcome", ensureWelcomeProject);
   ipcMain.handle("project:open", async () => {
     const result = await dialog.showOpenDialog({
