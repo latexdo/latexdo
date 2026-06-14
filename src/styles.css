@@ -1530,6 +1530,67 @@ button {
 }
 
 /* ===================================================================
+   TikZ Modal Overlay
+   =================================================================== */
+
+.tikz-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  padding: 30px;
+}
+
+.tikz-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #191c22;
+  padding: 12px 20px;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  border-bottom: 1px solid #252931;
+}
+
+.tikz-modal-title {
+  color: #e3e6ec;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.tikz-modal-close {
+  background: transparent;
+  border: none;
+  color: #8d939e;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.tikz-modal-close:hover {
+  background: #282c34;
+  color: #e3e6ec;
+}
+
+.tikz-modal-content {
+  flex: 1;
+  display: flex;
+  background: #111318;
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+/* ===================================================================
    TikZ Canvas – Drawing surface & code panel
    =================================================================== */
 
