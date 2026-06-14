@@ -23,6 +23,7 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Pencil,
   Play,
   Plus,
   RefreshCw,
@@ -42,6 +43,7 @@ import {
 } from "react";
 import FileTree from "./FileTree";
 import PdfPreview, { type PdfClickLocation } from "./PdfPreview";
+import TikzCanvas from "./TikzCanvas";
 import { monaco } from "./monaco";
 import type {
   CompileResult,
@@ -209,6 +211,7 @@ export default function App() {
   const [rootFile, setRootFile] = useState("main.tex");
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [previewVisible, setPreviewVisible] = useState(true);
+  const [tikzCanvasOpen, setTikzCanvasOpen] = useState(false);
   const [panelVisible, setPanelVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<"problems" | "output">(
     "problems",
@@ -1163,15 +1166,26 @@ export default function App() {
                 </span>
               </button>
             ) : null}
+            <button
+              className={`document-tab ${tikzCanvasOpen ? "active" : ""}`}
+              onClick={() => {
+                setTikzCanvasOpen(true);
+                setWelcomeOpen(false);
+              }}
+            >
+              <Pencil size={14} className="tab-file-icon" />
+              <span>TikZ Canvas</span>
+            </button>
             {documents.map((document) => {
               const dirty = document.content !== document.savedContent;
               return (
                 <button
                   key={document.path}
                   className={`document-tab ${
-                    !showWelcome && activePath === document.path ? "active" : ""
+                    !showWelcome && !tikzCanvasOpen && activePath === document.path ? "active" : ""
                   }`}
                   onClick={() => {
+                    setTikzCanvasOpen(false);
                     setActivePath(document.path);
                     activePathRef.current = document.path;
                   }}
@@ -1202,6 +1216,33 @@ export default function App() {
               } as React.CSSProperties
             }
           >
+            {tikzCanvasOpen ? (
+              <TikzCanvas
+                onInsertCode={(code) => {
+                  if (!activeDocument) {
+                    alert("Please open a .tex document first to insert the code.");
+                    return;
+                  }
+                  const editor = editorRef.current;
+                  if (editor) {
+                    const model = editor.getModel();
+                    if (model) {
+                      const position = editor.getPosition();
+                      const lineNumber = position?.lineNumber ?? model.getLineCount();
+                      const column = position?.column ?? 1;
+                      editor.executeEdits("", [
+                        {
+                          range: new monaco.Range(lineNumber, column, lineNumber, column),
+                          text: "\n" + code + "\n",
+                        },
+                      ]);
+                    }
+                  }
+                  setTikzCanvasOpen(false);
+                }}
+              />
+            ) : (
+              <>
             <section className="source-pane">
               {showWelcome ? (
                 <div className="welcome-page">
@@ -1395,6 +1436,8 @@ export default function App() {
                 </section>
               </>
             ) : null}
+              </>
+            )}
           </div>
 
           {panelVisible ? (
