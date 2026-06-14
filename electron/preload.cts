@@ -2,9 +2,18 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   CompileRequest,
   CompileResult,
+  GitCommitDetails,
+  GitDiffEditorInput,
+  GitDiffPreview,
+  GitHistorySummary,
+  GitStatusSummary,
+  ProofreadingResult,
+  ProofreadingSettings,
   ProjectEntry,
+  SpellCheckerSettings,
   SyncTexPdfLocation,
   SyncTexSourceLocation,
+  UpdateCheckResult,
 } from "./types.js" with { "resolution-mode": "import" };
 
 const api = {
@@ -27,6 +36,80 @@ const api = {
     ipcRenderer.invoke("file:create", projectPath, relativePath),
   createFolder: (projectPath: string, relativePath: string): Promise<string> =>
     ipcRenderer.invoke("folder:create", projectPath, relativePath),
+  moveEntry: (
+    projectPath: string,
+    fromRelativePath: string,
+    toRelativePath: string,
+  ): Promise<string> =>
+    ipcRenderer.invoke(
+      "entry:move",
+      projectPath,
+      fromRelativePath,
+      toRelativePath,
+    ),
+  getGitStatus: (projectPath: string): Promise<GitStatusSummary> =>
+    ipcRenderer.invoke("git:status", projectPath),
+  stageGitFile: (projectPath: string, relativePath: string): Promise<void> =>
+    ipcRenderer.invoke("git:stage", projectPath, relativePath),
+  unstageGitFile: (projectPath: string, relativePath: string): Promise<void> =>
+    ipcRenderer.invoke("git:unstage", projectPath, relativePath),
+  commitGit: (projectPath: string, message: string): Promise<void> =>
+    ipcRenderer.invoke("git:commit", projectPath, message),
+  getGitDiff: (
+    projectPath: string,
+    relativePath: string,
+  ): Promise<GitDiffPreview> =>
+    ipcRenderer.invoke("git:diff", projectPath, relativePath),
+  discardGitFile: (projectPath: string, relativePath: string): Promise<void> =>
+    ipcRenderer.invoke("git:discard", projectPath, relativePath),
+  stageAllGit: (projectPath: string): Promise<void> =>
+    ipcRenderer.invoke("git:stage-all", projectPath),
+  unstageAllGit: (projectPath: string): Promise<void> =>
+    ipcRenderer.invoke("git:unstage-all", projectPath),
+  discardAllGit: (projectPath: string): Promise<void> =>
+    ipcRenderer.invoke("git:discard-all", projectPath),
+  getGitEditorDiff: (
+    projectPath: string,
+    relativePath: string,
+  ): Promise<GitDiffEditorInput> =>
+    ipcRenderer.invoke("git:editor-diff", projectPath, relativePath),
+  getGitHistory: (
+    projectPath: string,
+    relativePath?: string,
+  ): Promise<GitHistorySummary> =>
+    ipcRenderer.invoke("git:history", projectPath, relativePath),
+  getGitCommitDetails: (
+    projectPath: string,
+    hash: string,
+  ): Promise<GitCommitDetails> =>
+    ipcRenderer.invoke("git:commit-details", projectPath, hash),
+  getGitCommitFileDiff: (
+    projectPath: string,
+    relativePath: string,
+    hash: string,
+  ): Promise<GitDiffEditorInput> =>
+    ipcRenderer.invoke("git:commit-file-diff", projectPath, relativePath, hash),
+  checkForUpdates: (): Promise<UpdateCheckResult> =>
+    ipcRenderer.invoke("app:check-updates"),
+  openReleasesPage: (): Promise<void> =>
+    ipcRenderer.invoke("app:open-releases"),
+  getSpellCheckerSettings: (): Promise<SpellCheckerSettings> =>
+    ipcRenderer.invoke("spellchecker:get-settings"),
+  updateSpellCheckerSettings: (
+    settings: SpellCheckerSettings,
+  ): Promise<SpellCheckerSettings> =>
+    ipcRenderer.invoke("spellchecker:update-settings", settings),
+  getProofreadingSettings: (): Promise<ProofreadingSettings> =>
+    ipcRenderer.invoke("proofread:get-settings"),
+  updateProofreadingSettings: (
+    settings: ProofreadingSettings,
+  ): Promise<ProofreadingSettings> =>
+    ipcRenderer.invoke("proofread:update-settings", settings),
+  proofreadDocument: (
+    relativePath: string,
+    content: string,
+  ): Promise<ProofreadingResult> =>
+    ipcRenderer.invoke("proofread:check", relativePath, content),
   compile: (request: CompileRequest): Promise<CompileResult> =>
     ipcRenderer.invoke("latex:compile", request),
   readPdf: (projectPath: string, pdfPath: string): Promise<Uint8Array> =>
@@ -61,13 +144,27 @@ const api = {
       x,
       y,
     ),
+  onOpenSpellCheckerSettings: (callback: () => void) => {
+    const listener = () => {
+      callback();
+    };
+
+    ipcRenderer.on("tools:open-spellchecker", listener);
+
+    return () => {
+      ipcRenderer.removeListener("tools:open-spellchecker", listener);
+    };
+  },
 };
 
 contextBridge.exposeInMainWorld("latexdo", api);
 
 const terminalApi = {
   create: (options?: { cwd?: string }) =>
-    ipcRenderer.invoke("terminal:create", options),
+    ipcRenderer.invoke("terminal:create", options) as Promise<{
+      id: number;
+      mode: "pty" | "pipe";
+    }>,
 
   write: (id: number, data: string) =>
     ipcRenderer.send("terminal:write", { id, data }),
