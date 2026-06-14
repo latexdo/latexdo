@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { compileLatex } from "./compiler.js";
 import { backwardSyncTex, forwardSyncTex } from "./synctex.js";
 import type { CompileRequest, ProjectEntry } from "./types.js";
+import { registerTerminalIpc } from "./terminal.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);

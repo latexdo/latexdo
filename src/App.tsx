@@ -44,6 +44,7 @@ import {
 import FileTree from "./FileTree";
 import PdfPreview, { type PdfClickLocation } from "./PdfPreview";
 import TikzCanvas from "./TikzCanvas";
+import { TerminalPanel } from "./components/TerminalPanel";
 import { monaco } from "./monaco";
 import type {
   CompileResult,
@@ -213,7 +214,7 @@ export default function App() {
   const [previewVisible, setPreviewVisible] = useState(true);
   const [tikzCanvasOpen, setTikzCanvasOpen] = useState(false);
   const [panelVisible, setPanelVisible] = useState(false);
-  const [activePanel, setActivePanel] = useState<"problems" | "output">(
+  const [activePanel, setActivePanel] = useState<"problems" | "output" | "terminal">(
     "problems",
   );
   const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
@@ -1555,6 +1556,12 @@ export default function App() {
                 >
                   OUTPUT
                 </button>
+                <button
+                  className={activePanel === "terminal" ? "active" : ""}
+                  onClick={() => setActivePanel("terminal")}
+                >
+                  TERMINAL
+                </button>
                 <div />
                 <button
                   className="panel-close"
@@ -1591,11 +1598,13 @@ export default function App() {
                       No problems detected
                     </div>
                   )
-                ) : (
+                ) : activePanel === "output" ? (
                   <pre className="build-output">
                     {compileResult?.output || "Compile the project to see build output."}
                   </pre>
-                )}
+                ) : activePanel === "terminal" ? (
+                  <TerminalPanel cwd={projectPath} />
+                ) : null}
               </div>
             </section>
           ) : null}
