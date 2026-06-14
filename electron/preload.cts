@@ -65,4 +65,48 @@ const api = {
 
 contextBridge.exposeInMainWorld("latexdo", api);
 
+const terminalApi = {
+  create: (options?: { cwd?: string }) =>
+    ipcRenderer.invoke("terminal:create", options),
+
+  write: (id: number, data: string) =>
+    ipcRenderer.send("terminal:write", { id, data }),
+
+  resize: (id: number, cols: number, rows: number) =>
+    ipcRenderer.send("terminal:resize", { id, cols, rows }),
+
+  dispose: (id: number) =>
+    ipcRenderer.send("terminal:dispose", { id }),
+
+  onData: (callback: (payload: { id: number; data: string }) => void) => {
+    const listener = (_event: unknown, payload: { id: number; data: string }) => {
+      callback(payload);
+    };
+
+    ipcRenderer.on("terminal:data", listener);
+
+    return () => {
+      ipcRenderer.removeListener("terminal:data", listener);
+    };
+  },
+
+  onExit: (callback: (payload: { id: number; exitCode: number }) => void) => {
+    const listener = (
+      _event: unknown,
+      payload: { id: number; exitCode: number },
+    ) => {
+      callback(payload);
+    };
+
+    ipcRenderer.on("terminal:exit", listener);
+
+    return () => {
+      ipcRenderer.removeListener("terminal:exit", listener);
+    };
+  },
+};
+
+contextBridge.exposeInMainWorld("terminalApi", terminalApi);
+
 export type LatexDoApi = typeof api;
+export type TerminalApi = typeof terminalApi;
