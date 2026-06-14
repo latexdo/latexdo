@@ -1,0 +1,178 @@
+name: texly-ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: texly-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: typecheck / build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run type checks
+        run: npm run typecheck
+
+      - name: Build application
+        run: npm run build
+
+  package_macos:
+    name: package / macOS DMG
+    needs: quality
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Package macOS DMG
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: >
+          npx electron-builder
+          --mac dmg
+          --arm64
+          --publish never
+          --config.mac.identity=-
+          --config.directories.output=release/macos
+
+      - name: Prepare macOS artifact
+        shell: bash
+        run: |
+          package_path="$(find release/macos -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          if [ -z "$package_path" ]; then
+            echo "No macOS DMG was produced."
+            exit 1
+          fi
+
+          mkdir -p artifacts
+          cp "$package_path" artifacts/TeXly-macos-arm64.dmg
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: texly-macos-arm64
+          path: artifacts/TeXly-macos-arm64.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+  package_windows:
+    name: package / Windows EXE
+    needs: quality
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Package Windows installer
+        run: >
+          npx electron-builder
+          --win nsis
+          --x64
+          --publish never
+          --config.directories.output=release/windows
+
+      - name: Prepare Windows artifact
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem -Path "release/windows" -Filter "*.exe" -File |
+            Select-Object -First 1
+
+          if (-not $package) {
+            throw "No Windows EXE was produced."
+          }
+
+          New-Item -ItemType Directory -Force -Path "artifacts" | Out-Null
+          Copy-Item $package.FullName "artifacts/TeXly-windows-x64.exe"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: texly-windows-x64
+          path: artifacts/TeXly-windows-x64.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  installers:
+    name: verify / installers
+    needs:
+      - package_macos
+      - package_windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Download packaged applications
+        uses: actions/download-artifact@v8
+        with:
+          pattern: texly-*
+          path: installers
+          merge-multiple: true
+
+      - name: Verify installers
+        shell: bash
+        run: |
+          test -f installers/TeXly-macos-arm64.dmg
+          test -f installers/TeXly-windows-x64.exe
+          sha256sum \
+            installers/TeXly-macos-arm64.dmg \
+            installers/TeXly-windows-x64.exe \
+            > installers/SHA256SUMS.txt
+
+      - name: Upload installer bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: texly-installers-${{ github.sha }}
+          path: installers/*
+          if-no-files-found: error
+          retention-days: 14
