@@ -7,13 +7,14 @@ import type { CompileRequest, ProjectEntry } from "./types.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
+let welcomeProjectPromise: Promise<string> | null = null;
 const starterDocument = String.raw`\documentclass[11pt]{article}
 
 \usepackage[margin=1in]{geometry}
 \usepackage{microtype}
 \usepackage{hyperref}
 
-\title{My TeXly Document}
+\title{My LatexDo Document}
 \author{}
 \date{\today}
 
@@ -65,7 +66,7 @@ async function listProject(
   projectPath: string,
   directory = projectPath,
 ): Promise<ProjectEntry[]> {
-  const hidden = new Set([".git", ".texly", "node_modules", "dist"]);
+  const hidden = new Set([".git", ".latexdo", "node_modules", "dist"]);
   const entries = await readdir(directory, { withFileTypes: true });
   const result: ProjectEntry[] = [];
 
@@ -103,7 +104,7 @@ async function listProject(
   });
 }
 
-async function ensureWelcomeProject(): Promise<string> {
+async function initializeWelcomeProject(): Promise<string> {
   const projectPath = path.join(app.getPath("userData"), "projects", "Welcome");
   const mainFile = path.join(projectPath, "main.tex");
 
@@ -113,11 +114,23 @@ async function ensureWelcomeProject(): Promise<string> {
     const source = app.isPackaged
       ? path.join(process.resourcesPath, "examples", "welcome")
       : path.join(process.cwd(), "examples", "welcome");
-    await mkdir(path.dirname(projectPath), { recursive: true });
-    await cp(source, projectPath, { recursive: true });
+    await mkdir(projectPath, { recursive: true });
+    await cp(source, projectPath, {
+      recursive: true,
+      force: false,
+      errorOnExist: false,
+    });
   }
 
   return projectPath;
+}
+
+function ensureWelcomeProject(): Promise<string> {
+  welcomeProjectPromise ??= initializeWelcomeProject().catch((error) => {
+    welcomeProjectPromise = null;
+    throw error;
+  });
+  return welcomeProjectPromise;
 }
 
 function createWindow(): void {
@@ -127,7 +140,7 @@ function createWindow(): void {
     height: 940,
     minWidth: 980,
     minHeight: 680,
-    title: "TeXly",
+    title: "LatexDo",
     titleBarStyle: "hiddenInset",
     backgroundColor: "#111318",
     webPreferences: {

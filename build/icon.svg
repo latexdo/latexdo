@@ -22,5 +22,5 @@
   <path d="M387 452h250" stroke="#D5DCEB" stroke-width="20" stroke-linecap="round"/>
   <path d="M387 615h250" stroke="#D5DCEB" stroke-width="20" stroke-linecap="round"/>
   <path d="M411 535h202" stroke="#5178CB" stroke-width="22" stroke-linecap="round"/>
-  <path d="M451 470h122l-17 42h-24v111h-40V512h-24l-17-42Z" fill="#315DB8"/>
+  <path d="M470 470h44v111h72v42H470V470Z" fill="#315DB8"/>
 </svg>

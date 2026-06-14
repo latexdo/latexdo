@@ -31,6 +31,6 @@ const api = {
     ipcRenderer.invoke("pdf:read", projectPath, pdfPath),
 };
 
-contextBridge.exposeInMainWorld("texly", api);
+contextBridge.exposeInMainWorld("latexdo", api);
 
-export type TexlyApi = typeof api;
+export type LatexDoApi = typeof api;

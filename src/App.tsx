@@ -50,6 +50,53 @@ import type {
   ProjectEntry,
 } from "./types";
 
+interface AppSettings {
+  defaultEngine: Engine;
+  editorFontSize: number;
+  wordWrap: boolean;
+  minimap: boolean;
+}
+
+const settingsStorageKey = "latexdo.settings";
+const defaultSettings: AppSettings = {
+  defaultEngine: "pdflatex",
+  editorFontSize: 13.5,
+  wordWrap: true,
+  minimap: true,
+};
+
+function loadSettings(): AppSettings {
+  try {
+    const saved = JSON.parse(
+      window.localStorage.getItem(settingsStorageKey) ?? "{}",
+    ) as Partial<AppSettings>;
+    const defaultEngine =
+      saved.defaultEngine === "xelatex" || saved.defaultEngine === "lualatex"
+        ? saved.defaultEngine
+        : "pdflatex";
+
+    return {
+      defaultEngine,
+      editorFontSize:
+        typeof saved.editorFontSize === "number" &&
+        saved.editorFontSize >= 11 &&
+        saved.editorFontSize <= 22
+          ? saved.editorFontSize
+          : defaultSettings.editorFontSize,
+      wordWrap:
+        typeof saved.wordWrap === "boolean"
+          ? saved.wordWrap
+          : defaultSettings.wordWrap,
+      minimap:
+        typeof saved.minimap === "boolean"
+          ? saved.minimap
+          : defaultSettings.minimap,
+    };
+  } catch {
+    return defaultSettings;
+  }
+}
+
 const supportedExtensions = new Set([
   "tex",
   "bib",
@@ -121,7 +168,9 @@ export default function App() {
   const [createPath, setCreatePath] = useState("");
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
-  const [engine, setEngine] = useState<Engine>("pdflatex");
+  const [settings, setSettings] = useState<AppSettings>(loadSettings);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [engine, setEngine] = useState<Engine>(settings.defaultEngine);
   const [rootFile, setRootFile] = useState("main.tex");
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [previewVisible, setPreviewVisible] = useState(true);
@@ -147,7 +196,7 @@ export default function App() {
   );
   const showWelcome = welcomeOpen && !activePath;
   const previewShown = previewVisible && !showWelcome;
-  const projectName = fileName(projectPath) || "TeXly";
+  const projectName = fileName(projectPath) || "LatexDo";
   const diagnostics = compileResult?.diagnostics ?? [];
   const errors = diagnostics.filter(
     (diagnostic) => diagnostic.severity === "error",
@@ -179,11 +228,15 @@ export default function App() {
     engineRef.current = engine;
   }, [engine]);
 
+  useEffect(() => {
+    window.localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
+  }, [settings]);
+
   const refreshProject = useCallback(async (path = projectPathRef.current) => {
     if (!path) {
       return [];
     }
-    const entries = await window.texly.listProject(path);
+    const entries = await window.latexdo.listProject(path);
     setProjectEntries(entries);
     return entries;
   }, []);
@@ -208,7 +261,7 @@ export default function App() {
         return;
       }
 
-      const content = await window.texly.readFile(targetProject, entry.path);
+      const content = await window.latexdo.readFile(targetProject, entry.path);
       const document: OpenDocument = {
         path: entry.path,
         relativePath: entry.relativePath,
@@ -240,7 +293,7 @@ export default function App() {
         setPdfUrl("");
       }
 
-      const entries = await window.texly.listProject(path);
+      const entries = await window.latexdo.listProject(path);
       setProjectEntries(entries);
       const allFiles = flattenEntries(entries);
       const main =
@@ -264,7 +317,7 @@ export default function App() {
   );
 
   useEffect(() => {
-    void window.texly
+    void window.latexdo
       .getWelcomeProject()
       .then((path) => loadProject(path, false))
       .catch((error: unknown) => {
@@ -286,7 +339,7 @@ export default function App() {
       if (!currentProject) {
         return;
       }
-      await window.texly.writeFile(
+      await window.latexdo.writeFile(
         currentProject,
         document.path,
         document.content,
@@ -326,7 +379,7 @@ export default function App() {
       );
       await Promise.all(
         dirtyDocuments.map((document) =>
-          window.texly.writeFile(
+          window.latexdo.writeFile(
             currentProject,
             document.path,
             document.content,
@@ -342,7 +395,7 @@ export default function App() {
         );
       }
 
-      const result = await window.texly.compile({
+      const result = await window.latexdo.compile({
         projectPath: currentProject,
         rootFile: rootFileRef.current,
         engine: engineRef.current,
@@ -350,7 +403,7 @@ export default function App() {
       setCompileResult(result);
 
       if (result.ok && result.pdfPath) {
-        const bytes = await window.texly.readPdf(
+        const bytes = await window.latexdo.readPdf(
           currentProject,
           result.pdfPath,
         );
@@ -404,6 +457,7 @@ export default function App() {
       }
       if (event.key === "Escape") {
         setCreateDialog(null);
+        setSettingsOpen(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -422,7 +476,7 @@ export default function App() {
     );
     monaco.editor.setModelMarkers(
       editorRef.current.getModel()!,
-      "texly",
+      "latexdo",
       relevantDiagnostics.map((diagnostic) => ({
         startLineNumber: diagnostic.line,
         startColumn: diagnostic.column,
@@ -502,7 +556,7 @@ export default function App() {
         };
       },
     });
-    instance.editor.defineTheme("texly-dark", {
+    instance.editor.defineTheme("latexdo-dark", {
       base: "vs-dark",
       inherit: true,
       rules: [
@@ -534,7 +588,7 @@ export default function App() {
   };
 
   const openProject = async () => {
-    const path = await window.texly.openProject();
+    const path = await window.latexdo.openProject();
     if (path) {
       await loadProject(path, false);
     }
@@ -542,7 +596,7 @@ export default function App() {
 
   const createProject = async () => {
     try {
-      const path = await window.texly.createProject();
+      const path = await window.latexdo.createProject();
       if (path) {
         await loadProject(path, true);
         setStatusMessage("Project created");
@@ -572,7 +626,7 @@ export default function App() {
     setCreateError("");
     try {
       if (createDialog === "file") {
-        const path = await window.texly.createFile(projectPath, relativePath);
+        const path = await window.latexdo.createFile(projectPath, relativePath);
         const entries = await refreshProject(projectPath);
         const entry = flattenEntries(entries).find((item) => item.path === path);
         if (!entry) {
@@ -581,7 +635,7 @@ export default function App() {
         await openDocument(entry);
         setStatusMessage(`Created ${relativePath}`);
       } else {
-        await window.texly.createFolder(projectPath, relativePath);
+        await window.latexdo.createFolder(projectPath, relativePath);
         await refreshProject(projectPath);
         setStatusMessage(`Created folder ${relativePath}`);
       }
@@ -617,7 +671,15 @@ export default function App() {
   const showWelcomePage = () => {
     setWelcomeOpen(true);
     setActivePath("");
-    setStatusMessage("Welcome to TeXly");
+    setStatusMessage("Welcome to LatexDo");
+  };
+
+  const toggleSidebar = () => {
+    setSidebarVisible((visible) => !visible);
+  };
+
+  const togglePanel = () => {
+    setPanelVisible((visible) => !visible);
   };
 
   const togglePreview = async () => {
@@ -700,31 +762,39 @@ export default function App() {
       <header className="titlebar">
         <div className="titlebar-drag">
           <div className="app-mark">
-            <span>T</span>
+            <span>L</span>
           </div>
           <span className="title-project">{projectName}</span>
           <span className="title-separator">—</span>
-          <span>TeXly</span>
+          <span>LatexDo</span>
         </div>
         <div className="title-actions">
           <button
-            className="icon-button"
-            onClick={() => setSidebarVisible((visible) => !visible)}
+            type="button"
+            className={`icon-button ${sidebarVisible ? "active" : ""}`}
+            onClick={toggleSidebar}
             title="Toggle sidebar (Cmd/Ctrl+B)"
+            aria-label="Toggle sidebar"
+            aria-pressed={sidebarVisible}
           >
             {sidebarVisible ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
           </button>
           <button
-            className="icon-button"
-            onClick={() => setPanelVisible((visible) => !visible)}
+            type="button"
+            className={`icon-button ${panelVisible ? "active" : ""}`}
+            onClick={togglePanel}
             title="Toggle panel"
+            aria-label="Toggle bottom panel"
+            aria-pressed={panelVisible}
           >
             <PanelBottom size={16} />
           </button>
           <button
-            className="icon-button"
+            type="button"
+            className={`icon-button ${previewShown ? "active" : ""}`}
             onClick={() => void togglePreview()}
             title="Toggle PDF preview"
+            aria-label="Toggle PDF preview"
             aria-pressed={previewShown}
           >
             {previewShown ? (
@@ -767,7 +837,14 @@ export default function App() {
             </button>
           </div>
           <div>
-            <button className="activity-button" title="Settings">
+            <button
+              type="button"
+              className={`activity-button ${settingsOpen ? "active" : ""}`}
+              onClick={() => setSettingsOpen(true)}
+              title="Settings"
+              aria-label="Open settings"
+              aria-pressed={settingsOpen}
+            >
               <Settings size={21} />
             </button>
           </div>
@@ -873,7 +950,7 @@ export default function App() {
                 }`}
                 onClick={showWelcomePage}
               >
-                <span className="welcome-tab-mark">T</span>
+                <span className="welcome-tab-mark">L</span>
                 <span>Welcome</span>
                 <span className="tab-close" onClick={closeWelcomePage}>
                   <X size={13} />
@@ -923,10 +1000,10 @@ export default function App() {
                 <div className="welcome-page">
                   <div className="welcome-hero">
                     <div className="welcome-brand">
-                      <span>T</span>
+                      <span>L</span>
                     </div>
                     <div>
-                      <h1>TeXly</h1>
+                      <h1>LatexDo</h1>
                       <p>Write beautifully. Compile locally.</p>
                     </div>
                   </div>
@@ -1001,7 +1078,7 @@ export default function App() {
                   path={activeDocument.path}
                   value={activeDocument.content}
                   language={languageFor(activeDocument.name)}
-                  theme="texly-dark"
+                  theme="latexdo-dark"
                   beforeMount={configureMonaco}
                   onMount={handleEditorMount}
                   onChange={(value) =>
@@ -1016,16 +1093,16 @@ export default function App() {
                   options={{
                     fontFamily:
                       "'SFMono-Regular', 'Cascadia Code', 'Fira Code', Menlo, monospace",
-                    fontSize: 13.5,
+                    fontSize: settings.editorFontSize,
                     lineHeight: 22,
-                    minimap: { enabled: true, scale: 0.75 },
+                    minimap: { enabled: settings.minimap, scale: 0.75 },
                     padding: { top: 16, bottom: 24 },
                     renderWhitespace: "selection",
                     smoothScrolling: true,
                     cursorSmoothCaretAnimation: "on",
                     bracketPairColorization: { enabled: true },
                     guides: { bracketPairs: true, indentation: true },
-                    wordWrap: "on",
+                    wordWrap: settings.wordWrap ? "on" : "off",
                     scrollBeyondLastLine: false,
                     automaticLayout: true,
                     fixedOverflowWidgets: true,
@@ -1034,7 +1111,7 @@ export default function App() {
                 />
               ) : (
                 <div className="empty-editor">
-                  <div className="empty-logo">T</div>
+                  <div className="empty-logo">L</div>
                   <h2>No editor is open</h2>
                   <button onClick={showWelcomePage}>Show Welcome</button>
                 </div>
@@ -1178,7 +1255,7 @@ export default function App() {
         <div>
           <span className="status-brand">
             <Box size={13} />
-            TeXly
+            LatexDo
           </span>
           <button onClick={() => setPanelVisible(true)}>
             <CircleAlert size={13} /> {errors}
@@ -1257,6 +1334,140 @@ export default function App() {
               </button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {settingsOpen ? (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setSettingsOpen(false);
+            }
+          }}
+        >
+          <section
+            className="settings-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-title"
+          >
+            <div className="settings-header">
+              <div className="dialog-icon">
+                <Settings size={20} />
+              </div>
+              <div className="dialog-copy">
+                <h2 id="settings-title">Settings</h2>
+                <p>Configure the editor and default LaTeX compiler.</p>
+              </div>
+              <button
+                type="button"
+                className="settings-close"
+                onClick={() => setSettingsOpen(false)}
+                aria-label="Close settings"
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <div className="settings-list">
+              <label className="settings-row">
+                <span>
+                  <strong>Default compiler</strong>
+                  <small>Used for the current and future projects.</small>
+                </span>
+                <select
+                  value={settings.defaultEngine}
+                  onChange={(event) => {
+                    const defaultEngine = event.target.value as Engine;
+                    setSettings((current) => ({
+                      ...current,
+                      defaultEngine,
+                    }));
+                    setEngine(defaultEngine);
+                  }}
+                >
+                  <option value="pdflatex">pdfLaTeX</option>
+                  <option value="xelatex">XeLaTeX</option>
+                  <option value="lualatex">LuaLaTeX</option>
+                </select>
+              </label>
+
+              <label className="settings-row">
+                <span>
+                  <strong>Editor font size</strong>
+                  <small>{settings.editorFontSize}px</small>
+                </span>
+                <input
+                  type="range"
+                  min="11"
+                  max="22"
+                  step="0.5"
+                  value={settings.editorFontSize}
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      editorFontSize: Number(event.target.value),
+                    }))
+                  }
+                />
+              </label>
+
+              <label className="settings-row settings-toggle">
+                <span>
+                  <strong>Word wrap</strong>
+                  <small>Wrap long source lines inside the editor.</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={settings.wordWrap}
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      wordWrap: event.target.checked,
+                    }))
+                  }
+                />
+              </label>
+
+              <label className="settings-row settings-toggle">
+                <span>
+                  <strong>Minimap</strong>
+                  <small>Show the source overview beside the editor.</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={settings.minimap}
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      minimap: event.target.checked,
+                    }))
+                  }
+                />
+              </label>
+            </div>
+
+            <div className="settings-footer">
+              <button
+                type="button"
+                className="dialog-cancel"
+                onClick={() => {
+                  setSettings(defaultSettings);
+                  setEngine(defaultSettings.defaultEngine);
+                }}
+              >
+                Reset defaults
+              </button>
+              <button
+                type="button"
+                className="dialog-submit"
+                onClick={() => setSettingsOpen(false)}
+              >
+                Done
+              </button>
+            </div>
+          </section>
         </div>
       ) : null}
     </div>

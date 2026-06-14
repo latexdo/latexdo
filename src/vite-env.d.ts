@@ -1,10 +1,10 @@
 /// <reference types="vite/client" />
 
-import type { TexlyApi } from "../electron/preload.cjs";
+import type { LatexDoApi } from "../electron/preload.cjs";
 
 declare global {
   interface Window {
-    texly: TexlyApi;
+    latexdo: LatexDoApi;
   }
 }
 

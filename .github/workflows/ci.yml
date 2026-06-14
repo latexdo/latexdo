@@ -1,4 +1,4 @@
-name: texly-ci
+name: latexdo-ci
 
 on:
   pull_request:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: texly-ci-${{ github.ref }}
+  group: latexdo-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -82,13 +82,13 @@ jobs:
           fi
 
           mkdir -p artifacts
-          cp "$package_path" artifacts/TeXly-macos-arm64.dmg
+          cp "$package_path" artifacts/LatexDo-macos-arm64.dmg
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v7
         with:
-          name: texly-macos-arm64
-          path: artifacts/TeXly-macos-arm64.dmg
+          name: latexdo-macos-arm64
+          path: artifacts/LatexDo-macos-arm64.dmg
           if-no-files-found: error
           retention-days: 14
 
@@ -133,13 +133,13 @@ jobs:
           }
 
           New-Item -ItemType Directory -Force -Path "artifacts" | Out-Null
-          Copy-Item $package.FullName "artifacts/TeXly-windows-x64.exe"
+          Copy-Item $package.FullName "artifacts/LatexDo-windows-x64.exe"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v7
         with:
-          name: texly-windows-x64
-          path: artifacts/TeXly-windows-x64.exe
+          name: latexdo-windows-x64
+          path: artifacts/LatexDo-windows-x64.exe
           if-no-files-found: error
           retention-days: 14
 
@@ -155,24 +155,24 @@ jobs:
       - name: Download packaged applications
         uses: actions/download-artifact@v8
         with:
-          pattern: texly-*
+          pattern: latexdo-*
           path: installers
           merge-multiple: true
 
       - name: Verify installers
         shell: bash
         run: |
-          test -f installers/TeXly-macos-arm64.dmg
-          test -f installers/TeXly-windows-x64.exe
+          test -f installers/LatexDo-macos-arm64.dmg
+          test -f installers/LatexDo-windows-x64.exe
           sha256sum \
-            installers/TeXly-macos-arm64.dmg \
-            installers/TeXly-windows-x64.exe \
+            installers/LatexDo-macos-arm64.dmg \
+            installers/LatexDo-windows-x64.exe \
             > installers/SHA256SUMS.txt
 
       - name: Upload installer bundle
         uses: actions/upload-artifact@v7
         with:
-          name: texly-installers-${{ github.sha }}
+          name: latexdo-installers-${{ github.sha }}
           path: installers/*
           if-no-files-found: error
           retention-days: 14

@@ -86,11 +86,11 @@ export async function compileLatex(
       output: "",
       diagnostics: [],
       error:
-        "latexmk was not found. Install MacTeX, TeX Live, or MiKTeX and restart TeXly.",
+        "latexmk was not found. Install MacTeX, TeX Live, or MiKTeX and restart LatexDo.",
     };
   }
 
-  const buildDirectory = path.join(request.projectPath, ".texly", "build");
+  const buildDirectory = path.join(request.projectPath, ".latexdo", "build");
   await mkdir(buildDirectory, { recursive: true });
 
   const engineFlag = {

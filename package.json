@@ -1,9 +1,9 @@
 {
-  "name": "texly",
+  "name": "latexdo",
   "version": "0.1.0",
   "private": true,
   "description": "A focused desktop LaTeX editor with live PDF preview.",
-  "author": "TeXly",
+  "author": "LatexDo",
   "main": "dist-electron/main.js",
   "type": "module",
   "scripts": {
@@ -35,8 +35,8 @@
     "wait-on": "^8.0.1"
   },
   "build": {
-    "appId": "com.texly.editor",
-    "productName": "TeXly",
+    "appId": "com.latexdo.editor",
+    "productName": "LatexDo",
     "icon": "build/icon.png",
     "files": [
       "dist/**/*",
