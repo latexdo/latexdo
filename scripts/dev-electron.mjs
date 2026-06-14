@@ -56,9 +56,6 @@ function startElectron() {
 
   electronProcess.on("exit", () => {
     electronProcess = null;
-    if (!stopping) {
-      scheduleRestart();
-    }
   });
 }
 
