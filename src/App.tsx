@@ -226,6 +226,7 @@ export default function App() {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const editorMouseDisposableRef = useRef<monaco.IDisposable | null>(null);
   const documentsRef = useRef<OpenDocument[]>([]);
+  const projectEntriesRef = useRef<ProjectEntry[]>([]);
   const projectPathRef = useRef("");
   const activePathRef = useRef("");
   const rootFileRef = useRef(rootFile);
@@ -265,6 +266,10 @@ export default function App() {
   useEffect(() => {
     documentsRef.current = documents;
   }, [documents]);
+
+  useEffect(() => {
+    projectEntriesRef.current = projectEntries;
+  }, [projectEntries]);
 
   useEffect(() => {
     projectPathRef.current = projectPath;
@@ -723,26 +728,114 @@ export default function App() {
       ],
     });
     instance.languages.registerCompletionItemProvider("latex", {
-      triggerCharacters: ["\\"],
-      provideCompletionItems: (model, position) => {
+      triggerCharacters: ["\\", "{"],
+      provideCompletionItems: async (model, position) => {
         const word = model.getWordUntilPosition(position);
+        const lineContent = model.getLineContent(position.lineNumber);
+        const textBeforePointer = lineContent.substring(0, position.column - 1);
+        
         const range = {
           startLineNumber: position.lineNumber,
           endLineNumber: position.lineNumber,
           startColumn: word.startColumn,
           endColumn: word.endColumn,
         };
-        return {
-          suggestions: latexSuggestions.map(([label, insertText]) => ({
-            label: `\\${label}`,
-            kind: instance.languages.CompletionItemKind.Snippet,
-            insertText,
-            insertTextRules:
-              instance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-            range,
-            detail: "LaTeX snippet",
-          })),
-        };
+
+        // Check if we are inside \cite{...}
+        const citeMatch = textBeforePointer.match(/\\(?:cite|citep|citet|parencite|textcite)[a-zA-Z]*\*?(?:\[[^\]]*\])*{([^}]*)$/);
+        if (citeMatch) {
+          const suggestions: monaco.languages.CompletionItem[] = [];
+          const allEntries = flattenEntries(projectEntriesRef.current);
+          const bibFiles = allEntries.filter(e => e.name.endsWith('.bib'));
+          for (const bib of bibFiles) {
+             try {
+               const content = await window.latexdo.readFile(projectPathRef.current, bib.path);
+               const regex = /@\w+\s*{\s*([^,]+),/g;
+               let match;
+               while ((match = regex.exec(content)) !== null) {
+                 const key = match[1].trim();
+                 const start = match.index;
+                 const end = content.indexOf('@', start + 1);
+                 const block = end === -1 ? content.slice(start) : content.slice(start, end);
+                 
+                 const titleMatch = block.match(/title\s*=\s*[{"]([^}"]+)[}"]/i);
+                 const authorMatch = block.match(/author\s*=\s*[{"]([^}"]+)[}"]/i);
+                 const yearMatch = block.match(/year\s*=\s*[{"]([^}"]+)[}"]/i);
+                 
+                 const detail = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : 'BibTeX Entry';
+                 let doc = '';
+                 if (authorMatch) doc += `Author: ${authorMatch[1].replace(/\s+/g, ' ').trim()}\n`;
+                 if (yearMatch) doc += `Year: ${yearMatch[1].trim()}`;
+                 
+                 suggestions.push({
+                    label: key,
+                    kind: instance.languages.CompletionItemKind.Reference,
+                    insertText: key,
+                    detail,
+                    documentation: doc,
+                    range,
+                 });
+               }
+             } catch (e) {
+               // Ignore missing/unreadable bib files
+             }
+          }
+          return { suggestions };
+        }
+
+        // Check if we are inside \ref{...}
+        const refMatch = textBeforePointer.match(/\\(?:ref|cref|Cref|autoref|pageref|eqref)[a-zA-Z]*\*?{([^}]*)$/);
+        if (refMatch) {
+          const suggestions: monaco.languages.CompletionItem[] = [];
+          const allEntries = flattenEntries(projectEntriesRef.current);
+          const texFiles = allEntries.filter(e => e.name.endsWith('.tex'));
+          
+          const openDocs = new Map(documentsRef.current.map(d => [d.path, d.content]));
+          
+          for (const tex of texFiles) {
+             try {
+               let content = openDocs.get(tex.path);
+               if (content === undefined) {
+                 content = await window.latexdo.readFile(projectPathRef.current, tex.path);
+               }
+               const regex = /\\label\s*{([^}]+)}/g;
+               let match;
+               while ((match = regex.exec(content)) !== null) {
+                 const label = match[1].trim();
+                 suggestions.push({
+                    label,
+                    kind: instance.languages.CompletionItemKind.Reference,
+                    insertText: label,
+                    detail: `Label from ${tex.name}`,
+                    range,
+                 });
+               }
+             } catch (e) {
+               // Ignore missing/unreadable tex files
+             }
+          }
+          // Remove duplicates
+          const unique = new Map();
+          for (const s of suggestions) unique.set(s.label, s);
+          return { suggestions: Array.from(unique.values()) };
+        }
+
+        // Default snippet completion (triggered by \)
+        if (textBeforePointer.endsWith('\\' + word.word) || textBeforePointer.endsWith('\\')) {
+          return {
+            suggestions: latexSuggestions.map(([label, insertText]) => ({
+              label: `\\${label}`,
+              kind: instance.languages.CompletionItemKind.Snippet,
+              insertText,
+              insertTextRules:
+                instance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              range,
+              detail: "LaTeX snippet",
+            })),
+          };
+        }
+
+        return { suggestions: [] };
       },
     });
     instance.editor.defineTheme("latexdo-dark", {
@@ -1041,6 +1134,13 @@ export default function App() {
             <button className="activity-button" title="LaTeX tools">
               <BookOpenText size={22} />
             </button>
+            <button
+              className={`activity-button ${tikzCanvasOpen ? "active" : ""}`}
+              onClick={() => setTikzCanvasOpen((open) => !open)}
+              title="TikZ Drawing Canvas"
+            >
+              <Pencil size={21} />
+            </button>
             <button className="activity-button" title="Extensions">
               <Blocks size={22} />
             </button>
@@ -1166,26 +1266,15 @@ export default function App() {
                 </span>
               </button>
             ) : null}
-            <button
-              className={`document-tab ${tikzCanvasOpen ? "active" : ""}`}
-              onClick={() => {
-                setTikzCanvasOpen(true);
-                setWelcomeOpen(false);
-              }}
-            >
-              <Pencil size={14} className="tab-file-icon" />
-              <span>TikZ Canvas</span>
-            </button>
             {documents.map((document) => {
               const dirty = document.content !== document.savedContent;
               return (
                 <button
                   key={document.path}
                   className={`document-tab ${
-                    !showWelcome && !tikzCanvasOpen && activePath === document.path ? "active" : ""
+                    !showWelcome && activePath === document.path ? "active" : ""
                   }`}
                   onClick={() => {
-                    setTikzCanvasOpen(false);
                     setActivePath(document.path);
                     activePathRef.current = document.path;
                   }}
@@ -1216,33 +1305,6 @@ export default function App() {
               } as React.CSSProperties
             }
           >
-            {tikzCanvasOpen ? (
-              <TikzCanvas
-                onInsertCode={(code) => {
-                  if (!activeDocument) {
-                    alert("Please open a .tex document first to insert the code.");
-                    return;
-                  }
-                  const editor = editorRef.current;
-                  if (editor) {
-                    const model = editor.getModel();
-                    if (model) {
-                      const position = editor.getPosition();
-                      const lineNumber = position?.lineNumber ?? model.getLineCount();
-                      const column = position?.column ?? 1;
-                      editor.executeEdits("", [
-                        {
-                          range: new monaco.Range(lineNumber, column, lineNumber, column),
-                          text: "\n" + code + "\n",
-                        },
-                      ]);
-                    }
-                  }
-                  setTikzCanvasOpen(false);
-                }}
-              />
-            ) : (
-              <>
             <section className="source-pane">
               {showWelcome ? (
                 <div className="welcome-page">
@@ -1436,9 +1498,44 @@ export default function App() {
                 </section>
               </>
             ) : null}
-              </>
-            )}
           </div>
+
+          {tikzCanvasOpen && (
+            <div className="tikz-modal-overlay">
+              <div className="tikz-modal-header">
+                <span className="tikz-modal-title">TikZ Drawing Canvas</span>
+                <button className="tikz-modal-close" onClick={() => setTikzCanvasOpen(false)}>
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="tikz-modal-content">
+                <TikzCanvas
+                  onInsertCode={(code) => {
+                    if (!activeDocument) {
+                      alert("Please open a .tex document first to insert the code.");
+                      return;
+                    }
+                    const editor = editorRef.current;
+                    if (editor) {
+                      const model = editor.getModel();
+                      if (model) {
+                        const position = editor.getPosition();
+                        const lineNumber = position?.lineNumber ?? model.getLineCount();
+                        const column = position?.column ?? 1;
+                        editor.executeEdits("", [
+                          {
+                            range: new monaco.Range(lineNumber, column, lineNumber, column),
+                            text: "\n" + code + "\n",
+                          },
+                        ]);
+                      }
+                    }
+                    setTikzCanvasOpen(false);
+                  }}
+                />
+              </div>
+            </div>
+          )}
 
           {panelVisible ? (
             <section className="bottom-panel">
