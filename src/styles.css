@@ -1528,3 +1528,446 @@ button {
     padding-left: 24px;
   }
 }
+
+/* ===================================================================
+   TikZ Canvas – Drawing surface & code panel
+   =================================================================== */
+
+.tikz-canvas-root {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: #111318;
+}
+
+/* ---------- Left: drawing area ---------- */
+
+.tikz-draw-area {
+  display: flex;
+  min-width: 0;
+  flex: 1.3;
+  flex-direction: column;
+  border-right: 1px solid #292d35;
+}
+
+.tikz-toolbar {
+  display: flex;
+  min-height: 44px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-bottom: 1px solid #252931;
+  background: #191c22;
+}
+
+.tikz-toolbar-tools {
+  display: flex;
+  gap: 2px;
+}
+
+.tikz-tool-btn {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  place-items: center;
+  color: #8d939e;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tikz-tool-btn:hover {
+  border-color: #3a414e;
+  background: #24282f;
+  color: #d7dce5;
+}
+
+.tikz-tool-btn.active {
+  border-color: #5a7acc;
+  background: #273252;
+  color: #93b5f8;
+  box-shadow: 0 0 8px rgb(90 122 204 / 18%);
+}
+
+.tikz-toolbar-divider {
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+  background: #2e333c;
+}
+
+/* Colors */
+
+.tikz-toolbar-colors {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tikz-color-row {
+  display: flex;
+  gap: 2px;
+}
+
+.tikz-color-swatch {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1.5px solid #3b414d;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+}
+
+.tikz-color-swatch:hover {
+  transform: scale(1.2);
+}
+
+.tikz-color-swatch.active {
+  border-color: #93b5f8;
+  box-shadow: 0 0 4px rgb(114 155 240 / 40%);
+  transform: scale(1.15);
+}
+
+.tikz-no-fill {
+  display: grid;
+  background: #20242b;
+  place-items: center;
+  color: #8d939e;
+}
+
+/* Props */
+
+.tikz-toolbar-props {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tikz-prop-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tikz-prop-label {
+  color: #727985;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.tikz-prop-value {
+  min-width: 28px;
+  color: #9da4af;
+  font-size: 9px;
+  text-align: right;
+}
+
+.tikz-toolbar-props input[type="range"] {
+  width: 60px;
+  accent-color: #6d96e8;
+}
+
+.tikz-checkbox-group {
+  gap: 3px;
+}
+
+.tikz-checkbox-group input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #6d96e8;
+}
+
+/* Actions */
+
+.tikz-toolbar-actions {
+  display: flex;
+  gap: 3px;
+}
+
+.tikz-action-btn {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  place-items: center;
+  color: #8d939e;
+  cursor: pointer;
+}
+
+.tikz-action-btn:hover:not(:disabled) {
+  background: #282c34;
+  color: #e3e6ec;
+}
+
+.tikz-action-btn:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.tikz-delete-btn:hover:not(:disabled) {
+  background: #3a2028;
+  color: #ee7373;
+}
+
+.tikz-clear-btn:hover:not(:disabled) {
+  background: #3a3020;
+  color: #dcb365;
+}
+
+/* SVG Container */
+
+.tikz-svg-container {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 50% 30%, rgb(88 126 207 / 5%), transparent 50%),
+    #15181e;
+}
+
+.tikz-svg {
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 1px #252931,
+    0 12px 40px rgb(0 0 0 / 30%);
+}
+
+/* Selected shape properties bar */
+
+.tikz-selected-props {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border-top: 1px solid #252931;
+  background: #191c22;
+}
+
+.tikz-selected-props-row {
+  display: flex;
+  gap: 8px;
+}
+
+.tikz-mini-prop {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tikz-mini-prop span {
+  color: #727985;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.tikz-mini-prop input {
+  width: 52px;
+  height: 24px;
+  padding: 0 5px;
+  border: 1px solid #343944;
+  border-radius: 4px;
+  outline: none;
+  background: #12151a;
+  color: #d7dce5;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
+}
+
+.tikz-mini-prop input:focus {
+  border-color: #5a7acc;
+}
+
+.tikz-mini-prop-wide input {
+  width: 100px;
+}
+
+/* ---------- Right: code panel ---------- */
+
+.tikz-code-panel {
+  display: flex;
+  width: 380px;
+  min-width: 280px;
+  flex: 0 0 380px;
+  flex-direction: column;
+  background: #171a20;
+}
+
+.tikz-code-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #252931;
+}
+
+.tikz-code-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #c8cdd6;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tikz-code-icon {
+  display: flex;
+  height: 22px;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: 5px;
+  background: linear-gradient(135deg, #1d3057, #223a68);
+  color: #8db4f8;
+  font-family: "Times New Roman", Georgia, serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.tikz-code-icon sub {
+  font-size: 8px;
+}
+
+.tikz-code-icon em {
+  font-style: italic;
+}
+
+.tikz-code-tabs {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.tikz-code-tab {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid #343944;
+  border-radius: 5px;
+  background: transparent;
+  color: #8d939e;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+
+.tikz-code-tab:hover {
+  border-color: #4a5261;
+  background: #20242b;
+  color: #c8cdd6;
+}
+
+.tikz-code-tab.active {
+  border-color: #5a7acc;
+  background: #273252;
+  color: #93b5f8;
+}
+
+.tikz-code-actions {
+  display: flex;
+  width: 100%;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.tikz-code-action-btn {
+  display: flex;
+  height: 26px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border: 1px solid #343944;
+  border-radius: 5px;
+  background: #20242b;
+  color: #aeb4be;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 550;
+  transition: all 0.15s;
+}
+
+.tikz-code-action-btn:hover {
+  border-color: #4a5261;
+  background: #292e38;
+  color: #e3e6ec;
+}
+
+.tikz-insert-btn {
+  border-color: #3d6ab5;
+  background: #273252;
+  color: #93b5f8;
+}
+
+.tikz-insert-btn:hover {
+  border-color: #5a85d6;
+  background: #2e3f6a;
+}
+
+/* Code body */
+
+.tikz-code-body {
+  flex: 1;
+  overflow: auto;
+  background: #12151a;
+}
+
+.tikz-code-pre {
+  min-height: 100%;
+  margin: 0;
+  padding: 14px 16px;
+  color: #c8cdd6;
+  font-family: "SFMono-Regular", "Cascadia Code", "Fira Code", Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.tikz-code-pre code {
+  color: inherit;
+}
+
+/* Code footer */
+
+.tikz-code-footer {
+  display: flex;
+  gap: 14px;
+  padding: 6px 12px;
+  border-top: 1px solid #252931;
+  color: #616870;
+  font-size: 9px;
+}
+
+/* ===== Responsive ===== */
+
+@media (max-width: 1000px) {
+  .tikz-canvas-root {
+    flex-direction: column;
+  }
+
+  .tikz-draw-area {
+    flex: 1;
+    border-right: 0;
+    border-bottom: 1px solid #292d35;
+  }
+
+  .tikz-code-panel {
+    width: 100%;
+    height: 240px;
+    flex: 0 0 240px;
+  }
+}
