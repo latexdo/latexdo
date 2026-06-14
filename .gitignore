@@ -12,6 +12,7 @@ out/
 coverage/
 .vite/
 .cache/
+.latexdo/
 
 # Environment files
 .env

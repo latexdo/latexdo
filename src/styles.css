@@ -88,6 +88,10 @@ button {
   padding-right: 8px;
 }
 
+.title-actions * {
+  -webkit-app-region: no-drag;
+}
+
 .icon-button,
 .small-icon {
   display: grid;
@@ -108,6 +112,18 @@ button {
 .small-icon:hover {
   background: #282c34;
   color: #e3e6ec;
+}
+
+.icon-button.active {
+  background: #252b35;
+  color: #dbe5f8;
+}
+
+.icon-button:focus-visible,
+.activity-button:focus-visible,
+.settings-close:focus-visible {
+  outline: 2px solid #729bf0;
+  outline-offset: -2px;
 }
 
 .workbench {
@@ -960,6 +976,123 @@ button {
   background: #1b1f26;
   box-shadow: 0 24px 80px rgb(0 0 0 / 48%);
   grid-template-columns: 38px 1fr;
+}
+
+.settings-dialog {
+  width: min(540px, calc(100vw - 40px));
+  overflow: hidden;
+  border: 1px solid #3a414e;
+  border-radius: 10px;
+  background: #1b1f26;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 48%);
+}
+
+.settings-header {
+  display: grid;
+  align-items: start;
+  padding: 22px 22px 16px;
+  border-bottom: 1px solid #2d323b;
+  grid-template-columns: 38px 1fr auto;
+}
+
+.settings-header .dialog-copy p {
+  margin-bottom: 0;
+}
+
+.settings-close {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #8d949f;
+  cursor: pointer;
+  place-items: center;
+}
+
+.settings-close:hover {
+  background: #2a2f38;
+  color: #e1e5eb;
+}
+
+.settings-list {
+  display: grid;
+}
+
+.settings-row {
+  display: grid;
+  min-height: 68px;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 22px;
+  border-bottom: 1px solid #272c34;
+  grid-template-columns: minmax(0, 1fr) 190px;
+}
+
+.settings-row > span {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-row strong {
+  color: #d9dde4;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.settings-row small {
+  color: #7f8793;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.settings-row select {
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid #3b424e;
+  border-radius: 5px;
+  outline: none;
+  background: #14171c;
+  color: #cbd0d8;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.settings-row select:focus {
+  border-color: #729bf0;
+}
+
+.settings-row input[type="range"] {
+  width: 100%;
+  accent-color: #6d96e8;
+}
+
+.settings-toggle {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.settings-toggle input {
+  width: 17px;
+  height: 17px;
+  margin: 0 3px 0 0;
+  accent-color: #6d96e8;
+}
+
+.settings-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 22px;
+}
+
+.settings-footer button {
+  height: 30px;
+  padding: 0 13px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 10.5px;
 }
 
 .dialog-icon {

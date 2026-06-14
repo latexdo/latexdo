@@ -1,6 +1,6 @@
-# TeXly
+# LatexDo
 
-TeXly is a desktop LaTeX editor built with Electron, React, TypeScript, and
+LatexDo is a desktop LaTeX editor built with Electron, React, TypeScript, and
 Monaco. It compiles local projects with `latexmk` and displays the resulting PDF
 beside the source.
 
@@ -30,11 +30,11 @@ npm run dist
 ## CI installers
 
 GitHub Actions runs on pull requests, pushes to `main`, and manual dispatches.
-After the `texly-ci` workflow succeeds, download the
-`texly-installers-<commit>` artifact from the workflow run. It contains:
+After the `latexdo-ci` workflow succeeds, download the
+`latexdo-installers-<commit>` artifact from the workflow run. It contains:
 
-- `TeXly-macos-arm64.dmg`
-- `TeXly-windows-x64.exe`
+- `LatexDo-macos-arm64.dmg`
+- `LatexDo-windows-x64.exe`
 - `SHA256SUMS.txt`
 
 The CI installers are unsigned development builds. Public distribution requires
