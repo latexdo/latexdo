@@ -28,3 +28,19 @@ export interface CompileResult {
   diagnostics: Diagnostic[];
   error?: string;
 }
+
+export interface SyncTexSourceLocation {
+  file: string;
+  line: number;
+  column: number;
+}
+
+export interface SyncTexPdfLocation {
+  page: number;
+  x: number;
+  y: number;
+  h: number;
+  v: number;
+  width: number;
+  height: number;
+}

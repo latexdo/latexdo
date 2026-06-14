@@ -832,17 +832,123 @@ button {
 .pdf-surface {
   position: relative;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
   background:
     radial-gradient(circle at top, rgb(255 255 255 / 3%), transparent 45%),
     #282b32;
 }
 
-.pdf-surface iframe {
-  width: 100%;
+.pdf-document {
+  display: flex;
+  min-width: min-content;
+  min-height: 100%;
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 24px;
+}
+
+.pdf-page {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: white;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 28%);
+  cursor: text;
+}
+
+.pdf-page canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.pdf-page .textLayer {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  overflow: clip;
+  color: transparent;
+  line-height: 1;
+  text-align: initial;
+  transform-origin: 0 0;
+  forced-color-adjust: none;
+  text-size-adjust: none;
+}
+
+.pdf-page .textLayer :is(span, br) {
+  position: absolute;
+  color: transparent;
+  cursor: pointer;
+  white-space: pre;
+  transform-origin: 0 0;
+  user-select: text;
+}
+
+.pdf-page .textLayer > :not(.markedContent),
+.pdf-page .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+}
+
+.pdf-page .textLayer .markedContent {
+  display: contents;
+}
+
+.pdf-page .textLayer .endOfContent {
+  position: absolute;
+  z-index: 0;
+  display: block;
+  inset: 100% 0 0;
+}
+
+.pdf-sync-highlight {
+  position: absolute;
+  z-index: 2;
+  border: 1px solid rgb(68 111 213 / 85%);
+  border-radius: 2px;
+  background: rgb(93 139 235 / 30%);
+  box-shadow: 0 0 0 2px rgb(93 139 235 / 12%);
+  pointer-events: none;
+  animation: pdf-sync-pulse 1.2s ease-out;
+}
+
+.pdf-page-number {
+  position: absolute;
+  z-index: 3;
+  right: 7px;
+  bottom: 6px;
+  padding: 2px 5px;
+  border-radius: 8px;
+  background: rgb(20 23 28 / 60%);
+  color: rgb(255 255 255 / 72%);
+  font-size: 8px;
+  pointer-events: none;
+}
+
+.pdf-loading,
+.pdf-error {
+  display: grid;
   height: 100%;
-  border: 0;
-  background: #31343a;
+  color: #9299a4;
+  font-size: 11px;
+  place-items: center;
+}
+
+.pdf-error {
+  color: #e18a8a;
+}
+
+@keyframes pdf-sync-pulse {
+  from {
+    background: rgb(111 157 255 / 58%);
+    box-shadow: 0 0 0 6px rgb(93 139 235 / 24%);
+  }
+
+  to {
+    background: rgb(93 139 235 / 30%);
+    box-shadow: 0 0 0 2px rgb(93 139 235 / 12%);
+  }
 }
 
 .preview-empty {

@@ -3,6 +3,7 @@ import { cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises"
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { compileLatex } from "./compiler.js";
+import { backwardSyncTex, forwardSyncTex } from "./synctex.js";
 import type { CompileRequest, ProjectEntry } from "./types.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -261,6 +262,41 @@ app.whenReady().then(() => {
     async (_event, projectPath: string, pdfPath: string) => {
       assertInside(projectPath, pdfPath);
       return readFile(pdfPath);
+    },
+  );
+  ipcMain.handle(
+    "synctex:forward",
+    async (
+      _event,
+      projectPath: string,
+      pdfPath: string,
+      inputPath: string,
+      line: number,
+      column: number,
+    ) => {
+      assertInside(projectPath, pdfPath);
+      assertInside(projectPath, inputPath);
+      return forwardSyncTex(
+        projectPath,
+        pdfPath,
+        inputPath,
+        line,
+        column,
+      );
+    },
+  );
+  ipcMain.handle(
+    "synctex:backward",
+    async (
+      _event,
+      projectPath: string,
+      pdfPath: string,
+      page: number,
+      x: number,
+      y: number,
+    ) => {
+      assertInside(projectPath, pdfPath);
+      return backwardSyncTex(projectPath, pdfPath, page, x, y);
     },
   );
 

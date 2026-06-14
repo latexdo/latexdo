@@ -3,6 +3,8 @@ import type {
   CompileRequest,
   CompileResult,
   ProjectEntry,
+  SyncTexPdfLocation,
+  SyncTexSourceLocation,
 } from "./types.js" with { "resolution-mode": "import" };
 
 const api = {
@@ -29,6 +31,36 @@ const api = {
     ipcRenderer.invoke("latex:compile", request),
   readPdf: (projectPath: string, pdfPath: string): Promise<Uint8Array> =>
     ipcRenderer.invoke("pdf:read", projectPath, pdfPath),
+  forwardSyncTex: (
+    projectPath: string,
+    pdfPath: string,
+    inputPath: string,
+    line: number,
+    column: number,
+  ): Promise<SyncTexPdfLocation | null> =>
+    ipcRenderer.invoke(
+      "synctex:forward",
+      projectPath,
+      pdfPath,
+      inputPath,
+      line,
+      column,
+    ),
+  backwardSyncTex: (
+    projectPath: string,
+    pdfPath: string,
+    page: number,
+    x: number,
+    y: number,
+  ): Promise<SyncTexSourceLocation | null> =>
+    ipcRenderer.invoke(
+      "synctex:backward",
+      projectPath,
+      pdfPath,
+      page,
+      x,
+      y,
+    ),
 };
 
 contextBridge.exposeInMainWorld("latexdo", api);
