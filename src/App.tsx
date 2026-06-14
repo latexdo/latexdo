@@ -56,6 +56,8 @@ import type {
   SyncTexSourceLocation,
 } from "./types";
 
+type PanelKind = "problems" | "output" | "terminal";
+
 interface AppSettings {
   defaultEngine: Engine;
   editorFontSize: number;
@@ -214,9 +216,7 @@ export default function App() {
   const [previewVisible, setPreviewVisible] = useState(true);
   const [tikzCanvasOpen, setTikzCanvasOpen] = useState(false);
   const [panelVisible, setPanelVisible] = useState(false);
-  const [activePanel, setActivePanel] = useState<"problems" | "output" | "terminal">(
-    "problems",
-  );
+  const [activePanel, setActivePanel] = useState<PanelKind>("problems");
   const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
   const [compiling, setCompiling] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Opening workspace…");
@@ -983,6 +983,11 @@ export default function App() {
     setPanelVisible((visible) => !visible);
   };
 
+  const openPanel = useCallback((panel: PanelKind) => {
+    setPanelVisible(true);
+    setActivePanel(panel);
+  }, []);
+
   const togglePreview = async () => {
     if (previewShown) {
       setPreviewVisible(false);
@@ -1084,9 +1089,36 @@ export default function App() {
           </button>
           <button
             type="button"
+            className={`icon-button workbench-toggle ${
+              panelVisible && activePanel === "problems" ? "active" : ""
+            }`}
+            onClick={() => openPanel("problems")}
+            title="Open problems"
+            aria-label="Open problems panel"
+            aria-pressed={panelVisible && activePanel === "problems"}
+          >
+            <CircleAlert size={16} />
+            {diagnostics.length ? (
+              <span className="icon-button-badge">{diagnostics.length}</span>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            className={`icon-button workbench-toggle ${
+              panelVisible && activePanel === "terminal" ? "active" : ""
+            }`}
+            onClick={() => openPanel("terminal")}
+            title="Open terminal"
+            aria-label="Open terminal panel"
+            aria-pressed={panelVisible && activePanel === "terminal"}
+          >
+            <TerminalSquare size={16} />
+          </button>
+          <button
+            type="button"
             className={`icon-button ${panelVisible ? "active" : ""}`}
             onClick={togglePanel}
-            title="Toggle panel"
+            title="Toggle bottom panel"
             aria-label="Toggle bottom panel"
             aria-pressed={panelVisible}
           >
@@ -1543,8 +1575,9 @@ export default function App() {
               <div className="panel-tabs">
                 <button
                   className={activePanel === "problems" ? "active" : ""}
-                  onClick={() => setActivePanel("problems")}
+                  onClick={() => openPanel("problems")}
                 >
+                  <CircleAlert size={13} />
                   PROBLEMS
                   {diagnostics.length ? (
                     <span className="count-badge">{diagnostics.length}</span>
@@ -1552,14 +1585,16 @@ export default function App() {
                 </button>
                 <button
                   className={activePanel === "output" ? "active" : ""}
-                  onClick={() => setActivePanel("output")}
+                  onClick={() => openPanel("output")}
                 >
+                  <Command size={13} />
                   OUTPUT
                 </button>
                 <button
                   className={activePanel === "terminal" ? "active" : ""}
-                  onClick={() => setActivePanel("terminal")}
+                  onClick={() => openPanel("terminal")}
                 >
+                  <TerminalSquare size={13} />
                   TERMINAL
                 </button>
                 <div />
@@ -1571,40 +1606,64 @@ export default function App() {
                 </button>
               </div>
               <div className="panel-content">
-                {activePanel === "problems" ? (
-                  diagnostics.length ? (
-                    diagnostics.map((diagnostic, index) => (
-                      <button
-                        className="diagnostic-row"
-                        key={`${diagnostic.file}-${diagnostic.line}-${index}`}
-                        onClick={() => void openDiagnostic(diagnostic)}
-                      >
-                        {diagnostic.severity === "error" ? (
-                          <CircleAlert size={15} className="error-icon" />
-                        ) : (
-                          <AlertCircle size={15} className="warning-icon" />
-                        )}
-                        <span className="diagnostic-message">
-                          {diagnostic.message}
+                <section
+                  className={`panel-pane ${
+                    activePanel === "problems" ? "" : "hidden"
+                  }`}
+                >
+                  {diagnostics.length ? (
+                    <>
+                      <div className="panel-summary">
+                        <span>
+                          <CircleAlert size={13} />
+                          {errors} errors
                         </span>
-                        <span className="diagnostic-location">
-                          {diagnostic.file || rootFile}:{diagnostic.line}
+                        <span>
+                          <AlertCircle size={13} />
+                          {warnings} warnings
                         </span>
-                      </button>
-                    ))
+                      </div>
+                      {diagnostics.map((diagnostic, index) => (
+                        <button
+                          className="diagnostic-row"
+                          key={`${diagnostic.file}-${diagnostic.line}-${index}`}
+                          onClick={() => void openDiagnostic(diagnostic)}
+                        >
+                          {diagnostic.severity === "error" ? (
+                            <CircleAlert size={15} className="error-icon" />
+                          ) : (
+                            <AlertCircle size={15} className="warning-icon" />
+                          )}
+                          <span className="diagnostic-message">
+                            {diagnostic.message}
+                          </span>
+                          <span className="diagnostic-location">
+                            {diagnostic.file || rootFile}:{diagnostic.line}
+                          </span>
+                        </button>
+                      ))}
+                    </>
                   ) : (
                     <div className="panel-empty">
                       <CircleCheck size={16} />
                       No problems detected
                     </div>
-                  )
-                ) : activePanel === "output" ? (
+                  )}
+                </section>
+                <section
+                  className={`panel-pane ${activePanel === "output" ? "" : "hidden"}`}
+                >
                   <pre className="build-output">
                     {compileResult?.output || "Compile the project to see build output."}
                   </pre>
-                ) : activePanel === "terminal" ? (
+                </section>
+                <section
+                  className={`panel-pane ${
+                    activePanel === "terminal" ? "" : "hidden"
+                  }`}
+                >
                   <TerminalPanel cwd={projectPath} />
-                ) : null}
+                </section>
               </div>
             </section>
           ) : null}
@@ -1617,10 +1676,10 @@ export default function App() {
             <Box size={13} />
             LatexDo
           </span>
-          <button onClick={() => setPanelVisible(true)}>
+          <button onClick={() => openPanel("problems")}>
             <CircleAlert size={13} /> {errors}
           </button>
-          <button onClick={() => setPanelVisible(true)}>
+          <button onClick={() => openPanel("problems")}>
             <AlertCircle size={13} /> {warnings}
           </button>
           <span className="status-message">{statusMessage}</span>
@@ -1629,7 +1688,7 @@ export default function App() {
           <span>{activeDocument ? "LaTeX" : "Plain Text"}</span>
           <span>UTF-8</span>
           <span>Spaces: 2</span>
-          <button onClick={() => setPanelVisible((visible) => !visible)}>
+          <button onClick={() => openPanel("terminal")}>
             <TerminalSquare size={13} />
           </button>
         </div>

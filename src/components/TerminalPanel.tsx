@@ -96,5 +96,13 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
     };
   }, [cwd]);
 
-  return <div className="terminal-dock" ref={containerRef} />;
+  return (
+    <div className="terminal-panel-shell">
+      <div className="terminal-panel-meta">
+        <span>Interactive shell</span>
+        <span className="terminal-panel-path">{cwd || "No workspace open"}</span>
+      </div>
+      <div className="terminal-dock" ref={containerRef} />
+    </div>
+  );
 }

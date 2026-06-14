@@ -108,6 +108,26 @@ button {
   border-radius: 5px;
 }
 
+.workbench-toggle {
+  position: relative;
+}
+
+.icon-button-badge {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #c85d66;
+  color: #fff7f8;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+}
+
 .icon-button:hover,
 .small-icon:hover {
   background: #282c34;
@@ -1304,8 +1324,8 @@ button {
 
 .bottom-panel {
   display: grid;
-  height: 170px;
-  min-height: 100px;
+  height: 220px;
+  min-height: 120px;
   border-top: 1px solid #2c3038;
   background: #171a20;
   grid-template-rows: 32px minmax(0, 1fr);
@@ -1313,10 +1333,11 @@ button {
 
 .panel-tabs {
   display: grid;
-  grid-template-columns: auto auto 1fr auto;
+  grid-template-columns: auto auto auto 1fr auto;
   align-items: center;
   gap: 16px;
   padding: 0 9px 0 13px;
+  background: #171a20;
 }
 
 .panel-tabs button {
@@ -1363,14 +1384,41 @@ button {
 }
 
 .panel-content {
+  position: relative;
   overflow: auto;
   border-top: 1px solid #22262d;
+}
+
+.panel-pane {
+  min-height: 100%;
+}
+
+.panel-pane.hidden {
+  display: none;
+}
+
+.panel-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #242932;
+  background: #14181f;
+  color: #97a0ad;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+}
+
+.panel-summary span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .diagnostic-row {
   display: flex;
   width: 100%;
-  height: 28px;
+  min-height: 30px;
   align-items: center;
   gap: 8px;
   padding: 0 12px;
@@ -1425,6 +1473,51 @@ button {
   font-size: 10.5px;
   line-height: 1.55;
   white-space: pre-wrap;
+}
+
+.terminal-panel-shell {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: 28px minmax(0, 1fr);
+}
+
+.terminal-panel-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  border-bottom: 1px solid #242932;
+  background: #14181f;
+  color: #9aa3af;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+}
+
+.terminal-panel-path {
+  overflow: hidden;
+  color: #6f95da;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-dock {
+  min-height: 0;
+  padding: 8px 10px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 1%), transparent 24%),
+    #11151b;
+}
+
+.terminal-dock .xterm {
+  height: 100%;
+}
+
+.terminal-dock .xterm-viewport {
+  border-radius: 6px;
 }
 
 .statusbar {
