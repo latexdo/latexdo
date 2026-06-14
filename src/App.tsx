@@ -41,6 +41,7 @@ import {
   useState,
 } from "react";
 import FileTree from "./FileTree";
+import PdfPreview, { type PdfClickLocation } from "./PdfPreview";
 import { monaco } from "./monaco";
 import type {
   CompileResult,
@@ -48,6 +49,8 @@ import type {
   Engine,
   OpenDocument,
   ProjectEntry,
+  SyncTexPdfLocation,
+  SyncTexSourceLocation,
 } from "./types";
 
 interface AppSettings {
@@ -156,6 +159,38 @@ function formatDuration(milliseconds: number): string {
     : `${(milliseconds / 1000).toFixed(1)} s`;
 }
 
+function normalizeRelativePath(filePath: string): string {
+  return filePath.replaceAll("\\", "/").replace(/(^|\/)\.\//g, "$1");
+}
+
+function wordColumn(
+  lineContent: string,
+  word: string | undefined,
+  preferredColumn: number,
+): { column: number; length: number } {
+  if (!word) {
+    return { column: Math.max(1, preferredColumn), length: 0 };
+  }
+
+  const matches: number[] = [];
+  let index = lineContent.indexOf(word);
+  while (index >= 0) {
+    matches.push(index);
+    index = lineContent.indexOf(word, index + word.length);
+  }
+  if (!matches.length) {
+    return { column: Math.max(1, preferredColumn), length: 0 };
+  }
+
+  const preferredIndex = Math.max(0, preferredColumn - 1);
+  const nearest = matches.reduce((best, candidate) =>
+    Math.abs(candidate - preferredIndex) < Math.abs(best - preferredIndex)
+      ? candidate
+      : best,
+  );
+  return { column: nearest + 1, length: word.length };
+}
+
 export default function App() {
   const [projectPath, setProjectPath] = useState("");
   const [projectEntries, setProjectEntries] = useState<ProjectEntry[]>([]);
@@ -181,15 +216,27 @@ export default function App() {
   const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
   const [compiling, setCompiling] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Opening workspace…");
-  const [pdfUrl, setPdfUrl] = useState("");
+  const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
+  const [pdfTarget, setPdfTarget] = useState<SyncTexPdfLocation | null>(null);
   const [pdfScale, setPdfScale] = useState(100);
   const [splitPercent, setSplitPercent] = useState(52);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const editorMouseDisposableRef = useRef<monaco.IDisposable | null>(null);
   const documentsRef = useRef<OpenDocument[]>([]);
   const projectPathRef = useRef("");
+  const activePathRef = useRef("");
   const rootFileRef = useRef(rootFile);
   const engineRef = useRef(engine);
-  const pdfUrlRef = useRef("");
+  const pdfPathRef = useRef("");
+  const forwardSyncRef = useRef<
+    ((position: monaco.Position) => Promise<void>) | null
+  >(null);
+  const pendingSourceRef = useRef<{
+    path: string;
+    line: number;
+    column: number;
+    word?: string;
+  } | null>(null);
 
   const activeDocument = documents.find(
     (document) => document.path === activePath,
@@ -219,6 +266,10 @@ export default function App() {
   useEffect(() => {
     projectPathRef.current = projectPath;
   }, [projectPath]);
+
+  useEffect(() => {
+    activePathRef.current = activePath;
+  }, [activePath]);
 
   useEffect(() => {
     rootFileRef.current = rootFile;
@@ -258,6 +309,7 @@ export default function App() {
       );
       if (existing) {
         setActivePath(entry.path);
+        activePathRef.current = entry.path;
         return;
       }
 
@@ -271,6 +323,7 @@ export default function App() {
       };
       setDocuments((current) => [...current, document]);
       setActivePath(entry.path);
+      activePathRef.current = entry.path;
       setStatusMessage(`Opened ${entry.relativePath}`);
     },
     [],
@@ -284,14 +337,12 @@ export default function App() {
       setDocuments([]);
       documentsRef.current = [];
       setActivePath("");
+      activePathRef.current = "";
       setWelcomeOpen(true);
       setCompileResult(null);
-
-      if (pdfUrlRef.current) {
-        URL.revokeObjectURL(pdfUrlRef.current);
-        pdfUrlRef.current = "";
-        setPdfUrl("");
-      }
+      setPdfData(null);
+      setPdfTarget(null);
+      pdfPathRef.current = "";
 
       const entries = await window.latexdo.listProject(path);
       setProjectEntries(entries);
@@ -326,11 +377,6 @@ export default function App() {
         );
       });
 
-    return () => {
-      if (pdfUrlRef.current) {
-        URL.revokeObjectURL(pdfUrlRef.current);
-      }
-    };
   }, [loadProject]);
 
   const saveDocument = useCallback(
@@ -365,10 +411,10 @@ export default function App() {
     }
   }, [activePath, saveDocument]);
 
-  const compile = useCallback(async () => {
+  const compile = useCallback(async (): Promise<CompileResult | null> => {
     const currentProject = projectPathRef.current;
     if (!currentProject || compiling) {
-      return;
+      return null;
     }
 
     setCompiling(true);
@@ -407,32 +453,172 @@ export default function App() {
           currentProject,
           result.pdfPath,
         );
-        const pdfBytes = new Uint8Array(bytes);
-        const nextUrl = URL.createObjectURL(
-          new Blob([pdfBytes], { type: "application/pdf" }),
-        );
-        if (pdfUrlRef.current) {
-          URL.revokeObjectURL(pdfUrlRef.current);
-        }
-        pdfUrlRef.current = nextUrl;
-        setPdfUrl(nextUrl);
+        pdfPathRef.current = result.pdfPath;
+        setPdfData(new Uint8Array(bytes));
+        setPdfTarget(null);
         setPreviewVisible(true);
         setStatusMessage(`Built successfully in ${formatDuration(result.durationMs)}`);
       } else {
+        pdfPathRef.current = "";
+        setPdfTarget(null);
         setPanelVisible(true);
         setActivePanel(result.diagnostics.length ? "problems" : "output");
         setStatusMessage(result.error ?? "Compilation failed");
       }
+      return result;
     } catch (error) {
+      pdfPathRef.current = "";
+      setPdfTarget(null);
       setPanelVisible(true);
       setActivePanel("output");
       setStatusMessage(
         error instanceof Error ? error.message : "Compilation failed",
       );
+      return null;
     } finally {
       setCompiling(false);
     }
   }, [compiling]);
+
+  const revealPendingSource = useCallback(() => {
+    const pending = pendingSourceRef.current;
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    if (!pending || !editor || !model) {
+      return false;
+    }
+
+    if (
+      normalizeRelativePath(model.uri.fsPath) !==
+      normalizeRelativePath(pending.path)
+    ) {
+      return false;
+    }
+
+    const line = Math.min(Math.max(1, pending.line), model.getLineCount());
+    const match = wordColumn(
+      model.getLineContent(line),
+      pending.word,
+      pending.column,
+    );
+    const range = new monaco.Range(
+      line,
+      match.column,
+      line,
+      match.column + match.length,
+    );
+    editor.setSelection(range);
+    editor.revealRangeInCenter(range, monaco.editor.ScrollType.Smooth);
+    editor.focus();
+    pendingSourceRef.current = null;
+    return true;
+  }, []);
+
+  const handleForwardSync = useCallback(
+    async (position: monaco.Position) => {
+      const document = documentsRef.current.find(
+        (item) => item.path === activePathRef.current,
+      );
+      if (!document || !document.name.endsWith(".tex")) {
+        return;
+      }
+
+      const model = editorRef.current?.getModel();
+      const word = model?.getWordAtPosition(position)?.word;
+      let pdfPath = pdfPathRef.current;
+      const sourceIsDirty = documentsRef.current.some(
+        (item) => item.content !== item.savedContent,
+      );
+
+      if (!pdfPath || sourceIsDirty) {
+        const result = await compile();
+        pdfPath = result?.ok ? result.pdfPath ?? "" : "";
+      }
+      if (!pdfPath) {
+        setStatusMessage("Compile successfully before synchronizing the PDF");
+        return;
+      }
+
+      try {
+        const location = await window.latexdo.forwardSyncTex(
+          projectPathRef.current,
+          pdfPath,
+          document.path,
+          position.lineNumber,
+          position.column,
+        );
+        if (!location) {
+          setStatusMessage("No PDF location was found for this source position");
+          return;
+        }
+
+        setPreviewVisible(true);
+        setPdfTarget({ ...location, word });
+        setStatusMessage(`Showing ${document.name}:${position.lineNumber} in PDF`);
+      } catch (error) {
+        setStatusMessage(
+          error instanceof Error ? error.message : "Could not synchronize PDF",
+        );
+      }
+    },
+    [compile],
+  );
+  forwardSyncRef.current = handleForwardSync;
+
+  const handleBackwardSync = useCallback(
+    async (pdfLocation: PdfClickLocation) => {
+      const pdfPath = pdfPathRef.current;
+      if (!pdfPath) {
+        return;
+      }
+
+      try {
+        const location: SyncTexSourceLocation | null =
+          await window.latexdo.backwardSyncTex(
+            projectPathRef.current,
+            pdfPath,
+            pdfLocation.page,
+            pdfLocation.x,
+            pdfLocation.y,
+          );
+        if (!location) {
+          setStatusMessage("No source location was found for this PDF position");
+          return;
+        }
+
+        const normalizedFile = normalizeRelativePath(location.file);
+        const entry = flattenEntries(projectEntries).find(
+          (item) =>
+            item.type === "file" &&
+            normalizeRelativePath(item.relativePath) === normalizedFile,
+        );
+        if (!entry) {
+          setStatusMessage(`Could not open ${location.file}`);
+          return;
+        }
+
+        pendingSourceRef.current = {
+          path: entry.path,
+          line: location.line,
+          column: location.column,
+          word: pdfLocation.word,
+        };
+        await openDocument(entry);
+        setWelcomeOpen(false);
+        requestAnimationFrame(() => {
+          revealPendingSource();
+        });
+        setStatusMessage(`Opened ${entry.relativePath}:${location.line}`);
+      } catch (error) {
+        setStatusMessage(
+          error instanceof Error
+            ? error.message
+            : "Could not synchronize source",
+        );
+      }
+    },
+    [openDocument, projectEntries, revealPendingSource],
+  );
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -584,8 +770,24 @@ export default function App() {
 
   const handleEditorMount: OnMount = (editor) => {
     editorRef.current = editor;
+    editorMouseDisposableRef.current?.dispose();
+    editorMouseDisposableRef.current = editor.onMouseDown((event) => {
+      if (event.event.detail === 2 && event.target.position) {
+        void forwardSyncRef.current?.(event.target.position);
+      }
+    });
+    requestAnimationFrame(() => {
+      revealPendingSource();
+    });
     editor.focus();
   };
+
+  useEffect(
+    () => () => {
+      editorMouseDisposableRef.current?.dispose();
+    },
+    [],
+  );
 
   const openProject = async () => {
     const path = await window.latexdo.openProject();
@@ -665,12 +867,14 @@ export default function App() {
       const nextPath =
         nextDocuments[Math.min(index, nextDocuments.length - 1)]?.path ?? "";
       setActivePath(nextPath);
+      activePathRef.current = nextPath;
     }
   };
 
   const showWelcomePage = () => {
     setWelcomeOpen(true);
     setActivePath("");
+    activePathRef.current = "";
     setStatusMessage("Welcome to LatexDo");
   };
 
@@ -713,7 +917,9 @@ export default function App() {
     event.stopPropagation();
     setWelcomeOpen(false);
     if (!activePath) {
-      setActivePath(documents[0]?.path ?? "");
+      const nextPath = documents[0]?.path ?? "";
+      setActivePath(nextPath);
+      activePathRef.current = nextPath;
     }
   };
 
@@ -967,6 +1173,7 @@ export default function App() {
                   }`}
                   onClick={() => {
                     setActivePath(document.path);
+                    activePathRef.current = document.path;
                   }}
                 >
                   <Code2 size={14} className="tab-file-icon" />
@@ -1157,10 +1364,14 @@ export default function App() {
                     </div>
                   </div>
                   <div className="pdf-surface">
-                    {pdfUrl ? (
-                      <iframe
-                        title="Compiled PDF"
-                        src={`${pdfUrl}#toolbar=0&navpanes=0&view=FitH&zoom=${pdfScale}`}
+                    {pdfData ? (
+                      <PdfPreview
+                        data={pdfData}
+                        scale={pdfScale}
+                        target={pdfTarget}
+                        onNavigate={(location) => {
+                          void handleBackwardSync(location);
+                        }}
                       />
                     ) : (
                       <div className="preview-empty">
