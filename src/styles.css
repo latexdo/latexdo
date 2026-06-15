@@ -1555,9 +1555,11 @@ button {
 .settings-list {
   display: grid;
   min-height: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   align-content: start;
   gap: 14px;
+  grid-auto-rows: max-content;
+  grid-template-columns: minmax(0, 1fr);
   overflow: auto;
   padding: 20px;
   background: #171b21;
