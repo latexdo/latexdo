@@ -155,6 +155,39 @@ const api = {
       ipcRenderer.removeListener("tools:open-spellchecker", listener);
     };
   },
+  onOpenProjectMenu: (callback: () => void) => {
+    const listener = () => {
+      callback();
+    };
+
+    ipcRenderer.on("file:open-project", listener);
+
+    return () => {
+      ipcRenderer.removeListener("file:open-project", listener);
+    };
+  },
+  onCreateFileMenu: (callback: () => void) => {
+    const listener = () => {
+      callback();
+    };
+
+    ipcRenderer.on("file:create-dialog", listener);
+
+    return () => {
+      ipcRenderer.removeListener("file:create-dialog", listener);
+    };
+  },
+  onCreateFolderMenu: (callback: () => void) => {
+    const listener = () => {
+      callback();
+    };
+
+    ipcRenderer.on("folder:create-dialog", listener);
+
+    return () => {
+      ipcRenderer.removeListener("folder:create-dialog", listener);
+    };
+  },
 };
 
 contextBridge.exposeInMainWorld("latexdo", api);

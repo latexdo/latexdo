@@ -5,7 +5,6 @@ import Editor, {
 } from "@monaco-editor/react";
 import {
   AlertCircle,
-  Blocks,
   BookOpenText,
   Box,
   Check,
@@ -14,6 +13,7 @@ import {
   CircleCheck,
   Code2,
   Command,
+  Download,
   ExternalLink,
   FilePlus2,
   Files,
@@ -31,7 +31,6 @@ import {
   Play,
   Plus,
   RefreshCw,
-  Search,
   Settings,
   TerminalSquare,
   X,
@@ -53,6 +52,7 @@ import { monaco } from "./monaco";
 import type {
   CompileResult,
   Diagnostic,
+  DiagnosticFix,
   Engine,
   GitCommitDetails,
   GitDiffEditorInput,
@@ -70,26 +70,7 @@ import type {
 } from "./types";
 
 type PanelKind = "problems" | "output" | "terminal";
-type SidebarView =
-  | "explorer"
-  | "search"
-  | "sourceControl"
-  | "tools"
-  | "extensions";
-
-interface SearchResult {
-  path: string;
-  relativePath: string;
-  line: number;
-  preview: string;
-}
-
-interface LatexSidebarStats {
-  texFiles: number;
-  bibFiles: number;
-  citations: number;
-  labels: number;
-}
+type SidebarView = "explorer" | "sourceControl";
 
 interface GitDiffSession extends GitDiffEditorInput {
   label: string;
@@ -109,6 +90,25 @@ const defaultSettings: AppSettings = {
   wordWrap: true,
   minimap: true,
 };
+
+function buildAutoCompileSignature(
+  documents: OpenDocument[],
+  projectPath: string,
+  rootFile: string,
+  engine: Engine,
+): string {
+  return JSON.stringify({
+    projectPath,
+    rootFile,
+    engine,
+    dirtyDocuments: documents
+      .filter((document) => document.content !== document.savedContent)
+      .map((document) => ({
+        relativePath: document.relativePath,
+        content: document.content,
+      })),
+  });
+}
 
 function loadSettings(): AppSettings {
   try {
@@ -209,6 +209,11 @@ function joinRelativePath(directory: string, name: string): string {
   return normalizeRelativePath(`${directory}/${name}`).replace(/^\/+/, "");
 }
 
+function createPathInDirectory(directory: string, name: string): string {
+  const normalizedDirectory = normalizeRelativePath(directory).replace(/\/+$/, "");
+  return normalizedDirectory ? joinRelativePath(normalizedDirectory, name) : name;
+}
+
 function uniqueWords(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
@@ -247,12 +252,137 @@ function wordColumn(
 }
 
 function diagnosticHeadline(diagnostic: Diagnostic): string {
-  return diagnostic.message;
+  if (diagnostic.title) {
+    return diagnostic.title;
+  }
+
+  const normalized = diagnostic.message.toLowerCase();
+
+  if (normalized.includes("undefined control sequence")) {
+    return "Unknown LaTeX command";
+  }
+  if (normalized.includes("missing $ inserted")) {
+    return "Math content is outside math mode";
+  }
+  if (normalized.includes("extra }, or forgotten $")) {
+    return "Unbalanced braces or math delimiters";
+  }
+  if (normalized.includes("runaway argument")) {
+    return "A command argument was never closed";
+  }
+  if (normalized.includes("file `") && normalized.includes("' not found")) {
+    return "A required file is missing";
+  }
+  if (normalized.includes("citation") && normalized.includes("undefined")) {
+    return "Citation key not found";
+  }
+  if (
+    normalized.includes("reference") && normalized.includes("undefined")
+  ) {
+    return "Reference could not be resolved";
+  }
+  if (normalized.includes("there were undefined references")) {
+    return "Some references are unresolved";
+  }
+  if (normalized.includes("there were undefined citations")) {
+    return "Some citations are unresolved";
+  }
+
+  return diagnostic.severity === "warning" ? "LaTeX warning" : "LaTeX error";
+}
+
+function diagnosticLocationLabel(diagnostic: Diagnostic, rootFile: string): string {
+  const file = diagnostic.file || rootFile;
+  return `${file}:${diagnostic.line}:${Math.max(1, diagnostic.column)}`;
+}
+
+function diagnosticMarkerMessage(diagnostic: Diagnostic): string {
+  return [
+    diagnosticHeadline(diagnostic),
+    diagnostic.detail,
+    diagnostic.originReason
+      ? `Why this location: ${diagnostic.originReason}`
+      : undefined,
+    diagnostic.reportedLine && diagnostic.reportedLine !== diagnostic.line
+      ? `LaTeX stopped later at line ${diagnostic.reportedLine}, column ${
+          diagnostic.reportedColumn ?? 1
+        }.`
+      : undefined,
+    diagnostic.suggestion ? `Suggested fix: ${diagnostic.suggestion}` : undefined,
+    `Compiler message: ${diagnostic.message}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function diagnosticAccuracyLabel(diagnostic: Diagnostic): string {
+  const confidence = diagnostic.locationConfidence
+    ? ` · ${diagnostic.locationConfidence}%`
+    : "";
+  if (diagnostic.locationAccuracy === "exact") {
+    return `Exact origin${confidence}`;
+  }
+  if (diagnostic.locationAccuracy === "inferred") {
+    return `Likely origin${confidence}`;
+  }
+  return `Compiler line${confidence}`;
+}
+
+function diagnosticContextContent(
+  diagnostic: Diagnostic,
+  text: string,
+  focus: boolean,
+): React.ReactNode {
+  if (!focus) {
+    return text || " ";
+  }
+
+  const start = Math.min(text.length, Math.max(0, diagnostic.column - 1));
+  const end = Math.min(
+    text.length,
+    Math.max(start + 1, (diagnostic.endColumn ?? diagnostic.column + 1) - 1),
+  );
+
+  return (
+    <>
+      {text.slice(0, start)}
+      <mark>{text.slice(start, end) || " "}</mark>
+      {text.slice(end)}
+    </>
+  );
+}
+
+function positionOffset(content: string, line: number, column: number): number {
+  const starts = [0];
+  for (let index = 0; index < content.length; index += 1) {
+    if (content[index] === "\n") {
+      starts.push(index + 1);
+    }
+  }
+
+  const lineIndex = Math.min(starts.length - 1, Math.max(0, line - 1));
+  const lineStart = starts[lineIndex];
+  const nextLineStart = starts[lineIndex + 1] ?? content.length + 1;
+  const lineEnd = Math.max(
+    lineStart,
+    nextLineStart - (content[nextLineStart - 2] === "\r" ? 2 : 1),
+  );
+  return Math.min(lineEnd, lineStart + Math.max(0, column - 1));
+}
+
+function applyTextFix(content: string, fix: DiagnosticFix): string | null {
+  const start = positionOffset(content, fix.line, fix.column);
+  const end = positionOffset(content, fix.endLine, fix.endColumn);
+  if (content.slice(start, Math.max(start, end)) !== fix.expectedText) {
+    return null;
+  }
+  return content.slice(0, start) + fix.replacement + content.slice(Math.max(start, end));
 }
 
 export default function App() {
   const [projectPath, setProjectPath] = useState("");
   const [projectEntries, setProjectEntries] = useState<ProjectEntry[]>([]);
+  const [hideProjectEntries, setHideProjectEntries] = useState(false);
   const [documents, setDocuments] = useState<OpenDocument[]>([]);
   const [activePath, setActivePath] = useState("");
   const [welcomeOpen, setWelcomeOpen] = useState(true);
@@ -274,9 +404,6 @@ export default function App() {
   const [activePanel, setActivePanel] = useState<PanelKind>("problems");
   const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
   const [compiling, setCompiling] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [searchRunning, setSearchRunning] = useState(false);
   const [gitStatus, setGitStatus] = useState<GitStatusSummary | null>(null);
   const [gitLoading, setGitLoading] = useState(false);
   const [gitCommitMessage, setGitCommitMessage] = useState("");
@@ -287,13 +414,6 @@ export default function App() {
   const [gitFileHistory, setGitFileHistory] = useState<GitHistorySummary | null>(null);
   const [gitCommitDetails, setGitCommitDetails] = useState<GitCommitDetails | null>(null);
   const [gitCommitDetailsTargetPath, setGitCommitDetailsTargetPath] = useState<string | null>(null);
-  const [latexStats, setLatexStats] = useState<LatexSidebarStats>({
-    texFiles: 0,
-    bibFiles: 0,
-    citations: 0,
-    labels: 0,
-  });
-  const [latexLoading, setLatexLoading] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [spellCheckerSettings, setSpellCheckerSettings] =
@@ -329,14 +449,18 @@ export default function App() {
     path: string;
     line: number;
     column: number;
+    endLine?: number;
+    endColumn?: number;
     word?: string;
   } | null>(null);
+  const lastAutoCompileSignatureRef = useRef("");
 
   const activeDocument = documents.find(
     (document) => document.path === activePath,
   );
   const showWelcome = welcomeOpen && !activePath;
-  const previewShown = previewVisible && !showWelcome;
+  const showBlankWorkspace = hideProjectEntries && !welcomeOpen && !activePath;
+  const previewShown = previewVisible && !showWelcome && !showBlankWorkspace;
   const projectName = fileName(projectPath) || "LatexDo";
   const diagnostics = useMemo(
     () => [...(compileResult?.diagnostics ?? []), ...(proofreadingResult?.diagnostics ?? [])],
@@ -348,6 +472,21 @@ export default function App() {
   const warnings = diagnostics.filter(
     (diagnostic) => diagnostic.severity === "warning",
   ).length;
+  const primaryDiagnostic = useMemo(
+    () =>
+      compileResult?.diagnostics.find((diagnostic) => diagnostic.isPrimary) ??
+      compileResult?.diagnostics.find(
+        (diagnostic) => diagnostic.severity === "error",
+      ) ??
+      null,
+    [compileResult?.diagnostics],
+  );
+  const cascadingErrors = useMemo(
+    () =>
+      compileResult?.diagnostics.filter((diagnostic) => diagnostic.isCascade)
+        .length ?? 0,
+    [compileResult?.diagnostics],
+  );
   const texFiles = useMemo(
     () =>
       flattenEntries(projectEntries).filter(
@@ -377,6 +516,21 @@ export default function App() {
 
     return languages.filter((language) => language.toLowerCase().includes(query));
   }, [spellCheckerLanguageQuery, spellCheckerSettings?.availableLanguages]);
+  const rootFileExists = useMemo(
+    () =>
+      allProjectEntries.some(
+        (entry) =>
+          entry.type === "file" &&
+          normalizeRelativePath(entry.relativePath) ===
+            normalizeRelativePath(rootFile),
+      ),
+    [allProjectEntries, rootFile],
+  );
+  const autoCompileSignature = useMemo(
+    () =>
+      buildAutoCompileSignature(documents, projectPath, rootFile, engine),
+    [documents, engine, projectPath, rootFile],
+  );
 
   useEffect(() => {
     documentsRef.current = documents;
@@ -453,10 +607,15 @@ export default function App() {
   );
 
   const loadProject = useCallback(
-    async (path: string, openFirstDocument = false) => {
+    async (
+      path: string,
+      openFirstDocument = false,
+      hideEntries = false,
+    ) => {
       setStatusMessage("Loading project…");
       setProjectPath(path);
       projectPathRef.current = path;
+      setHideProjectEntries(hideEntries);
       setDocuments([]);
       documentsRef.current = [];
       setActivePath("");
@@ -466,6 +625,7 @@ export default function App() {
       setPdfData(null);
       setPdfTarget(null);
       pdfPathRef.current = "";
+      lastAutoCompileSignatureRef.current = "";
 
       const entries = await window.latexdo.listProject(path);
       setProjectEntries(entries);
@@ -493,7 +653,7 @@ export default function App() {
   useEffect(() => {
     void window.latexdo
       .getWelcomeProject()
-      .then((path) => loadProject(path, false))
+      .then((path) => loadProject(path, false, true))
       .catch((error: unknown) => {
         setStatusMessage(
           error instanceof Error ? error.message : "Could not open workspace",
@@ -512,26 +672,19 @@ export default function App() {
         document.path,
         document.content,
       );
-      setDocuments((current) =>
-        current.map((item) =>
+      setDocuments((current) => {
+        const nextDocuments = current.map((item) =>
           item.path === document.path
             ? { ...item, savedContent: item.content }
             : item,
-        ),
-      );
+        );
+        documentsRef.current = nextDocuments;
+        return nextDocuments;
+      });
       setStatusMessage(`Saved ${document.relativePath}`);
     },
     [],
   );
-
-  const saveActive = useCallback(async () => {
-    const document = documentsRef.current.find(
-      (item) => item.path === activePath,
-    );
-    if (document) {
-      await saveDocument(document);
-    }
-  }, [activePath, saveDocument]);
 
   const compile = useCallback(async (): Promise<CompileResult | null> => {
     const currentProject = projectPathRef.current;
@@ -539,6 +692,12 @@ export default function App() {
       return null;
     }
 
+    lastAutoCompileSignatureRef.current = buildAutoCompileSignature(
+      documentsRef.current,
+      currentProject,
+      rootFileRef.current,
+      engineRef.current,
+    );
     setCompiling(true);
     setStatusMessage(`Compiling ${rootFileRef.current}…`);
     try {
@@ -602,6 +761,58 @@ export default function App() {
     }
   }, [compiling]);
 
+  const saveActiveAndCompile = useCallback(async () => {
+    const document = documentsRef.current.find(
+      (item) => item.path === activePathRef.current,
+    );
+    if (document) {
+      await saveDocument(document);
+    }
+    await compile();
+  }, [compile, saveDocument]);
+
+  const downloadPdf = useCallback(async () => {
+    const currentProject = projectPathRef.current;
+    if (!currentProject || !rootFileExists) {
+      return;
+    }
+
+    try {
+      const sourceIsDirty = documentsRef.current.some(
+        (document) => document.content !== document.savedContent,
+      );
+      let pdfPath = pdfPathRef.current;
+
+      if (!pdfPath || sourceIsDirty) {
+        const result = await compile();
+        pdfPath = result?.ok ? result.pdfPath ?? "" : "";
+      }
+      if (!pdfPath) {
+        setStatusMessage("Compile successfully before downloading the PDF");
+        return;
+      }
+
+      const bytes = await window.latexdo.readPdf(currentProject, pdfPath);
+      const url = URL.createObjectURL(
+        new Blob([bytes], { type: "application/pdf" }),
+      );
+      const link = document.createElement("a");
+      const downloadName = fileName(rootFileRef.current).replace(/\.tex$/i, ".pdf");
+
+      link.href = url;
+      link.download = downloadName;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setStatusMessage(`Downloaded ${downloadName}`);
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Could not download the PDF",
+      );
+    }
+  }, [compile, rootFileExists]);
+
   const compileEntry = useCallback(
     async (entry: ProjectEntry) => {
       if (entry.type !== "file" || !entry.name.endsWith(".tex")) {
@@ -616,6 +827,24 @@ export default function App() {
     },
     [compile],
   );
+
+  useEffect(() => {
+    if (!projectPath || !rootFileExists || compiling) {
+      return;
+    }
+    if (autoCompileSignature === lastAutoCompileSignatureRef.current) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      lastAutoCompileSignatureRef.current = autoCompileSignature;
+      void compile();
+    }, 700);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [autoCompileSignature, compile, compiling, projectPath, rootFileExists]);
 
   const moveEntry = useCallback(
     async (sourcePath: string, destination: ProjectEntry) => {
@@ -717,16 +946,36 @@ export default function App() {
     }
 
     const line = Math.min(Math.max(1, pending.line), model.getLineCount());
-    const match = wordColumn(
-      model.getLineContent(line),
-      pending.word,
-      pending.column,
+    const lineLength = model.getLineLength(line);
+    const match = pending.word
+      ? wordColumn(
+          model.getLineContent(line),
+          pending.word,
+          pending.column,
+        )
+      : {
+          column: Math.min(Math.max(1, pending.column), lineLength + 1),
+          length: Math.max(
+            1,
+            (pending.endColumn ?? pending.column + 1) - pending.column,
+          ),
+        };
+    const endLine = Math.min(
+      Math.max(line, pending.endLine ?? line),
+      model.getLineCount(),
     );
+    const endColumn =
+      endLine === line
+        ? Math.min(lineLength + 1, match.column + match.length)
+        : Math.min(
+            model.getLineLength(endLine) + 1,
+            Math.max(1, pending.endColumn ?? 1),
+          );
     const range = new monaco.Range(
       line,
       match.column,
-      line,
-      match.column + match.length,
+      endLine,
+      endColumn,
     );
     editor.setSelection(range);
     editor.revealRangeInCenter(range, monaco.editor.ScrollType.Smooth);
@@ -889,6 +1138,78 @@ export default function App() {
     [],
   );
 
+  const applyLatexDiagnosticFix = useCallback(
+    async (diagnostic: Diagnostic, fix: DiagnosticFix) => {
+      const currentProject = projectPathRef.current;
+      if (!currentProject || !diagnostic.file) {
+        return;
+      }
+
+      const targetPath = normalizeRelativePath(diagnostic.file);
+      const entry = flattenEntries(projectEntriesRef.current).find(
+        (item) =>
+          item.type === "file" &&
+          normalizeRelativePath(item.relativePath) === targetPath,
+      );
+      if (!entry) {
+        setStatusMessage(`Could not find ${diagnostic.file} in this project`);
+        return;
+      }
+
+      const openDocumentState = documentsRef.current.find(
+        (document) =>
+          normalizeRelativePath(document.relativePath) === targetPath,
+      );
+      const content =
+        openDocumentState?.content ??
+        (await window.latexdo.readFile(currentProject, entry.path));
+      const updatedContent = applyTextFix(content, fix);
+      if (updatedContent === null) {
+        setStatusMessage(
+          "The source changed after this analysis. Compile again before applying the fix.",
+        );
+        return;
+      }
+
+      await window.latexdo.writeFile(
+        currentProject,
+        entry.path,
+        updatedContent,
+      );
+
+      if (openDocumentState) {
+        const nextDocuments = documentsRef.current.map((document) =>
+          document.path === openDocumentState.path
+            ? {
+                ...document,
+                content: updatedContent,
+                savedContent: updatedContent,
+              }
+            : document,
+        );
+        documentsRef.current = nextDocuments;
+        setDocuments(nextDocuments);
+        setActivePath(openDocumentState.path);
+        activePathRef.current = openDocumentState.path;
+      } else {
+        await openDocument(entry);
+      }
+
+      pendingSourceRef.current = {
+        path: entry.path,
+        line: fix.line,
+        column: fix.column,
+        endLine: fix.endLine,
+        endColumn: Math.max(fix.column, fix.column + fix.replacement.length),
+      };
+      setWelcomeOpen(false);
+      requestAnimationFrame(() => revealPendingSource());
+      setStatusMessage(`Applied fix: ${fix.title}. Recompiling...`);
+      await compile();
+    },
+    [compile, openDocument, revealPendingSource],
+  );
+
   const runProofreading = useCallback(async () => {
     const document = documentsRef.current.find(
       (item) => item.path === activePathRef.current,
@@ -956,7 +1277,7 @@ export default function App() {
       const modifier = event.metaKey || event.ctrlKey;
       if (modifier && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        void saveActive();
+        void saveActiveAndCompile();
       }
       if (modifier && event.key === "Enter") {
         event.preventDefault();
@@ -975,11 +1296,12 @@ export default function App() {
       if (event.key === "Escape") {
         setCreateDialog(null);
         setSettingsOpen(false);
+        setTikzCanvasOpen(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [compile, saveActive]);
+  }, [compile, saveActiveAndCompile]);
 
   useEffect(() => {
     if (!activeDocument || !editorRef.current) {
@@ -991,15 +1313,35 @@ export default function App() {
         diagnostic.file === activeDocument.relativePath ||
         fileName(diagnostic.file) === activeDocument.name,
     );
+    const model = editorRef.current.getModel()!;
     monaco.editor.setModelMarkers(
-      editorRef.current.getModel()!,
+      model,
       "latexdo",
       relevantDiagnostics.map((diagnostic) => ({
         startLineNumber: diagnostic.line,
         startColumn: diagnostic.column,
         endLineNumber: diagnostic.endLine ?? diagnostic.line,
         endColumn: diagnostic.endColumn ?? diagnostic.column + 1,
-        message: diagnostic.message,
+        message: diagnosticMarkerMessage(diagnostic),
+        source:
+          diagnostic.locationAccuracy === "exact"
+            ? "LatexDo analysis"
+            : "LaTeX compiler",
+        code: diagnostic.code,
+        relatedInformation:
+          diagnostic.reportedLine && diagnostic.reportedLine !== diagnostic.line
+            ? [
+                {
+                  resource: model.uri,
+                  startLineNumber: diagnostic.reportedLine,
+                  startColumn: diagnostic.reportedColumn ?? 1,
+                  endLineNumber: diagnostic.reportedLine,
+                  endColumn: (diagnostic.reportedColumn ?? 1) + 1,
+                  message:
+                    "LaTeX stopped here after the earlier root-cause token left the document structure invalid.",
+                },
+              ]
+            : undefined,
         severity:
           diagnostic.severity === "error"
             ? monaco.MarkerSeverity.Error
@@ -1211,7 +1553,7 @@ export default function App() {
   const openProject = async () => {
     const path = await window.latexdo.openProject();
     if (path) {
-      await loadProject(path, false);
+      await loadProject(path, true, false);
     }
   };
 
@@ -1219,7 +1561,7 @@ export default function App() {
     try {
       const path = await window.latexdo.createProject();
       if (path) {
-        await loadProject(path, true);
+        await loadProject(path, true, false);
         setStatusMessage("Project created");
       }
     } catch (error) {
@@ -1234,6 +1576,23 @@ export default function App() {
     setCreateError("");
     setCreateDialog(type);
   };
+
+  const openCreateDialogInDirectory = useCallback(
+    (type: "file" | "folder", entry: ProjectEntry) => {
+      if (entry.type !== "directory") {
+        return;
+      }
+      setCreatePath(
+        createPathInDirectory(
+          entry.relativePath,
+          type === "file" ? "chapter.tex" : "chapters",
+        ),
+      );
+      setCreateError("");
+      setCreateDialog(type);
+    },
+    [],
+  );
 
   const submitCreate = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -1400,16 +1759,6 @@ export default function App() {
     setActiveSidebar(view);
   }, []);
 
-  const openSpellCheckerDialog = useCallback(() => {
-    setSpellCheckerLanguageQuery("");
-    setSpellCheckerWordDraft("");
-    setSpellCheckerError("");
-    setProofreadingError("");
-    setSettingsOpen(true);
-    void loadSpellCheckerSettings();
-    void loadProofreadingSettings();
-  }, [loadProofreadingSettings, loadSpellCheckerSettings]);
-
   const toggleSpellCheckerEnabled = useCallback(
     (enabled: boolean) => {
       if (!spellCheckerSettings) {
@@ -1506,6 +1855,28 @@ export default function App() {
       void loadProofreadingSettings();
     });
   }, [loadProofreadingSettings, loadSpellCheckerSettings]);
+
+  useEffect(() => {
+    return window.latexdo.onOpenProjectMenu(() => {
+      void openProject();
+    });
+  }, []);
+
+  useEffect(() => {
+    return window.latexdo.onCreateFileMenu(() => {
+      setCreatePath("chapter.tex");
+      setCreateError("");
+      setCreateDialog("file");
+    });
+  }, []);
+
+  useEffect(() => {
+    return window.latexdo.onCreateFolderMenu(() => {
+      setCreatePath("chapters");
+      setCreateError("");
+      setCreateDialog("folder");
+    });
+  }, []);
 
   const toggleSidebar = () => {
     setSidebarVisible((visible) => !visible);
@@ -1763,141 +2134,6 @@ export default function App() {
     };
   }, [activeSidebar, projectPath, activeDocument]);
 
-  useEffect(() => {
-    if (activeSidebar !== "search") {
-      return;
-    }
-
-    if (!searchQuery.trim() || !projectPath) {
-      setSearchResults([]);
-      setSearchRunning(false);
-      return;
-    }
-
-    let cancelled = false;
-    const runSearch = async () => {
-      setSearchRunning(true);
-      try {
-        const results: SearchResult[] = [];
-        const query = searchQuery.toLowerCase();
-        const openDocs = new Map(documents.map((document) => [document.path, document.content]));
-        const searchableFiles = allProjectEntries.filter(
-          (entry) =>
-            entry.type === "file" &&
-            supportedExtensions.has(entry.name.split(".").pop()?.toLowerCase() ?? ""),
-        );
-
-        for (const entry of searchableFiles) {
-          if (cancelled || results.length >= 60) {
-            break;
-          }
-
-          let content = openDocs.get(entry.path);
-          if (content === undefined) {
-            try {
-              content = await window.latexdo.readFile(projectPath, entry.path);
-            } catch {
-              continue;
-            }
-          }
-
-          const lines = content.split(/\r?\n/);
-          for (let index = 0; index < lines.length; index += 1) {
-            if (results.length >= 60) {
-              break;
-            }
-            if (lines[index].toLowerCase().includes(query)) {
-              results.push({
-                path: entry.path,
-                relativePath: entry.relativePath,
-                line: index + 1,
-                preview: lines[index].trim() || "(blank line)",
-              });
-            }
-          }
-        }
-
-        if (!cancelled) {
-          setSearchResults(results);
-        }
-      } finally {
-        if (!cancelled) {
-          setSearchRunning(false);
-        }
-      }
-    };
-
-    void runSearch();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSidebar, allProjectEntries, documents, projectPath, searchQuery]);
-
-  useEffect(() => {
-    if (activeSidebar !== "tools") {
-      return;
-    }
-
-    if (!projectPath) {
-      setLatexStats({ texFiles: 0, bibFiles: 0, citations: 0, labels: 0 });
-      return;
-    }
-
-    let cancelled = false;
-    const loadStats = async () => {
-      setLatexLoading(true);
-      try {
-        const openDocs = new Map(documents.map((document) => [document.path, document.content]));
-        const texProjectFiles = allProjectEntries.filter(
-          (entry) => entry.type === "file" && entry.name.endsWith(".tex"),
-        );
-        const bibProjectFiles = allProjectEntries.filter(
-          (entry) => entry.type === "file" && entry.name.endsWith(".bib"),
-        );
-
-        let labelCount = 0;
-        let citationCount = 0;
-
-        for (const entry of [...texProjectFiles, ...bibProjectFiles]) {
-          let content = openDocs.get(entry.path);
-          if (content === undefined) {
-            try {
-              content = await window.latexdo.readFile(projectPath, entry.path);
-            } catch {
-              continue;
-            }
-          }
-
-          if (entry.name.endsWith(".tex")) {
-            labelCount += (content.match(/\\label\s*{[^}]+}/g) ?? []).length;
-          }
-
-          if (entry.name.endsWith(".bib")) {
-            citationCount += (content.match(/@\w+\s*{\s*[^,]+,/g) ?? []).length;
-          }
-        }
-
-        if (!cancelled) {
-          setLatexStats({
-            texFiles: texProjectFiles.length,
-            bibFiles: bibProjectFiles.length,
-            citations: citationCount,
-            labels: labelCount,
-          });
-        }
-      } finally {
-        if (!cancelled) {
-          setLatexLoading(false);
-        }
-      }
-    };
-
-    void loadStats();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSidebar, allProjectEntries, documents, projectPath]);
-
   const togglePreview = async () => {
     if (previewShown) {
       setPreviewVisible(false);
@@ -1928,6 +2164,12 @@ export default function App() {
   const closeWelcomePage = (event: React.MouseEvent) => {
     event.stopPropagation();
     setWelcomeOpen(false);
+    if (hideProjectEntries) {
+      setActivePath("");
+      activePathRef.current = "";
+      setPreviewVisible(false);
+      return;
+    }
     if (!activePath) {
       const nextPath = documents[0]?.path ?? "";
       setActivePath(nextPath);
@@ -1950,6 +2192,9 @@ export default function App() {
           item.name === fileName(targetDiagnosticPath)),
     );
     if (!entry) {
+      setStatusMessage(
+        `Could not locate ${targetDiagnosticPath} in the open project`,
+      );
       return;
     }
 
@@ -1957,6 +2202,8 @@ export default function App() {
       path: entry.path,
       line: Math.max(1, diagnostic.line),
       column: Math.max(1, diagnostic.column),
+      endLine: diagnostic.endLine,
+      endColumn: diagnostic.endColumn,
       word: undefined,
     };
 
@@ -1964,25 +2211,7 @@ export default function App() {
     requestAnimationFrame(() => {
       revealPendingSource();
     });
-  };
-
-  const openSearchResult = async (result: SearchResult) => {
-    const entry = allProjectEntries.find(
-      (item) => item.type === "file" && item.path === result.path,
-    );
-    if (!entry) {
-      return;
-    }
-
-    await openDocument(entry);
-    requestAnimationFrame(() => {
-      editorRef.current?.revealLineInCenter(result.line);
-      editorRef.current?.setPosition({
-        lineNumber: result.line,
-        column: 1,
-      });
-      editorRef.current?.focus();
-    });
+    setStatusMessage(`Opened ${diagnosticLocationLabel(diagnostic, rootFileRef.current)}`);
   };
 
   const openGitFile = useCallback(
@@ -2126,15 +2355,6 @@ export default function App() {
             </button>
             <button
               className={`activity-button ${
-                sidebarVisible && activeSidebar === "search" ? "active" : ""
-              }`}
-              onClick={() => openSidebar("search")}
-              title="Search"
-            >
-              <Search size={22} />
-            </button>
-            <button
-              className={`activity-button ${
                 sidebarVisible && activeSidebar === "sourceControl" ? "active" : ""
               }`}
               onClick={() => openSidebar("sourceControl")}
@@ -2143,29 +2363,11 @@ export default function App() {
               <GitBranch size={21} />
             </button>
             <button
-              className={`activity-button ${
-                sidebarVisible && activeSidebar === "tools" ? "active" : ""
-              }`}
-              onClick={() => openSidebar("tools")}
-              title="Tools"
-            >
-              <BookOpenText size={22} />
-            </button>
-            <button
               className={`activity-button ${tikzCanvasOpen ? "active" : ""}`}
               onClick={() => setTikzCanvasOpen((open) => !open)}
-              title="TikZ Drawing Canvas"
+              title="Draw"
             >
               <Pencil size={21} />
-            </button>
-            <button
-              className={`activity-button ${
-                sidebarVisible && activeSidebar === "extensions" ? "active" : ""
-              }`}
-              onClick={() => openSidebar("extensions")}
-              title="Extensions"
-            >
-              <Blocks size={22} />
             </button>
           </div>
           <div>
@@ -2188,13 +2390,7 @@ export default function App() {
               <span>
                 {activeSidebar === "explorer"
                   ? "EXPLORER"
-                  : activeSidebar === "search"
-                    ? "SEARCH"
-                  : activeSidebar === "sourceControl"
-                    ? "SOURCE CONTROL"
-                      : activeSidebar === "tools"
-                        ? "TOOLS"
-                        : "EXTENSIONS"}
+                  : "SOURCE CONTROL"}
               </span>
               <div>
                 {activeSidebar === "explorer" ? (
@@ -2240,61 +2436,30 @@ export default function App() {
                   <FolderOpen size={14} />
                 </button>
                 <div className="file-tree">
-                  <FileTree
-                    entries={projectEntries}
-                    activePath={activePath}
-                    onOpen={openDocument}
-                    onCompileFile={(entry) => void compileEntry(entry)}
-                    onSetRootFile={(entry) => {
-                      setRootFile(entry.relativePath);
-                      rootFileRef.current = entry.relativePath;
-                      setStatusMessage(`Main file set to ${entry.relativePath}`);
-                    }}
-                    onMoveEntry={(sourcePath, destination) =>
-                      void moveEntry(sourcePath, destination)
-                    }
-                  />
+                  {hideProjectEntries ? null : (
+                    <FileTree
+                      entries={projectEntries}
+                      activePath={activePath}
+                      onOpen={openDocument}
+                      onCompileFile={(entry) => void compileEntry(entry)}
+                      onSetRootFile={(entry) => {
+                        setRootFile(entry.relativePath);
+                        rootFileRef.current = entry.relativePath;
+                        setStatusMessage(`Main file set to ${entry.relativePath}`);
+                      }}
+                      onMoveEntry={(sourcePath, destination) =>
+                        void moveEntry(sourcePath, destination)
+                      }
+                      onCreateFileInDirectory={(entry) =>
+                        openCreateDialogInDirectory("file", entry)
+                      }
+                      onCreateFolderInDirectory={(entry) =>
+                        openCreateDialogInDirectory("folder", entry)
+                      }
+                    />
+                  )}
                 </div>
-                <button className="open-folder-button" onClick={openProject}>
-                  <FolderOpen size={15} />
-                  Open folder
-                </button>
               </>
-            ) : activeSidebar === "search" ? (
-              <div className="sidebar-panel">
-                <div className="sidebar-search-box">
-                  <input
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder="Search project"
-                  />
-                </div>
-                <div className="sidebar-section-label">
-                  {searchRunning
-                    ? "Searching…"
-                    : `${searchResults.length} result${searchResults.length === 1 ? "" : "s"}`}
-                </div>
-                <div className="sidebar-list">
-                  {searchResults.map((result) => (
-                    <button
-                      key={`${result.path}:${result.line}:${result.preview}`}
-                      className="sidebar-item"
-                      onClick={() => void openSearchResult(result)}
-                    >
-                      <strong>{result.relativePath}</strong>
-                      <span>Line {result.line}</span>
-                      <small>{result.preview}</small>
-                    </button>
-                  ))}
-                  {!searchRunning && !searchResults.length ? (
-                    <div className="sidebar-empty-state">
-                      {searchQuery.trim()
-                        ? "No matches found."
-                        : "Type a term to search across the workspace."}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
             ) : activeSidebar === "sourceControl" ? (
               <div className="sidebar-panel">
                 <div className="sidebar-card">
@@ -2632,137 +2797,11 @@ export default function App() {
                   )}
                 </div>
               </div>
-            ) : activeSidebar === "tools" ? (
-              <div className="sidebar-panel">
-                <div className="sidebar-card">
-                  <strong>{rootFile || "No root file selected"}</strong>
-                  <span>{latexLoading ? "Scanning project…" : `${engine} ready`}</span>
-                </div>
-                <div className="sidebar-grid">
-                  <div className="sidebar-metric">
-                    <strong>{latexStats.texFiles}</strong>
-                    <span>TeX files</span>
-                  </div>
-                  <div className="sidebar-metric">
-                    <strong>{latexStats.bibFiles}</strong>
-                    <span>Bib files</span>
-                  </div>
-                  <div className="sidebar-metric">
-                    <strong>{latexStats.citations}</strong>
-                    <span>Citations</span>
-                  </div>
-                  <div className="sidebar-metric">
-                    <strong>{latexStats.labels}</strong>
-                    <span>Labels</span>
-                  </div>
-                </div>
-                <div className="sidebar-list">
-                  <button className="sidebar-item" onClick={() => void compile()}>
-                    <strong>Compile document</strong>
-                    <span>Run {engine} on {rootFile}</span>
-                  </button>
-                  <button
-                    className="sidebar-item"
-                    onClick={() => openPanel("problems")}
-                  >
-                    <strong>Problems</strong>
-                    <span>
-                      {diagnostics.length
-                        ? `${errors} errors, ${warnings} warnings`
-                        : "No active diagnostics"}
-                    </span>
-                  </button>
-                  <button
-                    className="sidebar-item"
-                    onClick={() => openPanel("output")}
-                  >
-                    <strong>Build output</strong>
-                    <span>Open compile logs in the bottom panel</span>
-                  </button>
-                  <button
-                    className="sidebar-item"
-                    onClick={() => openPanel("terminal")}
-                  >
-                    <strong>Terminal</strong>
-                    <span>Open the integrated terminal in the bottom panel</span>
-                  </button>
-                  <button
-                    className="sidebar-item"
-                    onClick={openSpellCheckerDialog}
-                  >
-                    <strong>All settings</strong>
-                    <span>Editor, spell checker, grammar, compiler, and updates</span>
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="sidebar-panel">
-                <div className="sidebar-card">
-                  <strong>Extensions marketplace</strong>
-                  <span>Extension management is not wired yet.</span>
-                </div>
-                <div className="sidebar-list">
-                  <div className="sidebar-item static">
-                    <strong>LaTeX Core</strong>
-                    <span>Built-in</span>
-                    <small>Editor, PDF preview, compile, sync, and terminal.</small>
-                  </div>
-                  <div className="sidebar-item static">
-                    <strong>More extensions</strong>
-                    <span>Coming soon</span>
-                    <small>This area is ready for installable tooling later.</small>
-                  </div>
-                </div>
-              </div>
-            )}
+            ) : null}
           </aside>
         ) : null}
 
         <main className="main-area">
-          <div className="toolbar">
-            <div className="root-control">
-              <span className="control-label">ROOT</span>
-              <div className="select-wrap">
-                <select
-                  value={rootFile}
-                  onChange={(event) => setRootFile(event.target.value)}
-                >
-                  {texFiles.map((entry) => (
-                    <option key={entry.path} value={entry.relativePath}>
-                      {entry.relativePath}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={13} />
-              </div>
-            </div>
-            <div className="toolbar-spacer" />
-            <div className="engine-select select-wrap">
-              <select
-                value={engine}
-                onChange={(event) => setEngine(event.target.value as Engine)}
-                title="LaTeX engine"
-              >
-                <option value="pdflatex">pdfLaTeX</option>
-                <option value="xelatex">XeLaTeX</option>
-                <option value="lualatex">LuaLaTeX</option>
-              </select>
-              <ChevronDown size={13} />
-            </div>
-            <button
-              className={`compile-button ${compiling ? "compiling" : ""}`}
-              onClick={() => void compile()}
-              disabled={compiling || !rootFile}
-            >
-              {compiling ? (
-                <LoaderCircle size={15} className="spin" />
-              ) : (
-                <Play size={14} fill="currentColor" />
-              )}
-              {compiling ? "Compiling" : "Compile"}
-            </button>
-          </div>
-
           <div className="document-tabs">
             {welcomeOpen ? (
               <button
@@ -2839,7 +2878,53 @@ export default function App() {
               } as React.CSSProperties
             }
           >
-            <section className="source-pane">
+            <section className={`source-pane ${showWelcome ? "welcome-only" : ""}`}>
+              {!showWelcome && !showBlankWorkspace ? (
+                <div className="source-toolbar">
+                  <div className="pane-label">TEX</div>
+                  <div className="root-control">
+                    <span className="control-label">ROOT</span>
+                    <div className="select-wrap">
+                      <select
+                        value={rootFile}
+                        onChange={(event) => setRootFile(event.target.value)}
+                      >
+                        {texFiles.map((entry) => (
+                          <option key={entry.path} value={entry.relativePath}>
+                            {entry.relativePath}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown size={13} />
+                    </div>
+                  </div>
+                  <div className="toolbar-spacer" />
+                  <div className="engine-select select-wrap">
+                    <select
+                      value={engine}
+                      onChange={(event) => setEngine(event.target.value as Engine)}
+                      title="LaTeX engine"
+                    >
+                      <option value="pdflatex">pdfLaTeX</option>
+                      <option value="xelatex">XeLaTeX</option>
+                      <option value="lualatex">LuaLaTeX</option>
+                    </select>
+                    <ChevronDown size={13} />
+                  </div>
+                  <button
+                    className={`compile-button ${compiling ? "compiling" : ""}`}
+                    onClick={() => void compile()}
+                    disabled={compiling || !rootFile}
+                  >
+                    {compiling ? (
+                      <LoaderCircle size={15} className="spin" />
+                    ) : (
+                      <Play size={14} fill="currentColor" />
+                    )}
+                    {compiling ? "Compiling" : "Compile"}
+                  </button>
+                </div>
+              ) : null}
               {showWelcome ? (
                 <div className="welcome-page">
                   <div className="welcome-hero">
@@ -2882,30 +2967,6 @@ export default function App() {
                           <small>Open an existing LaTeX project</small>
                         </span>
                       </button>
-                    </section>
-
-                    <section className="welcome-section">
-                      <h2>Current Project</h2>
-                      <div className="welcome-project-card">
-                        <div className="project-card-icon">
-                          <BookOpenText size={22} />
-                        </div>
-                        <div>
-                          <strong>{projectName}</strong>
-                          <small>{projectPath}</small>
-                        </div>
-                      </div>
-                      {texFiles.slice(0, 4).map((entry) => (
-                        <button
-                          className="welcome-recent"
-                          key={entry.path}
-                          onClick={() => void openDocument(entry)}
-                        >
-                          <Code2 size={15} />
-                          <span>{entry.relativePath}</span>
-                          <ExternalLink size={13} />
-                        </button>
-                      ))}
                     </section>
                   </div>
 
@@ -2977,8 +3038,10 @@ export default function App() {
               ) : (
                 <div className="empty-editor">
                   <div className="empty-logo">L</div>
-                  <h2>No editor is open</h2>
-                  <button onClick={showWelcomePage}>Show Welcome</button>
+                  <h2>{showBlankWorkspace ? "No project is open" : "No editor is open"}</h2>
+                  <button onClick={showBlankWorkspace ? openProject : showWelcomePage}>
+                    {showBlankWorkspace ? "Open Folder" : "Show Welcome"}
+                  </button>
                 </div>
               )}
             </section>
@@ -2994,6 +3057,7 @@ export default function App() {
                 <section className="preview-pane">
                   <div className="preview-header">
                     <div>
+                      <span className="pane-label">PDF</span>
                       <BookOpenText size={15} />
                       <span>{fileName(rootFile).replace(/\.tex$/, ".pdf")}</span>
                       {compileResult?.ok ? (
@@ -3016,8 +3080,8 @@ export default function App() {
                       >
                         <ZoomIn size={15} />
                       </button>
-                      <button onClick={() => void compile()} title="Refresh PDF">
-                        <RefreshCw size={14} />
+                      <button onClick={() => void downloadPdf()} title="Download PDF">
+                        <Download size={14} />
                       </button>
                     </div>
                   </div>
@@ -3144,59 +3208,239 @@ export default function App() {
                           <AlertCircle size={13} />
                           {warnings} warnings
                         </span>
+                        {cascadingErrors ? (
+                          <span>{cascadingErrors} secondary effects</span>
+                        ) : null}
                       </div>
-                      {diagnostics.map((diagnostic, index) => (
-                        <div
-                          className="diagnostic-row diagnostic-row-card"
-                          key={`${diagnostic.file}-${diagnostic.line}-${index}`}
-                        >
-                          <button
-                            className="diagnostic-row"
-                            onClick={() => void openDiagnostic(diagnostic)}
-                          >
-                            {diagnostic.severity === "error" ? (
-                              <CircleAlert size={15} className="error-icon" />
-                            ) : (
-                              <AlertCircle size={15} className="warning-icon" />
-                            )}
-                            <span className="diagnostic-copy">
-                              <span className="diagnostic-message">
-                                {diagnosticHeadline(diagnostic)}
-                              </span>
-                              {diagnostic.detail ? (
-                                <span className="diagnostic-detail">
-                                  {diagnostic.detail}
-                                </span>
-                              ) : null}
-                              {diagnostic.sourceLine ? (
-                                <span className="diagnostic-source-line">
-                                  {diagnostic.sourceLine}
-                                </span>
-                              ) : null}
-                              {diagnostic.suggestion ? (
-                                <span className="diagnostic-suggestion">
-                                  Fix: {diagnostic.suggestion}
-                                </span>
-                              ) : null}
+                      {primaryDiagnostic ? (
+                        <div className="diagnostic-analysis-hero">
+                          <div className="diagnostic-analysis-kicker">
+                            <Code2 size={13} />
+                            FIX THIS FIRST
+                            <span>
+                              {diagnosticAccuracyLabel(primaryDiagnostic)}
                             </span>
-                            <span className="diagnostic-location">
-                              {diagnostic.source === "proofread"
-                                ? "Writing"
-                                : "Build"} · {diagnostic.file || rootFile}:{diagnostic.line}
-                            </span>
-                          </button>
-                          {diagnostic.replacements?.length ? (
-                            <div className="diagnostic-actions">
-                              <button
-                                className="sidebar-mini-action subtle"
-                                onClick={() => applyDiagnosticReplacement(diagnostic)}
-                              >
-                                Apply "{diagnostic.replacements[0]}"
-                              </button>
+                          </div>
+                          <div className="diagnostic-analysis-body">
+                            <div>
+                              <strong>
+                                {diagnosticHeadline(primaryDiagnostic)}
+                              </strong>
+                              <p>
+                                {primaryDiagnostic.detail ??
+                                  primaryDiagnostic.message}
+                              </p>
+                              {primaryDiagnostic.reportedLine &&
+                              primaryDiagnostic.reportedLine !==
+                                primaryDiagnostic.line ? (
+                                <small>
+                                  LaTeX stopped at line{" "}
+                                  {primaryDiagnostic.reportedLine}, but source
+                                  analysis traced the cause back to{" "}
+                                  {diagnosticLocationLabel(
+                                    primaryDiagnostic,
+                                    rootFile,
+                                  )}
+                                  .
+                                </small>
+                              ) : (
+                                <small>
+                                  The first actionable failure is at{" "}
+                                  {diagnosticLocationLabel(
+                                    primaryDiagnostic,
+                                    rootFile,
+                                  )}
+                                  .
+                                </small>
+                              )}
                             </div>
-                          ) : null}
+                            <div className="diagnostic-analysis-buttons">
+                              <button
+                                className="sidebar-mini-action"
+                                onClick={() =>
+                                  void openDiagnostic(primaryDiagnostic)
+                                }
+                              >
+                                Go to root cause
+                              </button>
+                              {primaryDiagnostic.fixes?.[0] ? (
+                                <button
+                                  className="sidebar-mini-action primary"
+                                  onClick={() =>
+                                    void applyLatexDiagnosticFix(
+                                      primaryDiagnostic,
+                                      primaryDiagnostic.fixes![0],
+                                    )
+                                  }
+                                >
+                                  Apply suggested fix
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
                         </div>
-                      ))}
+                      ) : null}
+                      {diagnostics.map((diagnostic, index) => {
+                        const location = diagnosticLocationLabel(
+                          diagnostic,
+                          rootFile,
+                        );
+                        return (
+                          <article
+                            className={`diagnostic-row-card ${diagnostic.severity} ${
+                              diagnostic.isPrimary ? "primary-cause" : ""
+                            } ${diagnostic.isCascade ? "cascade" : ""}`}
+                            key={`${diagnostic.file}-${diagnostic.line}-${index}`}
+                          >
+                            <button
+                              className="diagnostic-row"
+                              onClick={() => void openDiagnostic(diagnostic)}
+                            >
+                              {diagnostic.severity === "error" ? (
+                                <CircleAlert size={16} className="error-icon" />
+                              ) : (
+                                <AlertCircle size={16} className="warning-icon" />
+                              )}
+                              <span className="diagnostic-copy">
+                                <span className="diagnostic-heading">
+                                  <span className="diagnostic-message">
+                                    {diagnosticHeadline(diagnostic)}
+                                  </span>
+                                  {diagnostic.isPrimary ? (
+                                    <span className="diagnostic-role root">
+                                      Root cause
+                                    </span>
+                                  ) : null}
+                                  {diagnostic.isCascade ? (
+                                    <span className="diagnostic-role cascade">
+                                      Secondary effect
+                                    </span>
+                                  ) : null}
+                                  <span
+                                    className={`diagnostic-accuracy ${
+                                      diagnostic.locationAccuracy ?? "line"
+                                    }`}
+                                  >
+                                    {diagnosticAccuracyLabel(diagnostic)}
+                                  </span>
+                                </span>
+                                {diagnostic.detail ? (
+                                  <span className="diagnostic-detail">
+                                    {diagnostic.detail}
+                                  </span>
+                                ) : null}
+                                {diagnostic.originReason ? (
+                                  <span className="diagnostic-origin-reason">
+                                    <strong>Why this location:</strong>{" "}
+                                    {diagnostic.originReason}
+                                  </span>
+                                ) : null}
+                                {diagnostic.cascadeReason ? (
+                                  <span className="diagnostic-cascade-reason">
+                                    <strong>Why this is secondary:</strong>{" "}
+                                    {diagnostic.cascadeReason}
+                                  </span>
+                                ) : null}
+                                {diagnostic.reportedLine &&
+                                diagnostic.reportedLine !== diagnostic.line ? (
+                                  <span className="diagnostic-detection-location">
+                                    <strong>Root cause:</strong> {location}
+                                    <span>
+                                      LaTeX stopped later at{" "}
+                                      {diagnostic.file || rootFile}:
+                                      {diagnostic.reportedLine}:
+                                      {diagnostic.reportedColumn ?? 1}
+                                    </span>
+                                  </span>
+                                ) : null}
+                                {diagnostic.sourceContext?.length ? (
+                                  <span className="diagnostic-context">
+                                    {diagnostic.sourceContext.map((contextLine) => (
+                                      <span
+                                        className={`diagnostic-context-line ${
+                                          contextLine.focus ? "focus" : ""
+                                        }`}
+                                        key={contextLine.line}
+                                      >
+                                        <span className="diagnostic-context-number">
+                                          {contextLine.line}
+                                        </span>
+                                        <code>
+                                          {diagnosticContextContent(
+                                            diagnostic,
+                                            contextLine.text,
+                                            contextLine.focus,
+                                          )}
+                                        </code>
+                                      </span>
+                                    ))}
+                                  </span>
+                                ) : diagnostic.sourceLine ? (
+                                  <span className="diagnostic-source-line">
+                                    {diagnostic.sourceLine}
+                                  </span>
+                                ) : null}
+                                {diagnostic.suggestion ? (
+                                  <span className="diagnostic-suggestion">
+                                    <strong>How to fix:</strong>{" "}
+                                    {diagnostic.suggestion}
+                                  </span>
+                                ) : null}
+                                <span className="diagnostic-compiler-message">
+                                  Compiler: {diagnostic.message}
+                                </span>
+                              </span>
+                              <span className="diagnostic-location">
+                                {location}
+                              </span>
+                            </button>
+                            <div className="diagnostic-actions">
+                              <span>
+                                {diagnostic.source === "proofread"
+                                  ? "Writing analysis"
+                                  : diagnostic.isPrimary
+                                    ? "Primary LaTeX cause"
+                                    : diagnostic.isCascade
+                                      ? "Compiler consequence"
+                                      : "LaTeX analysis"}
+                              </span>
+                              <div>
+                                <button
+                                  className="sidebar-mini-action"
+                                  onClick={() => void openDiagnostic(diagnostic)}
+                                >
+                                  Go to {location}
+                                </button>
+                                {diagnostic.replacements?.length ? (
+                                  <button
+                                    className="sidebar-mini-action subtle"
+                                    onClick={() =>
+                                      applyDiagnosticReplacement(diagnostic)
+                                    }
+                                  >
+                                    Apply "{diagnostic.replacements[0]}"
+                                  </button>
+                                ) : null}
+                                {diagnostic.fixes?.map((fix) => (
+                                  <button
+                                    className="sidebar-mini-action primary"
+                                    key={`${fix.line}-${fix.column}-${fix.title}`}
+                                    title={`${fix.confidence}% confidence`}
+                                    onClick={() =>
+                                      void applyLatexDiagnosticFix(
+                                        diagnostic,
+                                        fix,
+                                      )
+                                    }
+                                  >
+                                    {fix.title}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      })}
                     </>
                   ) : (
                     <div className="panel-empty">

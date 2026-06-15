@@ -14,6 +14,23 @@ export interface OpenDocument {
   savedContent: string;
 }
 
+export interface DiagnosticContextLine {
+  line: number;
+  text: string;
+  focus: boolean;
+}
+
+export interface DiagnosticFix {
+  title: string;
+  expectedText: string;
+  replacement: string;
+  line: number;
+  column: number;
+  endLine: number;
+  endColumn: number;
+  confidence: number;
+}
+
 export interface Diagnostic {
   file: string;
   line: number;
@@ -28,6 +45,19 @@ export interface Diagnostic {
   source?: "latex" | "proofread";
   code?: string;
   replacements?: string[];
+  title?: string;
+  locationAccuracy?: "exact" | "inferred" | "line";
+  highlightText?: string;
+  sourceContext?: DiagnosticContextLine[];
+  reportedLine?: number;
+  reportedColumn?: number;
+  originReason?: string;
+  locationConfidence?: number;
+  fixes?: DiagnosticFix[];
+  isPrimary?: boolean;
+  isCascade?: boolean;
+  cascadeReason?: string;
+  priority?: number;
 }
 
 export interface CompileResult {

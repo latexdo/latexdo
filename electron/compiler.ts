@@ -1,6 +1,10 @@
 import { spawn } from "node:child_process";
 import { access, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  analyzeLatexDiagnostic,
+  rankLatexDiagnostics,
+} from "./latexDiagnostics.js";
 import type { CompileRequest, CompileResult, Diagnostic } from "./types.js";
 
 const executableCandidates =
@@ -39,74 +43,72 @@ function normalizeDiagnosticFile(projectPath: string, filePath: string): string 
   return path.relative(projectPath, absoluteFile);
 }
 
-function diagnosticSuggestion(message: string): string | undefined {
-  const normalized = message.toLowerCase();
+function sanitizeCompileOutput(output: string): string {
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd());
 
-  if (normalized.includes("undefined control sequence")) {
-    return "Check the command on that line for a typo, or add the package that defines it.";
-  }
-  if (normalized.includes("missing $ inserted")) {
-    return "Move math-only content into math mode using $...$, \\(...\\), or an equation environment.";
-  }
-  if (normalized.includes("extra }, or forgotten $")) {
-    return "Balance braces and verify that every math opener has a matching closing delimiter.";
-  }
-  if (normalized.includes("runaway argument")) {
-    return "A command or environment argument was not closed. Look just before this line for a missing } or \\end{...}.";
-  }
-  if (normalized.includes("file `") && normalized.includes("' not found")) {
-    return "Verify the filename, extension, and relative path, then make sure the file actually exists in the project.";
-  }
-  if (normalized.includes("citation") && normalized.includes("undefined")) {
-    return "Check the citation key in your .tex file and confirm the matching entry exists in a loaded .bib file.";
-  }
-  if (normalized.includes("reference") && normalized.includes("undefined")) {
-    return "Check the \\label and \\ref names. References also need another compile pass after labels are created.";
-  }
-  if (normalized.includes("there were undefined references")) {
-    return "One or more \\ref commands do not match an existing \\label, or the document needs another compile pass.";
-  }
-  if (normalized.includes("there were undefined citations")) {
-    return "One or more \\cite commands do not match a BibTeX entry, or bibliography processing has not completed.";
+  const staleLatexmkFailure =
+    lines.some((line) =>
+      line.includes("gave an error in previous invocation of latexmk"),
+    ) &&
+    lines.some((line) => line.includes("Nothing to do for"));
+
+  if (!staleLatexmkFailure) {
+    return output.trim();
   }
 
-  return undefined;
-}
+  const filtered = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return false;
+    }
+    if (trimmed.startsWith("Rc files read:")) {
+      return false;
+    }
+    if (trimmed === "NONE") {
+      return false;
+    }
+    if (trimmed.startsWith("Latexmk: This is Latexmk")) {
+      return false;
+    }
+    if (trimmed.startsWith("Latexmk: Nothing to do for")) {
+      return false;
+    }
+    if (trimmed.startsWith("Latexmk: All targets")) {
+      return false;
+    }
+    if (trimmed.startsWith("Collected error summary")) {
+      return false;
+    }
+    if (trimmed.includes("gave an error in previous invocation of latexmk")) {
+      return false;
+    }
+    if (trimmed.startsWith("Latexmk: Sometimes, the -f option")) {
+      return false;
+    }
+    if (trimmed.startsWith("to try to force complete processing.")) {
+      return false;
+    }
+    if (trimmed.startsWith("But normally, you will need to correct")) {
+      return false;
+    }
+    if (trimmed.startsWith("error, and then rerun latexmk.")) {
+      return false;
+    }
+    if (trimmed.startsWith("In some cases, it is best to clean out")) {
+      return false;
+    }
+    if (trimmed.startsWith("latexmk after you've corrected the files.")) {
+      return false;
+    }
+    return true;
+  });
 
-function diagnosticDetail(message: string, file: string, line: number): string {
-  const location = file ? `${file}:${line}` : `line ${line}`;
-  const normalized = message.toLowerCase();
-
-  if (normalized.includes("undefined control sequence")) {
-    return `LaTeX found a command it does not know at ${location}.`;
-  }
-  if (normalized.includes("missing $ inserted")) {
-    return `LaTeX found math-only syntax outside math mode near ${location}.`;
-  }
-  if (normalized.includes("extra }, or forgotten $")) {
-    return `The grouping or math delimiters are unbalanced near ${location}.`;
-  }
-  if (normalized.includes("runaway argument")) {
-    return `A command argument or environment likely stays open past ${location}.`;
-  }
-  if (normalized.includes("file `") && normalized.includes("' not found")) {
-    return `A required file could not be loaded while compiling near ${location}.`;
-  }
-  if (normalized.includes("citation") && normalized.includes("undefined")) {
-    return `A citation key used near ${location} does not resolve to a bibliography entry.`;
-  }
-  if (normalized.includes("reference") && normalized.includes("undefined")) {
-    return `A \\ref-style command near ${location} does not resolve to a known label.`;
-  }
-
-  return `LaTeX reported a problem near ${location}.`;
-}
-
-function extractSourceSnippet(output: string, line: number): string | undefined {
-  const escapedLine = String(line).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`l\\.${escapedLine}\\s(.*)`);
-  const match = output.match(pattern);
-  return match?.[1]?.trim() || undefined;
+  return (
+    filtered.join("\n").trim() ||
+    "LatexDo forced a fresh compile because latexmk was stuck on a previous failed run."
+  );
 }
 
 async function enrichDiagnostics(
@@ -116,14 +118,12 @@ async function enrichDiagnostics(
 ): Promise<Diagnostic[]> {
   const fileCache = new Map<string, string>();
 
-  return Promise.all(
+  const enriched = await Promise.all(
     diagnostics.map(async (diagnostic) => {
-      const sourceSnippetFromOutput = extractSourceSnippet(output, diagnostic.line);
-      let sourceLine = sourceSnippetFromOutput;
-
-      if (!sourceLine && diagnostic.file) {
+      let content: string | undefined;
+      if (diagnostic.file) {
         const relativePath = normalizeDiagnosticFile(projectPath, diagnostic.file);
-        let content = fileCache.get(relativePath);
+        content = fileCache.get(relativePath);
         if (content === undefined) {
           try {
             content = await readFile(path.join(projectPath, relativePath), "utf8");
@@ -132,67 +132,92 @@ async function enrichDiagnostics(
           }
           fileCache.set(relativePath, content);
         }
-
-        const lines = content.split(/\r?\n/);
-        sourceLine = lines[diagnostic.line - 1]?.trim() || undefined;
       }
 
+      const analysis = analyzeLatexDiagnostic(diagnostic, content, output);
       return {
         ...diagnostic,
-        detail: diagnosticDetail(
-          diagnostic.message,
-          diagnostic.file,
-          diagnostic.line,
-        ),
-        suggestion: diagnosticSuggestion(diagnostic.message),
-        sourceLine,
+        ...analysis,
       };
     }),
   );
+  return rankLatexDiagnostics(enriched);
 }
 
-function parseDiagnostics(output: string, projectPath: string): Diagnostic[] {
+function parseDiagnostics(
+  output: string,
+  projectPath: string,
+  rootFile: string,
+): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const seen = new Set<string>();
-  const fileLinePattern = /^(.*?\.tex):(\d+):(?:(\d+):)?\s*(.*)$/gm;
+  const fileLinePattern =
+    /^(.*?\.(?:tex|sty|cls|bib)):(\d+):(?:(\d+):)?\s*(.*)$/gm;
   const warningPattern =
     /^(?:LaTeX|Package [^:]+) Warning:\s*(.+?)(?:\s+on input line (\d+))?\.?$/gm;
+
+  const addDiagnostic = (diagnostic: Diagnostic) => {
+    const key = `${diagnostic.file}:${diagnostic.line}:${diagnostic.message}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      diagnostics.push(diagnostic);
+    }
+  };
 
   for (const match of output.matchAll(fileLinePattern)) {
     const message = cleanLatexMessage(match[4]);
     const severity = /warning/i.test(message) ? "warning" : "error";
     const file = normalizeDiagnosticFile(projectPath, match[1]);
-    const key = `${file}:${match[2]}:${message}`;
+    addDiagnostic({
+      file,
+      line: Number(match[2]),
+      column: Number(match[3] ?? 1),
+      severity,
+      message,
+      source: "latex",
+    });
+  }
 
-    if (!seen.has(key)) {
-      seen.add(key);
-      diagnostics.push({
-        file,
-        line: Number(match[2]),
-        column: Number(match[3] ?? 1),
-        severity,
-        message,
+  const outputLines = output.split(/\r?\n/);
+  for (let index = 0; index < outputLines.length; index += 1) {
+    const errorMatch = outputLines[index].match(/^!\s*(.+)$/);
+    if (!errorMatch) {
+      continue;
+    }
+
+    for (
+      let contextIndex = index + 1;
+      contextIndex < Math.min(outputLines.length, index + 8);
+      contextIndex += 1
+    ) {
+      const lineMatch = outputLines[contextIndex].match(/^l\.(\d+)\s*(.*)$/);
+      if (!lineMatch) {
+        continue;
+      }
+
+      addDiagnostic({
+        file: normalizeDiagnosticFile(projectPath, rootFile),
+        line: Number(lineMatch[1]),
+        column: 1,
+        severity: "error",
+        message: cleanLatexMessage(errorMatch[1]),
         source: "latex",
       });
+      break;
     }
   }
 
   for (const match of output.matchAll(warningPattern)) {
     const message = match[1].replace(/\s+/g, " ").trim();
     const line = Number(match[2] ?? 1);
-    const key = `warning:${line}:${message}`;
-
-    if (!seen.has(key)) {
-      seen.add(key);
-      diagnostics.push({
-        file: "",
-        line,
-        column: 1,
-        severity: "warning",
-        message,
-        source: "latex",
-      });
-    }
+    addDiagnostic({
+      file: normalizeDiagnosticFile(projectPath, rootFile),
+      line,
+      column: 1,
+      severity: "warning",
+      message,
+      source: "latex",
+    });
   }
 
   return diagnostics.slice(0, 100);
@@ -226,6 +251,7 @@ export async function compileLatex(
 
   const args = [
     engineFlag,
+    "-g",
     "-synctex=1",
     "-interaction=nonstopmode",
     "-file-line-error",
@@ -252,15 +278,16 @@ export async function compileLatex(
       output += data.toString();
     });
     child.on("error", (error) => {
+      const cleanedOutput = sanitizeCompileOutput(output);
       void enrichDiagnostics(
-        parseDiagnostics(output, request.projectPath),
-        output,
+        parseDiagnostics(cleanedOutput, request.projectPath, request.rootFile),
+        cleanedOutput,
         request.projectPath,
       ).then((diagnostics) => {
         resolve({
           ok: false,
           durationMs: Math.round(performance.now() - startedAt),
-          output,
+          output: cleanedOutput,
           diagnostics,
           error: error.message,
         });
@@ -269,16 +296,17 @@ export async function compileLatex(
     child.on("close", (code) => {
       const pdfName = `${path.basename(request.rootFile, path.extname(request.rootFile))}.pdf`;
       const pdfPath = path.join(buildDirectory, pdfName);
+      const cleanedOutput = sanitizeCompileOutput(output);
       void enrichDiagnostics(
-        parseDiagnostics(output, request.projectPath),
-        output,
+        parseDiagnostics(cleanedOutput, request.projectPath, request.rootFile),
+        cleanedOutput,
         request.projectPath,
       ).then((diagnostics) => {
         resolve({
           ok: code === 0,
           pdfPath: code === 0 ? pdfPath : undefined,
           durationMs: Math.round(performance.now() - startedAt),
-          output,
+          output: cleanedOutput,
           diagnostics,
           error:
             code === 0 ? undefined : `LaTeX exited with code ${code ?? "unknown"}.`,

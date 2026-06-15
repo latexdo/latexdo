@@ -19,6 +19,8 @@ interface FileTreeProps {
   onCompileFile?: (entry: ProjectEntry) => void;
   onSetRootFile?: (entry: ProjectEntry) => void;
   onMoveEntry?: (sourcePath: string, destination: ProjectEntry) => void;
+  onCreateFileInDirectory?: (entry: ProjectEntry) => void;
+  onCreateFolderInDirectory?: (entry: ProjectEntry) => void;
   menuPath?: string | null;
   onToggleMenu?: (path: string | null) => void;
   draggedPath?: string | null;
@@ -60,6 +62,8 @@ function TreeRow({
   onCompileFile,
   onSetRootFile,
   onMoveEntry,
+  onCreateFileInDirectory,
+  onCreateFolderInDirectory,
   menuPath,
   onToggleMenu,
   draggedPath,
@@ -69,7 +73,6 @@ function TreeRow({
   const [dropActive, setDropActive] = useState(false);
   const toggleMenu = onToggleMenu ?? (() => {});
   const menuOpen = menuPath === entry.path;
-  const canShowMenu = isTexFile(entry);
   const isDropTarget =
     entry.type === "directory" && draggedPath && draggedPath !== entry.path;
 
@@ -97,6 +100,10 @@ function TreeRow({
           style={{ paddingLeft: rowPadding }}
           onClick={() => setExpanded((current) => !current)}
           title={entry.relativePath}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            toggleMenu(menuOpen ? null : entry.path);
+          }}
           onDragOver={(event) => {
             if (!isDropTarget) {
               return;
@@ -128,6 +135,46 @@ function TreeRow({
           )}
           <span>{entry.name}</span>
         </button>
+        <div className="tree-row-actions">
+          <button
+            className={`tree-row-menu-button ${menuOpen ? "active" : ""}`}
+            onClick={() => toggleMenu(menuOpen ? null : entry.path)}
+            title={`Actions for ${entry.name}`}
+          >
+            <MoreHorizontal size={14} />
+          </button>
+          {menuOpen ? (
+            <div className="tree-row-menu">
+              <button
+                className="tree-row-menu-item"
+                onClick={() => {
+                  toggleMenu(null);
+                  setExpanded((current) => !current);
+                }}
+              >
+                {expanded ? "Collapse folder" : "Expand folder"}
+              </button>
+              <button
+                className="tree-row-menu-item"
+                onClick={() => {
+                  toggleMenu(null);
+                  onCreateFileInDirectory?.(entry);
+                }}
+              >
+                New file
+              </button>
+              <button
+                className="tree-row-menu-item"
+                onClick={() => {
+                  toggleMenu(null);
+                  onCreateFolderInDirectory?.(entry);
+                }}
+              >
+                New folder
+              </button>
+            </div>
+          ) : null}
+        </div>
         {expanded && entry.children ? (
           <FileTree
             entries={entry.children}
@@ -137,6 +184,8 @@ function TreeRow({
             onCompileFile={onCompileFile}
             onSetRootFile={onSetRootFile}
             onMoveEntry={onMoveEntry}
+            onCreateFileInDirectory={onCreateFileInDirectory}
+            onCreateFolderInDirectory={onCreateFolderInDirectory}
             menuPath={menuPath}
             onToggleMenu={onToggleMenu}
             draggedPath={draggedPath}
@@ -162,9 +211,6 @@ function TreeRow({
         }}
         onDragEnd={() => onDragStartPath?.(null)}
         onContextMenu={(event) => {
-          if (!canShowMenu) {
-            return;
-          }
           event.preventDefault();
           toggleMenu(menuOpen ? null : entry.path);
         }}
@@ -172,39 +218,50 @@ function TreeRow({
         <FileIcon name={entry.name} />
         <span>{entry.name}</span>
       </button>
-      {canShowMenu ? (
-        <div className="tree-row-actions">
-          <button
-            className={`tree-row-menu-button ${menuOpen ? "active" : ""}`}
-            onClick={() => toggleMenu(menuOpen ? null : entry.path)}
-            title={`Actions for ${entry.name}`}
-          >
-            <MoreHorizontal size={14} />
-          </button>
-          {menuOpen ? (
-            <div className="tree-row-menu">
-              <button
-                className="tree-row-menu-item"
-                onClick={() => {
-                  toggleMenu(null);
-                  onCompileFile?.(entry);
-                }}
-              >
-                Generate PDF
-              </button>
-              <button
-                className="tree-row-menu-item"
-                onClick={() => {
-                  toggleMenu(null);
-                  onSetRootFile?.(entry);
-                }}
-              >
-                Use as main file
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      <div className="tree-row-actions">
+        <button
+          className={`tree-row-menu-button ${menuOpen ? "active" : ""}`}
+          onClick={() => toggleMenu(menuOpen ? null : entry.path)}
+          title={`Actions for ${entry.name}`}
+        >
+          <MoreHorizontal size={14} />
+        </button>
+        {menuOpen ? (
+          <div className="tree-row-menu">
+            <button
+              className="tree-row-menu-item"
+              onClick={() => {
+                toggleMenu(null);
+                onOpen(entry);
+              }}
+            >
+              Open file
+            </button>
+            {isTexFile(entry) ? (
+              <>
+                <button
+                  className="tree-row-menu-item"
+                  onClick={() => {
+                    toggleMenu(null);
+                    onCompileFile?.(entry);
+                  }}
+                >
+                  Generate PDF
+                </button>
+                <button
+                  className="tree-row-menu-item"
+                  onClick={() => {
+                    toggleMenu(null);
+                    onSetRootFile?.(entry);
+                  }}
+                >
+                  Use as main file
+                </button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -217,6 +274,8 @@ export default function FileTree({
   onCompileFile,
   onSetRootFile,
   onMoveEntry,
+  onCreateFileInDirectory,
+  onCreateFolderInDirectory,
   menuPath: controlledMenuPath,
   onToggleMenu: controlledToggleMenu,
   draggedPath: controlledDraggedPath,
@@ -247,6 +306,8 @@ export default function FileTree({
           onCompileFile={onCompileFile}
           onSetRootFile={onSetRootFile}
           onMoveEntry={onMoveEntry}
+          onCreateFileInDirectory={onCreateFileInDirectory}
+          onCreateFolderInDirectory={onCreateFolderInDirectory}
           menuPath={menuPath}
           onToggleMenu={toggleMenu}
           draggedPath={draggedPath}
