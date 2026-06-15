@@ -162,3 +162,32 @@ export interface ProofreadingResult {
 }
 
 export type Engine = "pdflatex" | "xelatex" | "lualatex";
+
+export type EditorMode = "author" | "rebuttal" | "reviewer";
+
+export interface ReviewChatComment {
+  id: string;
+  author: string;
+  text: string;
+  timestamp: number;
+}
+
+export interface ReviewChat {
+  id: string;
+  filePath: string;
+  selection: {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+    text: string;
+  };
+  comments: ReviewChatComment[];
+}
+
+export interface RebuttalItem {
+  id: string;
+  reviewerComment: string;
+  authorComment: string;
+  modificationMade: string;
+}

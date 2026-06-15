@@ -3213,3 +3213,209 @@ button {
     flex: 0 0 240px;
   }
 }
+
+/* Review and Rebuttal Sidebars */
+
+.review-sidebar, .rebuttal-sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.sidebar-header-actions {
+  padding: 12px;
+}
+
+.sidebar-primary-action {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #3d4653;
+  border-radius: 6px;
+  background: #252b35;
+  color: #e0e4eb;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.sidebar-primary-action:hover {
+  border-color: #4a5567;
+  background: #2d3440;
+}
+
+.sidebar-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #4f5663;
+  text-align: center;
+}
+
+.sidebar-empty p {
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.sidebar-empty .sub-text {
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.sidebar-item-card {
+  padding: 12px;
+  border-bottom: 1px solid #252a34;
+}
+
+.review-chat-card, .rebuttal-item-card {
+  margin-bottom: 12px;
+  border: 1px solid #2e343f;
+  border-radius: 8px;
+  background: #1c2027;
+}
+
+.review-chat-header, .rebuttal-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.review-chat-selection {
+  overflow: hidden;
+  max-width: 80%;
+  color: #7ca6ff;
+  cursor: pointer;
+  font-size: 11px;
+  font-style: italic;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-chat-selection:hover {
+  text-decoration: underline;
+}
+
+.review-comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.review-comment {
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: #252b35;
+}
+
+.comment-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  color: #9099a6;
+  font-size: 10px;
+}
+
+.comment-author {
+  color: #e0e4eb;
+  font-weight: 600;
+}
+
+.comment-text {
+  color: #d1d5db;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.comment-input-area textarea, .rebuttal-field textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #2e343f;
+  border-radius: 4px;
+  background: #15181e;
+  color: #d1d5db;
+  font-size: 11px;
+  resize: none;
+}
+
+.comment-input-area textarea {
+  height: 40px;
+}
+
+.rebuttal-field {
+  margin-bottom: 10px;
+}
+
+.rebuttal-field label {
+  display: block;
+  margin-bottom: 4px;
+  color: #9099a6;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.rebuttal-field textarea {
+  height: 60px;
+}
+
+.delete-button {
+  color: #ef4444 !important;
+  opacity: 0.6;
+}
+
+.delete-button:hover {
+  opacity: 1;
+}
+
+/* Mode Selector in Toolbar */
+.mode-selector-toolbar {
+  display: flex;
+  align-items: center;
+  background: #1a1e24;
+  border: 1px solid #2d333b;
+  border-radius: 4px;
+  padding: 1px;
+  margin-right: 12px;
+}
+
+.mode-button-mini {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: #8b949e;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mode-button-mini:hover {
+  background: #2d333b;
+  color: #c9d1d9;
+}
+
+.mode-button-mini.active {
+  background: #4774c5;
+  color: white;
+}
+
+@media (max-width: 1000px) {
+  .mode-button-mini span {
+    display: none;
+  }
+}

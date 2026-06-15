@@ -10,6 +10,7 @@ import {
 } from "electron";
 import { execFile } from "node:child_process";
 import {
+  access,
   cp,
   mkdir,
   readFile,
@@ -1413,6 +1414,15 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("project:list", async (_event, projectPath: string) => {
     return listProject(projectPath);
+  });
+  ipcMain.handle("file:exists", async (_event, projectPath: string, filePath: string) => {
+    assertInside(projectPath, filePath);
+    try {
+      await access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
   });
   ipcMain.handle(
     "file:read",
