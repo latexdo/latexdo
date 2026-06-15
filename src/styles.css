@@ -706,11 +706,12 @@ button {
 }
 
 .main-area {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   flex: 1;
-  grid-template-rows: 34px minmax(0, 1fr) auto;
+  overflow: hidden;
 }
 
 .source-toolbar {
@@ -818,6 +819,7 @@ button {
 
 .document-tabs {
   display: flex;
+  flex-shrink: 0;
   min-width: 0;
   overflow: hidden;
   border-bottom: 1px solid #292d35;
@@ -899,8 +901,10 @@ button {
 
 .editor-preview {
   display: flex;
+  flex: 1;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   background: #15181e;
 }
 
@@ -1139,7 +1143,7 @@ button {
 
 .source-pane {
   display: grid;
-  width: var(--source-width);
+  flex: 0 0 var(--source-width);
   min-width: 0;
   min-height: 0;
   grid-template-rows: 40px minmax(0, 1fr);
@@ -2056,13 +2060,42 @@ button {
   opacity: 0.65;
 }
 
+.panel-resize-handle {
+  position: absolute;
+  top: -4px;
+  left: 0;
+  right: 0;
+  height: 7px;
+  cursor: ns-resize;
+  z-index: 10;
+}
+
+.panel-resize-handle::after {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 32px;
+  height: 2px;
+  border-radius: 2px;
+  background: #3d4450;
+  content: "";
+  transform: translateX(-50%);
+  transition: background 0.15s ease;
+}
+
+.panel-resize-handle:hover::after {
+  background: #729bf0;
+}
+
 .bottom-panel {
+  position: relative;
   display: grid;
-  height: 300px;
-  min-height: 120px;
+  flex-shrink: 0;
+  min-height: 80px;
   border-top: 1px solid #2c3038;
   background: #171a20;
   grid-template-rows: 32px minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .panel-tabs {
@@ -3378,6 +3411,10 @@ button {
   opacity: 1;
 }
 
+.latex-command-hidden {
+  opacity: 0.15 !important;
+}
+
 /* Mode Selector in Toolbar */
 .mode-selector-toolbar {
   display: flex;
@@ -3386,7 +3423,6 @@ button {
   border: 1px solid #2d333b;
   border-radius: 4px;
   padding: 1px;
-  margin-right: 12px;
 }
 
 .mode-button-mini {

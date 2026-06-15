@@ -5,6 +5,7 @@ import type { RebuttalItem } from "../types";
 interface RebuttalSidebarProps {
   items: RebuttalItem[];
   onAddItem: () => void;
+  onAddRebuttalToSource: () => void;
   onUpdateItem: (id: string, updates: Partial<RebuttalItem>) => void;
   onDeleteItem: (id: string) => void;
 }
@@ -12,6 +13,7 @@ interface RebuttalSidebarProps {
 export const RebuttalSidebar: React.FC<RebuttalSidebarProps> = ({
   items,
   onAddItem,
+  onAddRebuttalToSource,
   onUpdateItem,
   onDeleteItem,
 }) => {
@@ -21,6 +23,10 @@ export const RebuttalSidebar: React.FC<RebuttalSidebarProps> = ({
         <button className="sidebar-primary-action" onClick={onAddItem}>
           <Plus size={14} />
           <span>New Rebuttal Item</span>
+        </button>
+        <button className="sidebar-primary-action" onClick={onAddRebuttalToSource}>
+          <Plus size={14} />
+          <span>Insert in Source</span>
         </button>
       </div>
 

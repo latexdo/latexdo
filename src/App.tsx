@@ -91,6 +91,7 @@ interface AppSettings {
   editorFontSize: number;
   wordWrap: boolean;
   minimap: boolean;
+  showRawLatex: boolean;
 }
 
 const settingsStorageKey = "latexdo.settings";
@@ -99,6 +100,7 @@ const defaultSettings: AppSettings = {
   editorFontSize: 13.5,
   wordWrap: true,
   minimap: true,
+  showRawLatex: true,
 };
 
 function buildAutoCompileSignature(
@@ -146,6 +148,10 @@ function loadSettings(): AppSettings {
         typeof saved.minimap === "boolean"
           ? saved.minimap
           : defaultSettings.minimap,
+      showRawLatex:
+        typeof saved.showRawLatex === "boolean"
+          ? saved.showRawLatex
+          : defaultSettings.showRawLatex,
     };
   } catch {
     return defaultSettings;
@@ -405,6 +411,7 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeSidebar, setActiveSidebar] = useState<SidebarView>("explorer");
+  const editorPreviewRef = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<Engine>(settings.defaultEngine);
   const [rootFile, setRootFile] = useState("main.tex");
   const [sidebarVisible, setSidebarVisible] = useState(true);
@@ -413,6 +420,7 @@ export default function App() {
   const [tableCanvasOpen, setTableCanvasOpen] = useState(false);
   const [panelVisible, setPanelVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<PanelKind>("problems");
+  const [panelHeight, setPanelHeight] = useState(200);
   const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
   const [compiling, setCompiling] = useState(false);
   const [gitStatus, setGitStatus] = useState<GitStatusSummary | null>(null);
@@ -635,7 +643,7 @@ export default function App() {
 \\providecommand{\\rebuttal}[3]{\\textcolor{red}{#2}\\footnote{REBUTTAL (Original: #1): #3}}
 % ----------------------------------------
 `;
-    if (content.includes("\\reviewercomment") || content.includes("\\rebuttal")) {
+    if (content.includes("% --- LatexDo Review & Rebuttal Macros ---")) {
       return content;
     }
     const docStart = content.indexOf("\\begin{document}");
@@ -802,7 +810,7 @@ export default function App() {
           window.latexdo.writeFile(
             currentProject,
             document.path,
-            document.content,
+            ensurePreambleMacros(document.content),
           ),
         ),
       );
@@ -932,7 +940,7 @@ export default function App() {
     const timeout = window.setTimeout(() => {
       lastAutoCompileSignatureRef.current = autoCompileSignature;
       void compile();
-    }, 700);
+    }, 100);
 
     return () => {
       window.clearTimeout(timeout);
@@ -1553,6 +1561,96 @@ export default function App() {
 
     reviewDecorationsRef.current = editor.deltaDecorations(reviewDecorationsRef.current, decorations);
   }, [activeDocument, reviewChats]);
+
+  const latexDecorationsRef = useRef<string[]>([]);
+
+  const updateLatexDecorations = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor || !activeDocument || !activeDocument.content) {
+      return;
+    }
+
+    if (settings.showRawLatex) {
+      latexDecorationsRef.current = editor.deltaDecorations(latexDecorationsRef.current, []);
+      return;
+    }
+
+    const model = editor.getModel();
+    if (!model) return;
+
+    const ranges: monaco.editor.IModelDeltaDecoration[] = [];
+    const text = activeDocument.content;
+
+    for (const match of text.matchAll(/\\(?:[a-zA-Z]+|\S)|%/g)) {
+      const startOffset = match.index!;
+      const command = match[0];
+
+      let preText = text.slice(0, startOffset);
+      let startLine = 1;
+      let lastNewline = -1;
+      while (true) {
+        const nl = preText.indexOf("\n", lastNewline + 1);
+        if (nl === -1 || nl >= startOffset) break;
+        startLine++;
+        lastNewline = nl;
+      }
+      let startCol = startOffset - (lastNewline + 1) + 1;
+
+      let endOffset = startOffset + command.length;
+
+      if (command === "%") {
+        const nl = text.indexOf("\n", startOffset);
+        endOffset = nl === -1 ? text.length : nl;
+      } else if (command.startsWith("\\")) {
+        const nextChar = text[endOffset];
+        if (nextChar === "[") {
+          let depth = 1;
+          let i = endOffset + 1;
+          while (i < text.length && depth > 0) {
+            if (text[i] === "[") depth++;
+            else if (text[i] === "]") depth--;
+            i++;
+          }
+          endOffset = i;
+        }
+        if (text[endOffset] === "{") {
+          let depth = 1;
+          let i = endOffset + 1;
+          while (i < text.length && depth > 0) {
+            if (text[i] === "{") depth++;
+            else if (text[i] === "}") depth--;
+            i++;
+          }
+          endOffset = i;
+        }
+      }
+
+      let endLine = startLine;
+      let endCol = startCol;
+      for (let i = startOffset; i < endOffset; i++) {
+        if (text[i] === "\n") {
+          endLine++;
+          endCol = 1;
+        } else {
+          endCol++;
+        }
+      }
+
+      ranges.push({
+        range: new monaco.Range(startLine, startCol, endLine, endCol),
+        options: {
+          inlineClassName: "latex-command-hidden",
+          stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+        },
+      });
+    }
+
+    latexDecorationsRef.current = editor.deltaDecorations(latexDecorationsRef.current, ranges);
+  }, [activeDocument, settings.showRawLatex]);
+
+  useEffect(() => {
+    updateLatexDecorations();
+  }, [updateLatexDecorations]);
 
   const configureMonaco: BeforeMount = (instance) => {
     if (!instance.languages.getLanguages().some(({ id }) => id === "latex")) {
@@ -2634,7 +2732,25 @@ export default function App() {
       const workspace = document.querySelector(".editor-preview")!;
       const bounds = workspace.getBoundingClientRect();
       const percent = ((moveEvent.clientX - bounds.left) / bounds.width) * 100;
-      setSplitPercent(Math.min(72, Math.max(28, percent)));
+      setSplitPercent(Math.min(80, Math.max(20, percent)));
+    };
+    const handleUp = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+  };
+
+  const startPanelResize = (event: React.PointerEvent) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const startY = event.clientY;
+    const startHeight = panelHeight;
+    const handleMove = (moveEvent: PointerEvent) => {
+      const mainArea = document.querySelector(".main-area")!;
+      const maxHeight = mainArea.clientHeight - 100;
+      const delta = startY - moveEvent.clientY;
+      setPanelHeight(Math.max(80, Math.min(maxHeight, startHeight + delta)));
     };
     const handleUp = () => {
       window.removeEventListener("pointermove", handleMove);
@@ -2778,6 +2894,13 @@ export default function App() {
                   <>
                     <button
                       className="small-icon"
+                      onClick={openProject}
+                      title="Open project"
+                    >
+                      <FolderOpen size={14} />
+                    </button>
+                    <button
+                      className="small-icon"
                       onClick={() => openCreateDialog("file")}
                       title="New file"
                     >
@@ -2811,36 +2934,9 @@ export default function App() {
             </div>
             {activeSidebar === "explorer" ? (
               <>
-                <div className="mode-selector">
-                  <button
-                    className={`mode-button ${mode === "author" ? "active" : ""}`}
-                    onClick={() => setMode("author")}
-                    title="Author Mode"
-                  >
-                    <User size={14} />
-                    <span>Author</span>
-                  </button>
-                  <button
-                    className={`mode-button ${mode === "reviewer" ? "active" : ""}`}
-                    onClick={() => setMode("reviewer")}
-                    title="Reviewer Mode"
-                  >
-                    <MessageSquare size={14} />
-                    <span>Reviewer</span>
-                  </button>
-                  <button
-                    className={`mode-button ${mode === "rebuttal" ? "active" : ""}`}
-                    onClick={() => setMode("rebuttal")}
-                    title="Rebuttal Mode"
-                  >
-                    <History size={14} />
-                    <span>Rebuttal</span>
-                  </button>
-                </div>
                 <button className="project-heading" onClick={openProject}>
                   <ChevronDown size={13} />
                   <span>{projectName.toUpperCase()}</span>
-                  <FolderOpen size={14} />
                 </button>
                 <div className="file-tree">
                   {mode === "author" ? (
@@ -2867,20 +2963,25 @@ export default function App() {
                       />
                     )
                   ) : mode === "reviewer" ? (
-                    <ReviewSidebar
-                      chats={reviewChats}
-                      onAddChat={handleAddReviewChat}
-                      onAddComment={handleAddReviewComment}
-                      onDeleteChat={handleDeleteReviewChat}
-                      onJumpToSelection={handleJumpToReviewSelection}
-                    />
+                    hideProjectEntries ? null : (
+                      <ReviewSidebar
+                        chats={reviewChats}
+                        onAddChat={handleAddReviewChat}
+                        onAddComment={handleAddReviewComment}
+                        onDeleteChat={handleDeleteReviewChat}
+                        onJumpToSelection={handleJumpToReviewSelection}
+                      />
+                    )
                   ) : (
-                    <RebuttalSidebar
-                      items={rebuttalItems}
-                      onAddItem={handleAddRebuttalItem}
-                      onUpdateItem={handleUpdateRebuttalItem}
-                      onDeleteItem={handleDeleteRebuttalItem}
-                    />
+                    hideProjectEntries ? null : (
+                      <RebuttalSidebar
+                        items={rebuttalItems}
+                        onAddItem={handleAddRebuttalItem}
+                        onAddRebuttalToSource={handleAddRebuttalToSource}
+                        onUpdateItem={handleUpdateRebuttalItem}
+                        onDeleteItem={handleDeleteRebuttalItem}
+                      />
+                    )
                   )}
                 </div>
               </>
@@ -3305,35 +3406,6 @@ export default function App() {
             <section className={`source-pane ${showWelcome ? "welcome-only" : ""}`}>
               {!showWelcome && !showBlankWorkspace ? (
                 <div className="source-toolbar">
-                  <div className="pane-label">TEX</div>
-                  
-                  <div className="mode-selector-toolbar">
-                    <button
-                      className={`mode-button-mini ${mode === "author" ? "active" : ""}`}
-                      onClick={() => setMode("author")}
-                      title="Author Mode"
-                    >
-                      <User size={13} />
-                      <span>Author</span>
-                    </button>
-                    <button
-                      className={`mode-button-mini ${mode === "reviewer" ? "active" : ""}`}
-                      onClick={() => setMode("reviewer")}
-                      title="Reviewer Mode"
-                    >
-                      <MessageSquare size={13} />
-                      <span>Reviewer</span>
-                    </button>
-                    <button
-                      className={`mode-button-mini ${mode === "rebuttal" ? "active" : ""}`}
-                      onClick={() => setMode("rebuttal")}
-                      title="Rebuttal Mode"
-                    >
-                      <History size={13} />
-                      <span>Rebuttal</span>
-                    </button>
-                  </div>
-
                   <div className="root-control">
                     <span className="control-label">ROOT</span>
                     <div className="select-wrap">
@@ -3350,30 +3422,66 @@ export default function App() {
                       <ChevronDown size={13} />
                     </div>
                   </div>
-                  <div className="toolbar-spacer" />
-                  <div className="engine-select select-wrap">
-                    <select
-                      value={engine}
-                      onChange={(event) => setEngine(event.target.value as Engine)}
-                      title="LaTeX engine"
-                    >
-                      <option value="pdflatex">pdfLaTeX</option>
-                      <option value="xelatex">XeLaTeX</option>
-                      <option value="lualatex">LuaLaTeX</option>
-                    </select>
-                    <ChevronDown size={13} />
+
+                  <div className="root-control">
+                    <span className="control-label">MODE</span>
+                    <div className="mode-selector-toolbar">
+                      <button
+                        className={`mode-button-mini ${mode === "author" ? "active" : ""}`}
+                        onClick={() => setMode("author")}
+                        title="Author Mode"
+                      >
+                        <User size={13} />
+                        <span>Author</span>
+                      </button>
+                      <button
+                        className={`mode-button-mini ${mode === "reviewer" ? "active" : ""}`}
+                        onClick={() => setMode("reviewer")}
+                        title="Reviewer Mode"
+                      >
+                        <MessageSquare size={13} />
+                        <span>Reviewer</span>
+                      </button>
+                      <button
+                        className={`mode-button-mini ${mode === "rebuttal" ? "active" : ""}`}
+                        onClick={() => setMode("rebuttal")}
+                        title="Rebuttal Mode"
+                      >
+                        <History size={13} />
+                        <span>Rebuttal</span>
+                      </button>
+                    </div>
                   </div>
+
+                  <div className="toolbar-spacer" />
+
+                  <div className="root-control">
+                    <span className="control-label">COMPILER</span>
+                    <div className="engine-select select-wrap">
+                      <select
+                        value={engine}
+                        onChange={(event) => setEngine(event.target.value as Engine)}
+                        title="LaTeX engine"
+                      >
+                        <option value="pdflatex">pdfLaTeX</option>
+                        <option value="xelatex">XeLaTeX</option>
+                        <option value="lualatex">LuaLaTeX</option>
+                      </select>
+                      <ChevronDown size={13} />
+                    </div>
+                  </div>
+
                   <button
                     className={`compile-button ${compiling ? "compiling" : ""}`}
                     onClick={() => void compile()}
                     disabled={compiling || !rootFile}
+                    title={compiling ? "Compiling..." : "Compile"}
                   >
                     {compiling ? (
                       <LoaderCircle size={15} className="spin" />
                     ) : (
                       <Play size={14} fill="currentColor" />
                     )}
-                    {compiling ? "Compiling" : "Compile"}
                   </button>
                 </div>
               ) : null}
@@ -3646,7 +3754,11 @@ export default function App() {
           )}
 
           {panelVisible ? (
-            <section className="bottom-panel">
+            <section className="bottom-panel" style={{ height: panelHeight }}>
+              <div
+                className="panel-resize-handle"
+                onPointerDown={startPanelResize}
+              />
               <div className="panel-tabs">
                 <button
                   className={activePanel === "problems" ? "active" : ""}
@@ -4155,6 +4267,25 @@ export default function App() {
                     setSettings((current) => ({
                       ...current,
                       minimap: event.target.checked,
+                    }))
+                  }
+                />
+              </label>
+
+              <label className="settings-row settings-toggle">
+                <span>
+                  <strong>Show raw LaTeX source</strong>
+                  <small>
+                    When off, LaTeX commands are faded so only document text is visible.
+                  </small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={settings.showRawLatex}
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      showRawLatex: event.target.checked,
                     }))
                   }
                 />

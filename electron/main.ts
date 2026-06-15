@@ -13,6 +13,7 @@ import {
   access,
   cp,
   mkdir,
+  mkdtemp,
   readFile,
   readdir,
   rename,
@@ -1389,26 +1390,9 @@ app.whenReady().then(() => {
     return result.canceled ? null : result.filePaths[0];
   });
   ipcMain.handle("project:create", async () => {
-    const result = await dialog.showSaveDialog({
-      title: "Create LaTeX project",
-      defaultPath: path.join(app.getPath("documents"), "My LaTeX Project"),
-      buttonLabel: "Create Project",
-      nameFieldLabel: "Project name",
-      showsTagField: false,
-    });
-    if (result.canceled || !result.filePath) {
-      return null;
-    }
-
-    const projectPath = result.filePath;
-    try {
-      await mkdir(projectPath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-        throw new Error("A file or folder with that project name already exists.");
-      }
-      throw error;
-    }
+    const tmpDir = await mkdtemp(path.join(app.getPath("temp"), "latexdo-project-"));
+    const projectPath = path.join(tmpDir, "My LaTeX Project");
+    await mkdir(projectPath, { recursive: true });
     await writeFile(path.join(projectPath, "main.tex"), starterDocument, "utf8");
     return projectPath;
   });
