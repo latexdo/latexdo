@@ -268,6 +268,41 @@ button {
   padding-top: 4px;
 }
 
+.file-tree-drop-surface {
+  position: relative;
+  min-height: 100%;
+  padding-bottom: 42px;
+}
+
+.file-tree-drop-surface.dragging {
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgb(72 112 177 / 5%)
+  );
+}
+
+.file-tree-drop-surface.root-drop-target {
+  background: rgb(48 83 135 / 18%);
+  box-shadow: inset 0 0 0 1px #527fc7;
+}
+
+.file-tree-root-hint {
+  position: sticky;
+  bottom: 8px;
+  width: calc(100% - 16px);
+  margin: 12px 8px 0;
+  padding: 9px 10px;
+  border: 1px dashed #547fbe;
+  border-radius: 6px;
+  background: rgb(29 47 72 / 94%);
+  color: #a9c8f7;
+  font-size: 10px;
+  line-height: 1.35;
+  pointer-events: none;
+  text-align: center;
+}
+
 .sidebar-panel {
   display: flex;
   min-height: 0;
@@ -531,6 +566,10 @@ button {
   align-items: stretch;
 }
 
+.tree-directory-row {
+  position: relative;
+}
+
 .tree-row:hover {
   background: #242831;
 }
@@ -543,6 +582,14 @@ button {
 .tree-row.drop-target {
   background: #233247;
   box-shadow: inset 0 0 0 1px #5b86d6;
+}
+
+.tree-row[draggable="true"] {
+  cursor: grab;
+}
+
+.tree-row[draggable="true"]:active {
+  cursor: grabbing;
 }
 
 .tree-row span {
@@ -1440,6 +1487,12 @@ button {
   padding-top: min(20vh, 180px);
 }
 
+.settings-backdrop {
+  align-items: center;
+  padding: 24px;
+  place-items: center;
+}
+
 .create-dialog {
   display: grid;
   width: min(460px, calc(100vw - 40px));
@@ -1453,11 +1506,11 @@ button {
 
 .settings-dialog {
   display: flex;
-  width: min(920px, calc(100vw - 40px));
-  height: min(760px, calc(100vh - 48px));
-  min-width: min(720px, calc(100vw - 40px));
-  min-height: min(520px, calc(100vh - 48px));
-  max-width: calc(100vw - 40px);
+  width: min(960px, calc(100vw - 48px));
+  height: min(780px, calc(100vh - 48px));
+  min-width: min(680px, calc(100vw - 48px));
+  min-height: min(500px, calc(100vh - 48px));
+  max-width: calc(100vw - 48px);
   max-height: calc(100vh - 48px);
   flex-direction: column;
   overflow: hidden;
@@ -1469,6 +1522,7 @@ button {
 }
 
 .settings-header {
+  flex: 0 0 auto;
   display: grid;
   align-items: start;
   padding: 22px 22px 16px;
@@ -1500,14 +1554,45 @@ button {
 
 .settings-list {
   display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  align-content: start;
   gap: 14px;
   overflow: auto;
-  padding: 18px;
+  padding: 20px;
   background: #171b21;
+  overscroll-behavior: contain;
+}
+
+.settings-section-heading {
+  display: grid;
+  gap: 3px;
+  padding: 6px 2px 0;
+}
+
+.settings-section-heading:not(:first-child) {
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid #2b313a;
+}
+
+.settings-section-heading strong {
+  color: #e1e6ee;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.settings-section-heading span {
+  color: #77818e;
+  font-size: 10px;
 }
 
 .settings-row {
   display: grid;
+  width: 100%;
+  min-width: 0;
   min-height: 76px;
   align-items: start;
   gap: 24px;
@@ -1517,6 +1602,10 @@ button {
   background: #1d222a;
   grid-template-columns: minmax(0, 1fr) minmax(210px, 260px);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 2%);
+}
+
+.settings-row > * {
+  min-width: 0;
 }
 
 .settings-row > span {
@@ -1537,6 +1626,7 @@ button {
 }
 
 .settings-row select {
+  box-sizing: border-box;
   width: 100%;
   min-height: 36px;
   padding: 0 10px;
@@ -1554,6 +1644,7 @@ button {
 }
 
 .settings-row input[type="range"] {
+  min-width: 0;
   width: 100%;
   margin-top: 8px;
   accent-color: #6d96e8;
@@ -1595,6 +1686,7 @@ button {
 }
 
 .settings-footer {
+  flex: 0 0 auto;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -1613,16 +1705,19 @@ button {
 
 .spellchecker-language-panel,
 .spellchecker-word-form {
-  display: flex;
+  display: grid;
+  min-width: 0;
   gap: 10px;
 }
 
 .spellchecker-language-panel {
-  flex-direction: column;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .spellchecker-language-panel input,
 .spellchecker-word-form input {
+  box-sizing: border-box;
+  min-width: 0;
   width: 100%;
   min-height: 32px;
   padding: 0 10px;
@@ -1636,7 +1731,12 @@ button {
 
 .spellchecker-word-form {
   align-items: center;
-  flex-wrap: wrap;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.spellchecker-word-form button,
+.settings-update-actions button {
+  white-space: nowrap;
 }
 
 .spellchecker-language-panel input:focus,
@@ -1714,12 +1814,14 @@ button {
 
 .spellchecker-grid {
   display: grid;
+  min-width: 0;
   gap: 12px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .spellchecker-field {
   display: grid;
+  min-width: 0;
   gap: 6px;
   color: #b8c0cb;
   font-size: 10.5px;
@@ -1730,6 +1832,8 @@ button {
 }
 
 .spellchecker-field select {
+  box-sizing: border-box;
+  min-width: 0;
   width: 100%;
   min-height: 32px;
   padding: 0 10px;
@@ -1754,6 +1858,46 @@ button {
   height: 15px;
   margin: 0;
   accent-color: #6d96e8;
+}
+
+@media (max-width: 760px) {
+  .settings-backdrop {
+    padding: 12px;
+  }
+
+  .settings-dialog {
+    width: calc(100vw - 24px);
+    height: calc(100vh - 24px);
+    min-width: 0;
+    min-height: 0;
+    max-width: none;
+    max-height: none;
+    resize: none;
+  }
+
+  .settings-header {
+    padding: 16px;
+    grid-template-columns: 32px 1fr auto;
+  }
+
+  .settings-list {
+    padding: 14px;
+  }
+
+  .settings-row,
+  .settings-toggle {
+    gap: 12px;
+    grid-template-columns: 1fr;
+  }
+
+  .settings-toggle input {
+    justify-self: start;
+  }
+
+  .spellchecker-grid,
+  .spellchecker-word-form {
+    grid-template-columns: 1fr;
+  }
 }
 
 .diagnostic-row-card {

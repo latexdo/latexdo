@@ -8,7 +8,7 @@ import {
   FolderOpen,
   MoreHorizontal,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectEntry } from "./types";
 
 interface FileTreeProps {
@@ -18,7 +18,10 @@ interface FileTreeProps {
   onOpen: (entry: ProjectEntry) => void;
   onCompileFile?: (entry: ProjectEntry) => void;
   onSetRootFile?: (entry: ProjectEntry) => void;
-  onMoveEntry?: (sourcePath: string, destination: ProjectEntry) => void;
+  onMoveEntry?: (
+    sourcePath: string,
+    destination: ProjectEntry | null,
+  ) => void;
   onCreateFileInDirectory?: (entry: ProjectEntry) => void;
   onCreateFolderInDirectory?: (entry: ProjectEntry) => void;
   menuPath?: string | null;
@@ -54,6 +57,50 @@ function isTexFile(entry: ProjectEntry): boolean {
   return entry.type === "file" && entry.name.toLowerCase().endsWith(".tex");
 }
 
+function normalizeTreePath(value: string): string {
+  return value.replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
+function parentTreePath(value: string): string {
+  const normalized = normalizeTreePath(value);
+  return normalized.slice(0, Math.max(0, normalized.lastIndexOf("/")));
+}
+
+function canDropIntoDirectory(
+  draggedPath: string | null,
+  destinationPath: string,
+): boolean {
+  if (!draggedPath) {
+    return false;
+  }
+
+  const source = normalizeTreePath(draggedPath);
+  const destination = normalizeTreePath(destinationPath);
+  return (
+    source !== destination &&
+    parentTreePath(source) !== destination &&
+    !destination.startsWith(`${source}/`)
+  );
+}
+
+function findEntryByPath(
+  entries: ProjectEntry[],
+  targetPath: string,
+): ProjectEntry | null {
+  for (const entry of entries) {
+    if (entry.path === targetPath) {
+      return entry;
+    }
+    const child = entry.children
+      ? findEntryByPath(entry.children, targetPath)
+      : null;
+    if (child) {
+      return child;
+    }
+  }
+  return null;
+}
+
 function TreeRow({
   entry,
   activePath,
@@ -71,10 +118,19 @@ function TreeRow({
 }: TreeRowProps) {
   const [expanded, setExpanded] = useState(depth < 1);
   const [dropActive, setDropActive] = useState(false);
+  const expandTimerRef = useRef<number | null>(null);
   const toggleMenu = onToggleMenu ?? (() => {});
   const menuOpen = menuPath === entry.path;
   const isDropTarget =
-    entry.type === "directory" && draggedPath && draggedPath !== entry.path;
+    entry.type === "directory" &&
+    canDropIntoDirectory(draggedPath, entry.path);
+
+  const clearExpandTimer = () => {
+    if (expandTimerRef.current !== null) {
+      window.clearTimeout(expandTimerRef.current);
+      expandTimerRef.current = null;
+    }
+  };
 
   useEffect(() => {
     if (!activePath || entry.type !== "directory") {
@@ -87,6 +143,8 @@ function TreeRow({
     }
   }, [activePath, entry.path, entry.type]);
 
+  useEffect(() => clearExpandTimer, []);
+
   const rowPadding = useMemo(
     () => (entry.type === "directory" ? 8 + depth * 12 : 25 + depth * 12),
     [depth, entry.type],
@@ -94,7 +152,7 @@ function TreeRow({
 
   if (entry.type === "directory") {
     return (
-      <div>
+      <div className="tree-directory-row">
         <button
           className={`tree-row ${dropActive ? "drop-target" : ""}`}
           style={{ paddingLeft: rowPadding }}
@@ -104,15 +162,51 @@ function TreeRow({
             event.preventDefault();
             toggleMenu(menuOpen ? null : entry.path);
           }}
+          draggable
+          onDragStart={(event) => {
+            event.stopPropagation();
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", entry.path);
+            onDragStartPath?.(entry.path);
+          }}
+          onDragEnd={() => {
+            clearExpandTimer();
+            setDropActive(false);
+            onDragStartPath?.(null);
+          }}
           onDragOver={(event) => {
+            if (draggedPath) {
+              event.stopPropagation();
+            }
             if (!isDropTarget) {
               return;
             }
             event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
             setDropActive(true);
+            if (!expanded && expandTimerRef.current === null) {
+              expandTimerRef.current = window.setTimeout(() => {
+                setExpanded(true);
+                expandTimerRef.current = null;
+              }, 450);
+            }
           }}
-          onDragLeave={() => setDropActive(false)}
+          onDragLeave={(event) => {
+            if (
+              event.currentTarget.contains(
+                event.relatedTarget as Node | null,
+              )
+            ) {
+              return;
+            }
+            clearExpandTimer();
+            setDropActive(false);
+          }}
           onDrop={(event) => {
+            if (draggedPath) {
+              event.stopPropagation();
+            }
+            clearExpandTimer();
             if (!onMoveEntry || !draggedPath || !isDropTarget) {
               setDropActive(false);
               return;
@@ -124,7 +218,7 @@ function TreeRow({
               return;
             }
             onMoveEntry(sourcePath, entry);
-            onDragStartPath?.(null);
+            onDragStartPath(null);
           }}
         >
           {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
@@ -283,10 +377,18 @@ export default function FileTree({
 }: FileTreeProps) {
   const [menuPathState, setMenuPathState] = useState<string | null>(null);
   const [draggedPathState, setDraggedPathState] = useState<string | null>(null);
+  const [rootDropActive, setRootDropActive] = useState(false);
   const menuPath = controlledMenuPath ?? menuPathState;
   const toggleMenu = controlledToggleMenu ?? setMenuPathState;
   const draggedPath = controlledDraggedPath ?? draggedPathState;
   const setDraggedPath = controlledSetDraggedPath ?? setDraggedPathState;
+  const draggedEntry =
+    depth === 0 && draggedPath
+      ? findEntryByPath(entries, draggedPath)
+      : null;
+  const canDropAtRoot = Boolean(
+    draggedEntry && normalizeTreePath(draggedEntry.relativePath).includes("/"),
+  );
 
   useEffect(() => {
     const closeMenu = () => toggleMenu(null);
@@ -294,7 +396,13 @@ export default function FileTree({
     return () => window.removeEventListener("click", closeMenu);
   }, [toggleMenu]);
 
-  return (
+  useEffect(() => {
+    if (!draggedPath) {
+      setRootDropActive(false);
+    }
+  }, [draggedPath]);
+
+  const rows = (
     <>
       {entries.map((entry) => (
         <TreeRow
@@ -315,5 +423,52 @@ export default function FileTree({
         />
       ))}
     </>
+  );
+
+  if (depth > 0) {
+    return rows;
+  }
+
+  return (
+    <div
+      className={`file-tree-drop-surface ${
+        draggedPath ? "dragging" : ""
+      } ${canDropAtRoot ? "root-available" : ""} ${
+        rootDropActive ? "root-drop-target" : ""
+      }`}
+      onDragOver={(event) => {
+        if (!canDropAtRoot) {
+          return;
+        }
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        setRootDropActive(true);
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setRootDropActive(false);
+        }
+      }}
+      onDrop={(event) => {
+        setRootDropActive(false);
+        if (!onMoveEntry || !canDropAtRoot) {
+          return;
+        }
+        event.preventDefault();
+        const sourcePath = event.dataTransfer.getData("text/plain");
+        if (!sourcePath) {
+          return;
+        }
+        onMoveEntry(sourcePath, null);
+        setDraggedPath(null);
+      }}
+    >
+      {rows}
+      {draggedPath && canDropAtRoot ? (
+        <div className="file-tree-root-hint">
+          Drop in this space to move to the project root
+        </div>
+      ) : null}
+    </div>
   );
 }
