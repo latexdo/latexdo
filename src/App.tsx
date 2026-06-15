@@ -20,8 +20,11 @@ import {
   FolderPlus,
   FolderOpen,
   GitBranch,
+  History,
   House,
   LoaderCircle,
+  MessageCircle,
+  MessageSquare,
   PanelBottom,
   PanelLeftClose,
   PanelLeftOpen,
@@ -33,6 +36,7 @@ import {
   RefreshCw,
   Settings,
   TerminalSquare,
+  User,
   X,
   ZoomIn,
   ZoomOut,
@@ -49,6 +53,8 @@ import PdfPreview, { type PdfClickLocation } from "./PdfPreview";
 import TikzCanvas from "./TikzCanvas";
 import TableCanvas from "./TableCanvas";
 import { TerminalPanel } from "./components/TerminalPanel";
+import { ReviewSidebar } from "./components/ReviewSidebar";
+import { RebuttalSidebar } from "./components/RebuttalSidebar";
 import { monaco } from "./monaco";
 import type {
   CompileResult,
@@ -64,6 +70,9 @@ import type {
   ProofreadingResult,
   ProofreadingSettings,
   ProjectEntry,
+  RebuttalItem,
+  ReviewChat,
+  ReviewChatComment,
   SpellCheckerSettings,
   SyncTexPdfLocation,
   SyncTexSourceLocation,
@@ -435,6 +444,9 @@ export default function App() {
   const [pdfTarget, setPdfTarget] = useState<SyncTexPdfLocation | null>(null);
   const [pdfScale, setPdfScale] = useState(100);
   const [splitPercent, setSplitPercent] = useState(52);
+  const [mode, setMode] = useState<EditorMode>("author");
+  const [reviewChats, setReviewChats] = useState<ReviewChat[]>([]);
+  const [rebuttalItems, setRebuttalItems] = useState<RebuttalItem[]>([]);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const editorMouseDisposableRef = useRef<monaco.IDisposable | null>(null);
   const documentsRef = useRef<OpenDocument[]>([]);
@@ -608,6 +620,84 @@ export default function App() {
     [],
   );
 
+  const resolveProjectDataPath = useCallback((projectPath: string, relativePath: string) => {
+    const separator = projectPath.includes("\\") ? "\\" : "/";
+    const cleanProjectPath = projectPath.replace(/[\\/]+$/, "");
+    const cleanRelativePath = relativePath.replaceAll("/", separator);
+    return `${cleanProjectPath}${separator}${cleanRelativePath}`;
+  }, []);
+
+  const ensurePreambleMacros = (content: string): string => {
+    const macros = `
+% --- LatexDo Review & Rebuttal Macros ---
+\\usepackage{xcolor}
+\\providecommand{\\reviewercomment}[2]{\\textcolor{blue}{#1}\\footnote{REVIEWER: #2}}
+\\providecommand{\\rebuttal}[3]{\\textcolor{red}{#2}\\footnote{REBUTTAL (Original: #1): #3}}
+% ----------------------------------------
+`;
+    if (content.includes("\\reviewercomment") || content.includes("\\rebuttal")) {
+      return content;
+    }
+    const docStart = content.indexOf("\\begin{document}");
+    if (docStart === -1) return macros + content;
+    return content.slice(0, docStart) + macros + content.slice(docStart);
+  };
+
+  const saveReviewData = useCallback(async (chats: ReviewChat[], items: RebuttalItem[]) => {
+    const currentProject = projectPathRef.current;
+    if (!currentProject) return;
+
+    try {
+      const data = JSON.stringify({ chats, items }, null, 2);
+      const filePath = resolveProjectDataPath(currentProject, ".latexdo/review_data.json");
+      await window.latexdo.writeFile(currentProject, filePath, data);
+    } catch (e) {
+      console.error("Failed to save review data", e);
+    }
+  }, [resolveProjectDataPath]);
+
+  const loadReviewData = useCallback(async (path: string) => {
+    try {
+      const filePath = resolveProjectDataPath(path, ".latexdo/review_data.json");
+      const exists = await window.latexdo.fileExists(path, filePath);
+      if (!exists) {
+        setReviewChats([]);
+        setRebuttalItems([]);
+        return;
+      }
+      const content = await window.latexdo.readFile(path, filePath);
+      const { chats, items } = JSON.parse(content) as { chats: ReviewChat[], items: RebuttalItem[] };
+      setReviewChats(chats || []);
+      setRebuttalItems(items || []);
+    } catch (e) {
+      setReviewChats([]);
+      setRebuttalItems([]);
+    }
+  }, [resolveProjectDataPath]);
+
+  const generateRebuttalFile = useCallback(async () => {
+    const currentProject = projectPathRef.current;
+    if (!currentProject || !rootFile) return;
+
+    try {
+      const rebuttalRoot = rootFile.replace(/\.tex$/, "-rebuttal.tex");
+      const entry = allProjectEntries.find(e => e.relativePath === rootFile);
+      if (!entry) return;
+
+      let content = documentsRef.current.find(d => d.path === entry.path)?.content;
+      if (content === undefined) {
+        content = await window.latexdo.readFile(currentProject, entry.path);
+      }
+      
+      content = ensurePreambleMacros(content);
+      await window.latexdo.writeFile(currentProject, rebuttalRoot, content);
+      setStatusMessage(`Generated rebuttal version: ${rebuttalRoot}`);
+      await refreshProject(currentProject);
+    } catch (e) {
+      setStatusMessage("Failed to generate rebuttal file.");
+    }
+  }, [allProjectEntries, refreshProject, rootFile]);
+
   const loadProject = useCallback(
     async (
       path: string,
@@ -631,6 +721,7 @@ export default function App() {
 
       const entries = await window.latexdo.listProject(path);
       setProjectEntries(entries);
+      await loadReviewData(path);
       const allFiles = flattenEntries(entries);
       const main =
         allFiles.find(
@@ -649,7 +740,7 @@ export default function App() {
       }
       setStatusMessage("Ready");
     },
-    [openDocument],
+    [loadReviewData, openDocument],
   );
 
   useEffect(() => {
@@ -1436,6 +1527,32 @@ export default function App() {
       })),
     );
   }, [activeDocument, diagnostics]);
+
+  const reviewDecorationsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !activeDocument) return;
+
+    const relevantChats = reviewChats.filter(chat => chat.filePath === activeDocument.relativePath);
+    const decorations = relevantChats.map(chat => ({
+      range: new monaco.Range(
+        chat.selection.startLine,
+        chat.selection.startColumn,
+        chat.selection.endLine,
+        chat.selection.endColumn
+      ),
+      options: {
+        isWholeLine: false,
+        className: "review-comment-decoration",
+        glyphMarginClassName: "review-comment-glyph",
+        stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+        hoverMessage: { value: "Review Comment: " + chat.comments[0]?.text },
+      },
+    }));
+
+    reviewDecorationsRef.current = editor.deltaDecorations(reviewDecorationsRef.current, decorations);
+  }, [activeDocument, reviewChats]);
 
   const configureMonaco: BeforeMount = (instance) => {
     if (!instance.languages.getLanguages().some(({ id }) => id === "latex")) {
@@ -2341,6 +2458,176 @@ export default function App() {
     [],
   );
 
+  const handleAddReviewChat = useCallback(() => {
+    const editor = editorRef.current;
+    const document = documentsRef.current.find(d => d.path === activePathRef.current);
+    if (!editor || !document) return;
+
+    const selection = editor.getSelection();
+    if (!selection || selection.isEmpty()) return;
+
+    const model = editor.getModel();
+    if (!model) return;
+
+    const selectedText = model.getValueInRange(selection);
+    if (!selectedText.trim()) {
+      setStatusMessage("Select some text to add a review comment.");
+      return;
+    }
+
+    const commentBody = "Add your comment here...";
+    const wrappedText = `\\reviewercomment{${selectedText}}{${commentBody}}`;
+
+    editor.executeEdits("reviewer-mode", [{
+      range: selection,
+      text: wrappedText,
+      forceMoveMarkers: true
+    }]);
+
+    const newChat: ReviewChat = {
+      id: Date.now().toString(),
+      filePath: document.relativePath,
+      selection: {
+        startLine: selection.startLineNumber,
+        startColumn: selection.startColumn,
+        endLine: selection.endLineNumber,
+        endColumn: selection.startColumn + wrappedText.length,
+        text: selectedText,
+      },
+      comments: [{
+        id: (Date.now() + 1).toString(),
+        author: "Reviewer",
+        text: commentBody,
+        timestamp: Date.now(),
+      }],
+    };
+
+    setReviewChats(prev => {
+      const next = [...prev, newChat];
+      void saveReviewData(next, rebuttalItems);
+      return next;
+    });
+    setStatusMessage("Added review comment to source.");
+  }, [rebuttalItems, saveReviewData]);
+
+  const handleAddRebuttalToSource = useCallback(() => {
+    const editor = editorRef.current;
+    const document = documentsRef.current.find(d => d.path === activePathRef.current);
+    if (!editor || !document) return;
+
+    const selection = editor.getSelection();
+    if (!selection || selection.isEmpty()) return;
+
+    const model = editor.getModel();
+    if (!model) return;
+
+    const selectedText = model.getValueInRange(selection);
+    if (!selectedText.trim()) {
+      setStatusMessage("Select text to modify for rebuttal.");
+      return;
+    }
+
+    const modifiedText = selectedText; // User will edit this in place
+    const rebuttalBody = "Rebuttal justification here...";
+    const wrappedText = `\\rebuttal{${selectedText}}{${modifiedText}}{${rebuttalBody}}`;
+
+    editor.executeEdits("rebuttal-mode", [{
+      range: selection,
+      text: wrappedText,
+      forceMoveMarkers: true
+    }]);
+
+    const newItem: RebuttalItem = {
+      id: Date.now().toString(),
+      reviewerComment: "",
+      authorComment: rebuttalBody,
+      modificationMade: modifiedText,
+    };
+    
+    setRebuttalItems(prev => {
+      const next = [...prev, newItem];
+      void saveReviewData(reviewChats, next);
+      return next;
+    });
+    setStatusMessage("Added rebuttal modification to source.");
+  }, [reviewChats, saveReviewData]);
+
+  const handleAddReviewComment = useCallback((chatId: string, text: string) => {
+    setReviewChats(prev => {
+      const next = prev.map(chat => {
+        if (chat.id === chatId) {
+          return {
+            ...chat,
+            comments: [...chat.comments, {
+              id: Date.now().toString(),
+              author: mode === "reviewer" ? "Reviewer" : "Author",
+              text,
+              timestamp: Date.now(),
+            }]
+          };
+        }
+        return chat;
+      });
+      void saveReviewData(next, rebuttalItems);
+      return next;
+    });
+  }, [mode, rebuttalItems, saveReviewData]);
+
+  const handleDeleteReviewChat = useCallback((chatId: string) => {
+    if (!window.confirm("Delete this review chat?")) return;
+    setReviewChats(prev => {
+      const next = prev.filter(c => c.id !== chatId);
+      void saveReviewData(next, rebuttalItems);
+      return next;
+    });
+  }, [rebuttalItems, saveReviewData]);
+
+  const handleJumpToReviewSelection = useCallback(async (chat: ReviewChat) => {
+    const entry = allProjectEntries.find(e => e.relativePath === chat.filePath);
+    if (!entry) return;
+
+    await openDocument(entry);
+    pendingSourceRef.current = {
+      path: entry.path,
+      line: chat.selection.startLine,
+      column: chat.selection.startColumn,
+      endLine: chat.selection.endLine,
+      endColumn: chat.selection.endColumn,
+    };
+    requestAnimationFrame(() => revealPendingSource());
+  }, [allProjectEntries, openDocument, revealPendingSource]);
+
+  const handleAddRebuttalItem = useCallback(() => {
+    const newItem: RebuttalItem = {
+      id: Date.now().toString(),
+      reviewerComment: "",
+      authorComment: "",
+      modificationMade: "",
+    };
+    setRebuttalItems(prev => {
+      const next = [...prev, newItem];
+      void saveReviewData(reviewChats, next);
+      return next;
+    });
+  }, [reviewChats, saveReviewData]);
+
+  const handleUpdateRebuttalItem = useCallback((id: string, updates: Partial<RebuttalItem>) => {
+    setRebuttalItems(prev => {
+      const next = prev.map(item => item.id === id ? { ...item, ...updates } : item);
+      void saveReviewData(reviewChats, next);
+      return next;
+    });
+  }, [reviewChats, saveReviewData]);
+
+  const handleDeleteRebuttalItem = useCallback((id: string) => {
+    if (!window.confirm("Delete this rebuttal item?")) return;
+    setRebuttalItems(prev => {
+      const next = prev.filter(item => item.id !== id);
+      void saveReviewData(reviewChats, next);
+      return next;
+    });
+  }, [reviewChats, saveReviewData]);
+
   const startResize = (event: React.PointerEvent) => {
     event.currentTarget.setPointerCapture(event.pointerId);
     const handleMove = (moveEvent: PointerEvent) => {
@@ -2524,32 +2811,75 @@ export default function App() {
             </div>
             {activeSidebar === "explorer" ? (
               <>
+                <div className="mode-selector">
+                  <button
+                    className={`mode-button ${mode === "author" ? "active" : ""}`}
+                    onClick={() => setMode("author")}
+                    title="Author Mode"
+                  >
+                    <User size={14} />
+                    <span>Author</span>
+                  </button>
+                  <button
+                    className={`mode-button ${mode === "reviewer" ? "active" : ""}`}
+                    onClick={() => setMode("reviewer")}
+                    title="Reviewer Mode"
+                  >
+                    <MessageSquare size={14} />
+                    <span>Reviewer</span>
+                  </button>
+                  <button
+                    className={`mode-button ${mode === "rebuttal" ? "active" : ""}`}
+                    onClick={() => setMode("rebuttal")}
+                    title="Rebuttal Mode"
+                  >
+                    <History size={14} />
+                    <span>Rebuttal</span>
+                  </button>
+                </div>
                 <button className="project-heading" onClick={openProject}>
                   <ChevronDown size={13} />
                   <span>{projectName.toUpperCase()}</span>
                   <FolderOpen size={14} />
                 </button>
                 <div className="file-tree">
-                  {hideProjectEntries ? null : (
-                    <FileTree
-                      entries={projectEntries}
-                      activePath={activePath}
-                      onOpen={openDocument}
-                      onCompileFile={(entry) => void compileEntry(entry)}
-                      onSetRootFile={(entry) => {
-                        setRootFile(entry.relativePath);
-                        rootFileRef.current = entry.relativePath;
-                        setStatusMessage(`Main file set to ${entry.relativePath}`);
-                      }}
-                      onMoveEntry={(sourcePath, destination) =>
-                        void moveEntry(sourcePath, destination)
-                      }
-                      onCreateFileInDirectory={(entry) =>
-                        openCreateDialogInDirectory("file", entry)
-                      }
-                      onCreateFolderInDirectory={(entry) =>
-                        openCreateDialogInDirectory("folder", entry)
-                      }
+                  {mode === "author" ? (
+                    hideProjectEntries ? null : (
+                      <FileTree
+                        entries={projectEntries}
+                        activePath={activePath}
+                        onOpen={openDocument}
+                        onCompileFile={(entry) => void compileEntry(entry)}
+                        onSetRootFile={(entry) => {
+                          setRootFile(entry.relativePath);
+                          rootFileRef.current = entry.relativePath;
+                          setStatusMessage(`Main file set to ${entry.relativePath}`);
+                        }}
+                        onMoveEntry={(sourcePath, destination) =>
+                          void moveEntry(sourcePath, destination)
+                        }
+                        onCreateFileInDirectory={(entry) =>
+                          openCreateDialogInDirectory("file", entry)
+                        }
+                        onCreateFolderInDirectory={(entry) =>
+                          openCreateDialogInDirectory("folder", entry)
+                        }
+                      />
+                    )
+                  ) : mode === "reviewer" ? (
+                    <ReviewSidebar
+                      chats={reviewChats}
+                      onAddChat={handleAddReviewChat}
+                      onAddComment={handleAddReviewComment}
+                      onDeleteChat={handleDeleteReviewChat}
+                      onJumpToSelection={handleJumpToReviewSelection}
+                    />
+                  ) : (
+                    <RebuttalSidebar
+                      items={rebuttalItems}
+                      onAddItem={handleAddRebuttalItem}
+                      onUpdateItem={handleUpdateRebuttalItem}
+                      onDeleteItem={handleDeleteRebuttalItem}
                     />
                   )}
                 </div>
@@ -2976,6 +3306,34 @@ export default function App() {
               {!showWelcome && !showBlankWorkspace ? (
                 <div className="source-toolbar">
                   <div className="pane-label">TEX</div>
+                  
+                  <div className="mode-selector-toolbar">
+                    <button
+                      className={`mode-button-mini ${mode === "author" ? "active" : ""}`}
+                      onClick={() => setMode("author")}
+                      title="Author Mode"
+                    >
+                      <User size={13} />
+                      <span>Author</span>
+                    </button>
+                    <button
+                      className={`mode-button-mini ${mode === "reviewer" ? "active" : ""}`}
+                      onClick={() => setMode("reviewer")}
+                      title="Reviewer Mode"
+                    >
+                      <MessageSquare size={13} />
+                      <span>Reviewer</span>
+                    </button>
+                    <button
+                      className={`mode-button-mini ${mode === "rebuttal" ? "active" : ""}`}
+                      onClick={() => setMode("rebuttal")}
+                      title="Rebuttal Mode"
+                    >
+                      <History size={13} />
+                      <span>Rebuttal</span>
+                    </button>
+                  </div>
+
                   <div className="root-control">
                     <span className="control-label">ROOT</span>
                     <div className="select-wrap">
