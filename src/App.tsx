@@ -22,6 +22,7 @@ import {
   GitBranch,
   History,
   House,
+  ImageUp,
   LoaderCircle,
   MessageCircle,
   MessageSquare,
@@ -37,6 +38,7 @@ import {
   Settings,
   TerminalSquare,
   User,
+  Wand,
   X,
   ZoomIn,
   ZoomOut,
@@ -52,14 +54,22 @@ import FileTree from "./FileTree";
 import PdfPreview, { type PdfClickLocation } from "./PdfPreview";
 import TikzCanvas from "./TikzCanvas";
 import TableCanvas from "./TableCanvas";
+import { FigureToTikzConverter } from "./components/FigureToTikzConverter";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { ReviewSidebar } from "./components/ReviewSidebar";
 import { RebuttalSidebar } from "./components/RebuttalSidebar";
 import { monaco } from "./monaco";
 import type {
   CompileResult,
+  ConferenceCheckerSettings,
+  CitationAssistantSettings,
+  StructureAssistantSettings,
+  ReproducibilitySettings,
+  AcronymManagerSettings,
+  ErrorDoctorSettings,
   Diagnostic,
   DiagnosticFix,
+  EditorMode,
   Engine,
   GitCommitDetails,
   GitDiffEditorInput,
@@ -78,6 +88,13 @@ import type {
   SyncTexSourceLocation,
   UpdateCheckResult,
 } from "./types";
+import { runConferenceChecks } from "./checks/conferenceChecker";
+import { runCitationChecks } from "./checks/citationAssistant";
+import { runStructureChecks } from "./checks/structureAssistant";
+import { runReproducibilityChecks } from "./checks/reproducibility";
+import { runAcronymChecks } from "./checks/acronymManager";
+import { analyzeCompileOutput } from "./checks/errorDoctor";
+import type { ErrorDoctorResult } from "./checks/errorDoctor";
 
 type PanelKind = "problems" | "output" | "terminal";
 type SidebarView = "explorer" | "sourceControl";
@@ -92,6 +109,70 @@ interface AppSettings {
   wordWrap: boolean;
   minimap: boolean;
   showRawLatex: boolean;
+
+  // Conference Checker
+  conferenceCheckerEnabled: boolean;
+  conferenceTemplate: string;
+  conferenceChecker_customTemplate: string;
+  checkMargins: boolean;
+  checkFontSize: boolean;
+  checkAbstractLength: boolean;
+  checkKeywords: boolean;
+  checkFigureReferences: boolean;
+  checkTableReferences: boolean;
+  checkBibliographyStyle: boolean;
+  checkPageLimit: boolean;
+  checkAuthorInfo: boolean;
+  checkAnonymousReview: boolean;
+  checkFigureResolution: boolean;
+  checkEmbeddedFonts: boolean;
+  checkCompiler: boolean;
+
+  // Citation Assistant
+  citationAssistantEnabled: boolean;
+  detectMissingCitations: boolean;
+  detectUnusedEntries: boolean;
+  detectDuplicateReferences: boolean;
+  detectBrokenLinks: boolean;
+  suggestCitationKeys: boolean;
+  importMetadataSources: boolean;
+  warnOldCitations: boolean;
+
+  // Structure Assistant
+  structureAssistantEnabled: boolean;
+  checkAbstractStructure: boolean;
+  checkIntroductionStructure: boolean;
+  checkRelatedWorkLength: boolean;
+  checkMethodReproducibility: boolean;
+  checkResultsDiscussion: boolean;
+  checkConclusionClaims: boolean;
+
+  // Reproducibility Checklist
+  reproducibilityEnabled: boolean;
+  checkCodeLink: boolean;
+  checkDatasetLink: boolean;
+  checkLicenseMentioned: boolean;
+  checkHyperparameters: boolean;
+  checkHardwareDetails: boolean;
+  checkRandomSeeds: boolean;
+  checkEvaluationMetrics: boolean;
+
+  // Acronym Manager
+  acronymManagerEnabled: boolean;
+  checkUndefinedAcronym: boolean;
+  checkDuplicateDefinition: boolean;
+  checkUnusedAcronym: boolean;
+  checkConflictingDefinitions: boolean;
+
+  // Error Doctor
+  errorDoctorEnabled: boolean;
+  explainErrors: boolean;
+  suggestFixes: boolean;
+  autoFixCommon: boolean;
+
+  // TikZ Converter
+  tikzConverterEnabled: boolean;
+  tikzConverterAutoOpen: boolean;
 }
 
 const settingsStorageKey = "latexdo.settings";
@@ -101,6 +182,63 @@ const defaultSettings: AppSettings = {
   wordWrap: true,
   minimap: true,
   showRawLatex: true,
+
+  conferenceCheckerEnabled: true,
+  conferenceTemplate: "ieee",
+  conferenceChecker_customTemplate: "",
+  checkMargins: true,
+  checkFontSize: true,
+  checkAbstractLength: true,
+  checkKeywords: true,
+  checkFigureReferences: true,
+  checkTableReferences: true,
+  checkBibliographyStyle: true,
+  checkPageLimit: true,
+  checkAuthorInfo: true,
+  checkAnonymousReview: true,
+  checkFigureResolution: true,
+  checkEmbeddedFonts: true,
+  checkCompiler: true,
+
+  citationAssistantEnabled: true,
+  detectMissingCitations: true,
+  detectUnusedEntries: true,
+  detectDuplicateReferences: true,
+  detectBrokenLinks: true,
+  suggestCitationKeys: true,
+  importMetadataSources: true,
+  warnOldCitations: true,
+
+  structureAssistantEnabled: true,
+  checkAbstractStructure: true,
+  checkIntroductionStructure: true,
+  checkRelatedWorkLength: true,
+  checkMethodReproducibility: true,
+  checkResultsDiscussion: true,
+  checkConclusionClaims: true,
+
+  reproducibilityEnabled: true,
+  checkCodeLink: true,
+  checkDatasetLink: true,
+  checkLicenseMentioned: true,
+  checkHyperparameters: true,
+  checkHardwareDetails: true,
+  checkRandomSeeds: true,
+  checkEvaluationMetrics: true,
+
+  acronymManagerEnabled: true,
+  checkUndefinedAcronym: true,
+  checkDuplicateDefinition: true,
+  checkUnusedAcronym: true,
+  checkConflictingDefinitions: true,
+
+  errorDoctorEnabled: true,
+  explainErrors: true,
+  suggestFixes: true,
+  autoFixCommon: true,
+
+  tikzConverterEnabled: true,
+  tikzConverterAutoOpen: true,
 };
 
 function buildAutoCompileSignature(
@@ -152,6 +290,166 @@ function loadSettings(): AppSettings {
         typeof saved.showRawLatex === "boolean"
           ? saved.showRawLatex
           : defaultSettings.showRawLatex,
+
+      conferenceCheckerEnabled:
+        typeof saved.conferenceCheckerEnabled === "boolean"
+          ? saved.conferenceCheckerEnabled
+          : defaultSettings.conferenceCheckerEnabled,
+      conferenceTemplate:
+        typeof saved.conferenceTemplate === "string"
+          ? saved.conferenceTemplate
+          : defaultSettings.conferenceTemplate,
+      conferenceChecker_customTemplate:
+        typeof saved.conferenceChecker_customTemplate === "string"
+          ? saved.conferenceChecker_customTemplate
+          : defaultSettings.conferenceChecker_customTemplate,
+      checkMargins:
+        typeof saved.checkMargins === "boolean"
+          ? saved.checkMargins : defaultSettings.checkMargins,
+      checkFontSize:
+        typeof saved.checkFontSize === "boolean"
+          ? saved.checkFontSize : defaultSettings.checkFontSize,
+      checkAbstractLength:
+        typeof saved.checkAbstractLength === "boolean"
+          ? saved.checkAbstractLength : defaultSettings.checkAbstractLength,
+      checkKeywords:
+        typeof saved.checkKeywords === "boolean"
+          ? saved.checkKeywords : defaultSettings.checkKeywords,
+      checkFigureReferences:
+        typeof saved.checkFigureReferences === "boolean"
+          ? saved.checkFigureReferences : defaultSettings.checkFigureReferences,
+      checkTableReferences:
+        typeof saved.checkTableReferences === "boolean"
+          ? saved.checkTableReferences : defaultSettings.checkTableReferences,
+      checkBibliographyStyle:
+        typeof saved.checkBibliographyStyle === "boolean"
+          ? saved.checkBibliographyStyle : defaultSettings.checkBibliographyStyle,
+      checkPageLimit:
+        typeof saved.checkPageLimit === "boolean"
+          ? saved.checkPageLimit : defaultSettings.checkPageLimit,
+      checkAuthorInfo:
+        typeof saved.checkAuthorInfo === "boolean"
+          ? saved.checkAuthorInfo : defaultSettings.checkAuthorInfo,
+      checkAnonymousReview:
+        typeof saved.checkAnonymousReview === "boolean"
+          ? saved.checkAnonymousReview : defaultSettings.checkAnonymousReview,
+      checkFigureResolution:
+        typeof saved.checkFigureResolution === "boolean"
+          ? saved.checkFigureResolution : defaultSettings.checkFigureResolution,
+      checkEmbeddedFonts:
+        typeof saved.checkEmbeddedFonts === "boolean"
+          ? saved.checkEmbeddedFonts : defaultSettings.checkEmbeddedFonts,
+      checkCompiler:
+        typeof saved.checkCompiler === "boolean"
+          ? saved.checkCompiler : defaultSettings.checkCompiler,
+
+      citationAssistantEnabled:
+        typeof saved.citationAssistantEnabled === "boolean"
+          ? saved.citationAssistantEnabled : defaultSettings.citationAssistantEnabled,
+      detectMissingCitations:
+        typeof saved.detectMissingCitations === "boolean"
+          ? saved.detectMissingCitations : defaultSettings.detectMissingCitations,
+      detectUnusedEntries:
+        typeof saved.detectUnusedEntries === "boolean"
+          ? saved.detectUnusedEntries : defaultSettings.detectUnusedEntries,
+      detectDuplicateReferences:
+        typeof saved.detectDuplicateReferences === "boolean"
+          ? saved.detectDuplicateReferences : defaultSettings.detectDuplicateReferences,
+      detectBrokenLinks:
+        typeof saved.detectBrokenLinks === "boolean"
+          ? saved.detectBrokenLinks : defaultSettings.detectBrokenLinks,
+      suggestCitationKeys:
+        typeof saved.suggestCitationKeys === "boolean"
+          ? saved.suggestCitationKeys : defaultSettings.suggestCitationKeys,
+      importMetadataSources:
+        typeof saved.importMetadataSources === "boolean"
+          ? saved.importMetadataSources : defaultSettings.importMetadataSources,
+      warnOldCitations:
+        typeof saved.warnOldCitations === "boolean"
+          ? saved.warnOldCitations : defaultSettings.warnOldCitations,
+
+      structureAssistantEnabled:
+        typeof saved.structureAssistantEnabled === "boolean"
+          ? saved.structureAssistantEnabled : defaultSettings.structureAssistantEnabled,
+      checkAbstractStructure:
+        typeof saved.checkAbstractStructure === "boolean"
+          ? saved.checkAbstractStructure : defaultSettings.checkAbstractStructure,
+      checkIntroductionStructure:
+        typeof saved.checkIntroductionStructure === "boolean"
+          ? saved.checkIntroductionStructure : defaultSettings.checkIntroductionStructure,
+      checkRelatedWorkLength:
+        typeof saved.checkRelatedWorkLength === "boolean"
+          ? saved.checkRelatedWorkLength : defaultSettings.checkRelatedWorkLength,
+      checkMethodReproducibility:
+        typeof saved.checkMethodReproducibility === "boolean"
+          ? saved.checkMethodReproducibility : defaultSettings.checkMethodReproducibility,
+      checkResultsDiscussion:
+        typeof saved.checkResultsDiscussion === "boolean"
+          ? saved.checkResultsDiscussion : defaultSettings.checkResultsDiscussion,
+      checkConclusionClaims:
+        typeof saved.checkConclusionClaims === "boolean"
+          ? saved.checkConclusionClaims : defaultSettings.checkConclusionClaims,
+
+      reproducibilityEnabled:
+        typeof saved.reproducibilityEnabled === "boolean"
+          ? saved.reproducibilityEnabled : defaultSettings.reproducibilityEnabled,
+      checkCodeLink:
+        typeof saved.checkCodeLink === "boolean"
+          ? saved.checkCodeLink : defaultSettings.checkCodeLink,
+      checkDatasetLink:
+        typeof saved.checkDatasetLink === "boolean"
+          ? saved.checkDatasetLink : defaultSettings.checkDatasetLink,
+      checkLicenseMentioned:
+        typeof saved.checkLicenseMentioned === "boolean"
+          ? saved.checkLicenseMentioned : defaultSettings.checkLicenseMentioned,
+      checkHyperparameters:
+        typeof saved.checkHyperparameters === "boolean"
+          ? saved.checkHyperparameters : defaultSettings.checkHyperparameters,
+      checkHardwareDetails:
+        typeof saved.checkHardwareDetails === "boolean"
+          ? saved.checkHardwareDetails : defaultSettings.checkHardwareDetails,
+      checkRandomSeeds:
+        typeof saved.checkRandomSeeds === "boolean"
+          ? saved.checkRandomSeeds : defaultSettings.checkRandomSeeds,
+      checkEvaluationMetrics:
+        typeof saved.checkEvaluationMetrics === "boolean"
+          ? saved.checkEvaluationMetrics : defaultSettings.checkEvaluationMetrics,
+
+      acronymManagerEnabled:
+        typeof saved.acronymManagerEnabled === "boolean"
+          ? saved.acronymManagerEnabled : defaultSettings.acronymManagerEnabled,
+      checkUndefinedAcronym:
+        typeof saved.checkUndefinedAcronym === "boolean"
+          ? saved.checkUndefinedAcronym : defaultSettings.checkUndefinedAcronym,
+      checkDuplicateDefinition:
+        typeof saved.checkDuplicateDefinition === "boolean"
+          ? saved.checkDuplicateDefinition : defaultSettings.checkDuplicateDefinition,
+      checkUnusedAcronym:
+        typeof saved.checkUnusedAcronym === "boolean"
+          ? saved.checkUnusedAcronym : defaultSettings.checkUnusedAcronym,
+      checkConflictingDefinitions:
+        typeof saved.checkConflictingDefinitions === "boolean"
+          ? saved.checkConflictingDefinitions : defaultSettings.checkConflictingDefinitions,
+
+      errorDoctorEnabled:
+        typeof saved.errorDoctorEnabled === "boolean"
+          ? saved.errorDoctorEnabled : defaultSettings.errorDoctorEnabled,
+      explainErrors:
+        typeof saved.explainErrors === "boolean"
+          ? saved.explainErrors : defaultSettings.explainErrors,
+      suggestFixes:
+        typeof saved.suggestFixes === "boolean"
+          ? saved.suggestFixes : defaultSettings.suggestFixes,
+      autoFixCommon:
+        typeof saved.autoFixCommon === "boolean"
+          ? saved.autoFixCommon : defaultSettings.autoFixCommon,
+
+      tikzConverterEnabled:
+        typeof saved.tikzConverterEnabled === "boolean"
+          ? saved.tikzConverterEnabled : defaultSettings.tikzConverterEnabled,
+      tikzConverterAutoOpen:
+        typeof saved.tikzConverterAutoOpen === "boolean"
+          ? saved.tikzConverterAutoOpen : defaultSettings.tikzConverterAutoOpen,
     };
   } catch {
     return defaultSettings;
@@ -185,6 +483,10 @@ const latexSuggestions = [
 
 function fileName(filePath: string): string {
   return filePath.split(/[/\\]/).pop() ?? filePath;
+}
+
+function getSetting(key: string, settings: AppSettings): boolean {
+  return (settings as unknown as Record<string, boolean>)[key] ?? true;
 }
 
 function languageFor(name: string): string {
@@ -410,6 +712,7 @@ export default function App() {
   const [creating, setCreating] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("editor");
   const [activeSidebar, setActiveSidebar] = useState<SidebarView>("explorer");
   const editorPreviewRef = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<Engine>(settings.defaultEngine);
@@ -418,6 +721,7 @@ export default function App() {
   const [previewVisible, setPreviewVisible] = useState(true);
   const [tikzCanvasOpen, setTikzCanvasOpen] = useState(false);
   const [tableCanvasOpen, setTableCanvasOpen] = useState(false);
+  const [tikzConverterOpen, setTikzConverterOpen] = useState(false);
   const [panelVisible, setPanelVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<PanelKind>("problems");
   const [panelHeight, setPanelHeight] = useState(200);
@@ -447,6 +751,8 @@ export default function App() {
     useState<ProofreadingResult | null>(null);
   const [proofreadingLoading, setProofreadingLoading] = useState(false);
   const [proofreadingError, setProofreadingError] = useState("");
+  const [assistantDiagnostics, setAssistantDiagnostics] = useState<Diagnostic[]>([]);
+  const [errorDoctorResult, setErrorDoctorResult] = useState<ErrorDoctorResult | null>(null);
   const [statusMessage, setStatusMessage] = useState("Opening workspace…");
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
   const [pdfTarget, setPdfTarget] = useState<SyncTexPdfLocation | null>(null);
@@ -485,8 +791,13 @@ export default function App() {
   const previewShown = previewVisible && !showWelcome && !showBlankWorkspace;
   const projectName = fileName(projectPath) || "LatexDo";
   const diagnostics = useMemo(
-    () => [...(compileResult?.diagnostics ?? []), ...(proofreadingResult?.diagnostics ?? [])],
-    [compileResult?.diagnostics, proofreadingResult?.diagnostics],
+    () => [
+      ...(compileResult?.diagnostics ?? []),
+      ...(proofreadingResult?.diagnostics ?? []),
+      ...assistantDiagnostics,
+      ...(errorDoctorResult?.diagnostics ?? []),
+    ],
+    [compileResult?.diagnostics, proofreadingResult?.diagnostics, assistantDiagnostics, errorDoctorResult?.diagnostics],
   );
   const errors = diagnostics.filter(
     (diagnostic) => diagnostic.severity === "error",
@@ -946,6 +1257,65 @@ export default function App() {
       window.clearTimeout(timeout);
     };
   }, [autoCompileSignature, compile, compiling, projectPath, rootFileExists]);
+
+  useEffect(() => {
+    const doc = activeDocument;
+    if (!doc || !doc.content) {
+      setAssistantDiagnostics([]);
+      return;
+    }
+    const content = doc.content;
+    const timer = setTimeout(() => {
+      const all: Diagnostic[] = [];
+      if (settings.conferenceCheckerEnabled) {
+        all.push(...runConferenceChecks(content, settings as unknown as ConferenceCheckerSettings));
+      }
+      if (settings.citationAssistantEnabled) {
+        all.push(...runCitationChecks(content, settings as unknown as CitationAssistantSettings));
+      }
+      if (settings.structureAssistantEnabled) {
+        all.push(...runStructureChecks(content, settings as unknown as StructureAssistantSettings));
+      }
+      if (settings.reproducibilityEnabled) {
+        all.push(...runReproducibilityChecks(content, settings as unknown as ReproducibilitySettings));
+      }
+      if (settings.acronymManagerEnabled) {
+        all.push(...runAcronymChecks(content, settings as unknown as AcronymManagerSettings));
+      }
+      setAssistantDiagnostics(all);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [activeDocument?.content, settings.conferenceCheckerEnabled, settings.citationAssistantEnabled, settings.structureAssistantEnabled,
+    settings.reproducibilityEnabled, settings.acronymManagerEnabled,
+    settings.checkMargins, settings.checkFontSize, settings.checkAbstractLength,
+    settings.checkKeywords, settings.checkFigureReferences, settings.checkTableReferences,
+    settings.checkBibliographyStyle, settings.checkPageLimit, settings.checkAuthorInfo,
+    settings.checkAnonymousReview, settings.checkFigureResolution, settings.checkEmbeddedFonts,
+    settings.checkCompiler, settings.detectMissingCitations, settings.detectUnusedEntries,
+    settings.detectDuplicateReferences, settings.detectBrokenLinks, settings.suggestCitationKeys,
+    settings.importMetadataSources, settings.warnOldCitations, settings.checkAbstractStructure,
+    settings.checkIntroductionStructure, settings.checkRelatedWorkLength,
+    settings.checkMethodReproducibility, settings.checkResultsDiscussion,
+    settings.checkConclusionClaims, settings.conferenceTemplate, settings.conferenceChecker_customTemplate,
+    settings.checkCodeLink, settings.checkDatasetLink, settings.checkLicenseMentioned,
+    settings.checkHyperparameters, settings.checkHardwareDetails, settings.checkRandomSeeds,
+    settings.checkEvaluationMetrics,     settings.checkUndefinedAcronym, settings.checkDuplicateDefinition,
+    settings.checkUnusedAcronym, settings.checkConflictingDefinitions,
+  ]);
+
+  useEffect(() => {
+    if (!settings.errorDoctorEnabled || !compileResult?.output) {
+      setErrorDoctorResult(null);
+      return;
+    }
+    const content = activeDocument?.content ?? "";
+    const result = analyzeCompileOutput(
+      compileResult.output,
+      content,
+      settings as unknown as ErrorDoctorSettings,
+    );
+    setErrorDoctorResult(result);
+  }, [compileResult?.output, settings.errorDoctorEnabled, settings.explainErrors, settings.suggestFixes, settings.autoFixCommon, activeDocument?.content]);
 
   const moveEntry = useCallback(
     async (sourcePath: string, destination: ProjectEntry | null) => {
@@ -2866,6 +3236,13 @@ export default function App() {
             >
               <Box size={21} />
             </button>
+            <button
+              className={`activity-button ${tikzConverterOpen ? "active" : ""}`}
+              onClick={() => setTikzConverterOpen((open) => !open)}
+              title="Figure → TikZ Converter"
+            >
+              <ImageUp size={21} />
+            </button>
           </div>
           <div>
             <button
@@ -3753,6 +4130,46 @@ export default function App() {
             </div>
           )}
 
+          {tikzConverterOpen && (
+            <div className="tikz-modal-overlay">
+              <div className="tikz-modal-header">
+                <span className="tikz-modal-title">
+                  <ImageUp size={16} />
+                  <span>Figure → TikZ Converter</span>
+                </span>
+                <button className="tikz-modal-close" onClick={() => setTikzConverterOpen(false)}>
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="tikz-modal-content">
+                <FigureToTikzConverter
+                  onInsertCode={(code) => {
+                    if (!activeDocument) {
+                      alert("Please open a .tex document first to insert the code.");
+                      return;
+                    }
+                    const editor = editorRef.current;
+                    if (editor) {
+                      const model = editor.getModel();
+                      if (model) {
+                        const position = editor.getPosition();
+                        const lineNumber = position?.lineNumber ?? model.getLineCount();
+                        const column = position?.column ?? 1;
+                        editor.executeEdits("", [
+                          {
+                            range: new monaco.Range(lineNumber, column, lineNumber, column),
+                            text: "\n" + code + "\n",
+                          },
+                        ]);
+                      }
+                    }
+                    setTikzConverterOpen(false);
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           {panelVisible ? (
             <section className="bottom-panel" style={{ height: panelHeight }}>
               <div
@@ -4190,426 +4607,513 @@ export default function App() {
               </button>
             </div>
 
+            <div className="settings-tabs">
+              <button className={`settings-tab ${settingsTab === "editor" ? "active" : ""}`} onClick={() => setSettingsTab("editor")}>Editor</button>
+              <button className={`settings-tab ${settingsTab === "language" ? "active" : ""}`} onClick={() => setSettingsTab("language")}>Language</button>
+              <button className={`settings-tab ${settingsTab === "conference" ? "active" : ""}`} onClick={() => setSettingsTab("conference")}>Conference Checker</button>
+              <button className={`settings-tab ${settingsTab === "citation" ? "active" : ""}`} onClick={() => setSettingsTab("citation")}>Citation Assistant</button>
+              <button className={`settings-tab ${settingsTab === "structure" ? "active" : ""}`} onClick={() => setSettingsTab("structure")}>Structure Assistant</button>
+              <button className={`settings-tab ${settingsTab === "reproducibility" ? "active" : ""}`} onClick={() => setSettingsTab("reproducibility")}>Reproducibility</button>
+              <button className={`settings-tab ${settingsTab === "acronym" ? "active" : ""}`} onClick={() => setSettingsTab("acronym")}>Acronym Manager</button>
+              <button className={`settings-tab ${settingsTab === "doctor" ? "active" : ""}`} onClick={() => setSettingsTab("doctor")}>Error Doctor</button>
+              <button className={`settings-tab ${settingsTab === "tikz" ? "active" : ""}`} onClick={() => setSettingsTab("tikz")}>TikZ Converter</button>
+              <button className={`settings-tab ${settingsTab === "application" ? "active" : ""}`} onClick={() => setSettingsTab("application")}>Application</button>
+            </div>
+
             <div className="settings-list">
-              <div className="settings-section-heading">
-                <strong>Editor and compiler</strong>
-                <span>Configure how LaTeX source is edited and built.</span>
-              </div>
-
-              <label className="settings-row">
-                <span>
-                  <strong>Default compiler</strong>
-                  <small>Used for the current and future projects.</small>
-                </span>
-                <select
-                  value={settings.defaultEngine}
-                  onChange={(event) => {
-                    const defaultEngine = event.target.value as Engine;
-                    setSettings((current) => ({
-                      ...current,
-                      defaultEngine,
-                    }));
-                    setEngine(defaultEngine);
-                  }}
-                >
-                  <option value="pdflatex">pdfLaTeX</option>
-                  <option value="xelatex">XeLaTeX</option>
-                  <option value="lualatex">LuaLaTeX</option>
-                </select>
-              </label>
-
-              <label className="settings-row">
-                <span>
-                  <strong>Editor font size</strong>
-                  <small>{settings.editorFontSize}px</small>
-                </span>
-                <input
-                  type="range"
-                  min="11"
-                  max="22"
-                  step="0.5"
-                  value={settings.editorFontSize}
-                  onChange={(event) =>
-                    setSettings((current) => ({
-                      ...current,
-                      editorFontSize: Number(event.target.value),
-                    }))
-                  }
-                />
-              </label>
-
-              <label className="settings-row settings-toggle">
-                <span>
-                  <strong>Word wrap</strong>
-                  <small>Wrap long source lines inside the editor.</small>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={settings.wordWrap}
-                  onChange={(event) =>
-                    setSettings((current) => ({
-                      ...current,
-                      wordWrap: event.target.checked,
-                    }))
-                  }
-                />
-              </label>
-
-              <label className="settings-row settings-toggle">
-                <span>
-                  <strong>Minimap</strong>
-                  <small>Show the source overview beside the editor.</small>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={settings.minimap}
-                  onChange={(event) =>
-                    setSettings((current) => ({
-                      ...current,
-                      minimap: event.target.checked,
-                    }))
-                  }
-                />
-              </label>
-
-              <label className="settings-row settings-toggle">
-                <span>
-                  <strong>Show raw LaTeX source</strong>
-                  <small>
-                    When off, LaTeX commands are faded so only document text is visible.
-                  </small>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={settings.showRawLatex}
-                  onChange={(event) =>
-                    setSettings((current) => ({
-                      ...current,
-                      showRawLatex: event.target.checked,
-                    }))
-                  }
-                />
-              </label>
-
-              <div className="settings-section-heading">
-                <strong>Language assistance</strong>
-                <span>Spelling, custom vocabulary, grammar, and style.</span>
-              </div>
-
-              <label className="settings-row settings-toggle">
-                <span>
-                  <strong>Check spelling while typing</strong>
-                  <small>
-                    Show misspellings directly in editable inputs across the app.
-                  </small>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={spellCheckerSettings?.enabled ?? true}
-                  onChange={(event) =>
-                    toggleSpellCheckerEnabled(event.target.checked)
-                  }
-                  disabled={spellCheckerLoading || !spellCheckerSettings}
-                />
-              </label>
-
-              <div className="settings-row settings-row-stack">
-                <span>
-                  <strong>Spell checker languages</strong>
-                  <small>
-                    {spellCheckerSettings?.usesSystemLanguage
-                      ? "macOS uses the native spell checker and automatically detects language."
-                      : "Choose one or more dictionaries for Windows and Linux spell checking."}
-                  </small>
-                </span>
-                {spellCheckerSettings?.usesSystemLanguage ? (
-                  <div className="spellchecker-note">
-                    Language selection is controlled by the system spell checker on macOS.
+              {settingsTab === "editor" ? (
+                <>
+                  <div className="settings-section-heading">
+                    <strong>Editor and compiler</strong>
+                    <span>Configure how LaTeX source is edited and built.</span>
                   </div>
-                ) : (
-                  <div className="spellchecker-language-panel">
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>Default compiler</strong>
+                      <small>Used for the current and future projects.</small>
+                    </span>
+                    <select
+                      value={settings.defaultEngine}
+                      onChange={(event) => {
+                        const defaultEngine = event.target.value as Engine;
+                        setSettings((current) => ({
+                          ...current,
+                          defaultEngine,
+                        }));
+                        setEngine(defaultEngine);
+                      }}
+                    >
+                      <option value="pdflatex">pdfLaTeX</option>
+                      <option value="xelatex">XeLaTeX</option>
+                      <option value="lualatex">LuaLaTeX</option>
+                    </select>
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>Editor font size</strong>
+                      <small>{settings.editorFontSize}px</small>
+                    </span>
                     <input
-                      type="text"
-                      value={spellCheckerLanguageQuery}
+                      type="range"
+                      min="11"
+                      max="22"
+                      step="0.5"
+                      value={settings.editorFontSize}
                       onChange={(event) =>
-                        setSpellCheckerLanguageQuery(event.target.value)
+                        setSettings((current) => ({
+                          ...current,
+                          editorFontSize: Number(event.target.value),
+                        }))
                       }
-                      placeholder="Filter languages"
-                      spellCheck={false}
-                      disabled={spellCheckerLoading || !spellCheckerSettings}
                     />
-                    <div className="spellchecker-language-list">
-                      {filteredSpellCheckerLanguages.length ? (
-                        filteredSpellCheckerLanguages.map((language) => (
-                          <label key={language} className="spellchecker-language-option">
-                            <input
-                              type="checkbox"
-                              checked={
-                                spellCheckerSettings?.languages.includes(language) ??
-                                false
-                              }
-                              onChange={() => toggleSpellCheckerLanguage(language)}
-                              disabled={
-                                spellCheckerLoading || !spellCheckerSettings
-                              }
-                            />
-                            <span>{language}</span>
-                          </label>
-                        ))
-                      ) : (
-                        <div className="spellchecker-note compact">
-                          No language matches that filter.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
+                  </label>
 
-              <div className="settings-row settings-row-stack">
-                <span>
-                  <strong>Custom words</strong>
-                  <small>
-                    Add project-specific terms, package names, and citation keys so they stop showing as misspellings.
-                  </small>
-                </span>
-                <form className="spellchecker-word-form" onSubmit={addSpellCheckerWord}>
-                  <input
-                    type="text"
-                    value={spellCheckerWordDraft}
-                    onChange={(event) => setSpellCheckerWordDraft(event.target.value)}
-                    placeholder="Add a custom word"
-                    spellCheck={false}
-                    disabled={spellCheckerLoading || !spellCheckerSettings}
-                  />
-                  <button
-                    type="submit"
-                    className="dialog-submit"
-                    disabled={spellCheckerLoading || !spellCheckerSettings}
-                  >
-                    Add word
-                  </button>
-                </form>
-                <div className="spellchecker-chip-list">
-                  {(spellCheckerSettings?.customWords ?? []).length ? (
-                    (spellCheckerSettings?.customWords ?? []).map((word) => (
-                      <span key={word} className="spellchecker-chip">
-                        {word}
-                      </span>
-                    ))
-                  ) : (
-                    <div className="spellchecker-note compact">
-                      No custom words added yet.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <label className="settings-row settings-toggle">
-                <span>
-                  <strong>Grammar and style checking</strong>
-                  <small>
-                    Run LanguageTool-compatible proofreading on natural-language text while ignoring LaTeX commands, math, and citations.
-                  </small>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={proofreadingSettings?.enabled ?? true}
-                  onChange={(event) => {
-                    if (!proofreadingSettings) {
-                      return;
-                    }
-                    void saveProofreadingSettings(
-                      {
-                        ...proofreadingSettings,
-                        enabled: event.target.checked,
-                      },
-                      event.target.checked
-                        ? "Grammar checker enabled"
-                        : "Grammar checker disabled",
-                    );
-                  }}
-                  disabled={!proofreadingSettings}
-                />
-              </label>
-
-              <div className="settings-row settings-row-stack">
-                <span>
-                  <strong>Proofreading service</strong>
-                  <small>
-                    Use the public LanguageTool API by default, or point LatexDo to your own compatible server.
-                  </small>
-                </span>
-                <div className="spellchecker-language-panel">
-                  <input
-                    type="text"
-                    value={proofreadingSettings?.serverUrl ?? ""}
-                    onChange={(event) => {
-                      setProofreadingSettings((current) =>
-                        current
-                          ? { ...current, serverUrl: event.target.value }
-                          : current,
-                      );
-                    }}
-                    placeholder="https://api.languagetool.org/v2/check"
-                    spellCheck={false}
-                    disabled={!proofreadingSettings}
-                  />
-                  <div className="spellchecker-grid">
-                    <label className="spellchecker-field">
-                      <span>Language</span>
-                      <select
-                        value={proofreadingSettings?.language ?? "auto"}
-                        onChange={(event) => {
-                          setProofreadingSettings((current) =>
-                            current
-                              ? { ...current, language: event.target.value }
-                              : current,
-                          );
-                        }}
-                        disabled={!proofreadingSettings}
-                      >
-                        <option value="auto">Automatic</option>
-                        <option value="en-US">English (US)</option>
-                        <option value="en-GB">English (UK)</option>
-                        <option value="fr">French</option>
-                        <option value="de">German</option>
-                        <option value="es">Spanish</option>
-                        <option value="it">Italian</option>
-                        <option value="pt">Portuguese</option>
-                      </select>
-                    </label>
-                    <label className="spellchecker-field">
-                      <span>Mother tongue</span>
-                      <input
-                        type="text"
-                        value={proofreadingSettings?.motherTongue ?? ""}
-                        onChange={(event) => {
-                          setProofreadingSettings((current) =>
-                            current
-                              ? { ...current, motherTongue: event.target.value }
-                              : current,
-                          );
-                        }}
-                        placeholder="Optional, e.g. en"
-                        spellCheck={false}
-                        disabled={!proofreadingSettings}
-                      />
-                    </label>
-                  </div>
-                  <label className="spellchecker-inline-toggle">
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Word wrap</strong>
+                      <small>Wrap long source lines inside the editor.</small>
+                    </span>
                     <input
                       type="checkbox"
-                      checked={proofreadingSettings?.picky ?? false}
-                      onChange={(event) => {
-                        setProofreadingSettings((current) =>
-                          current
-                            ? { ...current, picky: event.target.checked }
-                            : current,
-                        );
-                      }}
-                      disabled={!proofreadingSettings}
-                    />
-                    <span>Enable picky mode for stricter style suggestions</span>
-                  </label>
-                  <div className="settings-update-actions">
-                    <button
-                      type="button"
-                      className="dialog-cancel"
-                      onClick={() => {
-                        if (!proofreadingSettings) {
-                          return;
-                        }
-                        void saveProofreadingSettings(
-                          proofreadingSettings,
-                          "Proofreading settings saved",
-                        );
-                      }}
-                      disabled={!proofreadingSettings}
-                    >
-                      Save grammar settings
-                    </button>
-                    <button
-                      type="button"
-                      className="dialog-submit"
-                      onClick={() => void runProofreading()}
-                      disabled={
-                        !proofreadingSettings ||
-                        !proofreadingSettings.enabled ||
-                        proofreadingLoading ||
-                        !activeDocument ||
-                        !supportsProofreading(activeDocument.name)
+                      checked={settings.wordWrap}
+                      onChange={(event) =>
+                        setSettings((current) => ({
+                          ...current,
+                          wordWrap: event.target.checked,
+                        }))
                       }
-                    >
-                      {proofreadingLoading ? "Checking..." : "Proofread now"}
-                    </button>
-                  </div>
-                  <div className="spellchecker-note compact">
-                    {proofreadingResult?.error
-                      ? proofreadingResult.error
-                      : proofreadingResult?.output
-                        ? proofreadingResult.output
-                        : "Suggestions appear inline in the editor and in the Problems panel."}
-                  </div>
-                </div>
-              </div>
+                    />
+                  </label>
 
-              {spellCheckerError ? (
-                <div className="settings-row settings-row-stack settings-inline-error">
-                  <div className="dialog-error">
-                    <CircleAlert size={14} />
-                    {spellCheckerError}
-                  </div>
-                </div>
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Minimap</strong>
+                      <small>Show the source overview beside the editor.</small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={settings.minimap}
+                      onChange={(event) =>
+                        setSettings((current) => ({
+                          ...current,
+                          minimap: event.target.checked,
+                        }))
+                      }
+                    />
+                  </label>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Show raw LaTeX source</strong>
+                      <small>When off, LaTeX commands are faded so only document text is visible.</small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={settings.showRawLatex}
+                      onChange={(event) =>
+                        setSettings((current) => ({
+                          ...current,
+                          showRawLatex: event.target.checked,
+                        }))
+                      }
+                    />
+                  </label>
+                </>
               ) : null}
-              {proofreadingError ? (
-                <div className="settings-row settings-row-stack settings-inline-error">
-                  <div className="dialog-error">
-                    <CircleAlert size={14} />
-                    {proofreadingError}
+
+              {settingsTab === "language" ? (
+                <>
+                  <div className="settings-section-heading">
+                    <strong>Language assistance</strong>
+                    <span>Spelling, custom vocabulary, grammar, and style.</span>
                   </div>
-                </div>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Check spelling while typing</strong>
+                      <small>Show misspellings directly in editable inputs across the app.</small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={spellCheckerSettings?.enabled ?? true}
+                      onChange={(event) => toggleSpellCheckerEnabled(event.target.checked)}
+                      disabled={spellCheckerLoading || !spellCheckerSettings}
+                    />
+                  </label>
+
+                  <div className="settings-row settings-row-stack">
+                    <span>
+                      <strong>Spell checker languages</strong>
+                      <small>{spellCheckerSettings?.usesSystemLanguage ? "macOS uses the native spell checker and automatically detects language." : "Choose one or more dictionaries for Windows and Linux spell checking."}</small>
+                    </span>
+                    {spellCheckerSettings?.usesSystemLanguage ? (
+                      <div className="spellchecker-note">Language selection is controlled by the system spell checker on macOS.</div>
+                    ) : (
+                      <div className="spellchecker-language-panel">
+                        <input type="text" value={spellCheckerLanguageQuery} onChange={(event) => setSpellCheckerLanguageQuery(event.target.value)} placeholder="Filter languages" spellCheck={false} disabled={spellCheckerLoading || !spellCheckerSettings} />
+                        <div className="spellchecker-language-list">
+                          {filteredSpellCheckerLanguages.length ? (
+                            filteredSpellCheckerLanguages.map((language) => (
+                              <label key={language} className="spellchecker-language-option">
+                                <input type="checkbox" checked={spellCheckerSettings?.languages.includes(language) ?? false} onChange={() => toggleSpellCheckerLanguage(language)} disabled={spellCheckerLoading || !spellCheckerSettings} />
+                                <span>{language}</span>
+                              </label>
+                            ))
+                          ) : (
+                            <div className="spellchecker-note compact">No language matches that filter.</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="settings-row settings-row-stack">
+                    <span>
+                      <strong>Custom words</strong>
+                      <small>Add project-specific terms, package names, and citation keys so they stop showing as misspellings.</small>
+                    </span>
+                    <form className="spellchecker-word-form" onSubmit={addSpellCheckerWord}>
+                      <input type="text" value={spellCheckerWordDraft} onChange={(event) => setSpellCheckerWordDraft(event.target.value)} placeholder="Add a custom word" spellCheck={false} disabled={spellCheckerLoading || !spellCheckerSettings} />
+                      <button type="submit" className="dialog-submit" disabled={spellCheckerLoading || !spellCheckerSettings}>Add word</button>
+                    </form>
+                    <div className="spellchecker-chip-list">{(spellCheckerSettings?.customWords ?? []).length ? ((spellCheckerSettings?.customWords ?? []).map((word) => (<span key={word} className="spellchecker-chip">{word}</span>))) : (<div className="spellchecker-note compact">No custom words added yet.</div>)}</div>
+                  </div>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Grammar and style checking</strong>
+                      <small>Run LanguageTool-compatible proofreading on natural-language text while ignoring LaTeX commands, math, and citations.</small>
+                    </span>
+                    <input type="checkbox" checked={proofreadingSettings?.enabled ?? true} onChange={(event) => { if (!proofreadingSettings) return; void saveProofreadingSettings({ ...proofreadingSettings, enabled: event.target.checked }, event.target.checked ? "Grammar checker enabled" : "Grammar checker disabled"); }} disabled={!proofreadingSettings} />
+                  </label>
+
+                  <div className="settings-row settings-row-stack">
+                    <span>
+                      <strong>Proofreading service</strong>
+                      <small>Use the public LanguageTool API by default, or point LatexDo to your own compatible server.</small>
+                    </span>
+                    <div className="spellchecker-language-panel">
+                      <input type="text" value={proofreadingSettings?.serverUrl ?? ""} onChange={(event) => { setProofreadingSettings((current) => current ? { ...current, serverUrl: event.target.value } : current); }} placeholder="https://api.languagetool.org/v2/check" spellCheck={false} disabled={!proofreadingSettings} />
+                      <div className="spellchecker-grid">
+                        <label className="spellchecker-field">
+                          <span>Language</span>
+                          <select value={proofreadingSettings?.language ?? "auto"} onChange={(event) => { setProofreadingSettings((current) => current ? { ...current, language: event.target.value } : current); }} disabled={!proofreadingSettings}>
+                            <option value="auto">Automatic</option>
+                            <option value="en-US">English (US)</option>
+                            <option value="en-GB">English (UK)</option>
+                            <option value="fr">French</option>
+                            <option value="de">German</option>
+                            <option value="es">Spanish</option>
+                            <option value="it">Italian</option>
+                            <option value="pt">Portuguese</option>
+                          </select>
+                        </label>
+                        <label className="spellchecker-field">
+                          <span>Mother tongue</span>
+                          <input type="text" value={proofreadingSettings?.motherTongue ?? ""} onChange={(event) => { setProofreadingSettings((current) => current ? { ...current, motherTongue: event.target.value } : current); }} placeholder="Optional, e.g. en" spellCheck={false} disabled={!proofreadingSettings} />
+                        </label>
+                      </div>
+                      <label className="spellchecker-inline-toggle">
+                        <input type="checkbox" checked={proofreadingSettings?.picky ?? false} onChange={(event) => { setProofreadingSettings((current) => current ? { ...current, picky: event.target.checked } : current); }} disabled={!proofreadingSettings} />
+                        <span>Enable picky mode for stricter style suggestions</span>
+                      </label>
+                      <div className="settings-update-actions">
+                        <button type="button" className="dialog-cancel" onClick={() => { if (!proofreadingSettings) return; void saveProofreadingSettings(proofreadingSettings, "Proofreading settings saved"); }} disabled={!proofreadingSettings}>Save grammar settings</button>
+                        <button type="button" className="dialog-submit" onClick={() => void runProofreading()} disabled={!proofreadingSettings || !proofreadingSettings.enabled || proofreadingLoading || !activeDocument || !supportsProofreading(activeDocument.name)}>{proofreadingLoading ? "Checking..." : "Proofread now"}</button>
+                      </div>
+                      <div className="spellchecker-note compact">{proofreadingResult?.error ? proofreadingResult.error : proofreadingResult?.output ? proofreadingResult.output : "Suggestions appear inline in the editor and in the Problems panel."}</div>
+                    </div>
+                  </div>
+
+                  {spellCheckerError ? (<div className="settings-row settings-row-stack settings-inline-error"><div className="dialog-error"><CircleAlert size={14} />{spellCheckerError}</div></div>) : null}
+                  {proofreadingError ? (<div className="settings-row settings-row-stack settings-inline-error"><div className="dialog-error"><CircleAlert size={14} />{proofreadingError}</div></div>) : null}
+                </>
               ) : null}
 
-              <div className="settings-section-heading">
-                <strong>Application</strong>
-                <span>Version and release management.</span>
-              </div>
+              {settingsTab === "conference" ? (
+                <>
+                  <div className="settings-section-heading">
+                    <strong>Conference / Journal Submission Checker</strong>
+                    <span>Validate your manuscript against conference and journal submission guidelines.</span>
+                  </div>
 
-              <div className="settings-row update-row">
-                <span>
-                  <strong>App updates</strong>
-                  <small>
-                    {checkingUpdates
-                      ? "Checking for the latest release…"
-                      : updateInfo?.updateAvailable
-                        ? `Version ${updateInfo.latestVersion} is available. You are on ${updateInfo.currentVersion}.`
-                        : updateInfo?.latestVersion
-                          ? `You are up to date on version ${updateInfo.currentVersion}.`
-                          : updateInfo?.error
-                            ? updateInfo.error
-                            : "Check GitHub releases for updates."}
-                  </small>
-                </span>
-                <div className="settings-update-actions">
-                  <button
-                    type="button"
-                    className="dialog-cancel"
-                    onClick={() => void checkForUpdates()}
-                    disabled={checkingUpdates}
-                  >
-                    {checkingUpdates ? "Checking…" : "Check now"}
-                  </button>
-                  <button
-                    type="button"
-                    className="dialog-submit"
-                    onClick={() => void window.latexdo.openReleasesPage()}
-                    disabled={!updateInfo?.releaseUrl}
-                  >
-                    View release
-                  </button>
-                </div>
-              </div>
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Enable conference checker</strong>
+                      <small>Run submission-format checks on your LaTeX source.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.conferenceCheckerEnabled} onChange={(event) => setSettings((c) => ({ ...c, conferenceCheckerEnabled: event.target.checked }))} />
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>Select template</strong>
+                      <small>Choose the target venue template.</small>
+                    </span>
+                    <select value={settings.conferenceTemplate === "custom" ? "custom" : settings.conferenceTemplate} onChange={(event) => setSettings((c) => ({ ...c, conferenceTemplate: event.target.value }))}>
+                      <option value="ieee">IEEE</option>
+                      <option value="acm">ACM</option>
+                      <option value="springer">Springer</option>
+                      <option value="elsevier">Elsevier</option>
+                      <option value="neurips">NeurIPS</option>
+                      <option value="cvpr">CVPR</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                  </label>
+
+                  {settings.conferenceTemplate === "custom" ? (
+                    <div className="settings-row settings-row-stack">
+                      <span>
+                        <strong>Custom template</strong>
+                        <small>Describe your template or paste document class.</small>
+                      </span>
+                      <input type="text" value={settings.conferenceChecker_customTemplate} onChange={(event) => setSettings((c) => ({ ...c, conferenceChecker_customTemplate: event.target.value }))} placeholder="e.g., \\documentclass[twocolumn]{article}" />
+                    </div>
+                  ) : null}
+
+                  <div className="settings-section-heading" style={{ marginTop: 16, fontSize: 12, opacity: 0.7 }}>
+                    <strong>Checks to perform</strong>
+                  </div>
+
+                  {[
+                    ["checkMargins", "Margins", "Check for incorrect margin settings."],
+                    ["checkFontSize", "Font size", "Warn if font size does not match template requirements."],
+                    ["checkAbstractLength", "Abstract length", "Flag abstracts that exceed the word limit."],
+                    ["checkKeywords", "Missing keywords", "Ensure the document has keywords defined."],
+                    ["checkFigureReferences", "Figure references", "Find figures that are not referenced in the text."],
+                    ["checkTableReferences", "Table references", "Find tables that are not referenced in the text."],
+                    ["checkBibliographyStyle", "Bibliography style", "Verify bibliography style matches the template."],
+                    ["checkPageLimit", "Page limit", "Rough check for going over the page limit."],
+                    ["checkAuthorInfo", "Author information", "Check for missing author name, affiliation, or email."],
+                    ["checkAnonymousReview", "Anonymous review", "Detect potential author-identifying information for double-blind submissions."],
+                    ["checkFigureResolution", "Figure resolution", "Check included image formats and warn about low-resolution formats."],
+                    ["checkEmbeddedFonts", "Embedded fonts", "Basic check for font usage that may cause PDF issues."],
+                    ["checkCompiler", "Compiler selection", "Check if selected compiler is appropriate for used packages."],
+                  ].map(([key, label, desc]) => (
+                    <label key={key} className="settings-row settings-toggle">
+                      <span>
+                        <strong>{label}</strong>
+                        <small>{desc}</small>
+                      </span>
+                      <input type="checkbox" checked={getSetting(key, settings)} onChange={(event) => setSettings((c) => ({ ...c, [key]: event.target.checked }))} />
+                    </label>
+                  ))}
+                </>
+              ) : null}
+
+              {settingsTab === "citation" ? (
+                <>
+                  <div className="settings-section-heading">
+                    <strong>Smart Citation Assistant</strong>
+                    <span>Detect missing citations, unused references, broken links, and more.</span>
+                  </div>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Enable citation assistant</strong>
+                      <small>Run citation-related checks on your LaTeX source.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.citationAssistantEnabled} onChange={(event) => setSettings((c) => ({ ...c, citationAssistantEnabled: event.target.checked }))} />
+                  </label>
+
+                  {[
+                    ["detectMissingCitations", "Detect missing citations", "Find paragraphs that make technical claims but have no citations."],
+                    ["detectUnusedEntries", "Detect unused entries", "Check for BibTeX entries that are never cited."],
+                    ["detectDuplicateReferences", "Detect duplicate references", "Find the same paper cited under different keys."],
+                    ["detectBrokenLinks", "Detect broken links", "Check for malformed DOI, arXiv, and URL links."],
+                    ["suggestCitationKeys", "Suggest citation keys", "Auto-suggest citations for sentences with factual claims."],
+                    ["importMetadataSources", "Import from metadata sources", "Enable DOI/arXiv metadata import."],
+                    ["warnOldCitations", "Warn about old citations", "Flag citations older than 5 years and suggest newer surveys."],
+                  ].map(([key, label, desc]) => (
+                    <label key={key} className="settings-row settings-toggle">
+                      <span>
+                        <strong>{label}</strong>
+                        <small>{desc}</small>
+                      </span>
+                      <input type="checkbox" checked={getSetting(key, settings)} onChange={(event) => setSettings((c) => ({ ...c, [key]: event.target.checked }))} />
+                    </label>
+                  ))}
+                </>
+              ) : null}
+
+              {settingsTab === "structure" ? (
+                <>
+                  <div className="settings-section-heading">
+                    <strong>Research Structure Assistant</strong>
+                    <span>Check whether your paper's structure meets academic writing standards.</span>
+                  </div>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Enable structure assistant</strong>
+                      <small>Run structure quality checks on your LaTeX source.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.structureAssistantEnabled} onChange={(event) => setSettings((c) => ({ ...c, structureAssistantEnabled: event.target.checked }))} />
+                  </label>
+
+                  {[
+                    ["checkAbstractStructure", "Abstract structure", "Check if abstract includes problem, method, result, and contribution."],
+                    ["checkIntroductionStructure", "Introduction structure", "Check if introduction has motivation, gap, and contribution."],
+                    ["checkRelatedWorkLength", "Related work length", "Warn if the related work section is too short."],
+                    ["checkMethodReproducibility", "Method reproducibility", "Check for reproducibility details in the method section."],
+                    ["checkResultsDiscussion", "Results discussion", "Ensure results are accompanied by discussion and analysis."],
+                    ["checkConclusionClaims", "Conclusion claims", "Warn if conclusion introduces new claims not supported earlier."],
+                  ].map(([key, label, desc]) => (
+                    <label key={key} className="settings-row settings-toggle">
+                      <span>
+                        <strong>{label}</strong>
+                        <small>{desc}</small>
+                      </span>
+                      <input type="checkbox" checked={getSetting(key, settings)} onChange={(event) => setSettings((c) => ({ ...c, [key]: event.target.checked }))} />
+                    </label>
+                  ))}
+                </>
+              ) : null}
+
+              {settingsTab === "reproducibility" ? (
+                <>
+                  <div className="settings-section-heading">
+                    <strong>Reproducibility Checklist</strong>
+                    <span>Check that your paper includes all information needed for reproducibility.</span>
+                  </div>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Enable reproducibility checks</strong>
+                      <small>Run checks for code, data, and experiment reproducibility details.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.reproducibilityEnabled} onChange={(event) => setSettings((c) => ({ ...c, reproducibilityEnabled: event.target.checked }))} />
+                  </label>
+
+                  {[
+                    ["checkCodeLink", "Code availability", "Ensure a link to source code is provided (e.g., GitHub, Zenodo)."],
+                    ["checkDatasetLink", "Dataset availability", "Check that datasets are linked or their availability is mentioned."],
+                    ["checkLicenseMentioned", "License information", "Verify the license for code/data is stated."],
+                    ["checkHyperparameters", "Hyperparameters", "Confirm hyperparameters are listed for ML experiments."],
+                    ["checkHardwareDetails", "Hardware details", "Check that GPU/CPU and computing resources are described."],
+                    ["checkRandomSeeds", "Random seeds", "Ensure random seeds are mentioned for reproducibility."],
+                    ["checkEvaluationMetrics", "Evaluation metrics", "Check that metrics are defined and computation is described."],
+                  ].map(([key, label, desc]) => (
+                    <label key={key} className="settings-row settings-toggle">
+                      <span>
+                        <strong>{label}</strong>
+                        <small>{desc}</small>
+                      </span>
+                      <input type="checkbox" checked={getSetting(key, settings)} onChange={(event) => setSettings((c) => ({ ...c, [key]: event.target.checked }))} />
+                    </label>
+                  ))}
+                </>
+              ) : null}
+
+              {settingsTab === "acronym" ? (
+                <>
+                  <div className="settings-section-heading">
+                    <strong>Acronym & Glossary Manager</strong>
+                    <span>Automatically detect acronym definitions, duplicates, and usage issues.</span>
+                  </div>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Enable acronym manager</strong>
+                      <small>Run acronym consistency checks on your LaTeX source.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.acronymManagerEnabled} onChange={(event) => setSettings((c) => ({ ...c, acronymManagerEnabled: event.target.checked }))} />
+                  </label>
+
+                  {[
+                    ["checkUndefinedAcronym", "Undefined acronyms", "Warn when an acronym is used without prior definition."],
+                    ["checkDuplicateDefinition", "Duplicate definitions", "Warn if the same acronym is defined multiple times."],
+                    ["checkUnusedAcronym", "Unused acronyms", "Warn if an acronym is defined but never used again."],
+                    ["checkConflictingDefinitions", "Conflicting definitions", "Warn if different full forms map to the same acronym."],
+                  ].map(([key, label, desc]) => (
+                    <label key={key} className="settings-row settings-toggle">
+                      <span>
+                        <strong>{label}</strong>
+                        <small>{desc}</small>
+                      </span>
+                      <input type="checkbox" checked={getSetting(key, settings)} onChange={(event) => setSettings((c) => ({ ...c, [key]: event.target.checked }))} />
+                    </label>
+                  ))}
+                </>
+              ) : null}
+
+              {settingsTab === "doctor" ? (
+                <>
+                  <div className="settings-section-heading">
+                    <strong>LaTeX Error Doctor</strong>
+                    <span>Smart error explanations with one-click fix suggestions.</span>
+                  </div>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Enable Error Doctor</strong>
+                      <small>Analyze compile output and provide intelligent error explanations.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.errorDoctorEnabled} onChange={(event) => setSettings((c) => ({ ...c, errorDoctorEnabled: event.target.checked }))} />
+                  </label>
+
+                  {[
+                    ["explainErrors", "Explain errors", "Show human-readable explanations for LaTeX errors."],
+                    ["suggestFixes", "Suggest fixes", "Provide actionable fix suggestions for common errors."],
+                    ["autoFixCommon", "Auto-fix common errors", "Automatically apply one-click fixes for simple errors (e.g., underscore escaping)."],
+                  ].map(([key, label, desc]) => (
+                    <label key={key} className="settings-row settings-toggle">
+                      <span>
+                        <strong>{label}</strong>
+                        <small>{desc}</small>
+                      </span>
+                      <input type="checkbox" checked={getSetting(key, settings)} onChange={(event) => setSettings((c) => ({ ...c, [key]: event.target.checked }))} />
+                    </label>
+                  ))}
+                </>
+              ) : null}
+
+              {settingsTab === "tikz" ? (
+                <>
+                  <div className="settings-section-heading">
+                    <strong>Figure → TikZ Converter</strong>
+                    <span>Upload images and automatically generate editable TikZ code.</span>
+                  </div>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Enable TikZ converter</strong>
+                      <small>Show the Figure → TikZ converter button in the activity bar.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.tikzConverterEnabled} onChange={(event) => setSettings((c) => ({ ...c, tikzConverterEnabled: event.target.checked }))} />
+                  </label>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Auto-open on image copy</strong>
+                      <small>Automatically open converter when an image is detected in clipboard.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.tikzConverterAutoOpen} onChange={(event) => setSettings((c) => ({ ...c, tikzConverterAutoOpen: event.target.checked }))} />
+                  </label>
+                </>
+              ) : null}
+
+              {settingsTab === "application" ? (
+                <>
+                  <div className="settings-section-heading">
+                    <strong>Application</strong>
+                    <span>Version and release management.</span>
+                  </div>
+
+                  <div className="settings-row update-row">
+                    <span>
+                      <strong>App updates</strong>
+                      <small>{checkingUpdates ? "Checking for the latest release…" : updateInfo?.updateAvailable ? `Version ${updateInfo.latestVersion} is available. You are on ${updateInfo.currentVersion}.` : updateInfo?.latestVersion ? `You are up to date on version ${updateInfo.currentVersion}.` : updateInfo?.error ? updateInfo.error : "Check GitHub releases for updates."}</small>
+                    </span>
+                    <div className="settings-update-actions">
+                      <button type="button" className="dialog-cancel" onClick={() => void checkForUpdates()} disabled={checkingUpdates}>{checkingUpdates ? "Checking…" : "Check now"}</button>
+                      <button type="button" className="dialog-submit" onClick={() => void window.latexdo.openReleasesPage()} disabled={!updateInfo?.releaseUrl}>View release</button>
+                    </div>
+                  </div>
+                </>
+              ) : null}
             </div>
 
             <div className="settings-footer">
