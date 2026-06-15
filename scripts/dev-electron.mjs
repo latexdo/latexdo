@@ -14,6 +14,7 @@ const viteUrl = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173";
 let electronProcess = null;
 let restartTimer = null;
 let stopping = false;
+let watcherSettling = true;
 
 async function waitForFile(filePath) {
   for (;;) {
@@ -71,7 +72,7 @@ function stopElectron() {
 }
 
 function scheduleRestart() {
-  if (stopping) {
+  if (stopping || watcherSettling) {
     return;
   }
 
@@ -93,6 +94,9 @@ async function main() {
   watch(path.join(projectRoot, "dist-electron"), { recursive: true }, () => {
     scheduleRestart();
   });
+  setTimeout(() => {
+    watcherSettling = false;
+  }, 1000);
 }
 
 function shutdown(signal) {

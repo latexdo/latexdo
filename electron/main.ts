@@ -49,6 +49,9 @@ const githubLatestReleaseUrl =
 const spellCheckerSettingsFile = "spellchecker-settings.json";
 const proofreadingSettingsFile = "proofreading-settings.json";
 const openSpellCheckerChannel = "tools:open-spellchecker";
+const openProjectChannel = "file:open-project";
+const createFileChannel = "file:create-dialog";
+const createFolderChannel = "folder:create-dialog";
 let welcomeProjectPromise: Promise<string> | null = null;
 const starterDocument = String.raw`\documentclass[11pt]{article}
 
@@ -786,6 +789,28 @@ function buildApplicationMenu(): void {
     {
       label: "File",
       submenu: [
+        {
+          label: "Open Folder...",
+          accelerator: "CmdOrCtrl+O",
+          click: () => {
+            BrowserWindow.getFocusedWindow()?.webContents.send(openProjectChannel);
+          },
+        },
+        {
+          label: "New File...",
+          accelerator: "CmdOrCtrl+N",
+          click: () => {
+            BrowserWindow.getFocusedWindow()?.webContents.send(createFileChannel);
+          },
+        },
+        {
+          label: "New Folder...",
+          accelerator: "CmdOrCtrl+Shift+N",
+          click: () => {
+            BrowserWindow.getFocusedWindow()?.webContents.send(createFolderChannel);
+          },
+        },
+        { type: "separator" },
         { role: "close" },
         ...(process.platform === "darwin" ? [] : ([{ type: "separator" }, { role: "quit" }] as const)),
       ],
@@ -847,6 +872,13 @@ function buildApplicationMenu(): void {
     {
       label: "Help",
       submenu: [
+        {
+          label: "Report an Issue",
+          click: () => {
+            void shell.openExternal("https://github.com/latexdo/latexdo/issues/new");
+          },
+        },
+        { type: "separator" },
         {
           label: "Check for Updates",
           click: () => {
@@ -929,9 +961,9 @@ async function readGitStatus(projectPath: string): Promise<GitStatusSummary> {
       entries,
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Git status failed";
+    const message = normalizeGitError(error, "Git status failed");
     if (
-      message.includes("not a git repository") ||
+      message === "Not a Git repository" ||
       message.includes("unknown option") ||
       message.includes("No such file or directory")
     ) {
@@ -949,6 +981,38 @@ async function readGitStatus(projectPath: string): Promise<GitStatusSummary> {
       entries: [],
       error: message,
     };
+  }
+}
+
+function isNotGitRepositoryError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("not a git repository") ||
+    message.includes("No such file or directory")
+  );
+}
+
+function normalizeGitError(error: unknown, fallback: string): string {
+  if (isNotGitRepositoryError(error)) {
+    return "Not a Git repository";
+  }
+  return error instanceof Error ? error.message : fallback;
+}
+
+async function isGitRepository(projectPath: string): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync("git", [
+      "-C",
+      projectPath,
+      "rev-parse",
+      "--is-inside-work-tree",
+    ]);
+    return stdout.trim() === "true";
+  } catch (error) {
+    if (isNotGitRepositoryError(error)) {
+      return false;
+    }
+    throw error;
   }
 }
 
@@ -1057,6 +1121,14 @@ async function gitDiffEditorInput(
   const targetPath = resolveProjectPath(projectPath, relativePath);
   const modified = await readFile(targetPath, "utf8").catch(() => "");
 
+  if (!(await isGitRepository(projectPath))) {
+    return {
+      path: relativePath,
+      original: "",
+      modified,
+    };
+  }
+
   let original = "";
   try {
     const { stdout } = await execFileAsync("git", [
@@ -1097,6 +1169,14 @@ async function gitHistory(
   projectPath: string,
   relativePath?: string,
 ): Promise<GitHistorySummary> {
+  if (!(await isGitRepository(projectPath))) {
+    return {
+      scope: relativePath ? "file" : "repo",
+      target: relativePath ?? null,
+      commits: [],
+    };
+  }
+
   const args = [
     "-C",
     projectPath,
@@ -1124,6 +1204,14 @@ async function gitCommitDetails(
   projectPath: string,
   hash: string,
 ): Promise<GitCommitDetails> {
+  if (!(await isGitRepository(projectPath))) {
+    return {
+      hash,
+      summary: "",
+      body: "",
+    };
+  }
+
   const { stdout } = await execFileAsync("git", [
     "-C",
     projectPath,
@@ -1149,6 +1237,14 @@ async function gitDiffAtCommit(
 ): Promise<GitDiffEditorInput> {
   const targetPath = resolveProjectPath(projectPath, relativePath);
   const modified = await readFile(targetPath, "utf8").catch(() => "");
+
+  if (!(await isGitRepository(projectPath))) {
+    return {
+      path: relativePath,
+      original: "",
+      modified,
+    };
+  }
 
   let original = "";
   try {
