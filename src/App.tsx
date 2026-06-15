@@ -847,9 +847,12 @@ export default function App() {
   }, [autoCompileSignature, compile, compiling, projectPath, rootFileExists]);
 
   const moveEntry = useCallback(
-    async (sourcePath: string, destination: ProjectEntry) => {
+    async (sourcePath: string, destination: ProjectEntry | null) => {
       const currentProject = projectPathRef.current;
-      if (!currentProject || destination.type !== "directory") {
+      if (
+        !currentProject ||
+        (destination !== null && destination.type !== "directory")
+      ) {
         return;
       }
 
@@ -857,23 +860,57 @@ export default function App() {
         (entry) => entry.path === sourcePath,
       );
       if (!sourceEntry) {
-        setStatusMessage("The dragged file could not be found.");
+        setStatusMessage("The dragged item could not be found.");
         return;
       }
 
-      const destinationRelativePath = joinRelativePath(
-        destination.relativePath,
-        sourceEntry.name,
+      const sourceRelativePath = normalizeRelativePath(
+        sourceEntry.relativePath,
       );
+      const destinationDirectory = normalizeRelativePath(
+        destination?.relativePath ?? "",
+      ).replace(/\/+$/, "");
+      const sourceParent = sourceRelativePath.includes("/")
+        ? sourceRelativePath.slice(0, sourceRelativePath.lastIndexOf("/"))
+        : "";
+
+      if (destinationDirectory === sourceParent) {
+        setStatusMessage(
+          `${sourceEntry.name} is already in ${
+            destinationDirectory || "the project root"
+          }`,
+        );
+        return;
+      }
+
+      if (
+        destination &&
+        (destination.path === sourceEntry.path ||
+          normalizeRelativePath(destination.path).startsWith(
+            `${normalizeRelativePath(sourceEntry.path)}/`,
+          ))
+      ) {
+        setStatusMessage("A folder cannot be moved into itself.");
+        return;
+      }
+
+      const destinationRelativePath = destinationDirectory
+        ? joinRelativePath(destinationDirectory, sourceEntry.name)
+        : sourceEntry.name;
 
       try {
-        const dirtySourceDocument = documentsRef.current.find(
+        const sourcePrefix = `${sourceRelativePath}/`;
+        const dirtySourceDocuments = documentsRef.current.filter(
           (document) =>
-            document.path === sourceEntry.path &&
+            (normalizeRelativePath(document.relativePath) ===
+              sourceRelativePath ||
+              normalizeRelativePath(document.relativePath).startsWith(
+                sourcePrefix,
+              )) &&
             document.content !== document.savedContent,
         );
-        if (dirtySourceDocument) {
-          await saveDocument(dirtySourceDocument);
+        for (const document of dirtySourceDocuments) {
+          await saveDocument(document);
         }
 
         const nextPath = await window.latexdo.moveEntry(
@@ -882,37 +919,80 @@ export default function App() {
           destinationRelativePath,
         );
         const nextRelativePath = normalizeRelativePath(destinationRelativePath);
+        const nextPrefix = `${nextRelativePath}/`;
+        const sourceAbsolutePath = normalizeRelativePath(sourceEntry.path);
+        const absoluteSeparator = nextPath.includes("\\") ? "\\" : "/";
+        const joinAbsolutePath = (base: string, suffix: string): string =>
+          `${base.replace(/[\\/]+$/, "")}${absoluteSeparator}${suffix.replaceAll(
+            "/",
+            absoluteSeparator,
+          )}`;
 
-        setDocuments((current) =>
-          current.map((document) =>
-            document.path === sourceEntry.path
-              ? {
-                  ...document,
-                  path: nextPath,
-                  relativePath: nextRelativePath,
-                  name: sourceEntry.name,
-                }
-              : document,
-          ),
-        );
-        documentsRef.current = documentsRef.current.map((document) =>
-          document.path === sourceEntry.path
-            ? {
-                ...document,
-                path: nextPath,
-                relativePath: nextRelativePath,
-                name: sourceEntry.name,
-              }
-            : document,
-        );
+        const moveDocument = (document: OpenDocument): OpenDocument => {
+          const relativePath = normalizeRelativePath(document.relativePath);
+          if (
+            relativePath !== sourceRelativePath &&
+            !relativePath.startsWith(sourcePrefix)
+          ) {
+            return document;
+          }
 
-        if (activePathRef.current === sourceEntry.path) {
-          setActivePath(nextPath);
-          activePathRef.current = nextPath;
+          const relativeSuffix =
+            relativePath === sourceRelativePath
+              ? ""
+              : relativePath.slice(sourcePrefix.length);
+          const absolutePath = normalizeRelativePath(document.path);
+          const absoluteSuffix =
+            absolutePath === sourceAbsolutePath
+              ? ""
+              : absolutePath.slice(sourceAbsolutePath.length + 1);
+          return {
+            ...document,
+            path: absoluteSuffix
+              ? joinAbsolutePath(nextPath, absoluteSuffix)
+              : nextPath,
+            relativePath: relativeSuffix
+              ? `${nextPrefix}${relativeSuffix}`
+              : nextRelativePath,
+          };
+        };
+
+        const nextDocuments = documentsRef.current.map(moveDocument);
+        documentsRef.current = nextDocuments;
+        setDocuments(nextDocuments);
+
+        const normalizedActivePath = normalizeRelativePath(
+          activePathRef.current,
+        );
+        if (
+          normalizedActivePath === sourceAbsolutePath ||
+          normalizedActivePath.startsWith(`${sourceAbsolutePath}/`)
+        ) {
+          const activeSuffix =
+            normalizedActivePath === sourceAbsolutePath
+              ? ""
+              : normalizedActivePath.slice(sourceAbsolutePath.length + 1);
+          const movedActivePath = activeSuffix
+            ? joinAbsolutePath(nextPath, activeSuffix)
+            : nextPath;
+          setActivePath(movedActivePath);
+          activePathRef.current = movedActivePath;
         }
-        if (normalizeRelativePath(rootFileRef.current) === sourceEntry.relativePath) {
-          setRootFile(nextRelativePath);
-          rootFileRef.current = nextRelativePath;
+
+        const currentRootFile = normalizeRelativePath(rootFileRef.current);
+        if (
+          currentRootFile === sourceRelativePath ||
+          currentRootFile.startsWith(sourcePrefix)
+        ) {
+          const rootSuffix =
+            currentRootFile === sourceRelativePath
+              ? ""
+              : currentRootFile.slice(sourcePrefix.length);
+          const movedRootFile = rootSuffix
+            ? `${nextPrefix}${rootSuffix}`
+            : nextRelativePath;
+          setRootFile(movedRootFile);
+          rootFileRef.current = movedRootFile;
         }
 
         setCompileResult(null);
@@ -920,7 +1000,11 @@ export default function App() {
         setPdfTarget(null);
         pdfPathRef.current = "";
         await refreshProject(currentProject);
-        setStatusMessage(`Moved ${sourceEntry.name} to ${destination.relativePath}`);
+        setStatusMessage(
+          `Moved ${sourceEntry.name} to ${
+            destination?.relativePath || "the project root"
+          }`,
+        );
       } catch (error) {
         setStatusMessage(
           error instanceof Error ? error.message : "Could not move the file",
@@ -3558,7 +3642,7 @@ export default function App() {
 
       {settingsOpen ? (
         <div
-          className="modal-backdrop"
+          className="modal-backdrop settings-backdrop"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
               setSettingsOpen(false);
@@ -3590,6 +3674,11 @@ export default function App() {
             </div>
 
             <div className="settings-list">
+              <div className="settings-section-heading">
+                <strong>Editor and compiler</strong>
+                <span>Configure how LaTeX source is edited and built.</span>
+              </div>
+
               <label className="settings-row">
                 <span>
                   <strong>Default compiler</strong>
@@ -3665,6 +3754,11 @@ export default function App() {
                   }
                 />
               </label>
+
+              <div className="settings-section-heading">
+                <strong>Language assistance</strong>
+                <span>Spelling, custom vocabulary, grammar, and style.</span>
+              </div>
 
               <label className="settings-row settings-toggle">
                 <span>
@@ -3940,6 +4034,11 @@ export default function App() {
                   </div>
                 </div>
               ) : null}
+
+              <div className="settings-section-heading">
+                <strong>Application</strong>
+                <span>Version and release management.</span>
+              </div>
 
               <div className="settings-row update-row">
                 <span>
