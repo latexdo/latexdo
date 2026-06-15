@@ -47,6 +47,7 @@ import {
 import FileTree from "./FileTree";
 import PdfPreview, { type PdfClickLocation } from "./PdfPreview";
 import TikzCanvas from "./TikzCanvas";
+import TableCanvas from "./TableCanvas";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { monaco } from "./monaco";
 import type {
@@ -400,6 +401,7 @@ export default function App() {
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [previewVisible, setPreviewVisible] = useState(true);
   const [tikzCanvasOpen, setTikzCanvasOpen] = useState(false);
+  const [tableCanvasOpen, setTableCanvasOpen] = useState(false);
   const [panelVisible, setPanelVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<PanelKind>("problems");
   const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
@@ -1381,6 +1383,7 @@ export default function App() {
         setCreateDialog(null);
         setSettingsOpen(false);
         setTikzCanvasOpen(false);
+        setTableCanvasOpen(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -2453,6 +2456,13 @@ export default function App() {
             >
               <Pencil size={21} />
             </button>
+            <button
+              className={`activity-button ${tableCanvasOpen ? "active" : ""}`}
+              onClick={() => setTableCanvasOpen((open) => !open)}
+              title="Table Generator"
+            >
+              <Box size={21} />
+            </button>
           </div>
           <div>
             <button
@@ -3234,6 +3244,43 @@ export default function App() {
                       }
                     }
                     setTikzCanvasOpen(false);
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {tableCanvasOpen && (
+            <div className="tikz-modal-overlay">
+              <div className="tikz-modal-header">
+                <span className="tikz-modal-title">Table Generator</span>
+                <button className="tikz-modal-close" onClick={() => setTableCanvasOpen(false)}>
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="tikz-modal-content">
+                <TableCanvas
+                  onInsertCode={(code) => {
+                    if (!activeDocument) {
+                      alert("Please open a .tex document first to insert the code.");
+                      return;
+                    }
+                    const editor = editorRef.current;
+                    if (editor) {
+                      const model = editor.getModel();
+                      if (model) {
+                        const position = editor.getPosition();
+                        const lineNumber = position?.lineNumber ?? model.getLineCount();
+                        const column = position?.column ?? 1;
+                        editor.executeEdits("", [
+                          {
+                            range: new monaco.Range(lineNumber, column, lineNumber, column),
+                            text: "\n" + code + "\n",
+                          },
+                        ]);
+                      }
+                    }
+                    setTableCanvasOpen(false);
                   }}
                 />
               </div>
