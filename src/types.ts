@@ -191,3 +191,83 @@ export interface RebuttalItem {
   authorComment: string;
   modificationMade: string;
 }
+
+export type ConferenceTemplate = "ieee" | "acm" | "springer" | "elsevier" | "neurips" | "cvpr" | "custom";
+
+export interface ConferenceCheckerSettings {
+  enabled: boolean;
+  template: ConferenceTemplate;
+  customTemplate: string;
+  checkMargins: boolean;
+  checkFontSize: boolean;
+  checkAbstractLength: boolean;
+  checkKeywords: boolean;
+  checkFigureReferences: boolean;
+  checkTableReferences: boolean;
+  checkBibliographyStyle: boolean;
+  checkPageLimit: boolean;
+  checkAuthorInfo: boolean;
+  checkAnonymousReview: boolean;
+  checkFigureResolution: boolean;
+  checkEmbeddedFonts: boolean;
+  checkCompiler: boolean;
+}
+
+export interface CitationAssistantSettings {
+  enabled: boolean;
+  detectMissingCitations: boolean;
+  detectUnusedEntries: boolean;
+  detectDuplicateReferences: boolean;
+  detectBrokenLinks: boolean;
+  suggestCitationKeys: boolean;
+  importMetadataSources: boolean;
+  warnOldCitations: boolean;
+}
+
+export interface StructureAssistantSettings {
+  enabled: boolean;
+  checkAbstractStructure: boolean;
+  checkIntroductionStructure: boolean;
+  checkRelatedWorkLength: boolean;
+  checkMethodReproducibility: boolean;
+  checkResultsDiscussion: boolean;
+  checkConclusionClaims: boolean;
+}
+
+export interface ReproducibilitySettings {
+  enabled: boolean;
+  checkCodeLink: boolean;
+  checkDatasetLink: boolean;
+  checkLicenseMentioned: boolean;
+  checkHyperparameters: boolean;
+  checkHardwareDetails: boolean;
+  checkRandomSeeds: boolean;
+  checkEvaluationMetrics: boolean;
+}
+
+export interface AcronymManagerSettings {
+  enabled: boolean;
+  checkUndefinedAcronym: boolean;
+  checkDuplicateDefinition: boolean;
+  checkUnusedAcronym: boolean;
+  checkConflictingDefinitions: boolean;
+}
+
+export interface ErrorDoctorSettings {
+  enabled: boolean;
+  explainErrors: boolean;
+  suggestFixes: boolean;
+  autoFixCommon: boolean;
+}
+
+export interface TikzConverterSettings {
+  enabled: boolean;
+  autoOpen: boolean;
+}
+
+export interface ErrorFix {
+  errorRegex: RegExp;
+  title: string;
+  explanation: string;
+  getFixes: (match: RegExpExecArray, lines: string[]) => { find: string; replace: string; line: number; }[];
+}
