@@ -1,0 +1,155 @@
+name: latexdo-release
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: latexdo-release
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    if: github.event.pull_request.merged == true
+    name: test / typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+
+  build_macos:
+    name: build / macOS
+    needs: quality
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Package macOS DMG
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: >
+          npx electron-builder
+          --mac dmg
+          --arm64
+          --publish never
+          --config.mac.identity=-
+          --config.directories.output=release/macos
+
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          pkg="$(find release/macos -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          [ -n "$pkg" ] || { echo "No DMG produced"; exit 1; }
+          mkdir -p artifacts
+          cp "$pkg" artifacts/LatexDo-macos-arm64.dmg
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: latexdo-macos
+          path: artifacts/LatexDo-macos-arm64.dmg
+          if-no-files-found: error
+          retention-days: 1
+
+  build_windows:
+    name: build / Windows
+    needs: quality
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Package Windows installer
+        run: >
+          npx electron-builder
+          --win nsis
+          --x64
+          --publish never
+          --config.directories.output=release/windows
+
+      - name: Prepare artifact
+        shell: pwsh
+        run: |
+          $pkg = Get-ChildItem -Path "release/windows" -Filter "*.exe" -File | Select-Object -First 1
+          if (-not $pkg) { throw "No EXE produced" }
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          Copy-Item $pkg.FullName artifacts/LatexDo-windows-x64.exe
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: latexdo-windows
+          path: artifacts/LatexDo-windows-x64.exe
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: publish / rolling release
+    needs: [build_macos, build_windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: latexdo-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd artifacts
+          sha256sum *.dmg *.exe > SHA256SUMS.txt
+          ls -lh
+
+      - name: Delete old rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release delete rolling --yes 2>/dev/null || true
+          git tag -d rolling 2>/dev/null || true
+          git push origin :refs/tags/rolling 2>/dev/null || true
+
+      - name: Create rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create rolling \
+            --title "Latest build ($(date +'%Y-%m-%d %H:%M UTC'))" \
+            --notes "Automated build from PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}" \
+            --latest \
+            artifacts/*

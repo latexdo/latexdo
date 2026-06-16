@@ -1,5 +1,5 @@
 import React from "react";
-import { History, Plus, Trash2 } from "lucide-react";
+import { FileText, History, Plus, Trash2 } from "lucide-react";
 import type { RebuttalItem } from "../types";
 
 interface RebuttalSidebarProps {
@@ -8,6 +8,7 @@ interface RebuttalSidebarProps {
   onAddRebuttalToSource: () => void;
   onUpdateItem: (id: string, updates: Partial<RebuttalItem>) => void;
   onDeleteItem: (id: string) => void;
+  onGenerateLetter?: () => void;
 }
 
 export const RebuttalSidebar: React.FC<RebuttalSidebarProps> = ({
@@ -16,6 +17,7 @@ export const RebuttalSidebar: React.FC<RebuttalSidebarProps> = ({
   onAddRebuttalToSource,
   onUpdateItem,
   onDeleteItem,
+  onGenerateLetter,
 }) => {
   return (
     <div className="rebuttal-sidebar">
@@ -28,6 +30,12 @@ export const RebuttalSidebar: React.FC<RebuttalSidebarProps> = ({
           <Plus size={14} />
           <span>Insert in Source</span>
         </button>
+        {onGenerateLetter && (
+          <button className="sidebar-primary-action" onClick={onGenerateLetter}>
+            <FileText size={14} />
+            <span>Generate Letter</span>
+          </button>
+        )}
       </div>
 
       <div className="sidebar-list">
