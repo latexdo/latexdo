@@ -10,17 +10,16 @@ import { analyzeCompileOutput } from "../errorDoctor";
 import type {
   StructureAssistantSettings, AcronymManagerSettings, CitationAssistantSettings,
   ReproducibilitySettings, NotationManagerSettings, PdfComplianceSettings,
-  ConferenceCheckerSettings, ErrorDoctorSettings, ConferenceRequirements,
+  ConferenceCheckerSettings, ErrorDoctorSettings,
 } from "../../types";
 
-const S: StructureAssistantSettings = { enabled: true, checkMissingAbstract: true, checkSectionOrder: true, checkSectionEmpty: true, checkFigurePlacement: true, checkTablePlacement: true, checkCrossReferences: true, checkEquationNumbering: true, checkAppendixFormat: true, checkConclusion: true };
+const S: StructureAssistantSettings = { enabled: true, checkAbstractStructure: true, checkIntroductionStructure: true, checkRelatedWorkLength: true, checkMethodReproducibility: true, checkResultsDiscussion: true, checkConclusionClaims: true };
 const A: AcronymManagerSettings = { enabled: true, checkUndefinedAcronym: true, checkDuplicateDefinition: true, checkUnusedAcronym: true, checkConflictingDefinitions: true };
-const C: CitationAssistantSettings = { enabled: true, checkMissingCitations: true, checkInconsistentStyle: true, checkMissingBibliography: true, checkOvercitation: true, checkStaleReferences: true };
+const C: CitationAssistantSettings = { enabled: true, detectMissingCitations: true, detectUnusedEntries: true, detectDuplicateReferences: true, detectBrokenLinks: true, suggestCitationKeys: true, importMetadataSources: true, warnOldCitations: true };
 const R: ReproducibilitySettings = { enabled: true, checkCodeLink: true, checkDatasetLink: true, checkLicenseMentioned: true, checkHyperparameters: true, checkHardwareDetails: true, checkRandomSeeds: true, checkEvaluationMetrics: true };
 const N: NotationManagerSettings = { enabled: true, detectSymbols: true, detectConflicts: true, detectUndefinedNotation: true };
 const P: PdfComplianceSettings = { enabled: true, maxPages: 8, maxAbstractWords: 250, checkPageCount: true, checkUnreferencedFigures: true, checkUncitedCitations: true, checkSectionsWithNoCitations: true, checkType3Fonts: true, checkAbstractWordCount: true };
-const CR: ConferenceRequirements = { name: "NeurIPS", pageLimit: 8, sectionRequirements: ["Intro", "Method", "Results", "Conclusion"], formatStyle: "single-column", maxAbstractWords: 250, citationStyle: "author-year", figureRequirements: { maxFigures: 10, requiredFormats: ["PDF", "EPS"] } };
-const CF: ConferenceCheckerSettings = { enabled: true, checkFormatting: true, checkPageLimit: true, checkSectionRequirements: true, checkCitationStyle: true, checkFigureRequirements: true, checkAbstractLimit: true };
+const CF: ConferenceCheckerSettings = { enabled: true, template: "ieee", customTemplate: "", checkMargins: true, checkFontSize: true, checkAbstractLength: true, checkKeywords: true, checkFigureReferences: true, checkTableReferences: true, checkBibliographyStyle: true, checkPageLimit: true, checkAuthorInfo: true, checkAnonymousReview: true, checkFigureResolution: true, checkEmbeddedFonts: true, checkCompiler: true };
 const E: ErrorDoctorSettings = { enabled: true, explainErrors: true, suggestFixes: true, autoFixCommon: true };
 
 function doc(body: string): string {
@@ -182,7 +181,7 @@ const confCases: [string, string][] = [
 ];
 describe("Conference checker — edge case docs", () => {
   it.each(confCases)("handles: %s", (body, output) => {
-    const r = runConferenceChecks(body, output, CR, CF);
+    const r = runConferenceChecks(body, CF);
     expect(Array.isArray(r)).toBe(true);
   });
 });
