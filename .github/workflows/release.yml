@@ -127,21 +127,22 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: List downloaded artifacts
+        shell: bash
+        run: ls -lh artifacts/
+
       - name: Generate checksums
         shell: bash
         run: |
           cd artifacts
           sha256sum *.dmg *.exe > SHA256SUMS.txt
-          ls -lh
 
-      - name: Delete old rolling release
+      - name: Delete old rolling release and tag
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release delete rolling --yes 2>/dev/null || true
-          git tag -d rolling 2>/dev/null || true
-          git push origin :refs/tags/rolling 2>/dev/null || true
+          gh release delete rolling --cleanup-tag --yes 2>/dev/null || true
 
       - name: Create rolling release
         env:
@@ -149,7 +150,34 @@ jobs:
         shell: bash
         run: |
           gh release create rolling \
+            --repo "${{ github.repository }}" \
             --title "Latest build ($(date +'%Y-%m-%d %H:%M UTC'))" \
             --notes "Automated build from PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}" \
-            --latest \
-            artifacts/*
+            --latest
+
+      - name: Upload macOS artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release upload rolling \
+            --repo "${{ github.repository }}" \
+            artifacts/LatexDo-macos-arm64.dmg --clobber
+
+      - name: Upload Windows artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release upload rolling \
+            --repo "${{ github.repository }}" \
+            artifacts/LatexDo-windows-x64.exe --clobber
+
+      - name: Upload checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release upload rolling \
+            --repo "${{ github.repository }}" \
+            artifacts/SHA256SUMS.txt --clobber
