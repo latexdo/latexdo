@@ -38,6 +38,7 @@ import {
   Settings,
   TerminalSquare,
   User,
+  Variable,
   Wand,
   X,
   ZoomIn,
@@ -58,6 +59,8 @@ import { FigureToTikzConverter } from "./components/FigureToTikzConverter";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { ReviewSidebar } from "./components/ReviewSidebar";
 import { RebuttalSidebar } from "./components/RebuttalSidebar";
+import { generateRebuttalLetter } from "./rebuttalGenerator";
+import type { RebuttalGeneratorSettings } from "./types";
 import { monaco } from "./monaco";
 import type {
   CompileResult,
@@ -67,6 +70,8 @@ import type {
   ReproducibilitySettings,
   AcronymManagerSettings,
   ErrorDoctorSettings,
+  NotationManagerSettings,
+  PdfComplianceSettings,
   Diagnostic,
   DiagnosticFix,
   EditorMode,
@@ -95,8 +100,11 @@ import { runReproducibilityChecks } from "./checks/reproducibility";
 import { runAcronymChecks } from "./checks/acronymManager";
 import { analyzeCompileOutput } from "./checks/errorDoctor";
 import type { ErrorDoctorResult } from "./checks/errorDoctor";
+import { runNotationChecks } from "./checks/notationManager";
+import { runPdfComplianceChecks } from "./checks/pdfCompliance";
+import { NotationManager } from "./components/NotationManager";
 
-type PanelKind = "problems" | "output" | "terminal";
+type PanelKind = "problems" | "output" | "terminal" | "checkAnalysis" | "structureReport" | "pdfReport";
 type SidebarView = "explorer" | "sourceControl";
 
 interface GitDiffSession extends GitDiffEditorInput {
@@ -173,6 +181,38 @@ interface AppSettings {
   // TikZ Converter
   tikzConverterEnabled: boolean;
   tikzConverterAutoOpen: boolean;
+
+  // Notation Manager
+  notationManagerEnabled: boolean;
+  detectNotation: boolean;
+  detectNotationConflicts: boolean;
+  detectUndefinedNotation: boolean;
+
+  // PDF Compliance
+  pdfComplianceEnabled: boolean;
+  checkPageCount: boolean;
+  maxPages: number;
+  checkUnreferencedFigures: boolean;
+  checkUncitedCitations: boolean;
+  checkSectionsWithNoCitations: boolean;
+  checkType3Fonts: boolean;
+  checkAbstractWordCount: boolean;
+  maxAbstractWords: number;
+
+  // Rebuttal Generator
+  rebuttalManuscriptId: string;
+  rebuttalManuscriptTitle: string;
+  rebuttalFontSize: string;
+  rebuttalPaperSize: string;
+  rebuttalFontFamily: string;
+  rebuttalIncludeDiff: boolean;
+  rebuttalDiffOldFile: string;
+  rebuttalDiffNewFile: string;
+  rebuttalDiffOutput: string;
+  rebuttalSummary: string;
+  rebuttalSpacing: boolean;
+  rebuttalColorPrimary: string;
+  rebuttalColorAccent: string;
 }
 
 const settingsStorageKey = "latexdo.settings";
@@ -239,6 +279,35 @@ const defaultSettings: AppSettings = {
 
   tikzConverterEnabled: true,
   tikzConverterAutoOpen: true,
+
+  notationManagerEnabled: true,
+  detectNotation: true,
+  detectNotationConflicts: true,
+  detectUndefinedNotation: true,
+
+  pdfComplianceEnabled: true,
+  checkPageCount: true,
+  maxPages: 8,
+  checkUnreferencedFigures: true,
+  checkUncitedCitations: true,
+  checkSectionsWithNoCitations: true,
+  checkType3Fonts: true,
+  checkAbstractWordCount: true,
+  maxAbstractWords: 250,
+
+  rebuttalManuscriptId: "COLA-D-26-00101",
+  rebuttalManuscriptTitle: "Evaluating Package-Level Scoping Strategies for Repository-Level Code Completion in Pharo",
+  rebuttalFontSize: "11pt",
+  rebuttalPaperSize: "a4paper",
+  rebuttalFontFamily: "newpx",
+  rebuttalIncludeDiff: true,
+  rebuttalDiffOldFile: "oldfile.tex",
+  rebuttalDiffNewFile: "newfile.tex",
+  rebuttalDiffOutput: "diff.tex",
+  rebuttalSummary: "We revised the manuscript substantially in response to the reviewers' comments.",
+  rebuttalSpacing: true,
+  rebuttalColorPrimary: "1E1E1E",
+  rebuttalColorAccent: "D9D9D9",
 };
 
 function buildAutoCompileSignature(
@@ -450,6 +519,87 @@ function loadSettings(): AppSettings {
       tikzConverterAutoOpen:
         typeof saved.tikzConverterAutoOpen === "boolean"
           ? saved.tikzConverterAutoOpen : defaultSettings.tikzConverterAutoOpen,
+
+      notationManagerEnabled:
+        typeof saved.notationManagerEnabled === "boolean"
+          ? saved.notationManagerEnabled : defaultSettings.notationManagerEnabled,
+      detectNotation:
+        typeof saved.detectNotation === "boolean"
+          ? saved.detectNotation : defaultSettings.detectNotation,
+      detectNotationConflicts:
+        typeof saved.detectNotationConflicts === "boolean"
+          ? saved.detectNotationConflicts : defaultSettings.detectNotationConflicts,
+      detectUndefinedNotation:
+        typeof saved.detectUndefinedNotation === "boolean"
+          ? saved.detectUndefinedNotation : defaultSettings.detectUndefinedNotation,
+
+      pdfComplianceEnabled:
+        typeof saved.pdfComplianceEnabled === "boolean"
+          ? saved.pdfComplianceEnabled : defaultSettings.pdfComplianceEnabled,
+      checkPageCount:
+        typeof saved.checkPageCount === "boolean"
+          ? saved.checkPageCount : defaultSettings.checkPageCount,
+      maxPages:
+        typeof saved.maxPages === "number"
+          ? saved.maxPages : defaultSettings.maxPages,
+      checkUnreferencedFigures:
+        typeof saved.checkUnreferencedFigures === "boolean"
+          ? saved.checkUnreferencedFigures : defaultSettings.checkUnreferencedFigures,
+      checkUncitedCitations:
+        typeof saved.checkUncitedCitations === "boolean"
+          ? saved.checkUncitedCitations : defaultSettings.checkUncitedCitations,
+      checkSectionsWithNoCitations:
+        typeof saved.checkSectionsWithNoCitations === "boolean"
+          ? saved.checkSectionsWithNoCitations : defaultSettings.checkSectionsWithNoCitations,
+      checkType3Fonts:
+        typeof saved.checkType3Fonts === "boolean"
+          ? saved.checkType3Fonts : defaultSettings.checkType3Fonts,
+      checkAbstractWordCount:
+        typeof saved.checkAbstractWordCount === "boolean"
+          ? saved.checkAbstractWordCount : defaultSettings.checkAbstractWordCount,
+      maxAbstractWords:
+        typeof saved.maxAbstractWords === "number"
+          ? saved.maxAbstractWords : defaultSettings.maxAbstractWords,
+
+      rebuttalManuscriptId:
+        typeof saved.rebuttalManuscriptId === "string"
+          ? saved.rebuttalManuscriptId : defaultSettings.rebuttalManuscriptId,
+      rebuttalManuscriptTitle:
+        typeof saved.rebuttalManuscriptTitle === "string"
+          ? saved.rebuttalManuscriptTitle : defaultSettings.rebuttalManuscriptTitle,
+      rebuttalFontSize:
+        typeof saved.rebuttalFontSize === "string"
+          ? saved.rebuttalFontSize : defaultSettings.rebuttalFontSize,
+      rebuttalPaperSize:
+        typeof saved.rebuttalPaperSize === "string"
+          ? saved.rebuttalPaperSize : defaultSettings.rebuttalPaperSize,
+      rebuttalFontFamily:
+        typeof saved.rebuttalFontFamily === "string"
+          ? saved.rebuttalFontFamily : defaultSettings.rebuttalFontFamily,
+      rebuttalIncludeDiff:
+        typeof saved.rebuttalIncludeDiff === "boolean"
+          ? saved.rebuttalIncludeDiff : defaultSettings.rebuttalIncludeDiff,
+      rebuttalDiffOldFile:
+        typeof saved.rebuttalDiffOldFile === "string"
+          ? saved.rebuttalDiffOldFile : defaultSettings.rebuttalDiffOldFile,
+      rebuttalDiffNewFile:
+        typeof saved.rebuttalDiffNewFile === "string"
+          ? saved.rebuttalDiffNewFile : defaultSettings.rebuttalDiffNewFile,
+      rebuttalDiffOutput:
+        typeof saved.rebuttalDiffOutput === "string"
+          ? saved.rebuttalDiffOutput : defaultSettings.rebuttalDiffOutput,
+      rebuttalSummary:
+        typeof saved.rebuttalSummary === "string"
+          ? saved.rebuttalSummary : defaultSettings.rebuttalSummary,
+      rebuttalSpacing:
+        typeof saved.rebuttalSpacing === "boolean"
+          ? saved.rebuttalSpacing : defaultSettings.rebuttalSpacing,
+      rebuttalColorPrimary:
+        typeof saved.rebuttalColorPrimary === "string"
+          ? saved.rebuttalColorPrimary : defaultSettings.rebuttalColorPrimary,
+      rebuttalColorAccent:
+        typeof saved.rebuttalColorAccent === "string"
+          ? saved.rebuttalColorAccent : defaultSettings.rebuttalColorAccent,
     };
   } catch {
     return defaultSettings;
@@ -722,6 +872,8 @@ export default function App() {
   const [tikzCanvasOpen, setTikzCanvasOpen] = useState(false);
   const [tableCanvasOpen, setTableCanvasOpen] = useState(false);
   const [tikzConverterOpen, setTikzConverterOpen] = useState(false);
+  const [notationManagerOpen, setNotationManagerOpen] = useState(false);
+  const [pdfComplianceDiagnostics, setPdfComplianceDiagnostics] = useState<Diagnostic[]>([]);
   const [panelVisible, setPanelVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<PanelKind>("problems");
   const [panelHeight, setPanelHeight] = useState(200);
@@ -1282,6 +1434,10 @@ export default function App() {
       if (settings.acronymManagerEnabled) {
         all.push(...runAcronymChecks(content, settings as unknown as AcronymManagerSettings));
       }
+      if (settings.notationManagerEnabled) {
+        const result = runNotationChecks(content, settings as unknown as NotationManagerSettings);
+        all.push(...result.diagnostics);
+      }
       setAssistantDiagnostics(all);
     }, 500);
     return () => clearTimeout(timer);
@@ -1301,7 +1457,14 @@ export default function App() {
     settings.checkHyperparameters, settings.checkHardwareDetails, settings.checkRandomSeeds,
     settings.checkEvaluationMetrics,     settings.checkUndefinedAcronym, settings.checkDuplicateDefinition,
     settings.checkUnusedAcronym, settings.checkConflictingDefinitions,
+    settings.notationManagerEnabled, settings.detectNotation, settings.detectNotationConflicts,
+    settings.detectUndefinedNotation,
   ]);
+
+  const structureDiagnostics = useMemo(
+    () => assistantDiagnostics.filter((d) => d.source === "structure-assistant"),
+    [assistantDiagnostics],
+  );
 
   useEffect(() => {
     if (!settings.errorDoctorEnabled || !compileResult?.output) {
@@ -1316,6 +1479,21 @@ export default function App() {
     );
     setErrorDoctorResult(result);
   }, [compileResult?.output, settings.errorDoctorEnabled, settings.explainErrors, settings.suggestFixes, settings.autoFixCommon, activeDocument?.content]);
+
+  useEffect(() => {
+    if (!settings.pdfComplianceEnabled || !activeDocument?.content) {
+      setPdfComplianceDiagnostics([]);
+      return;
+    }
+    const content = activeDocument.content;
+    const compileOutput = compileResult?.output ?? "";
+    const result = runPdfComplianceChecks(
+      content,
+      compileOutput,
+      settings as unknown as PdfComplianceSettings,
+    );
+    setPdfComplianceDiagnostics(result);
+  }, [activeDocument?.content, compileResult?.output, settings.pdfComplianceEnabled, settings.checkPageCount, settings.maxPages, settings.checkUnreferencedFigures, settings.checkUncitedCitations, settings.checkSectionsWithNoCitations, settings.checkType3Fonts, settings.checkAbstractWordCount, settings.maxAbstractWords]);
 
   const moveEntry = useCallback(
     async (sourcePath: string, destination: ProjectEntry | null) => {
@@ -3020,6 +3198,43 @@ export default function App() {
     setStatusMessage("Added rebuttal modification to source.");
   }, [reviewChats, saveReviewData]);
 
+  const handleGenerateRebuttalLetter = useCallback(async () => {
+    const currentProject = projectPathRef.current;
+    if (!currentProject) { setStatusMessage("No project open."); return; }
+
+    try {
+      const s = settings;
+      const rebuttalSettings: RebuttalGeneratorSettings = {
+        manuscriptId: s.rebuttalManuscriptId,
+        manuscriptTitle: s.rebuttalManuscriptTitle,
+        fontSize: s.rebuttalFontSize,
+        paperSize: s.rebuttalPaperSize,
+        fontFamily: s.rebuttalFontFamily,
+        includeDiff: s.rebuttalIncludeDiff,
+        diffOldFile: s.rebuttalDiffOldFile,
+        diffNewFile: s.rebuttalDiffNewFile,
+        diffOutput: s.rebuttalDiffOutput,
+        summaryText: s.rebuttalSummary,
+        useOnehalfSpacing: s.rebuttalSpacing,
+        colorPrimary: s.rebuttalColorPrimary,
+        colorAccent: s.rebuttalColorAccent,
+      };
+
+      const tex = generateRebuttalLetter(rebuttalItems, rebuttalSettings);
+      if (!tex || tex.length < 50) {
+        setStatusMessage("Generated rebuttal letter is empty — check items and settings.");
+        return;
+      }
+      const outName = "rebuttal-letter.tex";
+      await window.latexdo.writeFile(currentProject, outName, tex);
+      setStatusMessage(`Generated ${outName} — open to compile.`);
+      await refreshProject(currentProject);
+    } catch (e) {
+      const err = e instanceof Error ? e.message : String(e);
+      setStatusMessage(`Failed: ${err}`);
+    }
+  }, [rebuttalItems, refreshProject, settings]);
+
   const handleAddReviewComment = useCallback((chatId: string, text: string) => {
     setReviewChats(prev => {
       const next = prev.map(chat => {
@@ -3243,6 +3458,17 @@ export default function App() {
             >
               <ImageUp size={21} />
             </button>
+            <button
+              className={`activity-button ${notationManagerOpen ? "active" : ""}`}
+              onClick={() => {
+                if (settings.notationManagerEnabled) {
+                  setNotationManagerOpen((open) => !open);
+                }
+              }}
+              title="Notation Manager"
+            >
+              <Variable size={21} />
+            </button>
           </div>
           <div>
             <button
@@ -3357,6 +3583,7 @@ export default function App() {
                         onAddRebuttalToSource={handleAddRebuttalToSource}
                         onUpdateItem={handleUpdateRebuttalItem}
                         onDeleteItem={handleDeleteRebuttalItem}
+                        onGenerateLetter={handleGenerateRebuttalLetter}
                       />
                     )
                   )}
@@ -4170,6 +4397,47 @@ export default function App() {
             </div>
           )}
 
+          {notationManagerOpen && (
+            <div className="tikz-modal-overlay">
+              <div className="tikz-modal-header">
+                <span className="tikz-modal-title">
+                  <Variable size={16} />
+                  <span>Notation Manager</span>
+                </span>
+                <button className="tikz-modal-close" onClick={() => setNotationManagerOpen(false)}>
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="tikz-modal-content">
+                <NotationManager
+                  content={activeDocument?.content ?? ""}
+                  onInsertCode={(code) => {
+                    if (!activeDocument) {
+                      alert("Please open a .tex document first to insert the code.");
+                      return;
+                    }
+                    const editor = editorRef.current;
+                    if (editor) {
+                      const model = editor.getModel();
+                      if (model) {
+                        const position = editor.getPosition();
+                        const lineNumber = position?.lineNumber ?? model.getLineCount();
+                        const column = position?.column ?? 1;
+                        editor.executeEdits("", [
+                          {
+                            range: new monaco.Range(lineNumber, column, lineNumber, column),
+                            text: "\n" + code + "\n",
+                          },
+                        ]);
+                      }
+                    }
+                    setNotationManagerOpen(false);
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           {panelVisible ? (
             <section className="bottom-panel" style={{ height: panelHeight }}>
               <div
@@ -4200,6 +4468,36 @@ export default function App() {
                 >
                   <TerminalSquare size={13} />
                   TERMINAL
+                </button>
+                <button
+                  className={activePanel === "checkAnalysis" ? "active" : ""}
+                  onClick={() => openPanel("checkAnalysis")}
+                >
+                  <AlertCircle size={13} />
+                  CHECK ANALYSIS
+                  {assistantDiagnostics.length ? (
+                    <span className="count-badge">{assistantDiagnostics.length}</span>
+                  ) : null}
+                </button>
+                <button
+                  className={activePanel === "structureReport" ? "active" : ""}
+                  onClick={() => openPanel("structureReport")}
+                >
+                  <Wand size={13} />
+                  STRUCTURE REPORT
+                  {structureDiagnostics.length ? (
+                    <span className="count-badge">{structureDiagnostics.length}</span>
+                  ) : null}
+                </button>
+                <button
+                  className={activePanel === "pdfReport" ? "active" : ""}
+                  onClick={() => openPanel("pdfReport")}
+                >
+                  <FilePlus2 size={13} />
+                  PDF COMPLIANCE
+                  {pdfComplianceDiagnostics.length ? (
+                    <span className="count-badge">{pdfComplianceDiagnostics.length}</span>
+                  ) : null}
                 </button>
                 <div />
                 <button
@@ -4479,6 +4777,188 @@ export default function App() {
                     <TerminalPanel cwd={projectPath} active />
                   </section>
                 ) : null}
+                {activePanel === "checkAnalysis" ? (
+                  <section className="panel-pane panel-pane-check-analysis">
+                    {assistantDiagnostics.length ? (
+                      <div className="check-analysis-list">
+                        {(() => {
+                          const grouped: Record<string, Diagnostic[]> = {};
+                          for (const d of assistantDiagnostics) {
+                            const source = d.source ?? "unknown";
+                            if (!grouped[source]) grouped[source] = [];
+                            grouped[source].push(d);
+                          }
+                          return Object.entries(grouped).map(([source, items]) => (
+                            <div key={source} className="check-analysis-group">
+                              <div className="check-analysis-group-header">
+                                <span className="check-analysis-group-name">
+                                  {source === "latex" ? "General" : source}
+                                </span>
+                                <span className="check-analysis-group-count">
+                                  {items.length} issue{items.length !== 1 ? "s" : ""}
+                                </span>
+                              </div>
+                              {items.map((d, i) => (
+                                <div key={i} className={`check-analysis-item check-analysis-item--${d.severity}`}>
+                                  <div className="check-analysis-item-icon">
+                                    {d.severity === "error" ? "✗" : "!"}
+                                  </div>
+                                  <div className="check-analysis-item-body">
+                                    <div className="check-analysis-item-message">{d.message}</div>
+                                    {d.detail && <div className="check-analysis-item-detail">{d.detail}</div>}
+                                    {d.suggestion && <div className="check-analysis-item-suggestion">{d.suggestion}</div>}
+                                    {d.suggestion?.includes("fix") || d.suggestion?.includes("Fix") ? (
+                                      <div className="check-analysis-item-fix">
+                                        <button
+                                          className="check-analysis-apply-btn"
+                                          onClick={() => {
+                                            const editor = editorRef.current;
+                                            if (!editor) return;
+                                            editor.focus();
+                                          }}
+                                        >
+                                          Apply fix
+                                        </button>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    ) : (
+                      <div className="check-analysis-empty">
+                        <AlertCircle size={20} />
+                        <span>No check results yet. Open a .tex file to run automated analysis.</span>
+                      </div>
+                    )}
+                  </section>
+                ) : null}
+                {activePanel === "structureReport" ? (
+                  <section className="panel-pane panel-pane-check-analysis">
+                    {structureDiagnostics.length ? (
+                      <div className="check-analysis-list">
+                        {(() => {
+                          const groups: Record<string, { label: string; diagnostics: Diagnostic[] }> = {};
+                          for (const d of structureDiagnostics) {
+                            let key = "other";
+                            let label = "Other";
+                            if (d.message.includes("Abstract")) { key = "abstract"; label = "Abstract"; }
+                            else if (d.message.includes("Introduction")) { key = "introduction"; label = "Introduction"; }
+                            else if (d.message.includes("Related Work")) { key = "related"; label = "Related Work"; }
+                            else if (d.message.includes("Method")) { key = "method"; label = "Method"; }
+                            else if (d.message.includes("Results")) { key = "results"; label = "Results"; }
+                            else if (d.message.includes("Conclusion")) { key = "conclusion"; label = "Conclusion"; }
+                            if (!groups[key]) groups[key] = { label, diagnostics: [] };
+                            groups[key].diagnostics.push(d);
+                          }
+                          return Object.entries(groups).map(([key, group]) => {
+                            const passed = group.diagnostics.filter((d) => d.severity !== "error" && !d.detail?.includes("missing") && !d.detail?.includes("not found") && !d.detail?.includes("lacks") && !d.detail?.includes("too short") && !d.detail?.includes("no ") && !d.message.includes("not found"));
+                            const failed = group.diagnostics.filter((d) => !passed.includes(d));
+                            return (
+                              <div key={key} className="check-analysis-group">
+                                <div className="check-analysis-group-header">
+                                  <span className="check-analysis-group-name">{group.label}</span>
+                                  <span className={`check-analysis-group-count ${failed.length > 0 ? "has-issues" : "all-good"}`}>
+                                    {failed.length > 0 ? `${failed.length} issue${failed.length !== 1 ? "s" : ""}` : "✓ All checks passed"}
+                                  </span>
+                                </div>
+                                {failed.map((d, i) => (
+                                  <div key={i} className={`check-analysis-item check-analysis-item--warning`}>
+                                    <div className="check-analysis-item-icon">!</div>
+                                    <div className="check-analysis-item-body">
+                                      <div className="check-analysis-item-message">{d.message}</div>
+                                      {d.detail && <div className="check-analysis-item-detail">{d.detail}</div>}
+                                      {d.suggestion && <div className="check-analysis-item-suggestion">{d.suggestion}</div>}
+                                    </div>
+                                  </div>
+                                ))}
+                                {passed.length > 0 && (
+                                  <div className="check-analysis-passed">
+                                    {passed.map((d, i) => (
+                                      <div key={i} className="check-analysis-passed-item">
+                                        <span className="check-analysis-passed-icon">✓</span>
+                                        <span>{d.message}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+                    ) : (
+                      <div className="check-analysis-empty">
+                        <Wand size={20} />
+                        <span>No structure analysis yet. Open a .tex file to check paper structure.</span>
+                      </div>
+                    )}
+                  </section>
+                ) : null}
+                {activePanel === "pdfReport" ? (
+                  <section className="panel-pane panel-pane-check-analysis">
+                    {pdfComplianceDiagnostics.length ? (
+                      <div className="check-analysis-list">
+                        {(() => {
+                          const groups: Record<string, { label: string; diagnostics: Diagnostic[] }> = {};
+                          for (const d of pdfComplianceDiagnostics) {
+                            let key = "other";
+                            let label = "Other";
+                            if (d.message.includes("page") || d.message.includes("Page")) { key = "pages"; label = "Page Count"; }
+                            else if (d.message.includes("Figure") || d.message.includes("figure")) { key = "figures"; label = "Figures"; }
+                            else if (d.message.includes("Citation") || d.message.includes("citation") || d.message.includes("cite") || d.message.includes("Section.*citation")) { key = "citations"; label = "Citations"; }
+                            else if (d.message.includes("Type 3") || d.message.includes("font")) { key = "fonts"; label = "Fonts"; }
+                            else if (d.message.includes("Abstract")) { key = "abstract"; label = "Abstract"; }
+                            if (!groups[key]) groups[key] = { label, diagnostics: [] };
+                            groups[key].diagnostics.push(d);
+                          }
+                          return Object.entries(groups).map(([key, group]) => {
+                            const passed = group.diagnostics.filter((d) => d.severity !== "error" && !d.detail?.includes("exceed") && !d.detail?.includes("never") && !d.detail?.includes("no ") && !d.detail?.includes("missing") && !d.message.includes("exceed") && !d.message.includes("never"));
+                            const failed = group.diagnostics.filter((d) => !passed.includes(d));
+                            return (
+                              <div key={key} className="check-analysis-group">
+                                <div className="check-analysis-group-header">
+                                  <span className="check-analysis-group-name">{group.label}</span>
+                                  <span className={`check-analysis-group-count ${failed.length > 0 ? "has-issues" : "all-good"}`}>
+                                    {failed.length > 0 ? `${failed.length} issue${failed.length !== 1 ? "s" : ""}` : "✓ Compliant"}
+                                  </span>
+                                </div>
+                                {failed.map((d, i) => (
+                                  <div key={i} className={`check-analysis-item ${d.severity === "error" ? "check-analysis-item--error" : "check-analysis-item--warning"}`}>
+                                    <div className="check-analysis-item-icon">{d.severity === "error" ? "✗" : "!"}</div>
+                                    <div className="check-analysis-item-body">
+                                      <div className="check-analysis-item-message">{d.message}</div>
+                                      {d.detail && <div className="check-analysis-item-detail">{d.detail}</div>}
+                                      {d.suggestion && <div className="check-analysis-item-suggestion">{d.suggestion}</div>}
+                                    </div>
+                                  </div>
+                                ))}
+                                {passed.length > 0 && (
+                                  <div className="check-analysis-passed">
+                                    {passed.map((d, i) => (
+                                      <div key={i} className="check-analysis-passed-item">
+                                        <span className="check-analysis-passed-icon">✓</span>
+                                        <span>{d.message}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+                    ) : (
+                      <div className="check-analysis-empty">
+                        <FilePlus2 size={20} />
+                        <span>No PDF compliance report yet. Compile your project to generate a compliance report.</span>
+                      </div>
+                    )}
+                  </section>
+                ) : null}
               </div>
             </section>
           ) : null}
@@ -4617,6 +5097,8 @@ export default function App() {
               <button className={`settings-tab ${settingsTab === "acronym" ? "active" : ""}`} onClick={() => setSettingsTab("acronym")}>Acronym Manager</button>
               <button className={`settings-tab ${settingsTab === "doctor" ? "active" : ""}`} onClick={() => setSettingsTab("doctor")}>Error Doctor</button>
               <button className={`settings-tab ${settingsTab === "tikz" ? "active" : ""}`} onClick={() => setSettingsTab("tikz")}>TikZ Converter</button>
+              <button className={`settings-tab ${settingsTab === "notation" ? "active" : ""}`} onClick={() => setSettingsTab("notation")}>Notation</button>
+              <button className={`settings-tab ${settingsTab === "pdf" ? "active" : ""}`} onClick={() => setSettingsTab("pdf")}>PDF Compliance</button>
               <button className={`settings-tab ${settingsTab === "application" ? "active" : ""}`} onClick={() => setSettingsTab("application")}>Application</button>
             </div>
 
@@ -5091,6 +5573,138 @@ export default function App() {
                       <small>Automatically open converter when an image is detected in clipboard.</small>
                     </span>
                     <input type="checkbox" checked={settings.tikzConverterAutoOpen} onChange={(event) => setSettings((c) => ({ ...c, tikzConverterAutoOpen: event.target.checked }))} />
+                  </label>
+                </>
+              ) : null}
+
+              {settingsTab === "notation" ? (
+                <>
+                  <div className="settings-section-heading">
+                    <strong>Notation Manager</strong>
+                    <span>Detect, define, and manage mathematical notation in your LaTeX documents.</span>
+                  </div>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Enable notation manager</strong>
+                      <small>Show the Notation Manager button in the activity bar.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.notationManagerEnabled} onChange={(event) => setSettings((c) => ({ ...c, notationManagerEnabled: event.target.checked }))} />
+                  </label>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Detect notation</strong>
+                      <small>Scan documents for mathematical symbols and notation.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.detectNotation} onChange={(event) => setSettings((c) => ({ ...c, detectNotation: event.target.checked }))} />
+                  </label>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Detect notation conflicts</strong>
+                      <small>Flag symbols that are visually or semantically similar.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.detectNotationConflicts} onChange={(event) => setSettings((c) => ({ ...c, detectNotationConflicts: event.target.checked }))} />
+                  </label>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Detect undefined notation</strong>
+                      <small>Warn when a symbol is used without a preceding definition.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.detectUndefinedNotation} onChange={(event) => setSettings((c) => ({ ...c, detectUndefinedNotation: event.target.checked }))} />
+                  </label>
+                </>
+              ) : null}
+
+              {settingsTab === "pdf" ? (
+                <>
+                  <div className="settings-section-heading">
+                    <strong>PDF Compliance Report</strong>
+                    <span>Check compiled PDF against conference guidelines and best practices.</span>
+                  </div>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Enable PDF compliance checks</strong>
+                      <small>Run compliance checks after each compilation.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.pdfComplianceEnabled} onChange={(event) => setSettings((c) => ({ ...c, pdfComplianceEnabled: event.target.checked }))} />
+                  </label>
+
+                  <div className="settings-section-subheading">Page count</div>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Check page count</strong>
+                      <small>Warn if the PDF exceeds the page limit.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.checkPageCount} onChange={(event) => setSettings((c) => ({ ...c, checkPageCount: event.target.checked }))} />
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>Maximum pages</strong>
+                      <small>Conference page limit.</small>
+                    </span>
+                    <input type="number" className="settings-number-input" min={1} max={100} value={settings.maxPages} onChange={(event) => setSettings((c) => ({ ...c, maxPages: parseInt(event.target.value, 10) || 8 }))} />
+                  </label>
+
+                  <div className="settings-section-subheading">Figures</div>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Check unreferenced figures</strong>
+                      <small>Detect figures that have no \\ref{} in text.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.checkUnreferencedFigures} onChange={(event) => setSettings((c) => ({ ...c, checkUnreferencedFigures: event.target.checked }))} />
+                  </label>
+
+                  <div className="settings-section-subheading">Citations</div>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Check uncited citations</strong>
+                      <small>Detect bibliography entries never cited in text.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.checkUncitedCitations} onChange={(event) => setSettings((c) => ({ ...c, checkUncitedCitations: event.target.checked }))} />
+                  </label>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Check sections with no citations</strong>
+                      <small>Flag sections that lack any citations.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.checkSectionsWithNoCitations} onChange={(event) => setSettings((c) => ({ ...c, checkSectionsWithNoCitations: event.target.checked }))} />
+                  </label>
+
+                  <div className="settings-section-subheading">Fonts</div>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Check for Type 3 fonts</strong>
+                      <small>Warn if the PDF uses bitmap fonts.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.checkType3Fonts} onChange={(event) => setSettings((c) => ({ ...c, checkType3Fonts: event.target.checked }))} />
+                  </label>
+
+                  <div className="settings-section-subheading">Abstract</div>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Check abstract word count</strong>
+                      <small>Warn if abstract exceeds the recommended limit.</small>
+                    </span>
+                    <input type="checkbox" checked={settings.checkAbstractWordCount} onChange={(event) => setSettings((c) => ({ ...c, checkAbstractWordCount: event.target.checked }))} />
+                  </label>
+
+                  <label className="settings-row">
+                    <span>
+                      <strong>Max abstract words</strong>
+                      <small>Recommended abstract word limit.</small>
+                    </span>
+                    <input type="number" className="settings-number-input" min={50} max={500} value={settings.maxAbstractWords} onChange={(event) => setSettings((c) => ({ ...c, maxAbstractWords: parseInt(event.target.value, 10) || 250 }))} />
                   </label>
                 </>
               ) : null}

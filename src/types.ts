@@ -42,7 +42,7 @@ export interface Diagnostic {
   detail?: string;
   suggestion?: string;
   sourceLine?: string;
-  source?: "latex" | "proofread";
+  source?: "latex" | "proofread" | "structure-assistant" | "citation-assistant" | "pdf-compliance";
   code?: string;
   replacements?: string[];
   title?: string;
@@ -269,5 +269,52 @@ export interface ErrorFix {
   errorRegex: RegExp;
   title: string;
   explanation: string;
-  getFixes: (match: RegExpExecArray, lines: string[]) => { find: string; replace: string; line: number; }[];
+  getFixes: (match: RegExpExecArray, lines: string[]) => { find: string; replace: string; line: number }[];
+}
+
+export interface NotationManagerSettings {
+  enabled: boolean;
+  detectSymbols: boolean;
+  detectConflicts: boolean;
+  detectUndefinedNotation: boolean;
+}
+
+export interface NotedSymbol {
+  symbol: string;
+  latex: string;
+  firstUseLine: number;
+  firstUseSection: string;
+  defined: boolean;
+  definitionLine: number | null;
+  usageCount: number;
+  environments: string[];
+  similarSymbols: string[];
+}
+
+export interface RebuttalGeneratorSettings {
+  manuscriptId: string;
+  manuscriptTitle: string;
+  fontSize: string;
+  paperSize: string;
+  fontFamily: string;
+  includeDiff: boolean;
+  diffOldFile: string;
+  diffNewFile: string;
+  diffOutput: string;
+  summaryText: string;
+  useOnehalfSpacing: boolean;
+  colorPrimary: string;
+  colorAccent: string;
+}
+
+export interface PdfComplianceSettings {
+  enabled: boolean;
+  checkPageCount: boolean;
+  maxPages: number;
+  checkUnreferencedFigures: boolean;
+  checkUncitedCitations: boolean;
+  checkSectionsWithNoCitations: boolean;
+  checkType3Fonts: boolean;
+  checkAbstractWordCount: boolean;
+  maxAbstractWords: number;
 }

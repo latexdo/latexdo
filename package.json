@@ -11,6 +11,9 @@
     "build": "tsc -b && vite build && tsc -p tsconfig.electron.json",
     "start": "electron .",
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.electron.json --pretty false",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "test:diagnostics": "node --experimental-strip-types scripts/test-latex-diagnostics.ts",
     "package": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder"
@@ -29,16 +32,21 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^4.1.9",
     "concurrently": "^9.1.0",
     "cross-env": "^7.0.3",
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
+    "jsdom": "^29.1.1",
     "typescript": "~5.7.2",
     "vite": "^6.0.5",
+    "vitest": "^4.1.9",
     "wait-on": "^8.0.1"
   },
   "build": {
