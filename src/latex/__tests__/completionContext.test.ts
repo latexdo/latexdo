@@ -106,7 +106,7 @@ const edgeCases = [
   { desc: "dot in key", line: "\\ref{fig.1}", col: "\\ref{fig.".length + 1 },
   { desc: "colon in key", line: "\\cite{doi:10.1000/test}", col: "\\cite{doi:10.1000/tes".length + 1 },
   { desc: "forward slash in key", line: "\\ref{sec/2}", col: "\\ref{sec/".length + 1 },
-  { desc: "very long key", line: "\\cite{" + "a".repeat(100) + "}", col: "\\cite{" + "a".repeat(80) + "".length + 1 },
+  { desc: "very long key", line: "\\cite{" + "a".repeat(100) + "}", col: ("\\cite{" + "a".repeat(80) + "").length + 1 },
   { desc: "empty cite with following text", line: "\\cite{} and then some", col: "\\cite{}".length },
   { desc: "command at line start", line: "\\cite{ref1}", col: "\\cite{ref".length + 1 },
   { desc: "command at end of text", line: "text \\cite{ref1}", col: "text \\cite{ref1}".length + 1 },

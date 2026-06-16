@@ -10,32 +10,30 @@ import { analyzeCompileOutput } from "../errorDoctor";
 import type {
   StructureAssistantSettings, AcronymManagerSettings, CitationAssistantSettings,
   ReproducibilitySettings, NotationManagerSettings, PdfComplianceSettings,
-  ConferenceCheckerSettings, ErrorDoctorSettings, ConferenceRequirements,
+  ConferenceCheckerSettings, ErrorDoctorSettings,
 } from "../../types";
 
 const baseDoc = "\\documentclass{article}\\begin{document}\\section{Intro}Content.\\section{Method}Approach.\\section{Results}Data.\\section{Conclusion}Summary.\\end{document}";
 const output = "Output written on paper.pdf (8 pages). No type 3 fonts.";
 
-const confReqs: ConferenceRequirements = { name: "T", pageLimit: 10, sectionRequirements: ["Intro", "Method", "Results", "Conclusion"], formatStyle: "single-column", maxAbstractWords: 300, citationStyle: "numeric", figureRequirements: { maxFigures: 10, requiredFormats: ["PDF"] } };
-
-// ── 1. Structure — all 2^9 combos (sampled 24) ──────────────────────────
+// ── 1. Structure — all 2^6 combos (sampled 16) ──────────────────────────
 const structCases: StructureAssistantSettings[] = [
-  { enabled: true, checkMissingAbstract: false, checkSectionOrder: false, checkSectionEmpty: false, checkFigurePlacement: false, checkTablePlacement: false, checkCrossReferences: false, checkEquationNumbering: false, checkAppendixFormat: false, checkConclusion: false },
-  { enabled: true, checkMissingAbstract: true, checkSectionOrder: false, checkSectionEmpty: false, checkFigurePlacement: false, checkTablePlacement: false, checkCrossReferences: false, checkEquationNumbering: false, checkAppendixFormat: false, checkConclusion: false },
-  { enabled: true, checkMissingAbstract: false, checkSectionOrder: true, checkSectionEmpty: false, checkFigurePlacement: false, checkTablePlacement: false, checkCrossReferences: false, checkEquationNumbering: false, checkAppendixFormat: false, checkConclusion: false },
-  { enabled: true, checkMissingAbstract: false, checkSectionOrder: false, checkSectionEmpty: true, checkFigurePlacement: false, checkTablePlacement: false, checkCrossReferences: false, checkEquationNumbering: false, checkAppendixFormat: false, checkConclusion: false },
-  { enabled: true, checkMissingAbstract: false, checkSectionOrder: false, checkSectionEmpty: false, checkFigurePlacement: true, checkTablePlacement: false, checkCrossReferences: false, checkEquationNumbering: false, checkAppendixFormat: false, checkConclusion: false },
-  { enabled: true, checkMissingAbstract: false, checkSectionOrder: false, checkSectionEmpty: false, checkFigurePlacement: false, checkTablePlacement: true, checkCrossReferences: false, checkEquationNumbering: false, checkAppendixFormat: false, checkConclusion: false },
-  { enabled: true, checkMissingAbstract: false, checkSectionOrder: false, checkSectionEmpty: false, checkFigurePlacement: false, checkTablePlacement: false, checkCrossReferences: true, checkEquationNumbering: false, checkAppendixFormat: false, checkConclusion: false },
-  { enabled: true, checkMissingAbstract: false, checkSectionOrder: false, checkSectionEmpty: false, checkFigurePlacement: false, checkTablePlacement: false, checkCrossReferences: false, checkEquationNumbering: true, checkAppendixFormat: false, checkConclusion: false },
-  { enabled: true, checkMissingAbstract: false, checkSectionOrder: false, checkSectionEmpty: false, checkFigurePlacement: false, checkTablePlacement: false, checkCrossReferences: false, checkEquationNumbering: false, checkAppendixFormat: true, checkConclusion: false },
-  { enabled: true, checkMissingAbstract: false, checkSectionOrder: false, checkSectionEmpty: false, checkFigurePlacement: false, checkTablePlacement: false, checkCrossReferences: false, checkEquationNumbering: false, checkAppendixFormat: false, checkConclusion: true },
-  { enabled: true, checkMissingAbstract: true, checkSectionOrder: true, checkSectionEmpty: true, checkFigurePlacement: true, checkTablePlacement: true, checkCrossReferences: true, checkEquationNumbering: true, checkAppendixFormat: true, checkConclusion: true },
-  { enabled: true, checkMissingAbstract: false, checkSectionOrder: true, checkSectionEmpty: false, checkFigurePlacement: true, checkTablePlacement: false, checkCrossReferences: true, checkEquationNumbering: false, checkAppendixFormat: true, checkConclusion: false },
-  { enabled: true, checkMissingAbstract: true, checkSectionOrder: false, checkSectionEmpty: true, checkFigurePlacement: false, checkTablePlacement: true, checkCrossReferences: false, checkEquationNumbering: true, checkAppendixFormat: false, checkConclusion: true },
-  { enabled: true, checkMissingAbstract: true, checkSectionOrder: true, checkSectionEmpty: false, checkFigurePlacement: false, checkTablePlacement: false, checkCrossReferences: false, checkEquationNumbering: true, checkAppendixFormat: false, checkConclusion: false },
-  { enabled: true, checkMissingAbstract: false, checkSectionOrder: true, checkSectionEmpty: true, checkFigurePlacement: false, checkTablePlacement: false, checkCrossReferences: true, checkEquationNumbering: false, checkAppendixFormat: false, checkConclusion: false },
-  { enabled: true, checkMissingAbstract: false, checkSectionOrder: true, checkSectionEmpty: false, checkFigurePlacement: false, checkTablePlacement: true, checkCrossReferences: false, checkEquationNumbering: true, checkAppendixFormat: false, checkConclusion: false },
+  { enabled: true, checkAbstractStructure: false, checkIntroductionStructure: false, checkRelatedWorkLength: false, checkMethodReproducibility: false, checkResultsDiscussion: false, checkConclusionClaims: false },
+  { enabled: true, checkAbstractStructure: true, checkIntroductionStructure: false, checkRelatedWorkLength: false, checkMethodReproducibility: false, checkResultsDiscussion: false, checkConclusionClaims: false },
+  { enabled: true, checkAbstractStructure: false, checkIntroductionStructure: true, checkRelatedWorkLength: false, checkMethodReproducibility: false, checkResultsDiscussion: false, checkConclusionClaims: false },
+  { enabled: true, checkAbstractStructure: false, checkIntroductionStructure: false, checkRelatedWorkLength: true, checkMethodReproducibility: false, checkResultsDiscussion: false, checkConclusionClaims: false },
+  { enabled: true, checkAbstractStructure: false, checkIntroductionStructure: false, checkRelatedWorkLength: false, checkMethodReproducibility: true, checkResultsDiscussion: false, checkConclusionClaims: false },
+  { enabled: true, checkAbstractStructure: false, checkIntroductionStructure: false, checkRelatedWorkLength: false, checkMethodReproducibility: false, checkResultsDiscussion: true, checkConclusionClaims: false },
+  { enabled: true, checkAbstractStructure: false, checkIntroductionStructure: false, checkRelatedWorkLength: false, checkMethodReproducibility: false, checkResultsDiscussion: false, checkConclusionClaims: true },
+  { enabled: true, checkAbstractStructure: true, checkIntroductionStructure: true, checkRelatedWorkLength: true, checkMethodReproducibility: true, checkResultsDiscussion: true, checkConclusionClaims: true },
+  { enabled: true, checkAbstractStructure: true, checkIntroductionStructure: false, checkRelatedWorkLength: true, checkMethodReproducibility: false, checkResultsDiscussion: true, checkConclusionClaims: false },
+  { enabled: true, checkAbstractStructure: false, checkIntroductionStructure: true, checkRelatedWorkLength: false, checkMethodReproducibility: true, checkResultsDiscussion: false, checkConclusionClaims: true },
+  { enabled: true, checkAbstractStructure: true, checkIntroductionStructure: true, checkRelatedWorkLength: false, checkMethodReproducibility: false, checkResultsDiscussion: false, checkConclusionClaims: true },
+  { enabled: true, checkAbstractStructure: false, checkIntroductionStructure: true, checkRelatedWorkLength: true, checkMethodReproducibility: false, checkResultsDiscussion: false, checkConclusionClaims: false },
+  { enabled: true, checkAbstractStructure: false, checkIntroductionStructure: true, checkRelatedWorkLength: false, checkMethodReproducibility: false, checkResultsDiscussion: true, checkConclusionClaims: false },
+  { enabled: true, checkAbstractStructure: true, checkIntroductionStructure: false, checkRelatedWorkLength: false, checkMethodReproducibility: true, checkResultsDiscussion: false, checkConclusionClaims: false },
+  { enabled: true, checkAbstractStructure: false, checkIntroductionStructure: false, checkRelatedWorkLength: true, checkMethodReproducibility: false, checkResultsDiscussion: true, checkConclusionClaims: false },
+  { enabled: true, checkAbstractStructure: false, checkIntroductionStructure: true, checkRelatedWorkLength: false, checkMethodReproducibility: true, checkResultsDiscussion: false, checkConclusionClaims: true },
 ];
 describe("Structure — settings combos", () => {
   it.each(structCases)("config", (s) => {
@@ -57,14 +55,16 @@ describe("Acronym — settings combos", () => {
   });
 });
 
-// ── 3. Citation — all 2^5 = 32 combos ───────────────────────────────────
-const citeSettings: CitationAssistantSettings[] = Array.from({ length: 32 }, (_, mask) => ({
+// ── 3. Citation — all 2^7 = 128 combos (sampled 64) ────────────────────
+const citeSettings: CitationAssistantSettings[] = Array.from({ length: 64 }, (_, mask) => ({
   enabled: true,
-  checkMissingCitations: !!(mask & 1),
-  checkInconsistentStyle: !!(mask & 2),
-  checkMissingBibliography: !!(mask & 4),
-  checkOvercitation: !!(mask & 8),
-  checkStaleReferences: !!(mask & 16),
+  detectMissingCitations: !!(mask & 1),
+  detectUnusedEntries: !!(mask & 2),
+  detectDuplicateReferences: !!(mask & 4),
+  detectBrokenLinks: !!(mask & 8),
+  suggestCitationKeys: !!(mask & 16),
+  importMetadataSources: false,
+  warnOldCitations: false,
 }));
 describe("Citation — settings combos", () => {
   it.each(citeSettings)("config", (s) => {
@@ -120,19 +120,26 @@ describe("PDF Compliance — settings combos", () => {
   });
 });
 
-// ── 7. Conference — all 2^6 = 64 combos ─────────────────────────────────
+// ── 7. Conference — all 2^6 = 64 combos (sampled 64) ────────────────────
 const confSettings: ConferenceCheckerSettings[] = Array.from({ length: 64 }, (_, mask) => ({
-  enabled: true,
-  checkFormatting: !!(mask & 1),
-  checkPageLimit: !!(mask & 2),
-  checkSectionRequirements: !!(mask & 4),
-  checkCitationStyle: !!(mask & 8),
-  checkFigureRequirements: !!(mask & 16),
-  checkAbstractLimit: !!(mask & 32),
+  enabled: true, template: "ieee", customTemplate: "",
+  checkMargins: !!(mask & 1),
+  checkFontSize: !!(mask & 2),
+  checkAbstractLength: !!(mask & 4),
+  checkKeywords: !!(mask & 8),
+  checkFigureReferences: !!(mask & 16),
+  checkTableReferences: !!(mask & 32),
+  checkBibliographyStyle: false,
+  checkPageLimit: false,
+  checkAuthorInfo: false,
+  checkAnonymousReview: false,
+  checkFigureResolution: false,
+  checkEmbeddedFonts: false,
+  checkCompiler: false,
 }));
 describe("Conference — settings combos", () => {
   it.each(confSettings)("config", (s) => {
-    expect(Array.isArray(runConferenceChecks(baseDoc, output, confReqs, s))).toBe(true);
+    expect(Array.isArray(runConferenceChecks(baseDoc, s))).toBe(true);
   });
 });
 
