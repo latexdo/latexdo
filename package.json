@@ -53,7 +53,7 @@
     "appId": "com.latexdo.editor",
     "productName": "LatexDo",
     "icon": "build/icon.png",
-    "npmRebuild": false,
+    "npmRebuild": true,
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
