@@ -4249,7 +4249,17 @@ export default function App() {
                       </button>
                     </div>
                   </div>
-                  <div className="pdf-surface">
+                  <div
+                    className="pdf-surface"
+                    onWheel={(e) => {
+                      if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault();
+                        setPdfScale((s) =>
+                          Math.max(60, Math.min(180, s + (e.deltaY > 0 ? -10 : 10))),
+                        );
+                      }
+                    }}
+                  >
                     {pdfData ? (
                       <PdfPreview
                         data={pdfData}

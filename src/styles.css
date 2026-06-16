@@ -59,6 +59,8 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
+
+.light-theme {
   --bg-scrollbar: #c0c4cc;
   --bg-scrollbar-hover: #a8adb6;
   --bg-activity-bar: #e2e4e8;
@@ -2205,12 +2207,19 @@ button {
 }
 
 .panel-tabs {
-  display: grid;
-  grid-template-columns: auto auto auto 1fr auto;
+  display: flex;
   align-items: center;
   gap: 16px;
   padding: 0 9px 0 13px;
   background: var(--bg-panel);
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+
+.panel-tabs > div:empty {
+  margin-left: auto;
 }
 
 .panel-tabs button {
@@ -3365,7 +3374,8 @@ button {
   padding: 12px;
 }
 
-.sidebar-primary-action {
+.review-sidebar .sidebar-primary-action,
+.rebuttal-sidebar .sidebar-primary-action {
   display: flex;
   width: 100%;
   align-items: center;
@@ -3382,7 +3392,8 @@ button {
   transition: all 0.2s;
 }
 
-.sidebar-primary-action:hover {
+.review-sidebar .sidebar-primary-action:hover,
+.rebuttal-sidebar .sidebar-primary-action:hover {
   border-color: #4a5567;
   background: #2d3440;
 }
