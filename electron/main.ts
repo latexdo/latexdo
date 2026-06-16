@@ -1400,9 +1400,10 @@ app.whenReady().then(() => {
     return listProject(projectPath);
   });
   ipcMain.handle("file:exists", async (_event, projectPath: string, filePath: string) => {
-    assertInside(projectPath, filePath);
+    const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(projectPath, filePath);
+    assertInside(projectPath, resolvedPath);
     try {
-      await access(filePath);
+      await access(resolvedPath);
       return true;
     } catch {
       return false;
@@ -1411,8 +1412,9 @@ app.whenReady().then(() => {
   ipcMain.handle(
     "file:read",
     async (_event, projectPath: string, filePath: string) => {
-      assertInside(projectPath, filePath);
-      return readFile(filePath, "utf8");
+      const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(projectPath, filePath);
+      assertInside(projectPath, resolvedPath);
+      return readFile(resolvedPath, "utf8");
     },
   );
   ipcMain.handle(
@@ -1423,9 +1425,10 @@ app.whenReady().then(() => {
       filePath: string,
       content: string,
     ) => {
-      assertInside(projectPath, filePath);
-      await mkdir(path.dirname(filePath), { recursive: true });
-      await writeFile(filePath, content, "utf8");
+      const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(projectPath, filePath);
+      assertInside(projectPath, resolvedPath);
+      await mkdir(path.dirname(resolvedPath), { recursive: true });
+      await writeFile(resolvedPath, content, "utf8");
     },
   );
   ipcMain.handle(
@@ -1440,7 +1443,7 @@ app.whenReady().then(() => {
         });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-          throw new Error(`"${relativePath}" already exists.`);
+          return filePath;
         }
         throw error;
       }
@@ -1455,7 +1458,7 @@ app.whenReady().then(() => {
         await mkdir(folderPath, { recursive: false });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-          throw new Error(`"${relativePath}" already exists.`);
+          return folderPath;
         }
         if ((error as NodeJS.ErrnoException).code === "ENOENT") {
           throw new Error("Create the parent folder first.");
@@ -1613,8 +1616,9 @@ app.whenReady().then(() => {
   ipcMain.handle(
     "pdf:read",
     async (_event, projectPath: string, pdfPath: string) => {
-      assertInside(projectPath, pdfPath);
-      return readFile(pdfPath);
+      const resolvedPath = path.isAbsolute(pdfPath) ? pdfPath : path.resolve(projectPath, pdfPath);
+      assertInside(projectPath, resolvedPath);
+      return readFile(resolvedPath);
     },
   );
   ipcMain.handle(
