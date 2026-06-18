@@ -7,6 +7,91 @@ function esc(s: string): string {
   return s.replace(/&/g, "\\&").replace(/%/g, "\\%").replace(/#/g, "\\#");
 }
 
+function firstNonEmptyLine(value: string, fallback: string): string {
+  return value.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() || fallback;
+}
+
+function textOrFallback(value: string | undefined, fallback: string): string {
+  return value && value.trim().length > 0 ? value : fallback;
+}
+
+function splitDiffLines(value: string): string[] {
+  const normalized = value.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trimEnd();
+  return normalized.length > 0 ? normalized.split("\n") : [];
+}
+
+function looksLikeDiff(value: string): boolean {
+  const diffLines = splitDiffLines(value).filter((line) =>
+    /^(?:--- |\+\+\+ |@@|[-+] )/.test(line),
+  );
+  return diffLines.length >= 2;
+}
+
+function buildLineDiff(original: string, revised: string): string {
+  const oldLines = splitDiffLines(original);
+  const newLines = splitDiffLines(revised);
+
+  if (oldLines.length === 0 && newLines.length === 0) {
+    return "--- Original\n+++ Revised\n@@ No manuscript text recorded @@";
+  }
+
+  const table = Array.from({ length: oldLines.length + 1 }, () =>
+    Array<number>(newLines.length + 1).fill(0),
+  );
+
+  for (let oldIndex = oldLines.length - 1; oldIndex >= 0; oldIndex -= 1) {
+    for (let newIndex = newLines.length - 1; newIndex >= 0; newIndex -= 1) {
+      if (oldLines[oldIndex] === newLines[newIndex]) {
+        table[oldIndex][newIndex] = table[oldIndex + 1][newIndex + 1] + 1;
+      } else {
+        table[oldIndex][newIndex] = Math.max(
+          table[oldIndex + 1][newIndex],
+          table[oldIndex][newIndex + 1],
+        );
+      }
+    }
+  }
+
+  const body: string[] = [];
+  let oldIndex = 0;
+  let newIndex = 0;
+
+  while (oldIndex < oldLines.length || newIndex < newLines.length) {
+    if (
+      oldIndex < oldLines.length &&
+      newIndex < newLines.length &&
+      oldLines[oldIndex] === newLines[newIndex]
+    ) {
+      body.push(` ${oldLines[oldIndex]}`);
+      oldIndex += 1;
+      newIndex += 1;
+    } else if (
+      oldIndex < oldLines.length &&
+      (newIndex >= newLines.length ||
+        table[oldIndex + 1][newIndex] >= table[oldIndex][newIndex + 1])
+    ) {
+      body.push(`- ${oldLines[oldIndex]}`);
+      oldIndex += 1;
+    } else if (newIndex < newLines.length) {
+      body.push(`+ ${newLines[newIndex]}`);
+      newIndex += 1;
+    }
+  }
+
+  return ["--- Original", "+++ Revised", "@@ Manuscript change @@", ...body].join("\n");
+}
+
+function manuscriptDiffForItem(item: RebuttalItem): string {
+  const changeText = item.revisedText || item.modificationMade || "";
+  if (!item.originalText && looksLikeDiff(changeText)) {
+    return changeText;
+  }
+
+  const original = item.originalText || "";
+  const revised = changeText;
+  return buildLineDiff(original, revised);
+}
+
 function preamble(settings: RebuttalGeneratorSettings): string {
   const fontSize = settings.fontSize || "11pt";
   const paperSize = settings.paperSize || "a4paper";
@@ -50,13 +135,17 @@ function preamble(settings: RebuttalGeneratorSettings): string {
     "\\usepackage{titlesec}",
     "\\usepackage{hyperref}",
     "\\usepackage{tcolorbox}",
-    "\\tcbuselibrary{breakable,skins}",
+    "\\usepackage{listings}",
+    "\\tcbuselibrary{breakable,skins,listings}",
     "",
     `\\definecolor{Ink}{HTML}{${primary}}`,
     `\\definecolor{Accent}{HTML}{${accent}}`,
     "\\definecolor{SoftGray}{HTML}{F6F6F6}",
     "\\definecolor{PanelGray}{HTML}{FAFAFA}",
     "\\definecolor{DarkGray}{HTML}{3A3A3A}",
+    "\\definecolor{DiffAdd}{HTML}{1A7F37}",
+    "\\definecolor{DiffRemove}{HTML}{B42318}",
+    "\\definecolor{DiffMeta}{HTML}{57606A}",
     "",
     "\\hypersetup{",
     "    colorlinks=true,",
@@ -112,6 +201,44 @@ function preamble(settings: RebuttalGeneratorSettings): string {
     "\\end{tcolorbox}",
     "}",
     "",
+    "\\lstdefinelanguage{LatexDoDiff}{",
+    "    morecomment=[f][\\color{DiffAdd}]{+},",
+    "    morecomment=[f][\\color{DiffRemove}]{-},",
+    "    morecomment=[f][\\color{DiffMeta}]{@}",
+    "}",
+    "\\lstdefinestyle{LatexDoDiffStyle}{",
+    "    language=LatexDoDiff,",
+    "    basicstyle=\\ttfamily\\small,",
+    "    breaklines=true,",
+    "    columns=fullflexible,",
+    "    keepspaces=true,",
+    "    showstringspaces=false,",
+    "    frame=none",
+    "}",
+    "",
+    "\\newenvironment{OriginalText}",
+    "{",
+    "\\begin{tcolorbox}[",
+    "    enhanced,",
+    "    breakable,",
+    "    colback=white,",
+    "    colframe=Accent,",
+    "    boxrule=0.5pt,",
+    "    arc=1mm,",
+    "    left=4mm,",
+    "    right=4mm,",
+    "    top=2mm,",
+    "    bottom=2mm,",
+    "    before skip=0.6em,",
+    "    after skip=0.6em",
+    "]",
+    "\\textbf{\\MakeUppercase{Text}}\\par",
+    "\\vspace{0.35em}",
+    "}",
+    "{",
+    "\\end{tcolorbox}",
+    "}",
+    "",
     "\\newenvironment{ReviewerComment}",
     "{",
     "\\begin{tcolorbox}[",
@@ -152,16 +279,14 @@ function preamble(settings: RebuttalGeneratorSettings): string {
     "    before skip=0.6em,",
     "    after skip=0.6em",
     "]",
-    "\\textbf{\\MakeUppercase{Author response}}\\par",
+    "\\textbf{\\MakeUppercase{Author answer}}\\par",
     "\\vspace{0.35em}",
     "}",
     "{",
     "\\end{tcolorbox}",
     "}",
     "",
-    "\\newenvironment{ManuscriptChange}",
-    "{",
-    "\\begin{tcolorbox}[",
+    "\\newtcblisting{ManuscriptChangeDiff}{",
     "    enhanced,",
     "    breakable,",
     "    colback=SoftGray,",
@@ -174,13 +299,10 @@ function preamble(settings: RebuttalGeneratorSettings): string {
     "    bottom=2mm,",
     "    before skip=0.6em,",
     "    after skip=0.6em,",
-    "    borderline north={1.5pt}{0pt}{Ink}",
-    "]",
-    "\\textbf{\\MakeUppercase{Manuscript change}}\\par",
-    "\\vspace{0.35em}",
-    "}",
-    "{",
-    "\\end{tcolorbox}",
+    "    borderline north={1.5pt}{0pt}{Ink},",
+    "    title={\\textbf{\\MakeUppercase{Changes (diff)}}},",
+    "    listing only,",
+    "    listing options={style=LatexDoDiffStyle}",
     "}",
   ]
     .filter(Boolean)
@@ -233,13 +355,19 @@ function reviewerSections(items: RebuttalItem[]): string {
 
   for (const item of items) {
     const label = `R${reviewerNum}`;
+    const originalText = textOrFallback(item.originalText, "No manuscript text recorded.");
     parts.push("");
     parts.push(
-      `\\begin{ReviewCard}{${esc(item.reviewerComment.split("\\n")[0] || "Comment")}}{${label}}`,
+      `\\begin{ReviewCard}{${esc(firstNonEmptyLine(item.reviewerComment, "Comment"))}}{${label}}`,
     );
 
+    parts.push("\\begin{OriginalText}");
+    parts.push(esc(originalText));
+    parts.push("\\end{OriginalText}");
+    parts.push("");
+
     parts.push("\\begin{ReviewerComment}");
-    parts.push(esc(item.reviewerComment));
+    parts.push(esc(textOrFallback(item.reviewerComment, "No reviewer comment recorded.")));
     parts.push("\\end{ReviewerComment}");
     parts.push("");
 
@@ -248,11 +376,9 @@ function reviewerSections(items: RebuttalItem[]): string {
     parts.push("\\end{AuthorResponse}");
     parts.push("");
 
-    if (item.modificationMade) {
-      parts.push("\\begin{ManuscriptChange}");
-      parts.push(esc(item.modificationMade));
-      parts.push("\\end{ManuscriptChange}");
-    }
+    parts.push("\\begin{ManuscriptChangeDiff}");
+    parts.push(manuscriptDiffForItem(item));
+    parts.push("\\end{ManuscriptChangeDiff}");
 
     parts.push("\\end{ReviewCard}");
 

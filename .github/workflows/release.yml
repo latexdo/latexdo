@@ -5,6 +5,10 @@ on:
     types: [closed]
     branches:
       - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,7 +19,7 @@ concurrency:
 
 jobs:
   quality:
-    if: github.event.pull_request.merged == true
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     name: test / typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -147,12 +151,28 @@ jobs:
       - name: Create rolling release
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          GIT_SHA: ${{ github.sha }}
         shell: bash
         run: |
+          case "$EVENT_NAME" in
+            pull_request)
+              notes="Automated build from PR #${PR_NUMBER}: ${PR_TITLE}"
+              ;;
+            push)
+              notes="Automated build from main at ${GIT_SHA}."
+              ;;
+            *)
+              notes="Manual rolling build from ${GIT_SHA}."
+              ;;
+          esac
+
           gh release create rolling \
             --repo "${{ github.repository }}" \
             --title "Latest build ($(date +'%Y-%m-%d %H:%M UTC'))" \
-            --notes "Automated build from PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}" \
+            --notes "$notes" \
             --latest
 
       - name: Upload macOS artifact
