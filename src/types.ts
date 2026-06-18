@@ -187,6 +187,8 @@ export interface ReviewChat {
 
 export interface RebuttalItem {
   id: string;
+  originalText?: string;
+  revisedText?: string;
   reviewerComment: string;
   authorComment: string;
   modificationMade: string;

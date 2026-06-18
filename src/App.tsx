@@ -26,6 +26,7 @@ import {
   LoaderCircle,
   MessageCircle,
   MessageSquare,
+  Minus,
   PanelBottom,
   PanelLeftClose,
   PanelLeftOpen,
@@ -60,6 +61,11 @@ import { TerminalPanel } from "./components/TerminalPanel";
 import { ReviewSidebar } from "./components/ReviewSidebar";
 import { RebuttalSidebar } from "./components/RebuttalSidebar";
 import { generateRebuttalLetter } from "./rebuttalGenerator";
+import {
+  buildReviewerCommentInsertion,
+  normalizeLatexDoReviewMarkup,
+  usesLatexDoReviewMacros,
+} from "./reviewMarkup";
 import type { RebuttalGeneratorSettings } from "./types";
 import { monaco } from "./monaco";
 import type {
@@ -80,6 +86,7 @@ import type {
   GitDiffEditorInput,
   GitDiffPreview,
   GitHistorySummary,
+  GitStatusEntry,
   GitStatusSummary,
   OpenDocument,
   ProofreadingResult,
@@ -635,6 +642,66 @@ function fileName(filePath: string): string {
   return filePath.split(/[/\\]/).pop() ?? filePath;
 }
 
+function gitDisplayPath(filePath: string): string {
+  return filePath.includes(" -> ") ? filePath.split(" -> ").pop() ?? filePath : filePath;
+}
+
+function fileDirectory(filePath: string): string {
+  const displayPath = gitDisplayPath(filePath);
+  const parts = displayPath.split(/[/\\]/);
+  parts.pop();
+  return parts.join("/") || ".";
+}
+
+function gitStatusCode(entry: GitStatusEntry, area: "staged" | "changes"): string {
+  const raw =
+    area === "staged"
+      ? entry.indexStatus || entry.workingTreeStatus
+      : entry.workingTreeStatus || entry.indexStatus;
+  if (entry.indexStatus === "?" || entry.workingTreeStatus === "?") return "U";
+  if (entry.indexStatus === "U" || entry.workingTreeStatus === "U") return "!";
+  return raw || "M";
+}
+
+function gitStatusLabel(code: string): string {
+  switch (code) {
+    case "A":
+      return "Added";
+    case "D":
+      return "Deleted";
+    case "R":
+      return "Renamed";
+    case "C":
+      return "Copied";
+    case "U":
+      return "Untracked";
+    case "!":
+      return "Conflict";
+    case "M":
+    default:
+      return "Modified";
+  }
+}
+
+function gitStatusClass(code: string): string {
+  switch (code) {
+    case "A":
+      return "added";
+    case "D":
+      return "deleted";
+    case "R":
+    case "C":
+      return "renamed";
+    case "U":
+      return "untracked";
+    case "!":
+      return "conflict";
+    case "M":
+    default:
+      return "modified";
+  }
+}
+
 function getSetting(key: string, settings: AppSettings): boolean {
   return (settings as unknown as Record<string, boolean>)[key] ?? true;
 }
@@ -878,7 +945,8 @@ export default function App() {
   const [activePanel, setActivePanel] = useState<PanelKind>("problems");
   const [panelHeight, setPanelHeight] = useState(200);
   const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
-  const [compiling, setCompiling] = useState(false);
+  const [compileJobCount, setCompileJobCount] = useState(0);
+  const compiling = compileJobCount > 0;
   const [gitStatus, setGitStatus] = useState<GitStatusSummary | null>(null);
   const [gitLoading, setGitLoading] = useState(false);
   const [gitCommitMessage, setGitCommitMessage] = useState("");
@@ -934,6 +1002,7 @@ export default function App() {
     word?: string;
   } | null>(null);
   const lastAutoCompileSignatureRef = useRef("");
+  const compileRunIdRef = useRef(0);
 
   const activeDocument = documents.find(
     (document) => document.path === activePath,
@@ -1099,19 +1168,203 @@ export default function App() {
   }, []);
 
   const ensurePreambleMacros = (content: string): string => {
-    const macros = `
-% --- LatexDo Review & Rebuttal Macros ---
-\\usepackage{xcolor}
-\\providecommand{\\reviewercomment}[2]{\\textcolor{blue}{#1}\\footnote{REVIEWER: #2}}
-\\providecommand{\\rebuttal}[3]{\\textcolor{red}{#2}\\footnote{REBUTTAL (Original: #1): #3}}
-% ----------------------------------------
+    const macroStart = "% --- LatexDo Review & Rebuttal Macros ---";
+    const macroEnd = "% ----------------------------------------";
+    const macros = String.raw`${macroStart}
+\usepackage{xcolor}
+\definecolor{LatexDoDiffAdd}{HTML}{1A7F37}
+\definecolor{LatexDoDiffRemove}{HTML}{B42318}
+\definecolor{LatexDoRule}{HTML}{8C959F}
+\makeatletter
+\@ifundefined{latexdoBlockTitle}{%
+  \long\def\latexdoBlockTitle#1{%
+    \par\noindent\textbf{\MakeUppercase{#1}}\par\nobreak\vspace{0.25em}%
+  }%
+}{}
+\@ifundefined{latexdoDiffRemoved}{%
+  \long\def\latexdoDiffRemoved#1{%
+    \par\noindent{\ttfamily\color{LatexDoDiffRemove}- }{\color{LatexDoDiffRemove}#1}\par%
+  }%
+}{}
+\@ifundefined{latexdoDiffAdded}{%
+  \long\def\latexdoDiffAdded#1{%
+    \par\noindent{\ttfamily\color{LatexDoDiffAdd}+ }{\color{LatexDoDiffAdd}#1}\par%
+  }%
+}{}
+\@ifundefined{latexdoreviewercomment}{%
+  \long\def\latexdoreviewercomment#1{%
+    \par\smallskip
+    \noindent{\color{LatexDoRule}\rule{2pt}{1.35em}}\hspace{0.65em}%
+    \begin{minipage}[t]{0.92\linewidth}%
+      \footnotesize\textbf{Reviewer comment.} #1%
+    \end{minipage}\par
+    \smallskip
+  }%
+}{}
+\@ifundefined{reviewercomment}{%
+  \long\def\reviewercomment#1#2{%
+    #1\latexdoreviewercomment{#2}%
+  }%
+}{}
+\@ifundefined{rebuttal}{%
+  \long\def\rebuttal#1#2#3#4{%
+    \par\medskip
+    \noindent{\color{LatexDoRule}\rule{\linewidth}{0.4pt}}\par
+    \latexdoBlockTitle{Text}#1\par
+    \latexdoBlockTitle{Reviewer comment}#2\par
+    \latexdoBlockTitle{Author answer}#3\par
+    \latexdoBlockTitle{Changes (diff)}
+    \latexdoDiffRemoved{#1}
+    \latexdoDiffAdded{#4}
+    \noindent{\color{LatexDoRule}\rule{\linewidth}{0.4pt}}\par
+    \medskip
+  }%
+}{}
+\makeatother
+${macroEnd}
 `;
-    if (content.includes("% --- LatexDo Review & Rebuttal Macros ---")) {
-      return content;
+    const macroStartIndex = content.indexOf(macroStart);
+    if (macroStartIndex !== -1) {
+      const macroEndIndex = content.indexOf(macroEnd, macroStartIndex);
+      if (macroEndIndex !== -1) {
+        return (
+          content.slice(0, macroStartIndex) +
+          macros +
+          content.slice(macroEndIndex + macroEnd.length).replace(/^\n/, "")
+        );
+      }
     }
     const docStart = content.indexOf("\\begin{document}");
     if (docStart === -1) return macros + content;
     return content.slice(0, docStart) + macros + content.slice(docStart);
+  };
+
+  const findProjectEntry = (relativePath: string): ProjectEntry | undefined => {
+    const normalizedPath = normalizeRelativePath(relativePath);
+    return flattenEntries(projectEntriesRef.current).find(
+      (entry) =>
+        entry.type === "file" &&
+        normalizeRelativePath(entry.relativePath) === normalizedPath,
+    );
+  };
+
+  const findOpenDocument = (relativePath: string): OpenDocument | undefined => {
+    const normalizedPath = normalizeRelativePath(relativePath);
+    return documentsRef.current.find(
+      (document) =>
+        normalizeRelativePath(document.relativePath) === normalizedPath,
+    );
+  };
+
+  const projectUsesLatexDoReviewMacros = async (
+    currentProject: string,
+  ): Promise<boolean> => {
+    if (documentsRef.current.some((document) => usesLatexDoReviewMacros(document.content))) {
+      return true;
+    }
+
+    const openDocumentPaths = new Set(
+      documentsRef.current.map((document) => normalizeRelativePath(document.relativePath)),
+    );
+    const texEntries = flattenEntries(projectEntriesRef.current).filter(
+      (entry) =>
+        entry.type === "file" &&
+        entry.name.endsWith(".tex") &&
+        !openDocumentPaths.has(normalizeRelativePath(entry.relativePath)),
+    );
+
+    for (const entry of texEntries) {
+      const content = await window.latexdo.readFile(currentProject, entry.path);
+      if (usesLatexDoReviewMacros(content)) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  const normalizeReviewMarkupForCompile = async (
+    currentProject: string,
+  ): Promise<Map<string, string>> => {
+    const normalizedContents = new Map<string, string>();
+    const texEntries = flattenEntries(projectEntriesRef.current).filter(
+      (entry) => entry.type === "file" && entry.name.endsWith(".tex"),
+    );
+
+    for (const entry of texEntries) {
+      const openDocument = findOpenDocument(entry.relativePath);
+      const content =
+        openDocument?.content ?? (await window.latexdo.readFile(currentProject, entry.path));
+      const normalizedContent = normalizeLatexDoReviewMarkup(content);
+
+      if (normalizedContent !== content) {
+        await window.latexdo.writeFile(currentProject, entry.path, normalizedContent);
+        normalizedContents.set(normalizeRelativePath(entry.relativePath), normalizedContent);
+      }
+    }
+
+    return normalizedContents;
+  };
+
+  const saveDocumentsForCompile = async (
+    currentProject: string,
+    dirtyDocuments: OpenDocument[],
+  ): Promise<void> => {
+    const rootRelativePath = rootFileRef.current;
+    const rootEntry = findProjectEntry(rootRelativePath);
+    const rootDocument = findOpenDocument(rootRelativePath);
+    const savedContents = await normalizeReviewMarkupForCompile(currentProject);
+
+    const reviewMacrosNeeded = await projectUsesLatexDoReviewMacros(currentProject);
+    if (reviewMacrosNeeded && rootEntry) {
+      const rootContent =
+        savedContents.get(normalizeRelativePath(rootEntry.relativePath)) ??
+        rootDocument?.content ??
+        (await window.latexdo.readFile(currentProject, rootEntry.path));
+      const rootContentWithMacros = ensurePreambleMacros(rootContent);
+      if (
+        rootContentWithMacros !== rootContent ||
+        rootDocument?.content !== rootDocument?.savedContent
+      ) {
+        await window.latexdo.writeFile(currentProject, rootEntry.path, rootContentWithMacros);
+        savedContents.set(normalizeRelativePath(rootEntry.relativePath), rootContentWithMacros);
+      }
+    }
+
+    await Promise.all(
+      dirtyDocuments
+        .filter(
+          (document) =>
+            normalizeRelativePath(document.relativePath) !==
+            normalizeRelativePath(rootRelativePath),
+        )
+        .map(async (document) => {
+          const normalizedPath = normalizeRelativePath(document.relativePath);
+          const content = savedContents.get(normalizedPath) ?? document.content;
+          await window.latexdo.writeFile(currentProject, document.path, content);
+          savedContents.set(normalizedPath, content);
+        }),
+    );
+
+    if (!reviewMacrosNeeded && rootDocument && rootDocument.content !== rootDocument.savedContent) {
+      const normalizedPath = normalizeRelativePath(rootDocument.relativePath);
+      const content = savedContents.get(normalizedPath) ?? rootDocument.content;
+      await window.latexdo.writeFile(currentProject, rootDocument.path, content);
+      savedContents.set(normalizedPath, content);
+    }
+
+    if (savedContents.size > 0) {
+      setDocuments((current) => {
+        const nextDocuments = current.map((document) => {
+          const savedContent = savedContents.get(normalizeRelativePath(document.relativePath));
+          return savedContent === undefined
+            ? document
+            : { ...document, content: savedContent, savedContent };
+        });
+        documentsRef.current = nextDocuments;
+        return nextDocuments;
+      });
+    }
   };
 
   const saveReviewData = useCallback(async (chats: ReviewChat[], items: RebuttalItem[]) => {
@@ -1252,78 +1505,74 @@ export default function App() {
 
   const compile = useCallback(async (): Promise<CompileResult | null> => {
     const currentProject = projectPathRef.current;
-    if (!currentProject || compiling) {
+    if (!currentProject) {
       return null;
     }
 
+    const compileRunId = compileRunIdRef.current + 1;
+    compileRunIdRef.current = compileRunId;
     lastAutoCompileSignatureRef.current = buildAutoCompileSignature(
       documentsRef.current,
       currentProject,
       rootFileRef.current,
       engineRef.current,
     );
-    setCompiling(true);
-    setStatusMessage(`Compiling ${rootFileRef.current}…`);
+    setCompileJobCount((count) => count + 1);
+    setStatusMessage(`Compiling ${rootFileRef.current} in the background…`);
     try {
       const dirtyDocuments = documentsRef.current.filter(
         (document) => document.content !== document.savedContent,
       );
-      await Promise.all(
-        dirtyDocuments.map((document) =>
-          window.latexdo.writeFile(
-            currentProject,
-            document.path,
-            ensurePreambleMacros(document.content),
-          ),
-        ),
-      );
-      if (dirtyDocuments.length) {
-        setDocuments((current) =>
-          current.map((document) => ({
-            ...document,
-            savedContent: document.content,
-          })),
-        );
-      }
+      await saveDocumentsForCompile(currentProject, dirtyDocuments);
 
       const result = await window.latexdo.compile({
         projectPath: currentProject,
         rootFile: rootFileRef.current,
         engine: engineRef.current,
       });
-      setCompileResult(result);
+
+      const isLatestCompile = compileRunId === compileRunIdRef.current;
+      if (isLatestCompile) {
+        setCompileResult(result);
+      }
 
       if (result.ok && result.pdfPath) {
         const bytes = await window.latexdo.readPdf(
           currentProject,
           result.pdfPath,
         );
-        pdfPathRef.current = result.pdfPath;
-        setPdfData(new Uint8Array(bytes));
-        setPdfTarget(null);
-        setPreviewVisible(true);
-        setStatusMessage(`Built successfully in ${formatDuration(result.durationMs)}`);
+        if (isLatestCompile) {
+          pdfPathRef.current = result.pdfPath;
+          setPdfData(new Uint8Array(bytes));
+          setPdfTarget(null);
+          setPreviewVisible(true);
+          setStatusMessage(`Built successfully in ${formatDuration(result.durationMs)}`);
+        }
       } else {
-        pdfPathRef.current = "";
-        setPdfTarget(null);
-        setPanelVisible(true);
-        setActivePanel(result.diagnostics.length ? "problems" : "output");
-        setStatusMessage(result.error ?? "Compilation failed");
+        if (isLatestCompile) {
+          pdfPathRef.current = "";
+          setPdfTarget(null);
+          setPanelVisible(true);
+          setActivePanel(result.diagnostics.length ? "problems" : "output");
+          setStatusMessage(result.error ?? "Compilation failed");
+        }
       }
       return result;
     } catch (error) {
-      pdfPathRef.current = "";
-      setPdfTarget(null);
-      setPanelVisible(true);
-      setActivePanel("output");
-      setStatusMessage(
-        error instanceof Error ? error.message : "Compilation failed",
-      );
+      if (compileRunId === compileRunIdRef.current) {
+        pdfPathRef.current = "";
+        setPdfTarget(null);
+        setPanelVisible(true);
+        setActivePanel("output");
+        setStatusMessage(
+          error instanceof Error ? error.message : "Compilation failed",
+        );
+      }
       return null;
     } finally {
-      setCompiling(false);
+      setCompileJobCount((count) => Math.max(0, count - 1));
     }
-  }, [compiling]);
+  }, []);
 
   const saveActiveAndCompile = useCallback(async () => {
     const document = documentsRef.current.find(
@@ -3122,11 +3371,28 @@ export default function App() {
     }
 
     const commentBody = "Add your comment here...";
-    const wrappedText = `\\reviewercomment{${selectedText}}{${commentBody}}`;
+    const selectionEndOffset = model.getOffsetAt(selection.getEndPosition());
+    const nextText = model.getValue().slice(selectionEndOffset, selectionEndOffset + 32);
+    const insertion = buildReviewerCommentInsertion(
+      selectedText,
+      commentBody,
+      nextText,
+    );
+    const insertionEndPosition = model.getPositionAt(
+      selectionEndOffset + insertion.consumedCharacterCount,
+    );
+    const editRange = insertion.consumedCharacterCount > 0
+      ? new monaco.Range(
+          selection.startLineNumber,
+          selection.startColumn,
+          insertionEndPosition.lineNumber,
+          insertionEndPosition.column,
+        )
+      : selection;
 
     editor.executeEdits("reviewer-mode", [{
-      range: selection,
-      text: wrappedText,
+      range: editRange,
+      text: insertion.text,
       forceMoveMarkers: true
     }]);
 
@@ -3137,7 +3403,7 @@ export default function App() {
         startLine: selection.startLineNumber,
         startColumn: selection.startColumn,
         endLine: selection.endLineNumber,
-        endColumn: selection.startColumn + wrappedText.length,
+        endColumn: selection.endColumn,
         text: selectedText,
       },
       comments: [{
@@ -3173,9 +3439,10 @@ export default function App() {
       return;
     }
 
-    const modifiedText = selectedText; // User will edit this in place
-    const rebuttalBody = "Rebuttal justification here...";
-    const wrappedText = `\\rebuttal{${selectedText}}{${modifiedText}}{${rebuttalBody}}`;
+    const revisedText = selectedText; // User edits the fourth argument in place.
+    const reviewerComment = "Reviewer comment here...";
+    const authorAnswer = "Author answer here...";
+    const wrappedText = `\\rebuttal{${selectedText}}{${reviewerComment}}{${authorAnswer}}{${revisedText}}`;
 
     editor.executeEdits("rebuttal-mode", [{
       range: selection,
@@ -3185,9 +3452,11 @@ export default function App() {
 
     const newItem: RebuttalItem = {
       id: Date.now().toString(),
-      reviewerComment: "",
-      authorComment: rebuttalBody,
-      modificationMade: modifiedText,
+      originalText: selectedText,
+      revisedText,
+      reviewerComment,
+      authorComment: authorAnswer,
+      modificationMade: revisedText,
     };
     
     setRebuttalItems(prev => {
@@ -3283,6 +3552,8 @@ export default function App() {
   const handleAddRebuttalItem = useCallback(() => {
     const newItem: RebuttalItem = {
       id: Date.now().toString(),
+      originalText: "",
+      revisedText: "",
       reviewerComment: "",
       authorComment: "",
       modificationMade: "",
@@ -3343,6 +3614,88 @@ export default function App() {
     };
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
+  };
+
+  const renderGitChangeRow = (
+    entry: GitStatusEntry,
+    area: "staged" | "changes",
+  ) => {
+    const code = gitStatusCode(entry, area);
+    const displayPath = gitDisplayPath(entry.path);
+    const directory = fileDirectory(entry.path);
+    const statusLabel = gitStatusLabel(code);
+    const isPreviewed = gitDiffPreview?.path === entry.path;
+
+    return (
+      <div
+        key={`${entry.path}:${entry.indexStatus}:${entry.workingTreeStatus}:${area}`}
+        className={`scm-file-row ${isPreviewed ? "active" : ""}`}
+      >
+        <button
+          type="button"
+          className="scm-file-main"
+          onClick={() => void previewGitDiff(entry.path)}
+          title={`Preview ${displayPath}`}
+        >
+          <span className={`scm-status-badge ${gitStatusClass(code)}`}>
+            {code}
+          </span>
+          <span className="scm-file-text">
+            <strong>{fileName(displayPath)}</strong>
+            <small>{directory}</small>
+          </span>
+        </button>
+
+        <div className="scm-row-actions">
+          <button
+            type="button"
+            className="scm-icon-action"
+            onClick={() => void openGitDiffEditor(entry.path)}
+            disabled={gitActionBusy === `editor-diff:${entry.path}`}
+            title="Open diff"
+            aria-label={`Open diff for ${displayPath}`}
+          >
+            <ExternalLink size={13} />
+          </button>
+          {area === "staged" ? (
+            <button
+              type="button"
+              className="scm-icon-action"
+              onClick={() => void unstageGitEntry(entry.path)}
+              disabled={gitActionBusy === `unstage:${entry.path}`}
+              title="Unstage changes"
+              aria-label={`Unstage ${displayPath}`}
+            >
+              <Minus size={13} />
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="scm-icon-action"
+                onClick={() => void stageGitEntry(entry.path)}
+                disabled={gitActionBusy === `stage:${entry.path}`}
+                title="Stage changes"
+                aria-label={`Stage ${displayPath}`}
+              >
+                <Plus size={13} />
+              </button>
+              <button
+                type="button"
+                className="scm-icon-action danger"
+                onClick={() => void discardGitEntry(entry.path)}
+                disabled={gitActionBusy === `discard:${entry.path}`}
+                title="Discard changes"
+                aria-label={`Discard ${displayPath}`}
+              >
+                <X size={13} />
+              </button>
+            </>
+          )}
+        </div>
+        <span className="scm-row-status">{statusLabel}</span>
+      </div>
+    );
   };
 
   return (
@@ -3590,192 +3943,89 @@ export default function App() {
                 </div>
               </>
             ) : activeSidebar === "sourceControl" ? (
-              <div className="sidebar-panel">
-                <div className="sidebar-card">
-                  <strong>{gitStatus?.branch || "No repository"}</strong>
-                  <span>
+              <div className="sidebar-panel source-control-panel">
+                <div className="scm-head">
+                  <div className="scm-branch">
+                    <GitBranch size={14} />
+                    <span>{gitStatus?.branch || "No repository"}</span>
+                  </div>
+                  <span className="scm-change-count">
                     {gitLoading
-                      ? "Refreshing repository state…"
+                      ? "Refreshing"
                       : gitStatus?.isRepo
-                        ? `${modifiedFiles} changed file${modifiedFiles === 1 ? "" : "s"}`
-                        : "Open a Git repository to see source control here."}
+                        ? `${modifiedFiles} changed`
+                        : "Unavailable"}
                   </span>
                 </div>
                 {gitStatus?.isRepo ? (
-                  <div className="sidebar-commit-box">
-                    <div className="sidebar-bulk-actions">
-                      <button
-                        className="sidebar-mini-action subtle"
-                        onClick={() => void stageAllGitEntries()}
-                        disabled={!unstagedGitEntries.length || gitActionBusy === "stage-all"}
-                      >
-                        {gitActionBusy === "stage-all" ? "Working…" : "Stage All"}
-                      </button>
-                      <button
-                        className="sidebar-mini-action subtle"
-                        onClick={() => void unstageAllGitEntries()}
-                        disabled={!stagedGitEntries.length || gitActionBusy === "unstage-all"}
-                      >
-                        {gitActionBusy === "unstage-all" ? "Working…" : "Unstage All"}
-                      </button>
-                      <button
-                        className="sidebar-mini-action subtle"
-                        onClick={() => void discardAllGitEntries()}
-                        disabled={!unstagedGitEntries.length || gitActionBusy === "discard-all"}
-                      >
-                        {gitActionBusy === "discard-all" ? "Working…" : "Discard All"}
-                      </button>
-                    </div>
+                  <div className="scm-commit-box">
                     <textarea
                       value={gitCommitMessage}
                       onChange={(event) => setGitCommitMessage(event.target.value)}
                       placeholder="Commit message"
                     />
                     <button
-                      className="sidebar-primary-action"
+                      className="scm-commit-action"
                       onClick={() => void commitGitChanges()}
                       disabled={gitActionBusy === "commit" || !gitCommitMessage.trim()}
                     >
-                      {gitActionBusy === "commit" ? "Committing…" : "Commit"}
+                      <Check size={13} />
+                      <span>{gitActionBusy === "commit" ? "Committing..." : "Commit"}</span>
                     </button>
                   </div>
                 ) : null}
-                <div className="sidebar-list">
+                <div className="sidebar-list source-control-list">
                   {gitStatus?.isRepo ? (
                     <>
                       {gitStatus.entries.length ? (
                         <>
-                          <div className="sidebar-section-label">
-                            Staged Changes ({stagedGitEntries.length})
+                          <div className="scm-section-header">
+                            <span>Staged Changes <b>{stagedGitEntries.length}</b></span>
+                            <button
+                              type="button"
+                              className="scm-icon-action"
+                              onClick={() => void unstageAllGitEntries()}
+                              disabled={!stagedGitEntries.length || gitActionBusy === "unstage-all"}
+                              title="Unstage all"
+                              aria-label="Unstage all changes"
+                            >
+                              <Minus size={13} />
+                            </button>
                           </div>
                           {stagedGitEntries.length ? (
-                            stagedGitEntries.map((entry) => {
-                              const hasWorktreeChange = Boolean(entry.workingTreeStatus);
-                              return (
-                                <div
-                                  key={`${entry.path}:${entry.indexStatus}:${entry.workingTreeStatus}:staged`}
-                                  className="sidebar-item static"
-                                >
-                                  <strong>{entry.path}</strong>
-                                  <span>
-                                    {entry.indexStatus || "·"}
-                                    {entry.workingTreeStatus || "·"}
-                                  </span>
-                                  <div className="sidebar-item-actions spread">
-                                    <button
-                                      className="sidebar-mini-action subtle"
-                                      onClick={() => void previewGitDiff(entry.path)}
-                                      disabled={gitActionBusy === `diff:${entry.path}`}
-                                    >
-                                      {gitActionBusy === `diff:${entry.path}`
-                                        ? "Loading…"
-                                        : "Diff"}
-                                    </button>
-                                    <div className="sidebar-item-actions">
-                                      <button
-                                        className="sidebar-mini-action subtle"
-                                        onClick={() => void openGitDiffEditor(entry.path)}
-                                        disabled={
-                                          gitActionBusy === `editor-diff:${entry.path}`
-                                        }
-                                      >
-                                        {gitActionBusy === `editor-diff:${entry.path}`
-                                          ? "Opening…"
-                                          : "Open"}
-                                      </button>
-                                      <button
-                                        className="sidebar-mini-action subtle"
-                                        onClick={() => void discardGitEntry(entry.path)}
-                                        disabled={
-                                          !hasWorktreeChange ||
-                                          gitActionBusy === `discard:${entry.path}`
-                                        }
-                                      >
-                                        {gitActionBusy === `discard:${entry.path}`
-                                          ? "Discarding…"
-                                          : "Discard"}
-                                      </button>
-                                      <button
-                                        className="sidebar-mini-action"
-                                        onClick={() => void unstageGitEntry(entry.path)}
-                                        disabled={
-                                          gitActionBusy === `unstage:${entry.path}`
-                                        }
-                                      >
-                                        {gitActionBusy === `unstage:${entry.path}`
-                                          ? "Working…"
-                                          : "Unstage"}
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })
+                            stagedGitEntries.map((entry) => renderGitChangeRow(entry, "staged"))
                           ) : (
                             <div className="sidebar-empty-state compact">
                               No staged changes.
                             </div>
                           )}
-                          <div className="sidebar-section-label">
-                            Changes ({unstagedGitEntries.length})
+                          <div className="scm-section-header">
+                            <span>Changes <b>{unstagedGitEntries.length}</b></span>
+                            <div className="scm-section-actions">
+                              <button
+                                type="button"
+                                className="scm-icon-action"
+                                onClick={() => void stageAllGitEntries()}
+                                disabled={!unstagedGitEntries.length || gitActionBusy === "stage-all"}
+                                title="Stage all"
+                                aria-label="Stage all changes"
+                              >
+                                <Plus size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                className="scm-icon-action danger"
+                                onClick={() => void discardAllGitEntries()}
+                                disabled={!unstagedGitEntries.length || gitActionBusy === "discard-all"}
+                                title="Discard all unstaged changes"
+                                aria-label="Discard all unstaged changes"
+                              >
+                                <X size={13} />
+                              </button>
+                            </div>
                           </div>
                           {unstagedGitEntries.length ? (
-                            unstagedGitEntries.map((entry) => (
-                              <div
-                                key={`${entry.path}:${entry.indexStatus}:${entry.workingTreeStatus}:unstaged`}
-                                className="sidebar-item static"
-                              >
-                                <strong>{entry.path}</strong>
-                                <span>
-                                  {entry.indexStatus || "·"}
-                                  {entry.workingTreeStatus || "·"}
-                                </span>
-                                <div className="sidebar-item-actions spread">
-                                  <button
-                                    className="sidebar-mini-action subtle"
-                                    onClick={() => void previewGitDiff(entry.path)}
-                                    disabled={gitActionBusy === `diff:${entry.path}`}
-                                  >
-                                    {gitActionBusy === `diff:${entry.path}`
-                                      ? "Loading…"
-                                      : "Diff"}
-                                  </button>
-                                  <div className="sidebar-item-actions">
-                                    <button
-                                      className="sidebar-mini-action subtle"
-                                      onClick={() => void openGitDiffEditor(entry.path)}
-                                      disabled={
-                                        gitActionBusy === `editor-diff:${entry.path}`
-                                      }
-                                    >
-                                      {gitActionBusy === `editor-diff:${entry.path}`
-                                        ? "Opening…"
-                                        : "Open"}
-                                    </button>
-                                    <button
-                                      className="sidebar-mini-action subtle"
-                                      onClick={() => void discardGitEntry(entry.path)}
-                                      disabled={
-                                        gitActionBusy === `discard:${entry.path}`
-                                      }
-                                    >
-                                      {gitActionBusy === `discard:${entry.path}`
-                                        ? "Discarding…"
-                                        : "Discard"}
-                                    </button>
-                                    <button
-                                      className="sidebar-mini-action"
-                                      onClick={() => void stageGitEntry(entry.path)}
-                                      disabled={gitActionBusy === `stage:${entry.path}`}
-                                    >
-                                      {gitActionBusy === `stage:${entry.path}`
-                                        ? "Working…"
-                                        : "Stage"}
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            ))
+                            unstagedGitEntries.map((entry) => renderGitChangeRow(entry, "changes"))
                           ) : (
                             <div className="sidebar-empty-state compact">
                               No unstaged changes.
@@ -3787,8 +4037,10 @@ export default function App() {
                           Working tree is clean.
                         </div>
                       )}
-                      <div className="sidebar-section-label">Diff Preview</div>
-                      <div className="sidebar-diff-preview">
+                      <div className="scm-section-header">
+                        <span>Diff Preview</span>
+                      </div>
+                      <div className="sidebar-diff-preview scm-diff-preview">
                         {gitDiffPreview ? (
                           <>
                             <button
@@ -3805,13 +4057,15 @@ export default function App() {
                             </div>
                           )}
                       </div>
-                      <div className="sidebar-section-label">Repository History</div>
-                      <div className="sidebar-list">
+                      <div className="scm-section-header">
+                        <span>Timeline</span>
+                      </div>
+                      <div className="scm-history-list">
                         {gitRepoHistory?.commits.length ? (
-                          gitRepoHistory.commits.slice(0, 8).map((commit) => (
+                          gitRepoHistory.commits.slice(0, 5).map((commit) => (
                             <button
                               key={commit.hash}
-                              className="sidebar-item"
+                              className="scm-history-row"
                               onClick={() => void openGitCommitDetails(commit.hash)}
                             >
                               <strong>{commit.subject}</strong>
@@ -4078,8 +4332,8 @@ export default function App() {
                   <button
                     className={`compile-button ${compiling ? "compiling" : ""}`}
                     onClick={() => void compile()}
-                    disabled={compiling || !rootFile}
-                    title={compiling ? "Compiling..." : "Compile"}
+                    disabled={!rootFile}
+                    title={compiling ? "Start another background compile" : "Compile"}
                   >
                     {compiling ? (
                       <LoaderCircle size={15} className="spin" />
@@ -4993,6 +5247,12 @@ export default function App() {
           <button onClick={() => openPanel("problems")}>
             <AlertCircle size={13} /> {warnings}
           </button>
+          {compiling ? (
+            <span className="status-compile">
+              <LoaderCircle size={13} className="spin" />
+              {compileJobCount} compile job{compileJobCount === 1 ? "" : "s"}
+            </span>
+          ) : null}
           <span className="status-message">{statusMessage}</span>
         </div>
         <div>
@@ -5733,7 +5993,7 @@ export default function App() {
                     </span>
                     <div className="settings-update-actions">
                       <button type="button" className="dialog-cancel" onClick={() => void checkForUpdates()} disabled={checkingUpdates}>{checkingUpdates ? "Checking…" : "Check now"}</button>
-                      <button type="button" className="dialog-submit" onClick={() => void window.latexdo.openReleasesPage()} disabled={!updateInfo?.releaseUrl}>View release</button>
+                      <button type="button" className="dialog-submit" onClick={() => void window.latexdo.openReleasesPage()}>View releases</button>
                     </div>
                   </div>
                 </>

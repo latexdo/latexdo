@@ -59,6 +59,15 @@ export const RebuttalSidebar: React.FC<RebuttalSidebarProps> = ({
               </div>
 
               <div className="rebuttal-field">
+                <label>Text</label>
+                <textarea
+                  value={item.originalText ?? ""}
+                  onChange={(e) => onUpdateItem(item.id, { originalText: e.target.value })}
+                  placeholder="The manuscript text being discussed."
+                />
+              </div>
+
+              <div className="rebuttal-field">
                 <label>Reviewer Comment</label>
                 <textarea
                   value={item.reviewerComment}
@@ -68,7 +77,7 @@ export const RebuttalSidebar: React.FC<RebuttalSidebarProps> = ({
               </div>
 
               <div className="rebuttal-field">
-                <label>Author Response</label>
+                <label>Author Answer</label>
                 <textarea
                   value={item.authorComment}
                   onChange={(e) => onUpdateItem(item.id, { authorComment: e.target.value })}
@@ -77,11 +86,16 @@ export const RebuttalSidebar: React.FC<RebuttalSidebarProps> = ({
               </div>
 
               <div className="rebuttal-field">
-                <label>Modification Made</label>
+                <label>Changes (diff)</label>
                 <textarea
-                  value={item.modificationMade}
-                  onChange={(e) => onUpdateItem(item.id, { modificationMade: e.target.value })}
-                  placeholder="What changes did you make in the LaTeX?"
+                  value={item.revisedText ?? item.modificationMade}
+                  onChange={(e) =>
+                    onUpdateItem(item.id, {
+                      revisedText: e.target.value,
+                      modificationMade: e.target.value,
+                    })
+                  }
+                  placeholder="The revised manuscript text or a unified diff."
                 />
               </div>
             </div>
