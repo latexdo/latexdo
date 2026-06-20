@@ -14,6 +14,53 @@ interface NotationEntry {
   description: string;
 }
 
+interface EquationTemplate {
+  label: string;
+  code: string;
+  desc: string;
+}
+
+const EQUATION_TEMPLATES: EquationTemplate[] = [
+  { label: "Inline", code: "$x$", desc: "Inline math" },
+  { label: "Display", code: "\\[\n  x = y\n\\]", desc: "Unnumbered display math" },
+  {
+    label: "Equation",
+    code: "\\begin{equation}\n  \\label{eq:label}\n  x = y\n\\end{equation}",
+    desc: "Numbered equation",
+  },
+  {
+    label: "Align",
+    code: "\\begin{align}\n  a &= b \\\\\n    &= c\n\\end{align}",
+    desc: "Aligned multi-line equations",
+  },
+  {
+    label: "Cases",
+    code:
+      "\\begin{equation}\n" +
+      "  f(x) = \\begin{cases}\n" +
+      "    0, & x < 0 \\\\\n" +
+      "    1, & x \\ge 0\n" +
+      "  \\end{cases}\n" +
+      "\\end{equation}",
+    desc: "Piecewise definition",
+  },
+  {
+    label: "Matrix",
+    code: "\\begin{bmatrix}\n  a & b \\\\\n  c & d\n\\end{bmatrix}",
+    desc: "Bracketed matrix",
+  },
+  { label: "Fraction", code: "\\frac{a}{b}", desc: "Fraction" },
+  { label: "Sum", code: "\\sum_{i=1}^{n} x_i", desc: "Summation" },
+  { label: "Integral", code: "\\int_{a}^{b} f(x)\\,dx", desc: "Definite integral" },
+  { label: "Norm", code: "\\left\\lVert x \\right\\rVert_2", desc: "Vector norm" },
+  { label: "Expectation", code: "\\mathbb{E}\\left[X\\right]", desc: "Expected value" },
+  {
+    label: "Definition",
+    code: "\\newcommand{\\mySymbol}{x}",
+    desc: "Reusable notation command",
+  },
+];
+
 const SYMBOL_PALETTE = [
   { latex: "\\alpha", display: "α" },
   { latex: "\\beta", display: "β" },
@@ -228,20 +275,10 @@ export function NotationManager({ content, onInsertCode }: NotationManagerProps)
         {/* Quick Equation Templates */}
         <div className="notation-manager-section">
           <div className="notation-manager-section-header">
-            <span>Equation Templates</span>
+            <span>Equation Templates & Math Blocks</span>
           </div>
           <div className="notation-manager-templates">
-            {[
-              { label: "Inline", code: "$ $", desc: "Inline math" },
-              { label: "Display", code: "\\[\n\t\n\\]", desc: "Display math" },
-              { label: "Equation", code: "\\begin{equation}\n\t\\label{eq:}\n\\end{equation}", desc: "Numbered equation" },
-              { label: "Align", code: "\\begin{align}\n\t\\label{eq:}\n\\end{align}", desc: "Multi-line align" },
-              { label: "Gather", code: "\\begin{gather}\n\t\\label{eq:}\n\\end{gather}", desc: "Gathered equations" },
-              { label: "Cases", code: "\\begin{cases}\n\t\\text{if } \\\\\n\t\\text{otherwise}\n\\end{cases}", desc: "Piecewise cases" },
-              { label: "Matrix", code: "\\begin{pmatrix}\n\t\\end{pmatrix}", desc: "Matrix (pmatrix)" },
-              { label: "Definition", code: "\\newcommand{\\}{\n}", desc: "New command" },
-              { label: "Notation", code: "\\begin{notation}\n\t\n\\end{notation}", desc: "Notation block" },
-            ].map((tpl) => (
+            {EQUATION_TEMPLATES.map((tpl) => (
               <button
                 key={tpl.label}
                 className="notation-manager-template-btn"

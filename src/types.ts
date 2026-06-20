@@ -185,6 +185,18 @@ export interface ReviewChat {
   comments: ReviewChatComment[];
 }
 
+export type DocumentHistorySource = "auto" | "manual" | "restore";
+
+export interface DocumentHistorySnapshot {
+  id: string;
+  filePath: string;
+  fileName: string;
+  label: string;
+  content: string;
+  timestamp: number;
+  source: DocumentHistorySource;
+}
+
 export interface RebuttalItem {
   id: string;
   originalText?: string;

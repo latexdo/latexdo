@@ -60,6 +60,7 @@ import { FigureToTikzConverter } from "./components/FigureToTikzConverter";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { ReviewSidebar } from "./components/ReviewSidebar";
 import { RebuttalSidebar } from "./components/RebuttalSidebar";
+import { HistorySidebar } from "./components/HistorySidebar";
 import { generateRebuttalLetter } from "./rebuttalGenerator";
 import {
   normalizeLatexDoReviewMarkup,
@@ -79,6 +80,7 @@ import type {
   PdfComplianceSettings,
   Diagnostic,
   DiagnosticFix,
+  DocumentHistorySnapshot,
   EditorMode,
   Engine,
   GitCommitDetails,
@@ -111,7 +113,7 @@ import { runPdfComplianceChecks } from "./checks/pdfCompliance";
 import { NotationManager } from "./components/NotationManager";
 
 type PanelKind = "problems" | "output" | "terminal" | "checkAnalysis" | "structureReport" | "pdfReport";
-type SidebarView = "explorer" | "sourceControl";
+type SidebarView = "explorer" | "sourceControl" | "history";
 
 interface GitDiffSession extends GitDiffEditorInput {
   label: string;
@@ -629,6 +631,13 @@ const latexSuggestions = [
   ["figure", "\\begin{figure}[ht]\n\t\\centering\n\t\\includegraphics[width=${1:0.8}\\textwidth]{${2:file}}\n\t\\caption{${3:caption}}\n\t\\label{fig:${4:label}}\n\\end{figure}"],
   ["table", "\\begin{table}[ht]\n\t\\centering\n\t\\begin{tabular}{${1:cc}}\n\t\t${0}\n\t\\end{tabular}\n\t\\caption{${2:caption}}\n\\end{table}"],
   ["equation", "\\begin{equation}\n\t${0}\n\\end{equation}"],
+  ["align", "\\begin{align}\n\t${1:a} &= ${2:b} \\\\\n\t&= ${0:c}\n\\end{align}"],
+  ["cases", "\\begin{equation}\n\t${1:f(x)} = \\begin{cases}\n\t\t${2:0}, & ${3:x < 0} \\\\\n\t\t${4:1}, & ${0:x \\ge 0}\n\t\\end{cases}\n\\end{equation}"],
+  ["matrix", "\\begin{bmatrix}\n\t${1:a} & ${2:b} \\\\\n\t${3:c} & ${0:d}\n\\end{bmatrix}"],
+  ["frac", "\\frac{${1:numerator}}{${0:denominator}}"],
+  ["sqrt", "\\sqrt{${0:x}}"],
+  ["sum", "\\sum_{${1:i=1}}^{${2:n}} ${0:x_i}"],
+  ["int", "\\int_{${1:a}}^{${2:b}} ${0:f(x)}\\,dx"],
   ["itemize", "\\begin{itemize}\n\t\\item ${0}\n\\end{itemize}"],
   ["enumerate", "\\begin{enumerate}\n\t\\item ${0}\n\\end{enumerate}"],
   ["cite", "\\cite{${1:key}}"],
@@ -636,6 +645,10 @@ const latexSuggestions = [
   ["label", "\\label{${1:label}}"],
   ["includegraphics", "\\includegraphics[width=${1:\\textwidth}]{${2:file}}"],
 ] as const;
+
+const historyStorageRelativePath = ".latexdo/history.json";
+const maxHistorySnapshotsPerFile = 80;
+const historyAutoCaptureDelayMs = 5000;
 
 function fileName(filePath: string): string {
   return filePath.split(/[/\\]/).pop() ?? filePath;
@@ -913,6 +926,75 @@ function applyTextFix(content: string, fix: DiagnosticFix): string | null {
   return content.slice(0, start) + fix.replacement + content.slice(Math.max(start, end));
 }
 
+function historySnapshotId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function buildHistorySnapshot(
+  document: OpenDocument,
+  source: DocumentHistorySnapshot["source"],
+): DocumentHistorySnapshot {
+  const timestamp = Date.now();
+  const sourceLabel =
+    source === "manual" ? "Manual" : source === "restore" ? "Restore point" : "Auto";
+  return {
+    id: historySnapshotId(),
+    filePath: document.relativePath,
+    fileName: document.name,
+    label: `${sourceLabel} state`,
+    content: document.content,
+    timestamp,
+    source,
+  };
+}
+
+function normalizeHistorySnapshot(value: unknown): DocumentHistorySnapshot | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const item = value as Partial<DocumentHistorySnapshot>;
+  if (
+    typeof item.id !== "string" ||
+    typeof item.filePath !== "string" ||
+    typeof item.content !== "string" ||
+    typeof item.timestamp !== "number"
+  ) {
+    return null;
+  }
+
+  return {
+    id: item.id,
+    filePath: item.filePath,
+    fileName: typeof item.fileName === "string" ? item.fileName : fileName(item.filePath),
+    label: typeof item.label === "string" ? item.label : "History state",
+    content: item.content,
+    timestamp: item.timestamp,
+    source:
+      item.source === "manual" || item.source === "restore" || item.source === "auto"
+        ? item.source
+        : "auto",
+  };
+}
+
+function pruneHistorySnapshots(
+  snapshots: DocumentHistorySnapshot[],
+): DocumentHistorySnapshot[] {
+  const sorted = [...snapshots].sort((a, b) => b.timestamp - a.timestamp);
+  const perFileCount = new Map<string, number>();
+  const kept: DocumentHistorySnapshot[] = [];
+
+  for (const snapshot of sorted) {
+    const count = perFileCount.get(snapshot.filePath) ?? 0;
+    if (count >= maxHistorySnapshotsPerFile) {
+      continue;
+    }
+    perFileCount.set(snapshot.filePath, count + 1);
+    kept.push(snapshot);
+  }
+
+  return kept;
+}
+
 export default function App() {
   const [projectPath, setProjectPath] = useState("");
   const [projectEntries, setProjectEntries] = useState<ProjectEntry[]>([]);
@@ -956,6 +1038,7 @@ export default function App() {
   const [gitFileHistory, setGitFileHistory] = useState<GitHistorySummary | null>(null);
   const [gitCommitDetails, setGitCommitDetails] = useState<GitCommitDetails | null>(null);
   const [gitCommitDetailsTargetPath, setGitCommitDetailsTargetPath] = useState<string | null>(null);
+  const [documentHistory, setDocumentHistory] = useState<DocumentHistorySnapshot[]>([]);
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [spellCheckerSettings, setSpellCheckerSettings] =
@@ -983,6 +1066,7 @@ export default function App() {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const editorMouseDisposableRef = useRef<monaco.IDisposable | null>(null);
   const documentsRef = useRef<OpenDocument[]>([]);
+  const documentHistoryRef = useRef<DocumentHistorySnapshot[]>([]);
   const projectEntriesRef = useRef<ProjectEntry[]>([]);
   const projectPathRef = useRef("");
   const activePathRef = useRef("");
@@ -1002,6 +1086,8 @@ export default function App() {
   } | null>(null);
   const lastAutoCompileSignatureRef = useRef("");
   const compileRunIdRef = useRef(0);
+  const historySaveTimerRef = useRef<number | null>(null);
+  const historyAutoCaptureTimerRef = useRef<number | null>(null);
 
   const activeDocument = documents.find(
     (document) => document.path === activePath,
@@ -1088,6 +1174,10 @@ export default function App() {
   useEffect(() => {
     documentsRef.current = documents;
   }, [documents]);
+
+  useEffect(() => {
+    documentHistoryRef.current = documentHistory;
+  }, [documentHistory]);
 
   useEffect(() => {
     projectEntriesRef.current = projectEntries;
@@ -1398,6 +1488,120 @@ ${macroEnd}
     }
   }, [resolveProjectDataPath]);
 
+  const saveHistoryData = useCallback(async (snapshots: DocumentHistorySnapshot[]) => {
+    const currentProject = projectPathRef.current;
+    if (!currentProject) return;
+
+    try {
+      const data = JSON.stringify({ snapshots }, null, 2);
+      const filePath = resolveProjectDataPath(currentProject, historyStorageRelativePath);
+      await window.latexdo.writeFile(currentProject, filePath, data);
+    } catch (e) {
+      console.error("Failed to save document history", e);
+    }
+  }, [resolveProjectDataPath]);
+
+  const scheduleHistorySave = useCallback((snapshots: DocumentHistorySnapshot[]) => {
+    if (historySaveTimerRef.current !== null) {
+      window.clearTimeout(historySaveTimerRef.current);
+    }
+    historySaveTimerRef.current = window.setTimeout(() => {
+      historySaveTimerRef.current = null;
+      void saveHistoryData(snapshots);
+    }, 350);
+  }, [saveHistoryData]);
+
+  const updateDocumentHistory = useCallback(
+    (
+      updater: (
+        snapshots: DocumentHistorySnapshot[],
+      ) => DocumentHistorySnapshot[],
+    ) => {
+      setDocumentHistory((current) => {
+        const updated = updater(current);
+        if (updated === current) {
+          return current;
+        }
+        const next = pruneHistorySnapshots(updated);
+        documentHistoryRef.current = next;
+        scheduleHistorySave(next);
+        return next;
+      });
+    },
+    [scheduleHistorySave],
+  );
+
+  const addHistorySnapshot = useCallback(
+    (snapshot: DocumentHistorySnapshot) => {
+      updateDocumentHistory((current) => {
+        const latestForFile = [...current]
+          .filter((item) => item.filePath === snapshot.filePath)
+          .sort((a, b) => b.timestamp - a.timestamp)[0];
+        if (latestForFile?.content === snapshot.content) {
+          return current;
+        }
+        return [snapshot, ...current];
+      });
+    },
+    [updateDocumentHistory],
+  );
+
+  const captureActiveHistorySnapshot = useCallback(
+    (source: DocumentHistorySnapshot["source"] = "manual") => {
+      const document = documentsRef.current.find(
+        (item) => item.path === activePathRef.current,
+      );
+      if (!document) {
+        setStatusMessage("Open a document before capturing history.");
+        return;
+      }
+      const latestForFile = [...documentHistoryRef.current]
+        .filter((item) => item.filePath === document.relativePath)
+        .sort((a, b) => b.timestamp - a.timestamp)[0];
+      const added = latestForFile?.content !== document.content;
+      addHistorySnapshot(buildHistorySnapshot(document, source));
+      if (source === "manual") {
+        setStatusMessage(
+          added
+            ? `Captured history state for ${document.relativePath}`
+            : `No changes to capture for ${document.relativePath}`,
+        );
+      }
+    },
+    [addHistorySnapshot],
+  );
+
+  const loadHistoryData = useCallback(async (path: string) => {
+    try {
+      const filePath = resolveProjectDataPath(path, historyStorageRelativePath);
+      const exists = await window.latexdo.fileExists(path, filePath);
+      if (!exists) {
+        setDocumentHistory([]);
+        documentHistoryRef.current = [];
+        return;
+      }
+      const content = await window.latexdo.readFile(path, filePath);
+      const parsed = JSON.parse(content) as {
+        snapshots?: unknown[];
+      } | unknown[];
+      const rawSnapshots = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed.snapshots)
+          ? parsed.snapshots
+          : [];
+      const snapshots = pruneHistorySnapshots(
+        rawSnapshots
+          .map(normalizeHistorySnapshot)
+          .filter((snapshot): snapshot is DocumentHistorySnapshot => Boolean(snapshot)),
+      );
+      setDocumentHistory(snapshots);
+      documentHistoryRef.current = snapshots;
+    } catch (e) {
+      setDocumentHistory([]);
+      documentHistoryRef.current = [];
+    }
+  }, [resolveProjectDataPath]);
+
   const generateRebuttalFile = useCallback(async () => {
     const currentProject = projectPathRef.current;
     if (!currentProject || !rootFile) return;
@@ -1433,6 +1637,8 @@ ${macroEnd}
       setHideProjectEntries(hideEntries);
       setDocuments([]);
       documentsRef.current = [];
+      setDocumentHistory([]);
+      documentHistoryRef.current = [];
       setActivePath("");
       activePathRef.current = "";
       setWelcomeOpen(true);
@@ -1445,6 +1651,7 @@ ${macroEnd}
       const entries = await window.latexdo.listProject(path);
       setProjectEntries(entries);
       await loadReviewData(path);
+      await loadHistoryData(path);
       const allFiles = flattenEntries(entries);
       const main =
         allFiles.find(
@@ -1463,7 +1670,7 @@ ${macroEnd}
       }
       setStatusMessage("Ready");
     },
-    [loadReviewData, openDocument],
+    [loadHistoryData, loadReviewData, openDocument],
   );
 
   useEffect(() => {
@@ -2647,6 +2854,12 @@ ${macroEnd}
   useEffect(
     () => () => {
       editorMouseDisposableRef.current?.dispose();
+      if (historySaveTimerRef.current !== null) {
+        window.clearTimeout(historySaveTimerRef.current);
+      }
+      if (historyAutoCaptureTimerRef.current !== null) {
+        window.clearTimeout(historyAutoCaptureTimerRef.current);
+      }
     },
     [],
   );
@@ -3559,6 +3772,144 @@ ${macroEnd}
     });
   }, [reviewChats, saveReviewData]);
 
+  const handleRestoreHistorySnapshot = useCallback(
+    async (snapshot: DocumentHistorySnapshot) => {
+      const entry = allProjectEntries.find(
+        (item) =>
+          item.type === "file" &&
+          normalizeRelativePath(item.relativePath) ===
+            normalizeRelativePath(snapshot.filePath),
+      );
+      if (!entry) {
+        setStatusMessage(`${snapshot.filePath} is no longer in this project.`);
+        return;
+      }
+
+      const currentProject = projectPathRef.current;
+      const currentDocument = documentsRef.current.find(
+        (document) =>
+          normalizeRelativePath(document.relativePath) ===
+          normalizeRelativePath(snapshot.filePath),
+      );
+      if (currentDocument && currentDocument.content !== snapshot.content) {
+        addHistorySnapshot(buildHistorySnapshot(currentDocument, "restore"));
+      }
+
+      const savedContent = currentProject
+        ? await window.latexdo.readFile(currentProject, entry.path).catch(() => snapshot.content)
+        : snapshot.content;
+
+      setGitDiffSession(null);
+      setWelcomeOpen(false);
+      setActivePath(entry.path);
+      activePathRef.current = entry.path;
+      setDocuments((current) => {
+        const exists = current.some((document) => document.path === entry.path);
+        const nextDocuments = exists
+          ? current.map((document) =>
+              document.path === entry.path
+                ? { ...document, content: snapshot.content, savedContent }
+                : document,
+            )
+          : [
+              ...current,
+              {
+                path: entry.path,
+                relativePath: entry.relativePath,
+                name: entry.name,
+                content: snapshot.content,
+                savedContent,
+              },
+            ];
+        documentsRef.current = nextDocuments;
+        return nextDocuments;
+      });
+      setStatusMessage(
+        `Restored ${snapshot.filePath} from history. Save to write it to disk.`,
+      );
+    },
+    [addHistorySnapshot, allProjectEntries],
+  );
+
+  const handleDeleteHistorySnapshot = useCallback(
+    (snapshotId: string) => {
+      updateDocumentHistory((current) =>
+        current.filter((snapshot) => snapshot.id !== snapshotId),
+      );
+    },
+    [updateDocumentHistory],
+  );
+
+  const handleInsertNotationCode = useCallback((code: string) => {
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    const document = documentsRef.current.find(
+      (item) => item.path === activePathRef.current,
+    );
+    if (!editor || !model || !document || !document.name.endsWith(".tex")) {
+      setStatusMessage("Open a .tex document before inserting math.");
+      return;
+    }
+
+    const selection = editor.getSelection();
+    const selectedText = selection && !selection.isEmpty()
+      ? model.getValueInRange(selection).trim()
+      : "";
+    const isInlineSnippet = code === "$x$";
+    const insertText = selectedText
+      ? code.replace("x = y", selectedText).replace("$x$", `$${selectedText}$`)
+      : code;
+    const position = editor.getPosition();
+    const lineNumber = position?.lineNumber ?? model.getLineCount();
+    const column = position?.column ?? model.getLineLength(lineNumber) + 1;
+    editor.executeEdits("notation-manager", [
+      {
+        range: selection && !selection.isEmpty()
+          ? selection
+          : new monaco.Range(lineNumber, column, lineNumber, column),
+        text: isInlineSnippet ? insertText : `\n${insertText}\n`,
+        forceMoveMarkers: true,
+      },
+    ]);
+    editor.focus();
+    setStatusMessage("Inserted notation snippet.");
+  }, []);
+
+  useEffect(() => {
+    if (historyAutoCaptureTimerRef.current !== null) {
+      window.clearTimeout(historyAutoCaptureTimerRef.current);
+      historyAutoCaptureTimerRef.current = null;
+    }
+    if (!projectPath || !activeDocument || showWelcome || showBlankWorkspace) {
+      return;
+    }
+
+    historyAutoCaptureTimerRef.current = window.setTimeout(() => {
+      historyAutoCaptureTimerRef.current = null;
+      const document = documentsRef.current.find(
+        (item) => item.path === activePathRef.current,
+      );
+      if (!document || !document.content.trim()) {
+        return;
+      }
+      addHistorySnapshot(buildHistorySnapshot(document, "auto"));
+    }, historyAutoCaptureDelayMs);
+
+    return () => {
+      if (historyAutoCaptureTimerRef.current !== null) {
+        window.clearTimeout(historyAutoCaptureTimerRef.current);
+        historyAutoCaptureTimerRef.current = null;
+      }
+    };
+  }, [
+    activeDocument?.content,
+    activeDocument?.path,
+    addHistorySnapshot,
+    projectPath,
+    showBlankWorkspace,
+    showWelcome,
+  ]);
+
   const startResize = (event: React.PointerEvent) => {
     event.currentTarget.setPointerCapture(event.pointerId);
     const handleMove = (moveEvent: PointerEvent) => {
@@ -3768,6 +4119,15 @@ ${macroEnd}
               <GitBranch size={21} />
             </button>
             <button
+              className={`activity-button ${
+                sidebarVisible && activeSidebar === "history" ? "active" : ""
+              }`}
+              onClick={() => openSidebar("history")}
+              title="History"
+            >
+              <History size={21} />
+            </button>
+            <button
               className={`activity-button ${tikzCanvasOpen ? "active" : ""}`}
               onClick={() => setTikzCanvasOpen((open) => !open)}
               title="Draw"
@@ -3820,7 +4180,9 @@ ${macroEnd}
               <span>
                 {activeSidebar === "explorer"
                   ? "EXPLORER"
-                  : "SOURCE CONTROL"}
+                  : activeSidebar === "sourceControl"
+                    ? "SOURCE CONTROL"
+                    : "HISTORY"}
               </span>
               <div>
                 {activeSidebar === "explorer" ? (
@@ -3861,6 +4223,15 @@ ${macroEnd}
                     title="Refresh Git status"
                   >
                     <RefreshCw size={14} />
+                  </button>
+                ) : activeSidebar === "history" ? (
+                  <button
+                    className="small-icon"
+                    onClick={() => captureActiveHistorySnapshot("manual")}
+                    title="Capture current state"
+                    disabled={!activeDocument}
+                  >
+                    <Plus size={14} />
                   </button>
                 ) : null}
               </div>
@@ -4156,6 +4527,16 @@ ${macroEnd}
                     </div>
                   )}
                 </div>
+              </div>
+            ) : activeSidebar === "history" ? (
+              <div className="sidebar-panel history-panel">
+                <HistorySidebar
+                  activeFilePath={activeDocument?.relativePath}
+                  snapshots={documentHistory}
+                  onCaptureSnapshot={() => captureActiveHistorySnapshot("manual")}
+                  onRestoreSnapshot={handleRestoreHistorySnapshot}
+                  onDeleteSnapshot={handleDeleteHistorySnapshot}
+                />
               </div>
             ) : null}
           </aside>
@@ -4654,25 +5035,7 @@ ${macroEnd}
                 <NotationManager
                   content={activeDocument?.content ?? ""}
                   onInsertCode={(code) => {
-                    if (!activeDocument) {
-                      alert("Please open a .tex document first to insert the code.");
-                      return;
-                    }
-                    const editor = editorRef.current;
-                    if (editor) {
-                      const model = editor.getModel();
-                      if (model) {
-                        const position = editor.getPosition();
-                        const lineNumber = position?.lineNumber ?? model.getLineCount();
-                        const column = position?.column ?? 1;
-                        editor.executeEdits("", [
-                          {
-                            range: new monaco.Range(lineNumber, column, lineNumber, column),
-                            text: "\n" + code + "\n",
-                          },
-                        ]);
-                      }
-                    }
+                    handleInsertNotationCode(code);
                     setNotationManagerOpen(false);
                   }}
                 />
