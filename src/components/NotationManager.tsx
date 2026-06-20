@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Plus, RefreshCw, Search, Variable } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { Copy, Plus, Search, Variable } from "lucide-react";
 import type { NotedSymbol } from "../types";
 import { analyzeNotation } from "../checks/notationManager";
 
@@ -10,7 +10,6 @@ interface NotationManagerProps {
 
 interface NotationEntry {
   symbol: string;
-  latexInput: string;
   description: string;
 }
 
@@ -20,9 +19,22 @@ interface EquationTemplate {
   desc: string;
 }
 
+type NotationTab = "templates" | "symbols" | "custom" | "detected";
+
+const NOTATION_TABS: Array<{ id: NotationTab; label: string }> = [
+  { id: "templates", label: "Templates" },
+  { id: "symbols", label: "Symbols" },
+  { id: "custom", label: "Custom" },
+  { id: "detected", label: "Detected" },
+];
+
 const EQUATION_TEMPLATES: EquationTemplate[] = [
   { label: "Inline", code: "$x$", desc: "Inline math" },
-  { label: "Display", code: "\\[\n  x = y\n\\]", desc: "Unnumbered display math" },
+  {
+    label: "Display",
+    code: "\\[\n  x = y\n\\]",
+    desc: "Unnumbered display math",
+  },
   {
     label: "Equation",
     code: "\\begin{equation}\n  \\label{eq:label}\n  x = y\n\\end{equation}",
@@ -51,9 +63,21 @@ const EQUATION_TEMPLATES: EquationTemplate[] = [
   },
   { label: "Fraction", code: "\\frac{a}{b}", desc: "Fraction" },
   { label: "Sum", code: "\\sum_{i=1}^{n} x_i", desc: "Summation" },
-  { label: "Integral", code: "\\int_{a}^{b} f(x)\\,dx", desc: "Definite integral" },
-  { label: "Norm", code: "\\left\\lVert x \\right\\rVert_2", desc: "Vector norm" },
-  { label: "Expectation", code: "\\mathbb{E}\\left[X\\right]", desc: "Expected value" },
+  {
+    label: "Integral",
+    code: "\\int_{a}^{b} f(x)\\,dx",
+    desc: "Definite integral",
+  },
+  {
+    label: "Norm",
+    code: "\\left\\lVert x \\right\\rVert_2",
+    desc: "Vector norm",
+  },
+  {
+    label: "Expectation",
+    code: "\\mathbb{E}\\left[X\\right]",
+    desc: "Expected value",
+  },
   {
     label: "Definition",
     code: "\\newcommand{\\mySymbol}{x}",
@@ -158,10 +182,13 @@ const SYMBOL_PALETTE = [
   { latex: "\\circ", display: "∘" },
 ];
 
-export function NotationManager({ content, onInsertCode }: NotationManagerProps) {
+export function NotationManager({
+  content,
+  onInsertCode,
+}: NotationManagerProps) {
   const [customEntries, setCustomEntries] = useState<NotationEntry[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [showPalette, setShowPalette] = useState(false);
+  const [activeTab, setActiveTab] = useState<NotationTab>("templates");
   const [newSymbol, setNewSymbol] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
@@ -186,7 +213,6 @@ export function NotationManager({ content, onInsertCode }: NotationManagerProps)
       ...prev,
       {
         symbol: newSymbol.trim(),
-        latexInput: newSymbol.trim(),
         description: newDescription.trim(),
       },
     ]);
@@ -225,33 +251,69 @@ export function NotationManager({ content, onInsertCode }: NotationManagerProps)
           <span>Notation Manager</span>
         </div>
         <div className="notation-manager-hints">
-          <span>{analysis.length} symbols detected</span>
+          <span>
+            {copied
+              ? `Copied ${copied.length > 22 ? `${copied.slice(0, 22)}...` : copied}`
+              : `${analysis.length} symbols detected`}
+          </span>
         </div>
       </div>
 
+      <div className="notation-manager-tabs">
+        {NOTATION_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            className={activeTab === tab.id ? "active" : ""}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       <div className="notation-manager-body">
-        {/* Symbol Palette */}
-        <div className="notation-manager-section">
-          <div className="notation-manager-section-header">
-            <span>Symbol Palette</span>
-            <button
-              className="notation-manager-toggle"
-              onClick={() => setShowPalette(!showPalette)}
-            >
-              {showPalette ? "Hide" : "Show"} ({filteredPalette.length})
-            </button>
+        {activeTab === "templates" ? (
+          <div className="notation-manager-section notation-manager-section-fill">
+            <div className="notation-manager-section-header">
+              <span>Equation Templates & Math Blocks</span>
+            </div>
+            <div className="notation-manager-templates">
+              {EQUATION_TEMPLATES.map((tpl) => (
+                <button
+                  key={tpl.label}
+                  className="notation-manager-template-btn"
+                  onClick={() => handleInsertEquation(tpl.code)}
+                  title={tpl.desc}
+                >
+                  <span className="notation-manager-template-label">
+                    {tpl.label}
+                  </span>
+                  <span className="notation-manager-template-desc">
+                    {tpl.desc}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="notation-manager-search">
-            <Search size={13} />
-            <input
-              type="text"
-              placeholder="Search symbols..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onFocus={() => setShowPalette(true)}
-            />
-          </div>
-          {showPalette && (
+        ) : null}
+
+        {activeTab === "symbols" ? (
+          <div className="notation-manager-section notation-manager-section-fill">
+            <div className="notation-manager-section-header">
+              <span>Symbol Palette</span>
+              <span className="notation-manager-section-count">
+                {filteredPalette.length} symbols
+              </span>
+            </div>
+            <div className="notation-manager-search">
+              <Search size={13} />
+              <input
+                type="text"
+                placeholder="Search symbols..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
             <div className="notation-manager-palette">
               {filteredPalette.map((sym) => (
                 <button
@@ -269,123 +331,129 @@ export function NotationManager({ content, onInsertCode }: NotationManagerProps)
                 </button>
               ))}
             </div>
-          )}
-        </div>
+          </div>
+        ) : null}
 
-        {/* Quick Equation Templates */}
-        <div className="notation-manager-section">
-          <div className="notation-manager-section-header">
-            <span>Equation Templates & Math Blocks</span>
-          </div>
-          <div className="notation-manager-templates">
-            {EQUATION_TEMPLATES.map((tpl) => (
-              <button
-                key={tpl.label}
-                className="notation-manager-template-btn"
-                onClick={() => handleInsertEquation(tpl.code)}
-                title={tpl.desc}
-              >
-                <span className="notation-manager-template-label">{tpl.label}</span>
-                <span className="notation-manager-template-desc">{tpl.desc}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Custom Notation Entries (User-defined) */}
-        <div className="notation-manager-section">
-          <div className="notation-manager-section-header">
-            <span>Custom Notation</span>
-            <span className="notation-manager-section-count">{customEntries.length} entries</span>
-          </div>
-          <div className="notation-manager-custom-form">
-            <input
-              type="text"
-              placeholder="\\lambda"
-              value={newSymbol}
-              onChange={(e) => setNewSymbol(e.target.value)}
-              className="notation-manager-custom-input"
-            />
-            <input
-              type="text"
-              placeholder="Description (e.g., regularization weight)"
-              value={newDescription}
-              onChange={(e) => setNewDescription(e.target.value)}
-              className="notation-manager-custom-input"
-            />
-            <button
-              className="notation-manager-custom-add"
-              onClick={handleAddCustomEntry}
-              disabled={!newSymbol.trim()}
-            >
-              <Plus size={13} /> Add
-            </button>
-          </div>
-          {customEntries.length > 0 && (
-            <div className="notation-manager-custom-list">
-              {customEntries.map((entry, i) => (
-                <div key={i} className="notation-manager-custom-item">
-                  <code className="notation-manager-custom-symbol">{entry.symbol}</code>
-                  <span className="notation-manager-custom-desc">{entry.description}</span>
-                  <button
-                    className="notation-manager-copy-btn"
-                    onClick={() => {
-                      const def = `\\newcommand{\\${entry.symbol.replace(/^\\/, "")}}{${entry.symbol}}`;
-                      handleCopy(def);
-                    }}
-                  >
-                    <Copy size={12} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Detected Symbols Analysis */}
-        {analysis.length > 0 && (
-          <div className="notation-manager-section">
+        {activeTab === "custom" ? (
+          <div className="notation-manager-section notation-manager-section-fill">
             <div className="notation-manager-section-header">
-              <span>Detected Symbols</span>
-              <span className="notation-manager-section-count">{analysis.length} symbols</span>
+              <span>Custom Notation</span>
+              <span className="notation-manager-section-count">
+                {customEntries.length} entries
+              </span>
             </div>
-            <div className="notation-manager-detected">
-              {analysis.map((sym: NotedSymbol, i: number) => (
-                <div key={i} className="notation-manager-detected-item">
-                  <div className="notation-manager-detected-header">
-                    <code className="notation-manager-detected-symbol">{sym.symbol}</code>
-                    <span className={`notation-manager-detected-badge ${sym.defined ? "defined" : "undefined"}`}>
-                      {sym.defined ? "Defined" : "Undefined"}
+            <div className="notation-manager-custom-form">
+              <input
+                type="text"
+                placeholder="\\lambda"
+                value={newSymbol}
+                onChange={(e) => setNewSymbol(e.target.value)}
+                className="notation-manager-custom-input"
+              />
+              <input
+                type="text"
+                placeholder="Description (e.g., regularization weight)"
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                className="notation-manager-custom-input"
+              />
+              <button
+                className="notation-manager-custom-add"
+                onClick={handleAddCustomEntry}
+                disabled={!newSymbol.trim()}
+              >
+                <Plus size={13} /> Add
+              </button>
+            </div>
+            {customEntries.length > 0 ? (
+              <div className="notation-manager-custom-list">
+                {customEntries.map((entry, i) => (
+                  <div key={i} className="notation-manager-custom-item">
+                    <code className="notation-manager-custom-symbol">
+                      {entry.symbol}
+                    </code>
+                    <span className="notation-manager-custom-desc">
+                      {entry.description}
                     </span>
-                    <span className="notation-manager-detected-count">{sym.usageCount}×</span>
-                    <span className="notation-manager-detected-section">{sym.firstUseSection}</span>
-                  </div>
-                  {sym.similarSymbols.length > 0 && (
-                    <div className="notation-manager-detected-conflict">
-                      ⚠ Similar: {sym.similarSymbols.join(", ")}
-                    </div>
-                  )}
-                  <div className="notation-manager-detected-actions">
                     <button
                       className="notation-manager-copy-btn"
-                      onClick={() => handleCopy(sym.symbol)}
+                      onClick={() => {
+                        const def = `\\newcommand{\\${entry.symbol.replace(/^\\/, "")}}{${entry.symbol}}`;
+                        handleCopy(def);
+                      }}
                     >
-                      Copy
+                      <Copy size={12} />
                     </button>
-                    {!sym.defined && (
-                      <button
-                        className="notation-manager-def-btn"
-                        onClick={() => handleInsertDefinition(sym.symbol)}
-                      >
-                        Define
-                      </button>
-                    )}
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="notation-manager-empty">
+                No custom notation yet.
+              </div>
+            )}
           </div>
-        )}
+        ) : null}
+
+        {activeTab === "detected" ? (
+          <div className="notation-manager-section notation-manager-section-fill">
+            <div className="notation-manager-section-header">
+              <span>Detected Symbols</span>
+              <span className="notation-manager-section-count">
+                {analysis.length} symbols
+              </span>
+            </div>
+            {analysis.length > 0 ? (
+              <div className="notation-manager-detected">
+                {analysis.map((sym: NotedSymbol, i: number) => (
+                  <div key={i} className="notation-manager-detected-item">
+                    <div className="notation-manager-detected-header">
+                      <code className="notation-manager-detected-symbol">
+                        {sym.symbol}
+                      </code>
+                      <span
+                        className={`notation-manager-detected-badge ${sym.defined ? "defined" : "undefined"}`}
+                      >
+                        {sym.defined ? "Defined" : "Undefined"}
+                      </span>
+                      <span className="notation-manager-detected-count">
+                        {sym.usageCount}×
+                      </span>
+                      <span className="notation-manager-detected-section">
+                        {sym.firstUseSection}
+                      </span>
+                    </div>
+                    {sym.similarSymbols.length > 0 && (
+                      <div className="notation-manager-detected-conflict">
+                        ⚠ Similar: {sym.similarSymbols.join(", ")}
+                      </div>
+                    )}
+                    <div className="notation-manager-detected-actions">
+                      <button
+                        className="notation-manager-copy-btn"
+                        onClick={() => handleCopy(sym.symbol)}
+                      >
+                        Copy
+                      </button>
+                      {!sym.defined && (
+                        <button
+                          className="notation-manager-def-btn"
+                          onClick={() => handleInsertDefinition(sym.symbol)}
+                        >
+                          Define
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="notation-manager-empty">
+                No notation symbols detected in the active document.
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -11,7 +11,6 @@ import {
 import { execFile } from "node:child_process";
 import {
   access,
-  cp,
   mkdir,
   mkdtemp,
   readFile,
@@ -57,7 +56,6 @@ const openSpellCheckerChannel = "tools:open-spellchecker";
 const openProjectChannel = "file:open-project";
 const createFileChannel = "file:create-dialog";
 const createFolderChannel = "folder:create-dialog";
-let welcomeProjectPromise: Promise<string> | null = null;
 const starterDocument = String.raw`\documentclass[11pt]{article}
 
 \usepackage[margin=1in]{geometry}
@@ -1343,35 +1341,6 @@ async function listProject(
   });
 }
 
-async function initializeWelcomeProject(): Promise<string> {
-  const projectPath = path.join(app.getPath("userData"), "projects", "Welcome");
-  const mainFile = path.join(projectPath, "main.tex");
-
-  try {
-    await stat(mainFile);
-  } catch {
-    const source = app.isPackaged
-      ? path.join(process.resourcesPath, "examples", "welcome")
-      : path.join(process.cwd(), "examples", "welcome");
-    await mkdir(projectPath, { recursive: true });
-    await cp(source, projectPath, {
-      recursive: true,
-      force: false,
-      errorOnExist: false,
-    });
-  }
-
-  return projectPath;
-}
-
-function ensureWelcomeProject(): Promise<string> {
-  welcomeProjectPromise ??= initializeWelcomeProject().catch((error) => {
-    welcomeProjectPromise = null;
-    throw error;
-  });
-  return welcomeProjectPromise;
-}
-
 function createWindow(): void {
   console.log("[latexdo] createWindow:start");
   nativeTheme.themeSource = "dark";
@@ -1414,7 +1383,6 @@ app.whenReady().then(() => {
   console.log("[latexdo] app:terminal-registered");
   buildApplicationMenu();
   console.log("[latexdo] app:menu-built");
-  ipcMain.handle("project:get-welcome", ensureWelcomeProject);
   ipcMain.handle("project:open", async () => {
     const result = await dialog.showOpenDialog({
       properties: ["openDirectory", "createDirectory"],

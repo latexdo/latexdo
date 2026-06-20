@@ -17,8 +17,6 @@ import type {
 } from "./types.js" with { "resolution-mode": "import" };
 
 const api = {
-  getWelcomeProject: (): Promise<string> =>
-    ipcRenderer.invoke("project:get-welcome"),
   openProject: (): Promise<string | null> => ipcRenderer.invoke("project:open"),
   createProject: (): Promise<string | null> =>
     ipcRenderer.invoke("project:create"),
