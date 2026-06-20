@@ -1,11 +1,6 @@
 const latexDoReviewCommandPattern =
   /\\(?:reviewercomment|latexdoreviewercomment|rebuttal)\s*\{/;
 
-export interface ReviewerCommentInsertion {
-  text: string;
-  consumedCharacterCount: number;
-}
-
 interface BraceArgument {
   value: string;
   endIndex: number;
@@ -92,21 +87,6 @@ function splitTrailingPunctuation(content: string, index: number): {
 
 export function usesLatexDoReviewMacros(content: string): boolean {
   return latexDoReviewCommandPattern.test(content);
-}
-
-export function buildReviewerCommentInsertion(
-  selectedText: string,
-  commentBody: string,
-  nextText: string,
-): ReviewerCommentInsertion {
-  const trailingMatch = nextText.match(/^([.,;:!?])([ \t]*)/);
-  const trailingText = trailingMatch ? trailingMatch[0] : "";
-  const sentenceText = trailingText ? `${selectedText}${trailingText.trimEnd()}` : selectedText;
-
-  return {
-    text: `${sentenceText}\n\\latexdoreviewercomment{${commentBody}}\n`,
-    consumedCharacterCount: trailingText.length,
-  };
 }
 
 export function normalizeLatexDoReviewMarkup(content: string): string {

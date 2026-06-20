@@ -62,7 +62,6 @@ import { ReviewSidebar } from "./components/ReviewSidebar";
 import { RebuttalSidebar } from "./components/RebuttalSidebar";
 import { generateRebuttalLetter } from "./rebuttalGenerator";
 import {
-  buildReviewerCommentInsertion,
   normalizeLatexDoReviewMarkup,
   usesLatexDoReviewMacros,
 } from "./reviewMarkup";
@@ -2350,9 +2349,12 @@ ${macroEnd}
       options: {
         isWholeLine: false,
         className: "review-comment-decoration",
+        beforeContentClassName: "review-comment-inline-marker",
         glyphMarginClassName: "review-comment-glyph",
+        glyphMargin: { position: monaco.editor.GlyphMarginLane.Center },
         stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
-        hoverMessage: { value: "Review Comment: " + chat.comments[0]?.text },
+        hoverMessage: { value: "Review comment: " + chat.comments[0]?.text },
+        glyphMarginHoverMessage: { value: "Review comment: " + chat.comments[0]?.text },
       },
     }));
 
@@ -3371,31 +3373,6 @@ ${macroEnd}
     }
 
     const commentBody = "Add your comment here...";
-    const selectionEndOffset = model.getOffsetAt(selection.getEndPosition());
-    const nextText = model.getValue().slice(selectionEndOffset, selectionEndOffset + 32);
-    const insertion = buildReviewerCommentInsertion(
-      selectedText,
-      commentBody,
-      nextText,
-    );
-    const insertionEndPosition = model.getPositionAt(
-      selectionEndOffset + insertion.consumedCharacterCount,
-    );
-    const editRange = insertion.consumedCharacterCount > 0
-      ? new monaco.Range(
-          selection.startLineNumber,
-          selection.startColumn,
-          insertionEndPosition.lineNumber,
-          insertionEndPosition.column,
-        )
-      : selection;
-
-    editor.executeEdits("reviewer-mode", [{
-      range: editRange,
-      text: insertion.text,
-      forceMoveMarkers: true
-    }]);
-
     const newChat: ReviewChat = {
       id: Date.now().toString(),
       filePath: document.relativePath,
@@ -3419,7 +3396,7 @@ ${macroEnd}
       void saveReviewData(next, rebuttalItems);
       return next;
     });
-    setStatusMessage("Added review comment to source.");
+    setStatusMessage("Added review comment to sidebar.");
   }, [rebuttalItems, saveReviewData]);
 
   const handleAddRebuttalToSource = useCallback(() => {
@@ -4426,6 +4403,7 @@ ${macroEnd}
                     bracketPairColorization: { enabled: true },
                     guides: { bracketPairs: true, indentation: true },
                     wordWrap: settings.wordWrap ? "on" : "off",
+                    glyphMargin: true,
                     scrollBeyondLastLine: false,
                     automaticLayout: true,
                     fixedOverflowWidgets: true,

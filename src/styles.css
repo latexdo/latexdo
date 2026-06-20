@@ -3729,6 +3729,67 @@ button {
   text-decoration: underline;
 }
 
+.monaco-editor .review-comment-decoration {
+  border-bottom: 1px solid rgba(124, 166, 255, 0.75);
+  background: rgba(124, 166, 255, 0.14);
+}
+
+.monaco-editor .review-comment-inline-marker {
+  position: relative;
+  display: inline-block;
+  width: 13px;
+  height: 10px;
+  margin-right: 4px;
+  border: 1px solid rgba(124, 166, 255, 0.95);
+  border-radius: 3px;
+  background: rgba(124, 166, 255, 0.18);
+  vertical-align: -1px;
+}
+
+.monaco-editor .review-comment-inline-marker::after {
+  content: "";
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  margin-top: 7px;
+  margin-left: 1px;
+  border-bottom: 1px solid rgba(124, 166, 255, 0.95);
+  border-left: 1px solid rgba(124, 166, 255, 0.95);
+  background: #141820;
+  transform: rotate(-35deg);
+}
+
+.monaco-editor .review-comment-glyph {
+  position: relative;
+}
+
+.monaco-editor .review-comment-glyph::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  width: 13px;
+  height: 10px;
+  border: 1px solid #7ca6ff;
+  border-radius: 3px;
+  background: rgba(124, 166, 255, 0.2);
+  box-shadow: 0 0 0 2px rgba(124, 166, 255, 0.1);
+  transform: translateX(-50%);
+}
+
+.monaco-editor .review-comment-glyph::after {
+  content: "";
+  position: absolute;
+  top: 13px;
+  left: calc(50% - 4px);
+  width: 4px;
+  height: 4px;
+  border-bottom: 1px solid #7ca6ff;
+  border-left: 1px solid #7ca6ff;
+  background: #141820;
+  transform: rotate(-35deg);
+}
+
 .review-comments-list {
   display: flex;
   flex-direction: column;
