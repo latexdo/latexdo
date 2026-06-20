@@ -998,7 +998,7 @@ function pruneHistorySnapshots(
 export default function App() {
   const [projectPath, setProjectPath] = useState("");
   const [projectEntries, setProjectEntries] = useState<ProjectEntry[]>([]);
-  const [hideProjectEntries, setHideProjectEntries] = useState(false);
+  const [hideProjectEntries, setHideProjectEntries] = useState(true);
   const [documents, setDocuments] = useState<OpenDocument[]>([]);
   const [activePath, setActivePath] = useState("");
   const [welcomeOpen, setWelcomeOpen] = useState(true);
@@ -1055,7 +1055,7 @@ export default function App() {
   const [proofreadingError, setProofreadingError] = useState("");
   const [assistantDiagnostics, setAssistantDiagnostics] = useState<Diagnostic[]>([]);
   const [errorDoctorResult, setErrorDoctorResult] = useState<ErrorDoctorResult | null>(null);
-  const [statusMessage, setStatusMessage] = useState("Opening workspace…");
+  const [statusMessage, setStatusMessage] = useState("Welcome to LatexDo");
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
   const [pdfTarget, setPdfTarget] = useState<SyncTexPdfLocation | null>(null);
   const [pdfScale, setPdfScale] = useState(100);
@@ -1069,6 +1069,7 @@ export default function App() {
   const documentHistoryRef = useRef<DocumentHistorySnapshot[]>([]);
   const projectEntriesRef = useRef<ProjectEntry[]>([]);
   const projectPathRef = useRef("");
+  const hideProjectEntriesRef = useRef(true);
   const activePathRef = useRef("");
   const rootFileRef = useRef(rootFile);
   const engineRef = useRef(engine);
@@ -1092,10 +1093,11 @@ export default function App() {
   const activeDocument = documents.find(
     (document) => document.path === activePath,
   );
+  const hasVisibleProject = Boolean(projectPath) && !hideProjectEntries;
   const showWelcome = welcomeOpen && !activePath;
   const showBlankWorkspace = hideProjectEntries && !welcomeOpen && !activePath;
   const previewShown = previewVisible && !showWelcome && !showBlankWorkspace;
-  const projectName = fileName(projectPath) || "LatexDo";
+  const projectName = hasVisibleProject ? fileName(projectPath) || "Project" : "No Folder";
   const diagnostics = useMemo(
     () => [
       ...(compileResult?.diagnostics ?? []),
@@ -1157,13 +1159,14 @@ export default function App() {
   }, [spellCheckerLanguageQuery, spellCheckerSettings?.availableLanguages]);
   const rootFileExists = useMemo(
     () =>
+      hasVisibleProject &&
       allProjectEntries.some(
         (entry) =>
           entry.type === "file" &&
           normalizeRelativePath(entry.relativePath) ===
             normalizeRelativePath(rootFile),
       ),
-    [allProjectEntries, rootFile],
+    [allProjectEntries, hasVisibleProject, rootFile],
   );
   const autoCompileSignature = useMemo(
     () =>
@@ -1186,6 +1189,10 @@ export default function App() {
   useEffect(() => {
     projectPathRef.current = projectPath;
   }, [projectPath]);
+
+  useEffect(() => {
+    hideProjectEntriesRef.current = hideProjectEntries;
+  }, [hideProjectEntries]);
 
   useEffect(() => {
     activePathRef.current = activePath;
@@ -1673,17 +1680,6 @@ ${macroEnd}
     [loadHistoryData, loadReviewData, openDocument],
   );
 
-  useEffect(() => {
-    void window.latexdo
-      .getWelcomeProject()
-      .then((path) => loadProject(path, false, true))
-      .catch((error: unknown) => {
-        setStatusMessage(
-          error instanceof Error ? error.message : "Could not open workspace",
-        );
-      });
-
-  }, [loadProject]);
   const saveDocument = useCallback(
     async (document: OpenDocument) => {
       const currentProject = projectPathRef.current;
@@ -1711,7 +1707,8 @@ ${macroEnd}
 
   const compile = useCallback(async (): Promise<CompileResult | null> => {
     const currentProject = projectPathRef.current;
-    if (!currentProject) {
+    if (!currentProject || hideProjectEntriesRef.current) {
+      setStatusMessage("Create or open a project before compiling.");
       return null;
     }
 
@@ -1848,7 +1845,19 @@ ${macroEnd}
   );
 
   useEffect(() => {
-    if (!projectPath || !rootFileExists || compiling) {
+    const hasDirtyDocuments = documents.some(
+      (document) => document.content !== document.savedContent,
+    );
+
+    if (
+      !hasVisibleProject ||
+      !activeDocument ||
+      !rootFileExists ||
+      !hasDirtyDocuments ||
+      compiling ||
+      showWelcome ||
+      showBlankWorkspace
+    ) {
       return;
     }
     if (autoCompileSignature === lastAutoCompileSignatureRef.current) {
@@ -1863,7 +1872,17 @@ ${macroEnd}
     return () => {
       window.clearTimeout(timeout);
     };
-  }, [autoCompileSignature, compile, compiling, projectPath, rootFileExists]);
+  }, [
+    activeDocument,
+    autoCompileSignature,
+    compile,
+    compiling,
+    documents,
+    hasVisibleProject,
+    rootFileExists,
+    showBlankWorkspace,
+    showWelcome,
+  ]);
 
   useEffect(() => {
     const doc = activeDocument;
@@ -2886,6 +2905,10 @@ ${macroEnd}
   };
 
   const openCreateDialog = (type: "file" | "folder") => {
+    if (!projectPath || hideProjectEntries) {
+      setStatusMessage("Create or open a project before adding files.");
+      return;
+    }
     setCreatePath(type === "file" ? "chapter.tex" : "chapters");
     setCreateError("");
     setCreateDialog(type);
@@ -4198,6 +4221,7 @@ ${macroEnd}
                       className="small-icon"
                       onClick={() => openCreateDialog("file")}
                       title="New file"
+                      disabled={!hasVisibleProject}
                     >
                       <FilePlus2 size={15} />
                     </button>
@@ -4205,6 +4229,7 @@ ${macroEnd}
                       className="small-icon"
                       onClick={() => openCreateDialog("folder")}
                       title="New folder"
+                      disabled={!hasVisibleProject}
                     >
                       <FolderPlus size={15} />
                     </button>
@@ -4212,6 +4237,7 @@ ${macroEnd}
                       className="small-icon"
                       onClick={() => void refreshProject()}
                       title="Refresh"
+                      disabled={!hasVisibleProject}
                     >
                       <RefreshCw size={14} />
                     </button>
@@ -4243,50 +4269,48 @@ ${macroEnd}
                   <span>{projectName.toUpperCase()}</span>
                 </button>
                 <div className="file-tree">
-                  {mode === "author" ? (
-                    hideProjectEntries ? null : (
-                      <FileTree
-                        entries={projectEntries}
-                        activePath={activePath}
-                        onOpen={openDocument}
-                        onCompileFile={(entry) => void compileEntry(entry)}
-                        onSetRootFile={(entry) => {
-                          setRootFile(entry.relativePath);
-                          rootFileRef.current = entry.relativePath;
-                          setStatusMessage(`Main file set to ${entry.relativePath}`);
-                        }}
-                        onMoveEntry={(sourcePath, destination) =>
-                          void moveEntry(sourcePath, destination)
-                        }
-                        onCreateFileInDirectory={(entry) =>
-                          openCreateDialogInDirectory("file", entry)
-                        }
-                        onCreateFolderInDirectory={(entry) =>
-                          openCreateDialogInDirectory("folder", entry)
-                        }
-                      />
-                    )
+                  {!hasVisibleProject ? (
+                    <div className="sidebar-empty-state">
+                      No project open. Create a project or open an existing folder.
+                    </div>
+                  ) : mode === "author" ? (
+                    <FileTree
+                      entries={projectEntries}
+                      activePath={activePath}
+                      onOpen={openDocument}
+                      onCompileFile={(entry) => void compileEntry(entry)}
+                      onSetRootFile={(entry) => {
+                        setRootFile(entry.relativePath);
+                        rootFileRef.current = entry.relativePath;
+                        setStatusMessage(`Main file set to ${entry.relativePath}`);
+                      }}
+                      onMoveEntry={(sourcePath, destination) =>
+                        void moveEntry(sourcePath, destination)
+                      }
+                      onCreateFileInDirectory={(entry) =>
+                        openCreateDialogInDirectory("file", entry)
+                      }
+                      onCreateFolderInDirectory={(entry) =>
+                        openCreateDialogInDirectory("folder", entry)
+                      }
+                    />
                   ) : mode === "reviewer" ? (
-                    hideProjectEntries ? null : (
-                      <ReviewSidebar
-                        chats={reviewChats}
-                        onAddChat={handleAddReviewChat}
-                        onAddComment={handleAddReviewComment}
-                        onDeleteChat={handleDeleteReviewChat}
-                        onJumpToSelection={handleJumpToReviewSelection}
-                      />
-                    )
+                    <ReviewSidebar
+                      chats={reviewChats}
+                      onAddChat={handleAddReviewChat}
+                      onAddComment={handleAddReviewComment}
+                      onDeleteChat={handleDeleteReviewChat}
+                      onJumpToSelection={handleJumpToReviewSelection}
+                    />
                   ) : (
-                    hideProjectEntries ? null : (
-                      <RebuttalSidebar
-                        items={rebuttalItems}
-                        onAddItem={handleAddRebuttalItem}
-                        onAddRebuttalToSource={handleAddRebuttalToSource}
-                        onUpdateItem={handleUpdateRebuttalItem}
-                        onDeleteItem={handleDeleteRebuttalItem}
-                        onGenerateLetter={handleGenerateRebuttalLetter}
-                      />
-                    )
+                    <RebuttalSidebar
+                      items={rebuttalItems}
+                      onAddItem={handleAddRebuttalItem}
+                      onAddRebuttalToSource={handleAddRebuttalToSource}
+                      onUpdateItem={handleUpdateRebuttalItem}
+                      onDeleteItem={handleDeleteRebuttalItem}
+                      onGenerateLetter={handleGenerateRebuttalLetter}
+                    />
                   )}
                 </div>
               </>
@@ -4726,16 +4750,18 @@ ${macroEnd}
                           <small>Create a project with a ready-to-build main.tex</small>
                         </span>
                       </button>
-                      <button
-                        className="welcome-action"
-                        onClick={() => openCreateDialog("file")}
-                      >
-                        <FilePlus2 size={18} />
-                        <span>
-                          <strong>New File</strong>
-                          <small>Add a .tex, .bib, or text file to this project</small>
-                        </span>
-                      </button>
+                      {hasVisibleProject ? (
+                        <button
+                          className="welcome-action"
+                          onClick={() => openCreateDialog("file")}
+                        >
+                          <FilePlus2 size={18} />
+                          <span>
+                            <strong>New File</strong>
+                            <small>Add a .tex, .bib, or text file to this project</small>
+                          </span>
+                        </button>
+                      ) : null}
                       <button className="welcome-action" onClick={openProject}>
                         <FolderOpen size={18} />
                         <span>
