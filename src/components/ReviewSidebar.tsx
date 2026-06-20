@@ -24,7 +24,7 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
       <div className="sidebar-header-actions">
         <button className="sidebar-primary-action" onClick={onAddChat}>
           <Plus size={14} />
-          <span>New Review Comment</span>
+          <span>New Review Thread</span>
         </button>
       </div>
 
@@ -32,8 +32,8 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
         {chats.length === 0 ? (
           <div className="sidebar-empty">
             <MessageSquare size={32} />
-            <p>No review comments yet.</p>
-            <p className="sub-text">Select text in the editor and click "New Review Comment" to start a discussion.</p>
+            <p>No review threads yet.</p>
+            <p className="sub-text">Select text in the editor and start a sidebar discussion.</p>
           </div>
         ) : (
           chats.map((chat) => (
@@ -56,23 +56,29 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
               </div>
               
               <div className="review-comments-list">
-                {chat.comments.map((comment) => (
-                  <div key={comment.id} className="review-comment">
-                    <div className="comment-meta">
-                      <User size={12} />
-                      <span className="comment-author">{comment.author}</span>
-                      <span className="comment-time">
-                        {new Date(comment.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                {chat.comments.length > 0 ? (
+                  chat.comments.map((comment) => (
+                    <div key={comment.id} className="review-comment">
+                      <div className="comment-meta">
+                        <User size={12} />
+                        <span className="comment-author">{comment.author}</span>
+                        <span className="comment-time">
+                          {new Date(comment.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <div className="comment-text">{comment.text}</div>
                     </div>
-                    <div className="comment-text">{comment.text}</div>
+                  ))
+                ) : (
+                  <div className="review-thread-empty">
+                    No messages yet.
                   </div>
-                ))}
+                )}
               </div>
 
               <div className="comment-input-area">
                 <textarea
-                  placeholder="Reply..."
+                  placeholder="Write a review message..."
                   value={commentTexts[chat.id] || ""}
                   onChange={(e) => setCommentTexts(prev => ({ ...prev, [chat.id]: e.target.value }))}
                   onKeyDown={(e) => {

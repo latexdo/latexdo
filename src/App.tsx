@@ -647,6 +647,7 @@ const latexSuggestions = [
 ] as const;
 
 const historyStorageRelativePath = ".latexdo/history.json";
+const legacyReviewPlaceholderText = "Add your comment here...";
 const maxHistorySnapshotsPerFile = 80;
 const historyAutoCaptureDelayMs = 5000;
 
@@ -930,6 +931,27 @@ function historySnapshotId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function removeLegacyReviewPlaceholders(chats: ReviewChat[]): {
+  chats: ReviewChat[];
+  changed: boolean;
+} {
+  let changed = false;
+  const cleaned = chats.map((chat) => {
+    const comments = chat.comments.filter((comment) => {
+      const keep =
+        comment.text.trim() !== legacyReviewPlaceholderText ||
+        comment.author !== "Reviewer";
+      if (!keep) {
+        changed = true;
+      }
+      return keep;
+    });
+    return comments.length === chat.comments.length ? chat : { ...chat, comments };
+  });
+
+  return { chats: cleaned, changed };
+}
+
 function buildHistorySnapshot(
   document: OpenDocument,
   source: DocumentHistorySnapshot["source"],
@@ -1024,6 +1046,7 @@ export default function App() {
   const [pdfComplianceDiagnostics, setPdfComplianceDiagnostics] = useState<Diagnostic[]>([]);
   const [panelVisible, setPanelVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<PanelKind>("problems");
+  const [terminalStarted, setTerminalStarted] = useState(false);
   const [panelHeight, setPanelHeight] = useState(200);
   const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
   const [compileJobCount, setCompileJobCount] = useState(0);
@@ -1487,13 +1510,18 @@ ${macroEnd}
       }
       const content = await window.latexdo.readFile(path, filePath);
       const { chats, items } = JSON.parse(content) as { chats: ReviewChat[], items: RebuttalItem[] };
-      setReviewChats(chats || []);
-      setRebuttalItems(items || []);
+      const nextItems = items || [];
+      const normalizedChats = removeLegacyReviewPlaceholders(chats || []);
+      setReviewChats(normalizedChats.chats);
+      setRebuttalItems(nextItems);
+      if (normalizedChats.changed) {
+        void saveReviewData(normalizedChats.chats, nextItems);
+      }
     } catch (e) {
       setReviewChats([]);
       setRebuttalItems([]);
     }
-  }, [resolveProjectDataPath]);
+  }, [resolveProjectDataPath, saveReviewData]);
 
   const saveHistoryData = useCallback(async (snapshots: DocumentHistorySnapshot[]) => {
     const currentProject = projectPathRef.current;
@@ -3224,6 +3252,9 @@ ${macroEnd}
   };
 
   const openPanel = useCallback((panel: PanelKind) => {
+    if (panel === "terminal") {
+      setTerminalStarted(true);
+    }
     setPanelVisible(true);
     setActivePanel(panel);
   }, []);
@@ -3608,7 +3639,6 @@ ${macroEnd}
       return;
     }
 
-    const commentBody = "Add your comment here...";
     const newChat: ReviewChat = {
       id: Date.now().toString(),
       filePath: document.relativePath,
@@ -3619,12 +3649,7 @@ ${macroEnd}
         endColumn: selection.endColumn,
         text: selectedText,
       },
-      comments: [{
-        id: (Date.now() + 1).toString(),
-        author: "Reviewer",
-        text: commentBody,
-        timestamp: Date.now(),
-      }],
+      comments: [],
     };
 
     setReviewChats(prev => {
@@ -3632,7 +3657,7 @@ ${macroEnd}
       void saveReviewData(next, rebuttalItems);
       return next;
     });
-    setStatusMessage("Added review comment to sidebar.");
+    setStatusMessage("Started review conversation in sidebar.");
   }, [rebuttalItems, saveReviewData]);
 
   const handleAddRebuttalToSource = useCallback(() => {
@@ -5403,9 +5428,16 @@ ${macroEnd}
                     {compileResult?.output || "Compile the project to see build output."}
                   </pre>
                 </section>
-                {activePanel === "terminal" ? (
-                  <section className="panel-pane panel-pane-terminal">
-                    <TerminalPanel cwd={projectPath} active />
+                {terminalStarted ? (
+                  <section
+                    className={`panel-pane panel-pane-terminal ${
+                      activePanel === "terminal" ? "" : "hidden"
+                    }`}
+                  >
+                    <TerminalPanel
+                      cwd={projectPath}
+                      active={activePanel === "terminal"}
+                    />
                   </section>
                 ) : null}
                 {activePanel === "checkAnalysis" ? (

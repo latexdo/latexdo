@@ -7,11 +7,11 @@ import {
 describe("review markup", () => {
   it("cleans old reviewercomment wrappers with citations and trailing punctuation", () => {
     const source =
-      "\\reviewercomment{Code completion helps developers~\\cite{Wang23a, Izdai24a}}{Add your comment here...}.";
+      "\\reviewercomment{Code completion helps developers~\\cite{Wang23a, Izdai24a}}{Please clarify this claim.}.";
 
     expect(normalizeLatexDoReviewMarkup(source)).toBe(
       "Code completion helps developers~\\cite{Wang23a, Izdai24a}.\n" +
-        "\\latexdoreviewercomment{Add your comment here...}\n",
+        "\\latexdoreviewercomment{Please clarify this claim.}\n",
     );
   });
 
