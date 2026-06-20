@@ -104,13 +104,28 @@ function buildTerminalEnv(shell: string, cwd: string): Record<string, string> {
   }
 
   env.TERM = "xterm-256color";
+  env.COLORTERM = env.COLORTERM || "truecolor";
+  env.TERM_PROGRAM = "LatexDo";
+  env.CLICOLOR = env.CLICOLOR || "1";
+  env.FORCE_COLOR = env.FORCE_COLOR || "1";
   env.HOME = env.HOME || app.getPath("home");
   env.PWD = cwd;
   env.HISTFILE = env.HISTFILE || `${app.getPath("temp")}/latexdo-shell-history`;
   env.ZDOTDIR = env.ZDOTDIR || env.HOME;
   env.BASH_SILENCE_DEPRECATION_WARNING =
     env.BASH_SILENCE_DEPRECATION_WARNING || "1";
-  env.PS1 = env.PS1 || "LatexDo$ ";
+  env.LSCOLORS = env.LSCOLORS || "ExGxBxDxCxEgEdxbxgxcxd";
+  env.LS_COLORS =
+    env.LS_COLORS ||
+    "di=1;34:ln=36:so=35:pi=33:ex=1;32:bd=34;46:cd=34;43:su=30;41:sg=30;46:tw=30;42:ow=30;43";
+
+  if (!env.PS1) {
+    const shellName = shell.split("/").pop() ?? "";
+    env.PS1 =
+      shellName === "zsh"
+        ? "%F{75}LatexDo%f %F{108}%~%f %# "
+        : "\u001b[38;5;75mLatexDo\u001b[0m \u001b[38;5;108m\\w\u001b[0m \\$ ";
+  }
 
   if (os.platform() !== "win32") {
     env.SHELL = shell;
