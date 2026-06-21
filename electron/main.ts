@@ -1932,7 +1932,7 @@ function createWindow(): void {
       preload: path.join(currentDirectory, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       spellcheck: true,
     },
   });
