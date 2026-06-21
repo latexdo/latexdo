@@ -12,6 +12,7 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "lcov"],
       include: ["src/checks/*.ts", "src/components/*.tsx", "src/latex/*.ts", "src/utils/*.ts"],
+      exclude: ["src/latex/registerLatexCompletions.ts"],
     },
   },
 });

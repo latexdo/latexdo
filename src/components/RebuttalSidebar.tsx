@@ -53,6 +53,8 @@ export const RebuttalSidebar: React.FC<RebuttalSidebarProps> = ({
                 <button 
                   className="small-icon delete-button" 
                   onClick={() => onDeleteItem(item.id)}
+                  title="Delete rebuttal item"
+                  aria-label="Delete rebuttal item"
                 >
                   <Trash2 size={13} />
                 </button>
