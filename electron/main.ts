@@ -12,13 +12,16 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   access,
+  copyFile,
+  link,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readdir,
   rename,
   stat,
-  writeFile,
+  unlink,
 } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -140,6 +143,83 @@ function relativeProjectPath(projectPath: string, targetPath: string): string {
   return relativePath || ".";
 }
 
+function temporarySiblingPath(targetPath: string, label = "tmp"): string {
+  return path.join(
+    path.dirname(targetPath),
+    `.${path.basename(targetPath)}.${randomUUID()}.${label}`,
+  );
+}
+
+async function removeIfPresent(filePath: string): Promise<void> {
+  await unlink(filePath).catch(() => {});
+}
+
+async function syncParentDirectory(filePath: string): Promise<void> {
+  let directoryHandle: Awaited<ReturnType<typeof open>> | null = null;
+  try {
+    directoryHandle = await open(path.dirname(filePath), "r");
+    await directoryHandle.sync();
+  } catch {
+    // Directory fsync is best-effort and unsupported on some platforms.
+  } finally {
+    await directoryHandle?.close().catch(() => {});
+  }
+}
+
+async function writeSyncedUtf8(filePath: string, content: string): Promise<void> {
+  const fileHandle = await open(filePath, "wx");
+  try {
+    await fileHandle.writeFile(content, "utf8");
+    await fileHandle.sync();
+  } finally {
+    await fileHandle.close();
+  }
+}
+
+async function refreshBackupFile(targetPath: string): Promise<void> {
+  const backupPath = `${targetPath}.bak`;
+  const backupTempPath = temporarySiblingPath(backupPath, "bak.tmp");
+
+  try {
+    await copyFile(targetPath, backupTempPath);
+    await rename(backupTempPath, backupPath);
+    await syncParentDirectory(backupPath);
+  } catch (error) {
+    await removeIfPresent(backupTempPath);
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+}
+
+async function atomicWriteUtf8(
+  targetPath: string,
+  content: string,
+  options: { backup?: boolean; exclusive?: boolean } = {},
+): Promise<void> {
+  await mkdir(path.dirname(targetPath), { recursive: true });
+  const tempPath = temporarySiblingPath(targetPath);
+
+  try {
+    await writeSyncedUtf8(tempPath, content);
+    if (options.backup) {
+      await refreshBackupFile(targetPath);
+    }
+
+    if (options.exclusive) {
+      await link(tempPath, targetPath);
+      await removeIfPresent(tempPath);
+    } else {
+      await rename(tempPath, targetPath);
+    }
+    await syncParentDirectory(targetPath);
+  } catch (error) {
+    await removeIfPresent(tempPath);
+    throw error;
+  }
+}
+
 const maxProjectIdLength = 128;
 const maxRelativePathLength = 4096;
 const maxTextContentLength = 20 * 1024 * 1024;
@@ -147,11 +227,7 @@ const maxProofreadingContentLength = 5 * 1024 * 1024;
 const maxGitCommitMessageLength = 20_000;
 const maxSettingsStringLength = 2048;
 const maxSyncTexNumber = 1_000_000;
-const reservedProjectPathSegments = new Set([
-  ".git",
-  ".latexdo",
-  "node_modules",
-]);
+const reservedProjectPathSegments = new Set([".git", "node_modules"]);
 const compileEngines = new Set(["pdflatex", "xelatex", "lualatex"]);
 const languageCodePattern = /^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$/;
 const gitHashPattern = /^[0-9a-fA-F]{7,64}$/;
@@ -611,8 +687,7 @@ async function writeStoredSpellCheckerSettings(
   settings: StoredSpellCheckerSettings,
 ): Promise<void> {
   const filePath = path.join(app.getPath("userData"), spellCheckerSettingsFile);
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(
+  await atomicWriteUtf8(
     filePath,
     JSON.stringify(
       {
@@ -623,7 +698,7 @@ async function writeStoredSpellCheckerSettings(
       null,
       2,
     ),
-    "utf8",
+    { backup: true },
   );
 }
 
@@ -758,8 +833,9 @@ async function writeStoredProofreadingSettings(
   settings: ProofreadingSettings,
 ): Promise<void> {
   const filePath = path.join(app.getPath("userData"), proofreadingSettingsFile);
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, JSON.stringify(settings, null, 2), "utf8");
+  await atomicWriteUtf8(filePath, JSON.stringify(settings, null, 2), {
+    backup: true,
+  });
 }
 
 function sanitizeProofreadingSettings(
@@ -1829,10 +1905,10 @@ app.whenReady().then(() => {
     );
     const projectPath = path.join(tmpDir, "My LaTeX Project");
     await mkdir(projectPath, { recursive: true });
-    await writeFile(
+    await atomicWriteUtf8(
       path.join(projectPath, "main.tex"),
       starterDocument,
-      "utf8",
+      { exclusive: true },
     );
     return registerProject(projectPath);
   });
@@ -1878,8 +1954,7 @@ app.whenReady().then(() => {
     const content = parseTextContent(channel, rawContent);
     const projectPath = getProjectRoot(projectId);
     const resolvedPath = resolveProjectPath(projectPath, filePath);
-    await mkdir(path.dirname(resolvedPath), { recursive: true });
-    await writeFile(resolvedPath, content, "utf8");
+    await atomicWriteUtf8(resolvedPath, content, { backup: true });
   });
   ipcMain.handle("file:create", async (_event, ...rawArgs: unknown[]) => {
     const channel = "file:create";
@@ -1888,11 +1963,9 @@ app.whenReady().then(() => {
     const relativePath = parseRelativePath(channel, rawRelativePath);
     const projectPath = getProjectRoot(projectId);
     const filePath = resolveProjectPath(projectPath, relativePath);
-    await mkdir(path.dirname(filePath), { recursive: true });
     try {
-      await writeFile(filePath, starterContent(relativePath), {
-        encoding: "utf8",
-        flag: "wx",
+      await atomicWriteUtf8(filePath, starterContent(relativePath), {
+        exclusive: true,
       });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "EEXIST") {
