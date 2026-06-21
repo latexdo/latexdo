@@ -1,4 +1,4 @@
-import type { LatexIndex, } from "./latexIndex";
+import type { LatexIndex } from "./latexIndex";
 import { parseBibFile } from "./parseBib";
 import { parseTexLabels } from "./parseTexLabels";
 

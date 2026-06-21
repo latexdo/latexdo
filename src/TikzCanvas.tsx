@@ -22,13 +22,7 @@ import {
   Type,
   Undo2,
 } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DrawShape, ShapeKind } from "./tikzGenerator";
 import { generateFullDocument, generateTikzCode } from "./tikzGenerator";
 import React from "react";
@@ -89,11 +83,7 @@ function defaultShape(kind: ShapeKind): DrawShape {
 
 function shapeContains(s: DrawShape, px: number, py: number): boolean {
   const margin = 6;
-  if (
-    s.kind === "line" ||
-    s.kind === "arrow" ||
-    s.kind === "freehand"
-  ) {
+  if (s.kind === "line" || s.kind === "arrow" || s.kind === "freehand") {
     for (let i = 0; i < s.points.length - 1; i++) {
       const [ax, ay] = s.points[i];
       const [bx, by] = s.points[i + 1];
@@ -104,12 +94,7 @@ function shapeContains(s: DrawShape, px: number, py: number): boolean {
   }
 
   if (s.kind === "text") {
-    return (
-      px >= s.x - 40 &&
-      px <= s.x + 80 &&
-      py >= s.y - 16 &&
-      py <= s.y + 16
-    );
+    return px >= s.x - 40 && px <= s.x + 80 && py >= s.y - 16 && py <= s.y + 16;
   }
 
   return (
@@ -139,10 +124,7 @@ function pointToSegmentDist(
 
 // ---------- Component ----------
 
-type ToolType =
-  | "select"
-  | "pan"
-  | ShapeKind;
+type ToolType = "select" | "pan" | ShapeKind;
 
 interface HistoryEntry {
   shapes: DrawShape[];
@@ -248,19 +230,43 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
       // tool shortcuts
       if (!mod && !e.shiftKey) {
         switch (e.key.toLowerCase()) {
-          case "v": setTool("select"); break;
-          case "h": setTool("pan"); break;
-          case "r": setTool("rect"); break;
-          case "c": setTool("circle"); break;
-          case "e": setTool("ellipse"); break;
-          case "l": setTool("line"); break;
-          case "a": setTool("arrow"); break;
-          case "t": setTool("text"); break;
-          case "d": setTool("diamond"); break;
-          case "p": setTool("freehand"); break;
+          case "v":
+            setTool("select");
+            break;
+          case "h":
+            setTool("pan");
+            break;
+          case "r":
+            setTool("rect");
+            break;
+          case "c":
+            setTool("circle");
+            break;
+          case "e":
+            setTool("ellipse");
+            break;
+          case "l":
+            setTool("line");
+            break;
+          case "a":
+            setTool("arrow");
+            break;
+          case "t":
+            setTool("text");
+            break;
+          case "d":
+            setTool("diamond");
+            break;
+          case "p":
+            setTool("freehand");
+            break;
           // added tools
-          case "g": setTool("grid"); break;
-          case "x": setTool("axes"); break;
+          case "g":
+            setTool("grid");
+            break;
+          case "x":
+            setTool("axes");
+            break;
         }
       }
     };
@@ -333,7 +339,10 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
         fill,
         strokeWidth,
         dashed,
-        points: [[x, y], [x, y]],
+        points: [
+          [x, y],
+          [x, y],
+        ],
       };
       setShapes([...shapes, shape]);
       return;
@@ -384,7 +393,9 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
             if (!origPoints) return s;
             return {
               ...s,
-              points: origPoints.map(([ox, oy]) => [ox + dx, oy + dy] as [number, number]),
+              points: origPoints.map(
+                ([ox, oy]) => [ox + dx, oy + dy] as [number, number],
+              ),
             };
           }
           const orig = history[historyIndex].shapes.find((h) => h.id === s.id);
@@ -431,10 +442,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
       const ny = Math.min(dragStart.y, y);
       const nw = Math.abs(x - dragStart.x);
       const nh = Math.abs(y - dragStart.y);
-      return [
-        ...prev.slice(0, -1),
-        { ...last, x: nx, y: ny, w: nw, h: nh },
-      ];
+      return [...prev.slice(0, -1), { ...last, x: nx, y: ny, w: nw, h: nh }];
     });
   };
 
@@ -457,8 +465,8 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
         const last = prev[prev.length - 1];
         if (!last || last.points.length < 3) return prev;
         // Douglas-Peucker-like simplification: take every 3rd point
-        const simplified = last.points.filter((_, i) =>
-          i === 0 || i === last.points.length - 1 || i % 3 === 0,
+        const simplified = last.points.filter(
+          (_, i) => i === 0 || i === last.points.length - 1 || i % 3 === 0,
         );
         return [...prev.slice(0, -1), { ...last, points: simplified }];
       });
@@ -483,10 +491,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
       ) {
         return prev.slice(0, -1);
       }
-      if (
-        (last.kind === "line" || last.kind === "arrow") &&
-        last.points.length >= 2
-      ) {
+      if ((last.kind === "line" || last.kind === "arrow") && last.points.length >= 2) {
         const [x1, y1] = last.points[0];
         const [x2, y2] = last.points[last.points.length - 1];
         if (Math.abs(x2 - x1) < 4 && Math.abs(y2 - y1) < 4) {
@@ -683,12 +688,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
                 <path d="M0,0 L0,6 L9,3 z" fill={s.stroke} />
               </marker>
             </defs>
-            <path
-              d={d}
-              {...base}
-              fill="none"
-              markerEnd={`url(#arrow-${s.id})`}
-            />
+            <path d={d} {...base} fill="none" markerEnd={`url(#arrow-${s.id})`} />
             {isSelected && (
               <path
                 d={d}
@@ -779,10 +779,29 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
           <g key={s.id}>
             <polygon points={points} {...base} />
             {isSelected && (
-              <rect x={s.x - 2} y={s.y - 2} width={s.w + 4} height={s.h + 4} fill="none" stroke="#729bf0" strokeWidth={1.5} strokeDasharray="4 3" />
+              <rect
+                x={s.x - 2}
+                y={s.y - 2}
+                width={s.w + 4}
+                height={s.h + 4}
+                fill="none"
+                stroke="#729bf0"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+              />
             )}
             {s.label && (
-              <text x={s.x + s.w / 2} y={s.y + s.h * 0.6} textAnchor="middle" dominantBaseline="central" fill={s.stroke} fontSize={s.fontSize} style={{ pointerEvents: "none" }}>{s.label}</text>
+              <text
+                x={s.x + s.w / 2}
+                y={s.y + s.h * 0.6}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill={s.stroke}
+                fontSize={s.fontSize}
+                style={{ pointerEvents: "none" }}
+              >
+                {s.label}
+              </text>
             )}
           </g>
         );
@@ -798,10 +817,29 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
           <g key={s.id}>
             <polygon points={points} {...base} />
             {isSelected && (
-              <rect x={s.x - 2} y={s.y - 2} width={s.w + 4} height={s.h + 4} fill="none" stroke="#729bf0" strokeWidth={1.5} strokeDasharray="4 3" />
+              <rect
+                x={s.x - 2}
+                y={s.y - 2}
+                width={s.w + 4}
+                height={s.h + 4}
+                fill="none"
+                stroke="#729bf0"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+              />
             )}
             {s.label && (
-              <text x={s.x + s.w / 2} y={s.y + s.h / 2} textAnchor="middle" dominantBaseline="central" fill={s.stroke} fontSize={s.fontSize} style={{ pointerEvents: "none" }}>{s.label}</text>
+              <text
+                x={s.x + s.w / 2}
+                y={s.y + s.h / 2}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill={s.stroke}
+                fontSize={s.fontSize}
+                style={{ pointerEvents: "none" }}
+              >
+                {s.label}
+              </text>
             )}
           </g>
         );
@@ -818,10 +856,29 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
             <ellipse cx={cx} cy={topY} rx={rx} ry={ry} {...base} />
             <path d={d} {...base} />
             {isSelected && (
-              <rect x={s.x - 2} y={s.y - 2} width={s.w + 4} height={s.h + 4} fill="none" stroke="#729bf0" strokeWidth={1.5} strokeDasharray="4 3" />
+              <rect
+                x={s.x - 2}
+                y={s.y - 2}
+                width={s.w + 4}
+                height={s.h + 4}
+                fill="none"
+                stroke="#729bf0"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+              />
             )}
             {s.label && (
-              <text x={cx} y={s.y + s.h / 2} textAnchor="middle" dominantBaseline="central" fill={s.stroke} fontSize={s.fontSize} style={{ pointerEvents: "none" }}>{s.label}</text>
+              <text
+                x={cx}
+                y={s.y + s.h / 2}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill={s.stroke}
+                fontSize={s.fontSize}
+                style={{ pointerEvents: "none" }}
+              >
+                {s.label}
+              </text>
             )}
           </g>
         );
@@ -830,16 +887,45 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
         const lines = [];
         const step = Math.max(25, s.w / 5);
         for (let x = 0; x <= s.w; x += step) {
-          lines.push(<line key={`gx${x}`} x1={s.x + x} y1={s.y} x2={s.x + x} y2={s.y + s.h} stroke={s.stroke} strokeWidth={0.5} />);
+          lines.push(
+            <line
+              key={`gx${x}`}
+              x1={s.x + x}
+              y1={s.y}
+              x2={s.x + x}
+              y2={s.y + s.h}
+              stroke={s.stroke}
+              strokeWidth={0.5}
+            />,
+          );
         }
         for (let y = 0; y <= s.h; y += step) {
-          lines.push(<line key={`gy${y}`} x1={s.x} y1={s.y + y} x2={s.x + s.w} y2={s.y + y} stroke={s.stroke} strokeWidth={0.5} />);
+          lines.push(
+            <line
+              key={`gy${y}`}
+              x1={s.x}
+              y1={s.y + y}
+              x2={s.x + s.w}
+              y2={s.y + y}
+              stroke={s.stroke}
+              strokeWidth={0.5}
+            />,
+          );
         }
         return (
           <g key={s.id} {...base} fill="none">
             {lines}
             {isSelected && (
-              <rect x={s.x - 2} y={s.y - 2} width={s.w + 4} height={s.h + 4} fill="none" stroke="#729bf0" strokeWidth={1.5} strokeDasharray="4 3" />
+              <rect
+                x={s.x - 2}
+                y={s.y - 2}
+                width={s.w + 4}
+                height={s.h + 4}
+                fill="none"
+                stroke="#729bf0"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+              />
             )}
           </g>
         );
@@ -848,16 +934,53 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
         return (
           <g key={s.id} {...base} fill="none">
             <defs>
-              <marker id={`axes-arrow-${s.id}`} markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+              <marker
+                id={`axes-arrow-${s.id}`}
+                markerWidth="10"
+                markerHeight="10"
+                refX="9"
+                refY="3"
+                orient="auto"
+                markerUnits="strokeWidth"
+              >
                 <path d="M0,0 L0,6 L9,3 z" fill={s.stroke} />
               </marker>
             </defs>
-            <path d={`M ${s.x} ${s.y + s.h} L ${s.x + s.w} ${s.y + s.h}`} markerEnd={`url(#axes-arrow-${s.id})`} stroke={s.stroke} strokeWidth={s.strokeWidth} />
-            <path d={`M ${s.x} ${s.y + s.h} L ${s.x} ${s.y}`} markerEnd={`url(#axes-arrow-${s.id})`} stroke={s.stroke} strokeWidth={s.strokeWidth} />
-            <text x={s.x + s.w + 8} y={s.y + s.h} fill={s.stroke} fontSize={12} dominantBaseline="central">x</text>
-            <text x={s.x} y={s.y - 8} fill={s.stroke} fontSize={12} textAnchor="middle">y</text>
+            <path
+              d={`M ${s.x} ${s.y + s.h} L ${s.x + s.w} ${s.y + s.h}`}
+              markerEnd={`url(#axes-arrow-${s.id})`}
+              stroke={s.stroke}
+              strokeWidth={s.strokeWidth}
+            />
+            <path
+              d={`M ${s.x} ${s.y + s.h} L ${s.x} ${s.y}`}
+              markerEnd={`url(#axes-arrow-${s.id})`}
+              stroke={s.stroke}
+              strokeWidth={s.strokeWidth}
+            />
+            <text
+              x={s.x + s.w + 8}
+              y={s.y + s.h}
+              fill={s.stroke}
+              fontSize={12}
+              dominantBaseline="central"
+            >
+              x
+            </text>
+            <text x={s.x} y={s.y - 8} fill={s.stroke} fontSize={12} textAnchor="middle">
+              y
+            </text>
             {isSelected && (
-              <rect x={s.x - 2} y={s.y - 2} width={s.w + 4} height={s.h + 4} fill="none" stroke="#729bf0" strokeWidth={1.5} strokeDasharray="4 3" />
+              <rect
+                x={s.x - 2}
+                y={s.y - 2}
+                width={s.w + 4}
+                height={s.h + 4}
+                fill="none"
+                stroke="#729bf0"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+              />
             )}
           </g>
         );
@@ -905,7 +1028,12 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     { id: "rect", icon: <Square size={16} />, label: "Rectangle", key: "R" },
     { id: "circle", icon: <Circle size={16} />, label: "Circle", key: "C" },
     { id: "ellipse", icon: <MoveHorizontal size={16} />, label: "Ellipse", key: "E" },
-    { id: "parallelogram", icon: <Hexagon size={16} />, label: "Parallelogram", key: "" },
+    {
+      id: "parallelogram",
+      icon: <Hexagon size={16} />,
+      label: "Parallelogram",
+      key: "",
+    },
     { id: "cylinder", icon: <Database size={16} />, label: "Cylinder", key: "" },
     { id: "line", icon: <Minus size={16} />, label: "Line", key: "L" },
     { id: "arrow", icon: <ArrowRight size={16} />, label: "Arrow", key: "A" },
@@ -922,9 +1050,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
 
   const updateSelected = (updates: Partial<DrawShape>) => {
     if (!selected) return;
-    const next = shapes.map((s) =>
-      s.id === selected ? { ...s, ...updates } : s,
-    );
+    const next = shapes.map((s) => (s.id === selected ? { ...s, ...updates } : s));
     setShapes(next);
     pushHistory(next);
   };
@@ -1111,9 +1237,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
                       <input
                         type="number"
                         value={Math.round(selectedShape.x)}
-                        onChange={(e) =>
-                          updateSelected({ x: Number(e.target.value) })
-                        }
+                        onChange={(e) => updateSelected({ x: Number(e.target.value) })}
                       />
                     </label>
                     <label className="tikz-mini-prop">
@@ -1121,9 +1245,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
                       <input
                         type="number"
                         value={Math.round(selectedShape.y)}
-                        onChange={(e) =>
-                          updateSelected({ y: Number(e.target.value) })
-                        }
+                        onChange={(e) => updateSelected({ y: Number(e.target.value) })}
                       />
                     </label>
                   </>
@@ -1138,9 +1260,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
                       <input
                         type="number"
                         value={Math.round(selectedShape.w)}
-                        onChange={(e) =>
-                          updateSelected({ w: Number(e.target.value) })
-                        }
+                        onChange={(e) => updateSelected({ w: Number(e.target.value) })}
                       />
                     </label>
                     <label className="tikz-mini-prop">
@@ -1148,9 +1268,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
                       <input
                         type="number"
                         value={Math.round(selectedShape.h)}
-                        onChange={(e) =>
-                          updateSelected({ h: Number(e.target.value) })
-                        }
+                        onChange={(e) => updateSelected({ h: Number(e.target.value) })}
                       />
                     </label>
                   </>
@@ -1168,9 +1286,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
                   <input
                     type="text"
                     value={selectedShape.label}
-                    onChange={(e) =>
-                      updateSelected({ label: e.target.value })
-                    }
+                    onChange={(e) => updateSelected({ label: e.target.value })}
                     placeholder="Text…"
                   />
                 </label>
@@ -1184,7 +1300,10 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
       <div className="tikz-code-panel">
         <div className="tikz-code-header">
           <div className="tikz-code-title">
-            <span className="tikz-code-icon">T<sub>i</sub><em>k</em>Z</span>
+            <span className="tikz-code-icon">
+              T<sub>i</sub>
+              <em>k</em>Z
+            </span>
             <span>Generated Code</span>
           </div>
           <div className="tikz-code-tabs">
@@ -1236,8 +1355,12 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
           </pre>
         </div>
         <div className="tikz-code-footer">
-          <span>{shapes.length} shape{shapes.length !== 1 ? "s" : ""}</span>
-          <span>Canvas: {canvasWidth}×{canvasHeight}px</span>
+          <span>
+            {shapes.length} shape{shapes.length !== 1 ? "s" : ""}
+          </span>
+          <span>
+            Canvas: {canvasWidth}×{canvasHeight}px
+          </span>
           <span>Scale: 1px = 0.02cm</span>
         </div>
       </div>

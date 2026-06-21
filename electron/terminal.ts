@@ -52,12 +52,7 @@ async function pickShell(): Promise<string> {
     return "powershell.exe";
   }
 
-  const candidates = [
-    process.env.SHELL,
-    "/bin/zsh",
-    "/bin/bash",
-    "/bin/sh",
-  ];
+  const candidates = [process.env.SHELL, "/bin/zsh", "/bin/bash", "/bin/sh"];
 
   for (const candidate of candidates) {
     if (await canExecute(candidate)) {
@@ -101,8 +96,7 @@ function buildTerminalEnv(shell: string, cwd: string): Record<string, string> {
   env.PWD = cwd;
   env.HISTFILE = env.HISTFILE || `${app.getPath("temp")}/latexdo-shell-history`;
   env.ZDOTDIR = env.ZDOTDIR || env.HOME;
-  env.BASH_SILENCE_DEPRECATION_WARNING =
-    env.BASH_SILENCE_DEPRECATION_WARNING || "1";
+  env.BASH_SILENCE_DEPRECATION_WARNING = env.BASH_SILENCE_DEPRECATION_WARNING || "1";
   env.LSCOLORS = env.LSCOLORS || "ExGxBxDxCxEgEdxbxgxcxd";
   env.LS_COLORS =
     env.LS_COLORS ||
@@ -119,8 +113,7 @@ function buildTerminalEnv(shell: string, cwd: string): Record<string, string> {
   if (os.platform() !== "win32") {
     env.SHELL = shell;
     env.PATH =
-      env.PATH ||
-      "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
+      env.PATH || "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
   }
 
   return env;
@@ -147,11 +140,7 @@ function shellArgs(shell: string, mode: "pty" | "pipe"): string[] {
   return [];
 }
 
-function sendTerminalExit(
-  sender: Electron.WebContents,
-  id: number,
-  exitCode: number,
-) {
+function sendTerminalExit(sender: Electron.WebContents, id: number, exitCode: number) {
   const session = terminals.get(id);
   if (!session || session.ownerWebContentsId !== sender.id) return;
 
@@ -161,11 +150,7 @@ function sendTerminalExit(
   }
 }
 
-function sendTerminalData(
-  sender: Electron.WebContents,
-  id: number,
-  data: string,
-) {
+function sendTerminalData(sender: Electron.WebContents, id: number, data: string) {
   const session = terminals.get(id);
   if (!session || session.ownerWebContentsId !== sender.id) return;
 
@@ -180,10 +165,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isInside(parent: string, child: string): boolean {
   const relative = path.relative(path.resolve(parent), path.resolve(child));
-  return (
-    relative === "" ||
-    (!relative.startsWith("..") && !path.isAbsolute(relative))
-  );
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function parseProjectId(options: unknown): string {
@@ -367,47 +349,38 @@ export function registerTerminalIpc(projects: TerminalProjectRegistry) {
     },
   );
 
-  ipcMain.on(
-    "terminal:write",
-    (event, payload: unknown, ...extraArgs: unknown[]) => {
-      if (extraArgs.length) return;
-      const session = getOwnedTerminal(event, payload);
-      if (!session) return;
-      if (!isRecord(payload) || typeof payload.data !== "string") return;
-      if (payload.data.length > maxTerminalWriteLength) return;
-      if (!payload.data) return;
+  ipcMain.on("terminal:write", (event, payload: unknown, ...extraArgs: unknown[]) => {
+    if (extraArgs.length) return;
+    const session = getOwnedTerminal(event, payload);
+    if (!session) return;
+    if (!isRecord(payload) || typeof payload.data !== "string") return;
+    if (payload.data.length > maxTerminalWriteLength) return;
+    if (!payload.data) return;
 
-      if (session.kind === "pty") {
-        session.process.write(payload.data);
-        return;
-      }
+    if (session.kind === "pty") {
+      session.process.write(payload.data);
+      return;
+    }
 
-      session.process.stdin.write(payload.data);
-    },
-  );
+    session.process.stdin.write(payload.data);
+  });
 
-  ipcMain.on(
-    "terminal:resize",
-    (event, payload: unknown, ...extraArgs: unknown[]) => {
-      if (extraArgs.length) return;
-      const session = getOwnedTerminal(event, payload);
-      if (!session || session.kind !== "pty") return;
-      if (!isRecord(payload)) return;
-      const size = parseTerminalSize(payload.cols, payload.rows);
-      if (!size) return;
+  ipcMain.on("terminal:resize", (event, payload: unknown, ...extraArgs: unknown[]) => {
+    if (extraArgs.length) return;
+    const session = getOwnedTerminal(event, payload);
+    if (!session || session.kind !== "pty") return;
+    if (!isRecord(payload)) return;
+    const size = parseTerminalSize(payload.cols, payload.rows);
+    if (!size) return;
 
-      session.process.resize(size.cols, size.rows);
-    },
-  );
+    session.process.resize(size.cols, size.rows);
+  });
 
-  ipcMain.on(
-    "terminal:dispose",
-    (event, payload: unknown, ...extraArgs: unknown[]) => {
-      if (extraArgs.length) return;
-      const session = getOwnedTerminal(event, payload);
-      if (!session) return;
+  ipcMain.on("terminal:dispose", (event, payload: unknown, ...extraArgs: unknown[]) => {
+    if (extraArgs.length) return;
+    const session = getOwnedTerminal(event, payload);
+    if (!session) return;
 
-      disposeTerminalSession(session);
-    },
-  );
+    disposeTerminalSession(session);
+  });
 }

@@ -32,7 +32,9 @@ function checkAbstractStructureImpl(content: string): Diagnostic[] {
   let abstractText = "";
   let abstractLine = 1;
 
-  const envMatch = content.match(/\\begin\s*\{abstract\}\s*([\s\S]*?)\\end\s*\{abstract\}/);
+  const envMatch = content.match(
+    /\\begin\s*\{abstract\}\s*([\s\S]*?)\\end\s*\{abstract\}/,
+  );
   const cmdMatch = content.match(/\\abstract\s*\{([^}]+)\}/);
 
   if (envMatch) {
@@ -55,7 +57,9 @@ function checkAbstractStructureImpl(content: string): Diagnostic[] {
     return diagnostics;
   }
 
-  const cleaned = abstractText.replace(/\\[a-zA-Z]+(?:\[[^\]]*\])?\{[^}]*\}/g, "").replace(/[{}]/g, "");
+  const cleaned = abstractText
+    .replace(/\\[a-zA-Z]+(?:\[[^\]]*\])?\{[^}]*\}/g, "")
+    .replace(/[{}]/g, "");
   const wordCount = countWords(cleaned);
   const lc = cleaned.toLowerCase();
 
@@ -78,18 +82,16 @@ function checkAbstractStructureImpl(content: string): Diagnostic[] {
   }[] = [
     {
       name: "problem statement",
-      patterns: [
-        /\b(problem|challenge|limitation|issue|gap|remains)\b/i,
-      ],
-      suggestion: "State the problem, limitation, or gap the paper addresses (e.g., \"existing methods struggle with...\")",
+      patterns: [/\b(problem|challenge|limitation|issue|gap|remains)\b/i],
+      suggestion:
+        'State the problem, limitation, or gap the paper addresses (e.g., "existing methods struggle with...")',
       found: false,
     },
     {
       name: "method/approach",
-      patterns: [
-        /\b(propose|introduce|present|method|approach|framework|novel)\b/i,
-      ],
-      suggestion: "Describe the proposed method or approach (e.g., \"we propose a novel framework that...\")",
+      patterns: [/\b(propose|introduce|present|method|approach|framework|novel)\b/i],
+      suggestion:
+        'Describe the proposed method or approach (e.g., "we propose a novel framework that...")',
       found: false,
     },
     {
@@ -97,15 +99,15 @@ function checkAbstractStructureImpl(content: string): Diagnostic[] {
       patterns: [
         /\b(result|achieve|outperform|improve|accuracy|experiment|show|demonstrate|obtain)\b/i,
       ],
-      suggestion: "Summarize key results (e.g., \"our method achieves 95% accuracy, outperforming baselines by...\")",
+      suggestion:
+        'Summarize key results (e.g., "our method achieves 95% accuracy, outperforming baselines by...")',
       found: false,
     },
     {
       name: "contribution",
-      patterns: [
-        /\b(contribution|contribute|key insight|first)\b/i,
-      ],
-      suggestion: "Highlight the main contributions (e.g., \"our key contribution is...\")",
+      patterns: [/\b(contribution|contribute|key insight|first)\b/i],
+      suggestion:
+        'Highlight the main contributions (e.g., "our key contribution is...")',
       found: false,
     },
   ];
@@ -145,7 +147,7 @@ function checkIntroductionStructureImpl(content: string): Diagnostic[] {
         1,
         "Introduction section not found",
         "No \\section{Introduction} was detected in the document",
-        'Add a \\section{Introduction} with motivation, gap, contributions, and outline',
+        "Add a \\section{Introduction} with motivation, gap, contributions, and outline",
       ),
     );
     return diagnostics;
@@ -165,28 +167,30 @@ function checkIntroductionStructureImpl(content: string): Diagnostic[] {
       patterns: [
         /\b(important|critical|essential|widespread|growing|demand|need|key)\b/i,
       ],
-      suggestion: "Include motivation for why the problem matters (e.g., \"this problem is critical because...\")",
+      suggestion:
+        'Include motivation for why the problem matters (e.g., "this problem is critical because...")',
     },
     {
       name: "gap identification",
       patterns: [
         /\b(however|but|yet|limited|lack|insufficient|remain|challenge|open problem)\b/i,
       ],
-      suggestion: "Identify gaps in prior work (e.g., \"however, existing approaches are limited by...\")",
+      suggestion:
+        'Identify gaps in prior work (e.g., "however, existing approaches are limited by...")',
     },
     {
       name: "contribution",
       patterns: [
         /\b(contribution|we propose|this paper|our work|present|introduce)\b/i,
       ],
-      suggestion: "Clearly state the paper's contributions (e.g., \"our contributions include...\")",
+      suggestion:
+        'Clearly state the paper\'s contributions (e.g., "our contributions include...")',
     },
     {
       name: "outline/roadmap",
-      patterns: [
-        /\b(organized as follows|structure|rest of this paper|section)\b/i,
-      ],
-      suggestion: "Provide a roadmap of the paper (e.g., \"the rest of this paper is organized as follows...\")",
+      patterns: [/\b(organized as follows|structure|rest of this paper|section)\b/i],
+      suggestion:
+        'Provide a roadmap of the paper (e.g., "the rest of this paper is organized as follows...")',
     },
   ];
 
@@ -217,7 +221,8 @@ function checkRelatedWorkLengthImpl(content: string): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
   const relatedSections: { text: string; line: number }[] = [];
-  const sectionRegex = /\\section\s*\{([^}]*[Rr]elated\s*[Ww]ork[^}]*)\}\s*([\s\S]*?)(?=\\section\s*\{|\\bibliography|\\end\s*\{document\})/g;
+  const sectionRegex =
+    /\\section\s*\{([^}]*[Rr]elated\s*[Ww]ork[^}]*)\}\s*([\s\S]*?)(?=\\section\s*\{|\\bibliography|\\end\s*\{document\})/g;
   let match: RegExpExecArray | null;
   while ((match = sectionRegex.exec(content)) !== null) {
     relatedSections.push({
@@ -232,7 +237,7 @@ function checkRelatedWorkLengthImpl(content: string): Diagnostic[] {
         1,
         "Related Work section not found",
         "No section titled 'Related Work' was detected in the document",
-        'Add a \\section{Related Work} to discuss prior research and position the paper',
+        "Add a \\section{Related Work} to discuss prior research and position the paper",
       ),
     );
     return diagnostics;
@@ -305,7 +310,7 @@ function checkMethodReproducibilityImpl(content: string): Diagnostic[] {
         1,
         "Method/Methodology section not found",
         "No recognizable method section was detected in the document",
-        'Add a \\section{Method} describing the proposed approach in sufficient detail for reproducibility',
+        "Add a \\section{Method} describing the proposed approach in sufficient detail for reproducibility",
       ),
     );
     return diagnostics;
@@ -318,8 +323,10 @@ function checkMethodReproducibilityImpl(content: string): Diagnostic[] {
   const indicators: { name: string; pattern: RegExp; message: string }[] = [
     {
       name: "algorithm or pseudocode",
-      pattern: /\\begin\s*\{algorithm\}|\\algorithm\b|\\begin\s*\{algorithmic\}|pseudo-?code/i,
-      message: "No algorithm or pseudocode found; including one improves reproducibility",
+      pattern:
+        /\\begin\s*\{algorithm\}|\\algorithm\b|\\begin\s*\{algorithmic\}|pseudo-?code/i,
+      message:
+        "No algorithm or pseudocode found; including one improves reproducibility",
     },
     {
       name: "dataset or implementation details",
@@ -328,17 +335,20 @@ function checkMethodReproducibilityImpl(content: string): Diagnostic[] {
     },
     {
       name: "hyperparameters or configuration",
-      pattern: /\b(hyperparameter|parameter setting|configuration|learning rate|batch size|epoch|optimizer)\b/i,
+      pattern:
+        /\b(hyperparameter|parameter setting|configuration|learning rate|batch size|epoch|optimizer)\b/i,
       message: "No hyperparameter or configuration details found",
     },
     {
       name: "mathematical formulation",
       pattern: /\\begin\s*\{equation\}|\\begin\s*\{align\}|\\\[\s*[^\[\]]*\\\]/,
-      message: "No mathematical formulation (equations/align) found in the method section",
+      message:
+        "No mathematical formulation (equations/align) found in the method section",
     },
     {
       name: "training or experimental setup",
-      pattern: /\b(training details|experimental setup|implementation details|we set|we use|configured)\b/i,
+      pattern:
+        /\b(training details|experimental setup|implementation details|we set|we use|configured)\b/i,
       message: "No training or experimental setup details found",
     },
   ];
@@ -384,7 +394,7 @@ function checkResultsDiscussionImpl(content: string): Diagnostic[] {
         1,
         "Results/Experiments section not found",
         "No recognizable results or experiments section was detected",
-        'Add a \\section{Experiments} or \\section{Results} to present and analyze empirical findings',
+        "Add a \\section{Experiments} or \\section{Results} to present and analyze empirical findings",
       ),
     );
     return diagnostics;
@@ -408,7 +418,10 @@ function checkResultsDiscussionImpl(content: string): Diagnostic[] {
     );
   }
 
-  const hasDiscussions = /\b(discuss|explain|reason|because|due to|interesting|notably|however|surprising)\b/i.test(lc);
+  const hasDiscussions =
+    /\b(discuss|explain|reason|because|due to|interesting|notably|however|surprising)\b/i.test(
+      lc,
+    );
   if (!hasDiscussions) {
     diagnostics.push(
       makeDiagnostic(
@@ -420,7 +433,8 @@ function checkResultsDiscussionImpl(content: string): Diagnostic[] {
     );
   }
 
-  const hasComparisons = /\b(compared to|better than|worse than|similar to|baseline|competitor)\b/i.test(lc);
+  const hasComparisons =
+    /\b(compared to|better than|worse than|similar to|baseline|competitor)\b/i.test(lc);
   if (!hasComparisons) {
     diagnostics.push(
       makeDiagnostic(
@@ -474,7 +488,7 @@ function checkConclusionClaimsImpl(content: string): Diagnostic[] {
         1,
         "Conclusion section not found",
         "No recognizable conclusion or summary section was detected",
-        'Add a \\section{Conclusion} to summarize findings, discuss limitations, and outline future work',
+        "Add a \\section{Conclusion} to summarize findings, discuss limitations, and outline future work",
       ),
     );
     return diagnostics;
@@ -484,7 +498,10 @@ function checkConclusionClaimsImpl(content: string): Diagnostic[] {
   const conclusionLine = findLine(content, conclusionSection.index!);
   const lc = conclusionText.toLowerCase();
 
-  const hasSummary = /\b(we presented|we showed|we demonstrated|we proposed|we introduced|we presented|we achieve|we obtain|summary|summarize|overall)\b/i.test(lc);
+  const hasSummary =
+    /\b(we presented|we showed|we demonstrated|we proposed|we introduced|we presented|we achieve|we obtain|summary|summarize|overall)\b/i.test(
+      lc,
+    );
   if (!hasSummary) {
     diagnostics.push(
       makeDiagnostic(
@@ -496,7 +513,10 @@ function checkConclusionClaimsImpl(content: string): Diagnostic[] {
     );
   }
 
-  const hasLimitations = /\b(limitation|limitation|drawback|weakness|caveat|scope|constraint|not general|assumption)\b/i.test(lc);
+  const hasLimitations =
+    /\b(limitation|limitation|drawback|weakness|caveat|scope|constraint|not general|assumption)\b/i.test(
+      lc,
+    );
   if (!hasLimitations) {
     diagnostics.push(
       makeDiagnostic(
@@ -508,7 +528,9 @@ function checkConclusionClaimsImpl(content: string): Diagnostic[] {
     );
   }
 
-  const hasFutureWork = /\b(future work|future research|next|future direction)\b/i.test(lc);
+  const hasFutureWork = /\b(future work|future research|next|future direction)\b/i.test(
+    lc,
+  );
   if (!hasFutureWork) {
     diagnostics.push(
       makeDiagnostic(

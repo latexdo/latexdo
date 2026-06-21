@@ -10,7 +10,10 @@ function inferLabelKind(key: string): LabelEntry["kind"] {
   return "unknown";
 }
 
-function findNearestCaption(lines: string[], labelLineIndex: number): string | undefined {
+function findNearestCaption(
+  lines: string[],
+  labelLineIndex: number,
+): string | undefined {
   const start = Math.max(0, labelLineIndex - 8);
   const end = Math.min(lines.length - 1, labelLineIndex + 3);
   for (let i = labelLineIndex; i >= start; i--) {
@@ -24,9 +27,14 @@ function findNearestCaption(lines: string[], labelLineIndex: number): string | u
   return undefined;
 }
 
-function findNearestSectionTitle(lines: string[], labelLineIndex: number): string | undefined {
+function findNearestSectionTitle(
+  lines: string[],
+  labelLineIndex: number,
+): string | undefined {
   for (let i = labelLineIndex; i >= Math.max(0, labelLineIndex - 20); i--) {
-    const match = lines[i].match(/\\(?:section|subsection|subsubsection)\*?\{([^}]*)\}/);
+    const match = lines[i].match(
+      /\\(?:section|subsection|subsubsection)\*?\{([^}]*)\}/,
+    );
     if (match) return match[1].trim();
   }
   return undefined;

@@ -42,18 +42,14 @@ async function waitForServer(url) {
 }
 
 function startElectron() {
-  electronProcess = spawn(
-    electronBinary,
-    ["."],
-    {
-      cwd: projectRoot,
-      env: {
-        ...process.env,
-        VITE_DEV_SERVER_URL: viteUrl,
-      },
-      stdio: "inherit",
+  electronProcess = spawn(electronBinary, ["."], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      VITE_DEV_SERVER_URL: viteUrl,
     },
-  );
+    stdio: "inherit",
+  });
 
   electronProcess.on("exit", () => {
     electronProcess = null;

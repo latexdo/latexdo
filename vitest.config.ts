@@ -11,7 +11,12 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
-      include: ["src/checks/*.ts", "src/components/*.tsx", "src/latex/*.ts", "src/utils/*.ts"],
+      include: [
+        "src/checks/*.ts",
+        "src/components/*.tsx",
+        "src/latex/*.ts",
+        "src/utils/*.ts",
+      ],
       exclude: ["src/latex/registerLatexCompletions.ts"],
       thresholds: {
         lines: 79,

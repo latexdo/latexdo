@@ -2,10 +2,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { access, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import {
-  analyzeLatexDiagnostic,
-  rankLatexDiagnostics,
-} from "./latexDiagnostics.js";
+import { analyzeLatexDiagnostic, rankLatexDiagnostics } from "./latexDiagnostics.js";
 import type { CompileResult, Diagnostic } from "./types.js";
 
 type CompileLatexRequest = {
@@ -51,15 +48,12 @@ function normalizeDiagnosticFile(projectPath: string, filePath: string): string 
 }
 
 function sanitizeCompileOutput(output: string): string {
-  const lines = output
-    .split(/\r?\n/)
-    .map((line) => line.trimEnd());
+  const lines = output.split(/\r?\n/).map((line) => line.trimEnd());
 
   const staleLatexmkFailure =
     lines.some((line) =>
       line.includes("gave an error in previous invocation of latexmk"),
-    ) &&
-    lines.some((line) => line.includes("Nothing to do for"));
+    ) && lines.some((line) => line.includes("Nothing to do for"));
 
   if (!staleLatexmkFailure) {
     return output.trim();
@@ -158,8 +152,7 @@ function parseDiagnostics(
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const seen = new Set<string>();
-  const fileLinePattern =
-    /^(.*?\.(?:tex|sty|cls|bib)):(\d+):(?:(\d+):)?\s*(.*)$/gm;
+  const fileLinePattern = /^(.*?\.(?:tex|sty|cls|bib)):(\d+):(?:(\d+):)?\s*(.*)$/gm;
   const warningPattern =
     /^(?:LaTeX|Package [^:]+) Warning:\s*(.+?)(?:\s+on input line (\d+))?\.?$/gm;
 

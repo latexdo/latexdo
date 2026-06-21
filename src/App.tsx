@@ -45,13 +45,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import appIconUrl from "../build/icon.svg";
 import FileTree from "./FileTree";
 import PdfPreview, { type PdfClickLocation } from "./PdfPreview";
@@ -63,10 +57,7 @@ import { ReviewSidebar } from "./components/ReviewSidebar";
 import { RebuttalSidebar } from "./components/RebuttalSidebar";
 import { HistorySidebar } from "./components/HistorySidebar";
 import { generateRebuttalLetter } from "./rebuttalGenerator";
-import {
-  normalizeLatexDoReviewMarkup,
-  usesLatexDoReviewMacros,
-} from "./reviewMarkup";
+import { normalizeLatexDoReviewMarkup, usesLatexDoReviewMacros } from "./reviewMarkup";
 import type { RebuttalGeneratorSettings } from "./types";
 import { monaco } from "./monaco";
 import type {
@@ -115,7 +106,13 @@ import { runNotationChecks } from "./checks/notationManager";
 import { runPdfComplianceChecks } from "./checks/pdfCompliance";
 import { NotationManager } from "./components/NotationManager";
 
-type PanelKind = "problems" | "output" | "terminal" | "checkAnalysis" | "structureReport" | "pdfReport";
+type PanelKind =
+  | "problems"
+  | "output"
+  | "terminal"
+  | "checkAnalysis"
+  | "structureReport"
+  | "pdfReport";
 type SidebarView = "explorer" | "sourceControl" | "history";
 
 interface GitDiffSession extends GitDiffEditorInput {
@@ -363,7 +360,8 @@ const defaultSettings: AppSettings = {
   maxAbstractWords: 250,
 
   rebuttalManuscriptId: "COLA-D-26-00101",
-  rebuttalManuscriptTitle: "Evaluating Package-Level Scoping Strategies for Repository-Level Code Completion in Pharo",
+  rebuttalManuscriptTitle:
+    "Evaluating Package-Level Scoping Strategies for Repository-Level Code Completion in Pharo",
   rebuttalFontSize: "11pt",
   rebuttalPaperSize: "a4paper",
   rebuttalFontFamily: "newpx",
@@ -371,7 +369,8 @@ const defaultSettings: AppSettings = {
   rebuttalDiffOldFile: "oldfile.tex",
   rebuttalDiffNewFile: "newfile.tex",
   rebuttalDiffOutput: "diff.tex",
-  rebuttalSummary: "We revised the manuscript substantially in response to the reviewers' comments.",
+  rebuttalSummary:
+    "We revised the manuscript substantially in response to the reviewers' comments.",
   rebuttalSpacing: true,
   rebuttalColorPrimary: "1E1E1E",
   rebuttalColorAccent: "D9D9D9",
@@ -418,13 +417,9 @@ function loadSettings(): AppSettings {
           ? saved.editorFontSize
           : defaultSettings.editorFontSize,
       wordWrap:
-        typeof saved.wordWrap === "boolean"
-          ? saved.wordWrap
-          : defaultSettings.wordWrap,
+        typeof saved.wordWrap === "boolean" ? saved.wordWrap : defaultSettings.wordWrap,
       minimap:
-        typeof saved.minimap === "boolean"
-          ? saved.minimap
-          : defaultSettings.minimap,
+        typeof saved.minimap === "boolean" ? saved.minimap : defaultSettings.minimap,
       showRawLatex:
         typeof saved.showRawLatex === "boolean"
           ? saved.showRawLatex
@@ -444,258 +439,333 @@ function loadSettings(): AppSettings {
           : defaultSettings.conferenceChecker_customTemplate,
       checkMargins:
         typeof saved.checkMargins === "boolean"
-          ? saved.checkMargins : defaultSettings.checkMargins,
+          ? saved.checkMargins
+          : defaultSettings.checkMargins,
       checkFontSize:
         typeof saved.checkFontSize === "boolean"
-          ? saved.checkFontSize : defaultSettings.checkFontSize,
+          ? saved.checkFontSize
+          : defaultSettings.checkFontSize,
       checkAbstractLength:
         typeof saved.checkAbstractLength === "boolean"
-          ? saved.checkAbstractLength : defaultSettings.checkAbstractLength,
+          ? saved.checkAbstractLength
+          : defaultSettings.checkAbstractLength,
       checkKeywords:
         typeof saved.checkKeywords === "boolean"
-          ? saved.checkKeywords : defaultSettings.checkKeywords,
+          ? saved.checkKeywords
+          : defaultSettings.checkKeywords,
       checkFigureReferences:
         typeof saved.checkFigureReferences === "boolean"
-          ? saved.checkFigureReferences : defaultSettings.checkFigureReferences,
+          ? saved.checkFigureReferences
+          : defaultSettings.checkFigureReferences,
       checkTableReferences:
         typeof saved.checkTableReferences === "boolean"
-          ? saved.checkTableReferences : defaultSettings.checkTableReferences,
+          ? saved.checkTableReferences
+          : defaultSettings.checkTableReferences,
       checkBibliographyStyle:
         typeof saved.checkBibliographyStyle === "boolean"
-          ? saved.checkBibliographyStyle : defaultSettings.checkBibliographyStyle,
+          ? saved.checkBibliographyStyle
+          : defaultSettings.checkBibliographyStyle,
       checkPageLimit:
         typeof saved.checkPageLimit === "boolean"
-          ? saved.checkPageLimit : defaultSettings.checkPageLimit,
+          ? saved.checkPageLimit
+          : defaultSettings.checkPageLimit,
       checkAuthorInfo:
         typeof saved.checkAuthorInfo === "boolean"
-          ? saved.checkAuthorInfo : defaultSettings.checkAuthorInfo,
+          ? saved.checkAuthorInfo
+          : defaultSettings.checkAuthorInfo,
       checkAnonymousReview:
         typeof saved.checkAnonymousReview === "boolean"
-          ? saved.checkAnonymousReview : defaultSettings.checkAnonymousReview,
+          ? saved.checkAnonymousReview
+          : defaultSettings.checkAnonymousReview,
       checkFigureResolution:
         typeof saved.checkFigureResolution === "boolean"
-          ? saved.checkFigureResolution : defaultSettings.checkFigureResolution,
+          ? saved.checkFigureResolution
+          : defaultSettings.checkFigureResolution,
       checkEmbeddedFonts:
         typeof saved.checkEmbeddedFonts === "boolean"
-          ? saved.checkEmbeddedFonts : defaultSettings.checkEmbeddedFonts,
+          ? saved.checkEmbeddedFonts
+          : defaultSettings.checkEmbeddedFonts,
       checkCompiler:
         typeof saved.checkCompiler === "boolean"
-          ? saved.checkCompiler : defaultSettings.checkCompiler,
+          ? saved.checkCompiler
+          : defaultSettings.checkCompiler,
 
       citationAssistantEnabled:
         typeof saved.citationAssistantEnabled === "boolean"
-          ? saved.citationAssistantEnabled : defaultSettings.citationAssistantEnabled,
+          ? saved.citationAssistantEnabled
+          : defaultSettings.citationAssistantEnabled,
       detectMissingCitations:
         typeof saved.detectMissingCitations === "boolean"
-          ? saved.detectMissingCitations : defaultSettings.detectMissingCitations,
+          ? saved.detectMissingCitations
+          : defaultSettings.detectMissingCitations,
       detectUnusedEntries:
         typeof saved.detectUnusedEntries === "boolean"
-          ? saved.detectUnusedEntries : defaultSettings.detectUnusedEntries,
+          ? saved.detectUnusedEntries
+          : defaultSettings.detectUnusedEntries,
       detectDuplicateReferences:
         typeof saved.detectDuplicateReferences === "boolean"
-          ? saved.detectDuplicateReferences : defaultSettings.detectDuplicateReferences,
+          ? saved.detectDuplicateReferences
+          : defaultSettings.detectDuplicateReferences,
       detectBrokenLinks:
         typeof saved.detectBrokenLinks === "boolean"
-          ? saved.detectBrokenLinks : defaultSettings.detectBrokenLinks,
+          ? saved.detectBrokenLinks
+          : defaultSettings.detectBrokenLinks,
       suggestCitationKeys:
         typeof saved.suggestCitationKeys === "boolean"
-          ? saved.suggestCitationKeys : defaultSettings.suggestCitationKeys,
+          ? saved.suggestCitationKeys
+          : defaultSettings.suggestCitationKeys,
       importMetadataSources:
         typeof saved.importMetadataSources === "boolean"
-          ? saved.importMetadataSources : defaultSettings.importMetadataSources,
+          ? saved.importMetadataSources
+          : defaultSettings.importMetadataSources,
       warnOldCitations:
         typeof saved.warnOldCitations === "boolean"
-          ? saved.warnOldCitations : defaultSettings.warnOldCitations,
+          ? saved.warnOldCitations
+          : defaultSettings.warnOldCitations,
 
       structureAssistantEnabled:
         typeof saved.structureAssistantEnabled === "boolean"
-          ? saved.structureAssistantEnabled : defaultSettings.structureAssistantEnabled,
+          ? saved.structureAssistantEnabled
+          : defaultSettings.structureAssistantEnabled,
       checkAbstractStructure:
         typeof saved.checkAbstractStructure === "boolean"
-          ? saved.checkAbstractStructure : defaultSettings.checkAbstractStructure,
+          ? saved.checkAbstractStructure
+          : defaultSettings.checkAbstractStructure,
       checkIntroductionStructure:
         typeof saved.checkIntroductionStructure === "boolean"
-          ? saved.checkIntroductionStructure : defaultSettings.checkIntroductionStructure,
+          ? saved.checkIntroductionStructure
+          : defaultSettings.checkIntroductionStructure,
       checkRelatedWorkLength:
         typeof saved.checkRelatedWorkLength === "boolean"
-          ? saved.checkRelatedWorkLength : defaultSettings.checkRelatedWorkLength,
+          ? saved.checkRelatedWorkLength
+          : defaultSettings.checkRelatedWorkLength,
       checkMethodReproducibility:
         typeof saved.checkMethodReproducibility === "boolean"
-          ? saved.checkMethodReproducibility : defaultSettings.checkMethodReproducibility,
+          ? saved.checkMethodReproducibility
+          : defaultSettings.checkMethodReproducibility,
       checkResultsDiscussion:
         typeof saved.checkResultsDiscussion === "boolean"
-          ? saved.checkResultsDiscussion : defaultSettings.checkResultsDiscussion,
+          ? saved.checkResultsDiscussion
+          : defaultSettings.checkResultsDiscussion,
       checkConclusionClaims:
         typeof saved.checkConclusionClaims === "boolean"
-          ? saved.checkConclusionClaims : defaultSettings.checkConclusionClaims,
+          ? saved.checkConclusionClaims
+          : defaultSettings.checkConclusionClaims,
 
       reproducibilityEnabled:
         typeof saved.reproducibilityEnabled === "boolean"
-          ? saved.reproducibilityEnabled : defaultSettings.reproducibilityEnabled,
+          ? saved.reproducibilityEnabled
+          : defaultSettings.reproducibilityEnabled,
       checkCodeLink:
         typeof saved.checkCodeLink === "boolean"
-          ? saved.checkCodeLink : defaultSettings.checkCodeLink,
+          ? saved.checkCodeLink
+          : defaultSettings.checkCodeLink,
       checkDatasetLink:
         typeof saved.checkDatasetLink === "boolean"
-          ? saved.checkDatasetLink : defaultSettings.checkDatasetLink,
+          ? saved.checkDatasetLink
+          : defaultSettings.checkDatasetLink,
       checkLicenseMentioned:
         typeof saved.checkLicenseMentioned === "boolean"
-          ? saved.checkLicenseMentioned : defaultSettings.checkLicenseMentioned,
+          ? saved.checkLicenseMentioned
+          : defaultSettings.checkLicenseMentioned,
       checkHyperparameters:
         typeof saved.checkHyperparameters === "boolean"
-          ? saved.checkHyperparameters : defaultSettings.checkHyperparameters,
+          ? saved.checkHyperparameters
+          : defaultSettings.checkHyperparameters,
       checkHardwareDetails:
         typeof saved.checkHardwareDetails === "boolean"
-          ? saved.checkHardwareDetails : defaultSettings.checkHardwareDetails,
+          ? saved.checkHardwareDetails
+          : defaultSettings.checkHardwareDetails,
       checkRandomSeeds:
         typeof saved.checkRandomSeeds === "boolean"
-          ? saved.checkRandomSeeds : defaultSettings.checkRandomSeeds,
+          ? saved.checkRandomSeeds
+          : defaultSettings.checkRandomSeeds,
       checkEvaluationMetrics:
         typeof saved.checkEvaluationMetrics === "boolean"
-          ? saved.checkEvaluationMetrics : defaultSettings.checkEvaluationMetrics,
+          ? saved.checkEvaluationMetrics
+          : defaultSettings.checkEvaluationMetrics,
 
       acronymManagerEnabled:
         typeof saved.acronymManagerEnabled === "boolean"
-          ? saved.acronymManagerEnabled : defaultSettings.acronymManagerEnabled,
+          ? saved.acronymManagerEnabled
+          : defaultSettings.acronymManagerEnabled,
       checkUndefinedAcronym:
         typeof saved.checkUndefinedAcronym === "boolean"
-          ? saved.checkUndefinedAcronym : defaultSettings.checkUndefinedAcronym,
+          ? saved.checkUndefinedAcronym
+          : defaultSettings.checkUndefinedAcronym,
       checkDuplicateDefinition:
         typeof saved.checkDuplicateDefinition === "boolean"
-          ? saved.checkDuplicateDefinition : defaultSettings.checkDuplicateDefinition,
+          ? saved.checkDuplicateDefinition
+          : defaultSettings.checkDuplicateDefinition,
       checkUnusedAcronym:
         typeof saved.checkUnusedAcronym === "boolean"
-          ? saved.checkUnusedAcronym : defaultSettings.checkUnusedAcronym,
+          ? saved.checkUnusedAcronym
+          : defaultSettings.checkUnusedAcronym,
       checkConflictingDefinitions:
         typeof saved.checkConflictingDefinitions === "boolean"
-          ? saved.checkConflictingDefinitions : defaultSettings.checkConflictingDefinitions,
+          ? saved.checkConflictingDefinitions
+          : defaultSettings.checkConflictingDefinitions,
 
       errorDoctorEnabled:
         typeof saved.errorDoctorEnabled === "boolean"
-          ? saved.errorDoctorEnabled : defaultSettings.errorDoctorEnabled,
+          ? saved.errorDoctorEnabled
+          : defaultSettings.errorDoctorEnabled,
       explainErrors:
         typeof saved.explainErrors === "boolean"
-          ? saved.explainErrors : defaultSettings.explainErrors,
+          ? saved.explainErrors
+          : defaultSettings.explainErrors,
       suggestFixes:
         typeof saved.suggestFixes === "boolean"
-          ? saved.suggestFixes : defaultSettings.suggestFixes,
+          ? saved.suggestFixes
+          : defaultSettings.suggestFixes,
       autoFixCommon:
         typeof saved.autoFixCommon === "boolean"
-          ? saved.autoFixCommon : defaultSettings.autoFixCommon,
+          ? saved.autoFixCommon
+          : defaultSettings.autoFixCommon,
 
       tikzConverterEnabled:
         typeof saved.tikzConverterEnabled === "boolean"
-          ? saved.tikzConverterEnabled : defaultSettings.tikzConverterEnabled,
+          ? saved.tikzConverterEnabled
+          : defaultSettings.tikzConverterEnabled,
       tikzConverterAutoOpen:
         typeof saved.tikzConverterAutoOpen === "boolean"
-          ? saved.tikzConverterAutoOpen : defaultSettings.tikzConverterAutoOpen,
+          ? saved.tikzConverterAutoOpen
+          : defaultSettings.tikzConverterAutoOpen,
 
       notationManagerEnabled:
         typeof saved.notationManagerEnabled === "boolean"
-          ? saved.notationManagerEnabled : defaultSettings.notationManagerEnabled,
+          ? saved.notationManagerEnabled
+          : defaultSettings.notationManagerEnabled,
       detectNotation:
         typeof saved.detectNotation === "boolean"
-          ? saved.detectNotation : defaultSettings.detectNotation,
+          ? saved.detectNotation
+          : defaultSettings.detectNotation,
       detectNotationConflicts:
         typeof saved.detectNotationConflicts === "boolean"
-          ? saved.detectNotationConflicts : defaultSettings.detectNotationConflicts,
+          ? saved.detectNotationConflicts
+          : defaultSettings.detectNotationConflicts,
       detectUndefinedNotation:
         typeof saved.detectUndefinedNotation === "boolean"
-          ? saved.detectUndefinedNotation : defaultSettings.detectUndefinedNotation,
+          ? saved.detectUndefinedNotation
+          : defaultSettings.detectUndefinedNotation,
 
       pdfComplianceEnabled:
         typeof saved.pdfComplianceEnabled === "boolean"
-          ? saved.pdfComplianceEnabled : defaultSettings.pdfComplianceEnabled,
+          ? saved.pdfComplianceEnabled
+          : defaultSettings.pdfComplianceEnabled,
       checkPageCount:
         typeof saved.checkPageCount === "boolean"
-          ? saved.checkPageCount : defaultSettings.checkPageCount,
+          ? saved.checkPageCount
+          : defaultSettings.checkPageCount,
       maxPages:
-        typeof saved.maxPages === "number"
-          ? saved.maxPages : defaultSettings.maxPages,
+        typeof saved.maxPages === "number" ? saved.maxPages : defaultSettings.maxPages,
       checkUnreferencedFigures:
         typeof saved.checkUnreferencedFigures === "boolean"
-          ? saved.checkUnreferencedFigures : defaultSettings.checkUnreferencedFigures,
+          ? saved.checkUnreferencedFigures
+          : defaultSettings.checkUnreferencedFigures,
       checkUncitedCitations:
         typeof saved.checkUncitedCitations === "boolean"
-          ? saved.checkUncitedCitations : defaultSettings.checkUncitedCitations,
+          ? saved.checkUncitedCitations
+          : defaultSettings.checkUncitedCitations,
       checkSectionsWithNoCitations:
         typeof saved.checkSectionsWithNoCitations === "boolean"
-          ? saved.checkSectionsWithNoCitations : defaultSettings.checkSectionsWithNoCitations,
+          ? saved.checkSectionsWithNoCitations
+          : defaultSettings.checkSectionsWithNoCitations,
       checkType3Fonts:
         typeof saved.checkType3Fonts === "boolean"
-          ? saved.checkType3Fonts : defaultSettings.checkType3Fonts,
+          ? saved.checkType3Fonts
+          : defaultSettings.checkType3Fonts,
       checkAbstractWordCount:
         typeof saved.checkAbstractWordCount === "boolean"
-          ? saved.checkAbstractWordCount : defaultSettings.checkAbstractWordCount,
+          ? saved.checkAbstractWordCount
+          : defaultSettings.checkAbstractWordCount,
       maxAbstractWords:
         typeof saved.maxAbstractWords === "number"
-          ? saved.maxAbstractWords : defaultSettings.maxAbstractWords,
+          ? saved.maxAbstractWords
+          : defaultSettings.maxAbstractWords,
 
       rebuttalManuscriptId:
         typeof saved.rebuttalManuscriptId === "string"
-          ? saved.rebuttalManuscriptId : defaultSettings.rebuttalManuscriptId,
+          ? saved.rebuttalManuscriptId
+          : defaultSettings.rebuttalManuscriptId,
       rebuttalManuscriptTitle:
         typeof saved.rebuttalManuscriptTitle === "string"
-          ? saved.rebuttalManuscriptTitle : defaultSettings.rebuttalManuscriptTitle,
+          ? saved.rebuttalManuscriptTitle
+          : defaultSettings.rebuttalManuscriptTitle,
       rebuttalFontSize:
         typeof saved.rebuttalFontSize === "string"
-          ? saved.rebuttalFontSize : defaultSettings.rebuttalFontSize,
+          ? saved.rebuttalFontSize
+          : defaultSettings.rebuttalFontSize,
       rebuttalPaperSize:
         typeof saved.rebuttalPaperSize === "string"
-          ? saved.rebuttalPaperSize : defaultSettings.rebuttalPaperSize,
+          ? saved.rebuttalPaperSize
+          : defaultSettings.rebuttalPaperSize,
       rebuttalFontFamily:
         typeof saved.rebuttalFontFamily === "string"
-          ? saved.rebuttalFontFamily : defaultSettings.rebuttalFontFamily,
+          ? saved.rebuttalFontFamily
+          : defaultSettings.rebuttalFontFamily,
       rebuttalIncludeDiff:
         typeof saved.rebuttalIncludeDiff === "boolean"
-          ? saved.rebuttalIncludeDiff : defaultSettings.rebuttalIncludeDiff,
+          ? saved.rebuttalIncludeDiff
+          : defaultSettings.rebuttalIncludeDiff,
       rebuttalDiffOldFile:
         typeof saved.rebuttalDiffOldFile === "string"
-          ? saved.rebuttalDiffOldFile : defaultSettings.rebuttalDiffOldFile,
+          ? saved.rebuttalDiffOldFile
+          : defaultSettings.rebuttalDiffOldFile,
       rebuttalDiffNewFile:
         typeof saved.rebuttalDiffNewFile === "string"
-          ? saved.rebuttalDiffNewFile : defaultSettings.rebuttalDiffNewFile,
+          ? saved.rebuttalDiffNewFile
+          : defaultSettings.rebuttalDiffNewFile,
       rebuttalDiffOutput:
         typeof saved.rebuttalDiffOutput === "string"
-          ? saved.rebuttalDiffOutput : defaultSettings.rebuttalDiffOutput,
+          ? saved.rebuttalDiffOutput
+          : defaultSettings.rebuttalDiffOutput,
       rebuttalSummary:
         typeof saved.rebuttalSummary === "string"
-          ? saved.rebuttalSummary : defaultSettings.rebuttalSummary,
+          ? saved.rebuttalSummary
+          : defaultSettings.rebuttalSummary,
       rebuttalSpacing:
         typeof saved.rebuttalSpacing === "boolean"
-          ? saved.rebuttalSpacing : defaultSettings.rebuttalSpacing,
+          ? saved.rebuttalSpacing
+          : defaultSettings.rebuttalSpacing,
       rebuttalColorPrimary:
         typeof saved.rebuttalColorPrimary === "string"
-          ? saved.rebuttalColorPrimary : defaultSettings.rebuttalColorPrimary,
+          ? saved.rebuttalColorPrimary
+          : defaultSettings.rebuttalColorPrimary,
       rebuttalColorAccent:
         typeof saved.rebuttalColorAccent === "string"
-          ? saved.rebuttalColorAccent : defaultSettings.rebuttalColorAccent,
+          ? saved.rebuttalColorAccent
+          : defaultSettings.rebuttalColorAccent,
     };
   } catch {
     return defaultSettings;
   }
 }
 
-const supportedExtensions = new Set([
-  "tex",
-  "bib",
-  "sty",
-  "cls",
-  "txt",
-  "md",
-  "json",
-]);
+const supportedExtensions = new Set(["tex", "bib", "sty", "cls", "txt", "md", "json"]);
 
 const latexSuggestions = [
   ["section", "\\section{${1:title}}"],
   ["subsection", "\\subsection{${1:title}}"],
   ["begin", "\\begin{${1:environment}}\n\t${0}\n\\end{${1:environment}}"],
-  ["figure", "\\begin{figure}[ht]\n\t\\centering\n\t\\includegraphics[width=${1:0.8}\\textwidth]{${2:file}}\n\t\\caption{${3:caption}}\n\t\\label{fig:${4:label}}\n\\end{figure}"],
-  ["table", "\\begin{table}[ht]\n\t\\centering\n\t\\begin{tabular}{${1:cc}}\n\t\t${0}\n\t\\end{tabular}\n\t\\caption{${2:caption}}\n\\end{table}"],
+  [
+    "figure",
+    "\\begin{figure}[ht]\n\t\\centering\n\t\\includegraphics[width=${1:0.8}\\textwidth]{${2:file}}\n\t\\caption{${3:caption}}\n\t\\label{fig:${4:label}}\n\\end{figure}",
+  ],
+  [
+    "table",
+    "\\begin{table}[ht]\n\t\\centering\n\t\\begin{tabular}{${1:cc}}\n\t\t${0}\n\t\\end{tabular}\n\t\\caption{${2:caption}}\n\\end{table}",
+  ],
   ["equation", "\\begin{equation}\n\t${0}\n\\end{equation}"],
   ["align", "\\begin{align}\n\t${1:a} &= ${2:b} \\\\\n\t&= ${0:c}\n\\end{align}"],
-  ["cases", "\\begin{equation}\n\t${1:f(x)} = \\begin{cases}\n\t\t${2:0}, & ${3:x < 0} \\\\\n\t\t${4:1}, & ${0:x \\ge 0}\n\t\\end{cases}\n\\end{equation}"],
-  ["matrix", "\\begin{bmatrix}\n\t${1:a} & ${2:b} \\\\\n\t${3:c} & ${0:d}\n\\end{bmatrix}"],
+  [
+    "cases",
+    "\\begin{equation}\n\t${1:f(x)} = \\begin{cases}\n\t\t${2:0}, & ${3:x < 0} \\\\\n\t\t${4:1}, & ${0:x \\ge 0}\n\t\\end{cases}\n\\end{equation}",
+  ],
+  [
+    "matrix",
+    "\\begin{bmatrix}\n\t${1:a} & ${2:b} \\\\\n\t${3:c} & ${0:d}\n\\end{bmatrix}",
+  ],
   ["frac", "\\frac{${1:numerator}}{${0:denominator}}"],
   ["sqrt", "\\sqrt{${0:x}}"],
   ["sum", "\\sum_{${1:i=1}}^{${2:n}} ${0:x_i}"],
@@ -718,7 +788,9 @@ function fileName(filePath: string): string {
 }
 
 function gitDisplayPath(filePath: string): string {
-  return filePath.includes(" -> ") ? filePath.split(" -> ").pop() ?? filePath : filePath;
+  return filePath.includes(" -> ")
+    ? (filePath.split(" -> ").pop() ?? filePath)
+    : filePath;
 }
 
 function fileDirectory(filePath: string): string {
@@ -898,9 +970,7 @@ function diagnosticHeadline(diagnostic: Diagnostic): string {
   if (normalized.includes("citation") && normalized.includes("undefined")) {
     return "Citation key not found";
   }
-  if (
-    normalized.includes("reference") && normalized.includes("undefined")
-  ) {
+  if (normalized.includes("reference") && normalized.includes("undefined")) {
     return "Reference could not be resolved";
   }
   if (normalized.includes("there were undefined references")) {
@@ -998,7 +1068,9 @@ function applyTextFix(content: string, fix: DiagnosticFix): string | null {
   if (content.slice(start, Math.max(start, end)) !== fix.expectedText) {
     return null;
   }
-  return content.slice(0, start) + fix.replacement + content.slice(Math.max(start, end));
+  return (
+    content.slice(0, start) + fix.replacement + content.slice(Math.max(start, end))
+  );
 }
 
 function historySnapshotId(): string {
@@ -1061,7 +1133,8 @@ function normalizeHistorySnapshot(value: unknown): DocumentHistorySnapshot | nul
   return {
     id: item.id,
     filePath: item.filePath,
-    fileName: typeof item.fileName === "string" ? item.fileName : fileName(item.filePath),
+    fileName:
+      typeof item.fileName === "string" ? item.fileName : fileName(item.filePath),
     label: typeof item.label === "string" ? item.label : "History state",
     content: item.content,
     timestamp: item.timestamp,
@@ -1099,9 +1172,7 @@ export default function App() {
   const [documents, setDocuments] = useState<OpenDocument[]>([]);
   const [activePath, setActivePath] = useState("");
   const [welcomeOpen, setWelcomeOpen] = useState(true);
-  const [createDialog, setCreateDialog] = useState<"file" | "folder" | null>(
-    null,
-  );
+  const [createDialog, setCreateDialog] = useState<"file" | "folder" | null>(null);
   const [createPath, setCreatePath] = useState("");
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
@@ -1118,7 +1189,9 @@ export default function App() {
   const [tableCanvasOpen, setTableCanvasOpen] = useState(false);
   const [tikzConverterOpen, setTikzConverterOpen] = useState(false);
   const [notationManagerOpen, setNotationManagerOpen] = useState(false);
-  const [pdfComplianceDiagnostics, setPdfComplianceDiagnostics] = useState<Diagnostic[]>([]);
+  const [pdfComplianceDiagnostics, setPdfComplianceDiagnostics] = useState<
+    Diagnostic[]
+  >([]);
   const [panelVisible, setPanelVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<PanelKind>("problems");
   const [terminalStarted, setTerminalStarted] = useState(false);
@@ -1134,8 +1207,12 @@ export default function App() {
   const [gitDiffSession, setGitDiffSession] = useState<GitDiffSession | null>(null);
   const [gitRepoHistory, setGitRepoHistory] = useState<GitHistorySummary | null>(null);
   const [gitFileHistory, setGitFileHistory] = useState<GitHistorySummary | null>(null);
-  const [gitCommitDetails, setGitCommitDetails] = useState<GitCommitDetails | null>(null);
-  const [gitCommitDetailsTargetPath, setGitCommitDetailsTargetPath] = useState<string | null>(null);
+  const [gitCommitDetails, setGitCommitDetails] = useState<GitCommitDetails | null>(
+    null,
+  );
+  const [gitCommitDetailsTargetPath, setGitCommitDetailsTargetPath] = useState<
+    string | null
+  >(null);
   const [documentHistory, setDocumentHistory] = useState<DocumentHistorySnapshot[]>([]);
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
@@ -1152,7 +1229,9 @@ export default function App() {
   const [proofreadingLoading, setProofreadingLoading] = useState(false);
   const [proofreadingError, setProofreadingError] = useState("");
   const [assistantDiagnostics, setAssistantDiagnostics] = useState<Diagnostic[]>([]);
-  const [errorDoctorResult, setErrorDoctorResult] = useState<ErrorDoctorResult | null>(null);
+  const [errorDoctorResult, setErrorDoctorResult] = useState<ErrorDoctorResult | null>(
+    null,
+  );
   const [statusMessage, setStatusMessage] = useState("Welcome to LatexDo");
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
   const [pdfTarget, setPdfTarget] = useState<SyncTexPdfLocation | null>(null);
@@ -1173,9 +1252,9 @@ export default function App() {
   const rootFileRef = useRef(rootFile);
   const engineRef = useRef(engine);
   const pdfPathRef = useRef("");
-  const forwardSyncRef = useRef<
-    ((position: monaco.Position) => Promise<void>) | null
-  >(null);
+  const forwardSyncRef = useRef<((position: monaco.Position) => Promise<void>) | null>(
+    null,
+  );
   const pendingSourceRef = useRef<{
     path: string;
     line: number;
@@ -1189,14 +1268,14 @@ export default function App() {
   const historySaveTimerRef = useRef<number | null>(null);
   const historyAutoCaptureTimerRef = useRef<number | null>(null);
 
-  const activeDocument = documents.find(
-    (document) => document.path === activePath,
-  );
+  const activeDocument = documents.find((document) => document.path === activePath);
   const hasVisibleProject = Boolean(projectId) && !hideProjectEntries;
   const showWelcome = welcomeOpen && !activePath;
   const showBlankWorkspace = hideProjectEntries && !welcomeOpen && !activePath;
   const previewShown = previewVisible && !showWelcome && !showBlankWorkspace;
-  const projectName = hasVisibleProject ? fileName(projectPath) || "Project" : "No Folder";
+  const projectName = hasVisibleProject
+    ? fileName(projectPath) || "Project"
+    : "No Folder";
   const diagnostics = useMemo(
     () => [
       ...(compileResult?.diagnostics ?? []),
@@ -1204,7 +1283,12 @@ export default function App() {
       ...assistantDiagnostics,
       ...(errorDoctorResult?.diagnostics ?? []),
     ],
-    [compileResult?.diagnostics, proofreadingResult?.diagnostics, assistantDiagnostics, errorDoctorResult?.diagnostics],
+    [
+      compileResult?.diagnostics,
+      proofreadingResult?.diagnostics,
+      assistantDiagnostics,
+      errorDoctorResult?.diagnostics,
+    ],
   );
   const errors = diagnostics.filter(
     (diagnostic) => diagnostic.severity === "error",
@@ -1223,8 +1307,8 @@ export default function App() {
   );
   const cascadingErrors = useMemo(
     () =>
-      compileResult?.diagnostics.filter((diagnostic) => diagnostic.isCascade)
-        .length ?? 0,
+      compileResult?.diagnostics.filter((diagnostic) => diagnostic.isCascade).length ??
+      0,
     [compileResult?.diagnostics],
   );
   const texFiles = useMemo(
@@ -1244,7 +1328,8 @@ export default function App() {
     [gitStatus],
   );
   const unstagedGitEntries = useMemo(
-    () => (gitStatus?.entries ?? []).filter((entry) => Boolean(entry.workingTreeStatus)),
+    () =>
+      (gitStatus?.entries ?? []).filter((entry) => Boolean(entry.workingTreeStatus)),
     [gitStatus],
   );
   const filteredSpellCheckerLanguages = useMemo(() => {
@@ -1262,14 +1347,12 @@ export default function App() {
       allProjectEntries.some(
         (entry) =>
           entry.type === "file" &&
-          normalizeRelativePath(entry.relativePath) ===
-            normalizeRelativePath(rootFile),
+          normalizeRelativePath(entry.relativePath) === normalizeRelativePath(rootFile),
       ),
     [allProjectEntries, hasVisibleProject, rootFile],
   );
   const autoCompileSignature = useMemo(
-    () =>
-      buildAutoCompileSignature(documents, projectId, rootFile, engine),
+    () => buildAutoCompileSignature(documents, projectId, rootFile, engine),
     [documents, engine, projectId, rootFile],
   );
 
@@ -1343,10 +1426,7 @@ export default function App() {
         return;
       }
 
-      const content = await window.latexdo.readFile(
-        targetProject,
-        entry.relativePath,
-      );
+      const content = await window.latexdo.readFile(targetProject, entry.relativePath);
       const document: OpenDocument = {
         path: entry.path,
         relativePath: entry.relativePath,
@@ -1450,20 +1530,23 @@ ${macroEnd}
   const findOpenDocument = (relativePath: string): OpenDocument | undefined => {
     const normalizedPath = normalizeRelativePath(relativePath);
     return documentsRef.current.find(
-      (document) =>
-        normalizeRelativePath(document.relativePath) === normalizedPath,
+      (document) => normalizeRelativePath(document.relativePath) === normalizedPath,
     );
   };
 
   const projectUsesLatexDoReviewMacros = async (
     currentProject: string,
   ): Promise<boolean> => {
-    if (documentsRef.current.some((document) => usesLatexDoReviewMacros(document.content))) {
+    if (
+      documentsRef.current.some((document) => usesLatexDoReviewMacros(document.content))
+    ) {
       return true;
     }
 
     const openDocumentPaths = new Set(
-      documentsRef.current.map((document) => normalizeRelativePath(document.relativePath)),
+      documentsRef.current.map((document) =>
+        normalizeRelativePath(document.relativePath),
+      ),
     );
     const texEntries = flattenEntries(projectEntriesRef.current).filter(
       (entry) =>
@@ -1473,10 +1556,7 @@ ${macroEnd}
     );
 
     for (const entry of texEntries) {
-      const content = await window.latexdo.readFile(
-        currentProject,
-        entry.relativePath,
-      );
+      const content = await window.latexdo.readFile(currentProject, entry.relativePath);
       if (usesLatexDoReviewMacros(content)) {
         return true;
       }
@@ -1506,7 +1586,10 @@ ${macroEnd}
           entry.relativePath,
           normalizedContent,
         );
-        normalizedContents.set(normalizeRelativePath(entry.relativePath), normalizedContent);
+        normalizedContents.set(
+          normalizeRelativePath(entry.relativePath),
+          normalizedContent,
+        );
       }
     }
 
@@ -1538,7 +1621,10 @@ ${macroEnd}
           rootEntry.relativePath,
           rootContentWithMacros,
         );
-        savedContents.set(normalizeRelativePath(rootEntry.relativePath), rootContentWithMacros);
+        savedContents.set(
+          normalizeRelativePath(rootEntry.relativePath),
+          rootContentWithMacros,
+        );
       }
     }
 
@@ -1561,7 +1647,11 @@ ${macroEnd}
         }),
     );
 
-    if (!reviewMacrosNeeded && rootDocument && rootDocument.content !== rootDocument.savedContent) {
+    if (
+      !reviewMacrosNeeded &&
+      rootDocument &&
+      rootDocument.content !== rootDocument.savedContent
+    ) {
       const normalizedPath = normalizeRelativePath(rootDocument.relativePath);
       const content = savedContents.get(normalizedPath) ?? rootDocument.content;
       await window.latexdo.writeFile(
@@ -1575,7 +1665,9 @@ ${macroEnd}
     if (savedContents.size > 0) {
       setDocuments((current) => {
         const nextDocuments = current.map((document) => {
-          const savedContent = savedContents.get(normalizeRelativePath(document.relativePath));
+          const savedContent = savedContents.get(
+            normalizeRelativePath(document.relativePath),
+          );
           return savedContent === undefined
             ? document
             : { ...document, content: savedContent, savedContent };
@@ -1586,72 +1678,83 @@ ${macroEnd}
     }
   };
 
-  const saveReviewData = useCallback(async (chats: ReviewChat[], items: RebuttalItem[]) => {
-    const currentProject = projectIdRef.current;
-    if (!currentProject) return;
+  const saveReviewData = useCallback(
+    async (chats: ReviewChat[], items: RebuttalItem[]) => {
+      const currentProject = projectIdRef.current;
+      if (!currentProject) return;
 
-    try {
-      const data = JSON.stringify({ chats, items }, null, 2);
-      const filePath = resolveProjectDataPath(".latexdo/review_data.json");
-      await window.latexdo.writeFile(currentProject, filePath, data);
-    } catch (e) {
-      console.error("Failed to save review data", e);
-    }
-  }, [resolveProjectDataPath]);
+      try {
+        const data = JSON.stringify({ chats, items }, null, 2);
+        const filePath = resolveProjectDataPath(".latexdo/review_data.json");
+        await window.latexdo.writeFile(currentProject, filePath, data);
+      } catch (e) {
+        console.error("Failed to save review data", e);
+      }
+    },
+    [resolveProjectDataPath],
+  );
 
-  const loadReviewData = useCallback(async (id: string) => {
-    try {
-      const filePath = resolveProjectDataPath(".latexdo/review_data.json");
-      const exists = await window.latexdo.fileExists(id, filePath);
-      if (!exists) {
+  const loadReviewData = useCallback(
+    async (id: string) => {
+      try {
+        const filePath = resolveProjectDataPath(".latexdo/review_data.json");
+        const exists = await window.latexdo.fileExists(id, filePath);
+        if (!exists) {
+          setReviewChats([]);
+          setRebuttalItems([]);
+          return;
+        }
+        const content = await window.latexdo.readFile(id, filePath);
+        const { chats, items } = JSON.parse(content) as {
+          chats: ReviewChat[];
+          items: RebuttalItem[];
+        };
+        const nextItems = items || [];
+        const normalizedChats = removeLegacyReviewPlaceholders(chats || []);
+        setReviewChats(normalizedChats.chats);
+        setRebuttalItems(nextItems);
+        if (normalizedChats.changed) {
+          void saveReviewData(normalizedChats.chats, nextItems);
+        }
+      } catch (e) {
         setReviewChats([]);
         setRebuttalItems([]);
-        return;
       }
-      const content = await window.latexdo.readFile(id, filePath);
-      const { chats, items } = JSON.parse(content) as { chats: ReviewChat[], items: RebuttalItem[] };
-      const nextItems = items || [];
-      const normalizedChats = removeLegacyReviewPlaceholders(chats || []);
-      setReviewChats(normalizedChats.chats);
-      setRebuttalItems(nextItems);
-      if (normalizedChats.changed) {
-        void saveReviewData(normalizedChats.chats, nextItems);
+    },
+    [resolveProjectDataPath, saveReviewData],
+  );
+
+  const saveHistoryData = useCallback(
+    async (snapshots: DocumentHistorySnapshot[]) => {
+      const currentProject = projectIdRef.current;
+      if (!currentProject) return;
+
+      try {
+        const data = JSON.stringify({ snapshots }, null, 2);
+        const filePath = resolveProjectDataPath(historyStorageRelativePath);
+        await window.latexdo.writeFile(currentProject, filePath, data);
+      } catch (e) {
+        console.error("Failed to save document history", e);
       }
-    } catch (e) {
-      setReviewChats([]);
-      setRebuttalItems([]);
-    }
-  }, [resolveProjectDataPath, saveReviewData]);
+    },
+    [resolveProjectDataPath],
+  );
 
-  const saveHistoryData = useCallback(async (snapshots: DocumentHistorySnapshot[]) => {
-    const currentProject = projectIdRef.current;
-    if (!currentProject) return;
-
-    try {
-      const data = JSON.stringify({ snapshots }, null, 2);
-      const filePath = resolveProjectDataPath(historyStorageRelativePath);
-      await window.latexdo.writeFile(currentProject, filePath, data);
-    } catch (e) {
-      console.error("Failed to save document history", e);
-    }
-  }, [resolveProjectDataPath]);
-
-  const scheduleHistorySave = useCallback((snapshots: DocumentHistorySnapshot[]) => {
-    if (historySaveTimerRef.current !== null) {
-      window.clearTimeout(historySaveTimerRef.current);
-    }
-    historySaveTimerRef.current = window.setTimeout(() => {
-      historySaveTimerRef.current = null;
-      void saveHistoryData(snapshots);
-    }, 350);
-  }, [saveHistoryData]);
+  const scheduleHistorySave = useCallback(
+    (snapshots: DocumentHistorySnapshot[]) => {
+      if (historySaveTimerRef.current !== null) {
+        window.clearTimeout(historySaveTimerRef.current);
+      }
+      historySaveTimerRef.current = window.setTimeout(() => {
+        historySaveTimerRef.current = null;
+        void saveHistoryData(snapshots);
+      }, 350);
+    },
+    [saveHistoryData],
+  );
 
   const updateDocumentHistory = useCallback(
-    (
-      updater: (
-        snapshots: DocumentHistorySnapshot[],
-      ) => DocumentHistorySnapshot[],
-    ) => {
+    (updater: (snapshots: DocumentHistorySnapshot[]) => DocumentHistorySnapshot[]) => {
       setDocumentHistory((current) => {
         const updated = updater(current);
         if (updated === current) {
@@ -1706,36 +1809,43 @@ ${macroEnd}
     [addHistorySnapshot],
   );
 
-  const loadHistoryData = useCallback(async (id: string) => {
-    try {
-      const filePath = resolveProjectDataPath(historyStorageRelativePath);
-      const exists = await window.latexdo.fileExists(id, filePath);
-      if (!exists) {
+  const loadHistoryData = useCallback(
+    async (id: string) => {
+      try {
+        const filePath = resolveProjectDataPath(historyStorageRelativePath);
+        const exists = await window.latexdo.fileExists(id, filePath);
+        if (!exists) {
+          setDocumentHistory([]);
+          documentHistoryRef.current = [];
+          return;
+        }
+        const content = await window.latexdo.readFile(id, filePath);
+        const parsed = JSON.parse(content) as
+          | {
+              snapshots?: unknown[];
+            }
+          | unknown[];
+        const rawSnapshots = Array.isArray(parsed)
+          ? parsed
+          : Array.isArray(parsed.snapshots)
+            ? parsed.snapshots
+            : [];
+        const snapshots = pruneHistorySnapshots(
+          rawSnapshots
+            .map(normalizeHistorySnapshot)
+            .filter((snapshot): snapshot is DocumentHistorySnapshot =>
+              Boolean(snapshot),
+            ),
+        );
+        setDocumentHistory(snapshots);
+        documentHistoryRef.current = snapshots;
+      } catch (e) {
         setDocumentHistory([]);
         documentHistoryRef.current = [];
-        return;
       }
-      const content = await window.latexdo.readFile(id, filePath);
-      const parsed = JSON.parse(content) as {
-        snapshots?: unknown[];
-      } | unknown[];
-      const rawSnapshots = Array.isArray(parsed)
-        ? parsed
-        : Array.isArray(parsed.snapshots)
-          ? parsed.snapshots
-          : [];
-      const snapshots = pruneHistorySnapshots(
-        rawSnapshots
-          .map(normalizeHistorySnapshot)
-          .filter((snapshot): snapshot is DocumentHistorySnapshot => Boolean(snapshot)),
-      );
-      setDocumentHistory(snapshots);
-      documentHistoryRef.current = snapshots;
-    } catch (e) {
-      setDocumentHistory([]);
-      documentHistoryRef.current = [];
-    }
-  }, [resolveProjectDataPath]);
+    },
+    [resolveProjectDataPath],
+  );
 
   const generateRebuttalFile = useCallback(async () => {
     const currentProject = projectIdRef.current;
@@ -1743,17 +1853,14 @@ ${macroEnd}
 
     try {
       const rebuttalRoot = rootFile.replace(/\.tex$/, "-rebuttal.tex");
-      const entry = allProjectEntries.find(e => e.relativePath === rootFile);
+      const entry = allProjectEntries.find((e) => e.relativePath === rootFile);
       if (!entry) return;
 
-      let content = documentsRef.current.find(d => d.path === entry.path)?.content;
+      let content = documentsRef.current.find((d) => d.path === entry.path)?.content;
       if (content === undefined) {
-        content = await window.latexdo.readFile(
-          currentProject,
-          entry.relativePath,
-        );
+        content = await window.latexdo.readFile(currentProject, entry.relativePath);
       }
-      
+
       content = ensurePreambleMacros(content);
       await window.latexdo.writeFile(currentProject, rebuttalRoot, content);
       setStatusMessage(`Generated rebuttal version: ${rebuttalRoot}`);
@@ -1764,11 +1871,7 @@ ${macroEnd}
   }, [allProjectEntries, refreshProject, rootFile]);
 
   const loadProject = useCallback(
-    async (
-      project: OpenProject,
-      openFirstDocument = false,
-      hideEntries = false,
-    ) => {
+    async (project: OpenProject, openFirstDocument = false, hideEntries = false) => {
       setStatusMessage("Loading project…");
       setProjectId(project.id);
       projectIdRef.current = project.id;
@@ -1797,9 +1900,7 @@ ${macroEnd}
         allFiles.find(
           (entry) => entry.type === "file" && entry.relativePath === "main.tex",
         ) ??
-        allFiles.find(
-          (entry) => entry.type === "file" && entry.name.endsWith(".tex"),
-        );
+        allFiles.find((entry) => entry.type === "file" && entry.name.endsWith(".tex"));
 
       if (main) {
         setRootFile(main.relativePath);
@@ -1813,30 +1914,25 @@ ${macroEnd}
     [loadHistoryData, loadReviewData, openDocument],
   );
 
-  const saveDocument = useCallback(
-    async (document: OpenDocument) => {
-      const currentProject = projectIdRef.current;
-      if (!currentProject) {
-        return;
-      }
-      await window.latexdo.writeFile(
-        currentProject,
-        document.relativePath,
-        document.content,
+  const saveDocument = useCallback(async (document: OpenDocument) => {
+    const currentProject = projectIdRef.current;
+    if (!currentProject) {
+      return;
+    }
+    await window.latexdo.writeFile(
+      currentProject,
+      document.relativePath,
+      document.content,
+    );
+    setDocuments((current) => {
+      const nextDocuments = current.map((item) =>
+        item.path === document.path ? { ...item, savedContent: item.content } : item,
       );
-      setDocuments((current) => {
-        const nextDocuments = current.map((item) =>
-          item.path === document.path
-            ? { ...item, savedContent: item.content }
-            : item,
-        );
-        documentsRef.current = nextDocuments;
-        return nextDocuments;
-      });
-      setStatusMessage(`Saved ${document.relativePath}`);
-    },
-    [],
-  );
+      documentsRef.current = nextDocuments;
+      return nextDocuments;
+    });
+    setStatusMessage(`Saved ${document.relativePath}`);
+  }, []);
 
   const compile = useCallback(async (): Promise<CompileResult | null> => {
     const currentProject = projectIdRef.current;
@@ -1873,16 +1969,15 @@ ${macroEnd}
       }
 
       if (result.ok && result.pdfPath) {
-        const bytes = await window.latexdo.readPdf(
-          currentProject,
-          result.pdfPath,
-        );
+        const bytes = await window.latexdo.readPdf(currentProject, result.pdfPath);
         if (isLatestCompile) {
           pdfPathRef.current = result.pdfPath;
           setPdfData(new Uint8Array(bytes));
           setPdfTarget(null);
           setPreviewVisible(true);
-          setStatusMessage(`Built successfully in ${formatDuration(result.durationMs)}`);
+          setStatusMessage(
+            `Built successfully in ${formatDuration(result.durationMs)}`,
+          );
         }
       } else {
         if (isLatestCompile) {
@@ -1900,9 +1995,7 @@ ${macroEnd}
         setPdfTarget(null);
         setPanelVisible(true);
         setActivePanel("output");
-        setStatusMessage(
-          error instanceof Error ? error.message : "Compilation failed",
-        );
+        setStatusMessage(error instanceof Error ? error.message : "Compilation failed");
       }
       return null;
     } finally {
@@ -1934,7 +2027,7 @@ ${macroEnd}
 
       if (!pdfPath || sourceIsDirty) {
         const result = await compile();
-        pdfPath = result?.ok ? result.pdfPath ?? "" : "";
+        pdfPath = result?.ok ? (result.pdfPath ?? "") : "";
       }
       if (!pdfPath) {
         setStatusMessage("Compile successfully before downloading the PDF");
@@ -1942,9 +2035,7 @@ ${macroEnd}
       }
 
       const bytes = await window.latexdo.readPdf(currentProject, pdfPath);
-      const url = URL.createObjectURL(
-        new Blob([bytes], { type: "application/pdf" }),
-      );
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
       const link = document.createElement("a");
       const downloadName = fileName(rootFileRef.current).replace(/\.tex$/i, ".pdf");
 
@@ -2027,44 +2118,101 @@ ${macroEnd}
     const timer = setTimeout(() => {
       const all: Diagnostic[] = [];
       if (settings.conferenceCheckerEnabled) {
-        all.push(...runConferenceChecks(content, settings as unknown as ConferenceCheckerSettings));
+        all.push(
+          ...runConferenceChecks(
+            content,
+            settings as unknown as ConferenceCheckerSettings,
+          ),
+        );
       }
       if (settings.citationAssistantEnabled) {
-        all.push(...runCitationChecks(content, settings as unknown as CitationAssistantSettings));
+        all.push(
+          ...runCitationChecks(
+            content,
+            settings as unknown as CitationAssistantSettings,
+          ),
+        );
       }
       if (settings.structureAssistantEnabled) {
-        all.push(...runStructureChecks(content, settings as unknown as StructureAssistantSettings));
+        all.push(
+          ...runStructureChecks(
+            content,
+            settings as unknown as StructureAssistantSettings,
+          ),
+        );
       }
       if (settings.reproducibilityEnabled) {
-        all.push(...runReproducibilityChecks(content, settings as unknown as ReproducibilitySettings));
+        all.push(
+          ...runReproducibilityChecks(
+            content,
+            settings as unknown as ReproducibilitySettings,
+          ),
+        );
       }
       if (settings.acronymManagerEnabled) {
-        all.push(...runAcronymChecks(content, settings as unknown as AcronymManagerSettings));
+        all.push(
+          ...runAcronymChecks(content, settings as unknown as AcronymManagerSettings),
+        );
       }
       if (settings.notationManagerEnabled) {
-        const result = runNotationChecks(content, settings as unknown as NotationManagerSettings);
+        const result = runNotationChecks(
+          content,
+          settings as unknown as NotationManagerSettings,
+        );
         all.push(...result.diagnostics);
       }
       setAssistantDiagnostics(all);
     }, 500);
     return () => clearTimeout(timer);
-  }, [activeDocument?.content, settings.conferenceCheckerEnabled, settings.citationAssistantEnabled, settings.structureAssistantEnabled,
-    settings.reproducibilityEnabled, settings.acronymManagerEnabled,
-    settings.checkMargins, settings.checkFontSize, settings.checkAbstractLength,
-    settings.checkKeywords, settings.checkFigureReferences, settings.checkTableReferences,
-    settings.checkBibliographyStyle, settings.checkPageLimit, settings.checkAuthorInfo,
-    settings.checkAnonymousReview, settings.checkFigureResolution, settings.checkEmbeddedFonts,
-    settings.checkCompiler, settings.detectMissingCitations, settings.detectUnusedEntries,
-    settings.detectDuplicateReferences, settings.detectBrokenLinks, settings.suggestCitationKeys,
-    settings.importMetadataSources, settings.warnOldCitations, settings.checkAbstractStructure,
-    settings.checkIntroductionStructure, settings.checkRelatedWorkLength,
-    settings.checkMethodReproducibility, settings.checkResultsDiscussion,
-    settings.checkConclusionClaims, settings.conferenceTemplate, settings.conferenceChecker_customTemplate,
-    settings.checkCodeLink, settings.checkDatasetLink, settings.checkLicenseMentioned,
-    settings.checkHyperparameters, settings.checkHardwareDetails, settings.checkRandomSeeds,
-    settings.checkEvaluationMetrics,     settings.checkUndefinedAcronym, settings.checkDuplicateDefinition,
-    settings.checkUnusedAcronym, settings.checkConflictingDefinitions,
-    settings.notationManagerEnabled, settings.detectNotation, settings.detectNotationConflicts,
+  }, [
+    activeDocument?.content,
+    settings.conferenceCheckerEnabled,
+    settings.citationAssistantEnabled,
+    settings.structureAssistantEnabled,
+    settings.reproducibilityEnabled,
+    settings.acronymManagerEnabled,
+    settings.checkMargins,
+    settings.checkFontSize,
+    settings.checkAbstractLength,
+    settings.checkKeywords,
+    settings.checkFigureReferences,
+    settings.checkTableReferences,
+    settings.checkBibliographyStyle,
+    settings.checkPageLimit,
+    settings.checkAuthorInfo,
+    settings.checkAnonymousReview,
+    settings.checkFigureResolution,
+    settings.checkEmbeddedFonts,
+    settings.checkCompiler,
+    settings.detectMissingCitations,
+    settings.detectUnusedEntries,
+    settings.detectDuplicateReferences,
+    settings.detectBrokenLinks,
+    settings.suggestCitationKeys,
+    settings.importMetadataSources,
+    settings.warnOldCitations,
+    settings.checkAbstractStructure,
+    settings.checkIntroductionStructure,
+    settings.checkRelatedWorkLength,
+    settings.checkMethodReproducibility,
+    settings.checkResultsDiscussion,
+    settings.checkConclusionClaims,
+    settings.conferenceTemplate,
+    settings.conferenceChecker_customTemplate,
+    settings.checkCodeLink,
+    settings.checkDatasetLink,
+    settings.checkLicenseMentioned,
+    settings.checkHyperparameters,
+    settings.checkHardwareDetails,
+    settings.checkRandomSeeds,
+    settings.checkEvaluationMetrics,
+    settings.checkUndefinedAcronym,
+    settings.checkDuplicateDefinition,
+    settings.checkUnusedAcronym,
+    settings.checkConflictingDefinitions,
+    settings.notationManagerEnabled,
+    settings.detectNotation,
+    settings.detectNotationConflicts,
     settings.detectUndefinedNotation,
   ]);
 
@@ -2085,7 +2233,14 @@ ${macroEnd}
       settings as unknown as ErrorDoctorSettings,
     );
     setErrorDoctorResult(result);
-  }, [compileResult?.output, settings.errorDoctorEnabled, settings.explainErrors, settings.suggestFixes, settings.autoFixCommon, activeDocument?.content]);
+  }, [
+    compileResult?.output,
+    settings.errorDoctorEnabled,
+    settings.explainErrors,
+    settings.suggestFixes,
+    settings.autoFixCommon,
+    activeDocument?.content,
+  ]);
 
   useEffect(() => {
     if (!settings.pdfComplianceEnabled || !activeDocument?.content) {
@@ -2100,7 +2255,19 @@ ${macroEnd}
       settings as unknown as PdfComplianceSettings,
     );
     setPdfComplianceDiagnostics(result);
-  }, [activeDocument?.content, compileResult?.output, settings.pdfComplianceEnabled, settings.checkPageCount, settings.maxPages, settings.checkUnreferencedFigures, settings.checkUncitedCitations, settings.checkSectionsWithNoCitations, settings.checkType3Fonts, settings.checkAbstractWordCount, settings.maxAbstractWords]);
+  }, [
+    activeDocument?.content,
+    compileResult?.output,
+    settings.pdfComplianceEnabled,
+    settings.checkPageCount,
+    settings.maxPages,
+    settings.checkUnreferencedFigures,
+    settings.checkUncitedCitations,
+    settings.checkSectionsWithNoCitations,
+    settings.checkType3Fonts,
+    settings.checkAbstractWordCount,
+    settings.maxAbstractWords,
+  ]);
 
   const moveEntry = useCallback(
     async (sourcePath: string, destination: ProjectEntry | null) => {
@@ -2120,9 +2287,7 @@ ${macroEnd}
         return;
       }
 
-      const sourceRelativePath = normalizeRelativePath(
-        sourceEntry.relativePath,
-      );
+      const sourceRelativePath = normalizeRelativePath(sourceEntry.relativePath);
       const destinationDirectory = normalizeRelativePath(
         destination?.relativePath ?? "",
       ).replace(/\/+$/, "");
@@ -2158,11 +2323,8 @@ ${macroEnd}
         const sourcePrefix = `${sourceRelativePath}/`;
         const dirtySourceDocuments = documentsRef.current.filter(
           (document) =>
-            (normalizeRelativePath(document.relativePath) ===
-              sourceRelativePath ||
-              normalizeRelativePath(document.relativePath).startsWith(
-                sourcePrefix,
-              )) &&
+            (normalizeRelativePath(document.relativePath) === sourceRelativePath ||
+              normalizeRelativePath(document.relativePath).startsWith(sourcePrefix)) &&
             document.content !== document.savedContent,
         );
         for (const document of dirtySourceDocuments) {
@@ -2219,9 +2381,7 @@ ${macroEnd}
         documentsRef.current = nextDocuments;
         setDocuments(nextDocuments);
 
-        const normalizedActivePath = normalizeRelativePath(
-          activePathRef.current,
-        );
+        const normalizedActivePath = normalizeRelativePath(activePathRef.current);
         if (
           normalizedActivePath === sourceAbsolutePath ||
           normalizedActivePath.startsWith(`${sourceAbsolutePath}/`)
@@ -2281,8 +2441,7 @@ ${macroEnd}
     }
 
     if (
-      normalizeRelativePath(model.uri.fsPath) !==
-      normalizeRelativePath(pending.path)
+      normalizeRelativePath(model.uri.fsPath) !== normalizeRelativePath(pending.path)
     ) {
       return false;
     }
@@ -2290,11 +2449,7 @@ ${macroEnd}
     const line = Math.min(Math.max(1, pending.line), model.getLineCount());
     const lineLength = model.getLineLength(line);
     const match = pending.word
-      ? wordColumn(
-          model.getLineContent(line),
-          pending.word,
-          pending.column,
-        )
+      ? wordColumn(model.getLineContent(line), pending.word, pending.column)
       : {
           column: Math.min(Math.max(1, pending.column), lineLength + 1),
           length: Math.max(
@@ -2313,12 +2468,7 @@ ${macroEnd}
             model.getLineLength(endLine) + 1,
             Math.max(1, pending.endColumn ?? 1),
           );
-    const range = new monaco.Range(
-      line,
-      match.column,
-      endLine,
-      endColumn,
-    );
+    const range = new monaco.Range(line, match.column, endLine, endColumn);
     editor.setSelection(range);
     editor.revealRangeInCenter(range, monaco.editor.ScrollType.Smooth);
     editor.focus();
@@ -2344,7 +2494,7 @@ ${macroEnd}
 
       if (!pdfPath || sourceIsDirty) {
         const result = await compile();
-        pdfPath = result?.ok ? result.pdfPath ?? "" : "";
+        pdfPath = result?.ok ? (result.pdfPath ?? "") : "";
       }
       if (!pdfPath) {
         setStatusMessage("Compile successfully before synchronizing the PDF");
@@ -2423,62 +2573,57 @@ ${macroEnd}
         setStatusMessage(`Opened ${entry.relativePath}:${location.line}`);
       } catch (error) {
         setStatusMessage(
-          error instanceof Error
-            ? error.message
-            : "Could not synchronize source",
+          error instanceof Error ? error.message : "Could not synchronize source",
         );
       }
     },
     [openDocument, projectEntries, revealPendingSource],
   );
 
-  const applyDiagnosticReplacement = useCallback(
-    (diagnostic: Diagnostic) => {
-      if (
-        !diagnostic.replacements?.length ||
-        !diagnostic.file ||
-        diagnostic.source !== "proofread"
-      ) {
-        return;
-      }
+  const applyDiagnosticReplacement = useCallback((diagnostic: Diagnostic) => {
+    if (
+      !diagnostic.replacements?.length ||
+      !diagnostic.file ||
+      diagnostic.source !== "proofread"
+    ) {
+      return;
+    }
 
-      const targetPath = normalizeRelativePath(diagnostic.file);
-      const replacement = diagnostic.replacements[0] ?? "";
+    const targetPath = normalizeRelativePath(diagnostic.file);
+    const replacement = diagnostic.replacements[0] ?? "";
 
-      setDocuments((current) =>
-        current.map((document) => {
-          if (normalizeRelativePath(document.relativePath) !== targetPath) {
-            return document;
-          }
+    setDocuments((current) =>
+      current.map((document) => {
+        if (normalizeRelativePath(document.relativePath) !== targetPath) {
+          return document;
+        }
 
-          const lines = document.content.split("\n");
-          const lineIndex = Math.max(0, diagnostic.line - 1);
-          const line = lines[lineIndex];
-          if (line === undefined) {
-            return document;
-          }
+        const lines = document.content.split("\n");
+        const lineIndex = Math.max(0, diagnostic.line - 1);
+        const line = lines[lineIndex];
+        if (line === undefined) {
+          return document;
+        }
 
-          const startColumn = Math.max(0, diagnostic.column - 1);
-          const endColumn = Math.max(
-            startColumn,
-            (diagnostic.endLine === diagnostic.line
-              ? (diagnostic.endColumn ?? diagnostic.column)
-              : diagnostic.column) - 1,
-          );
+        const startColumn = Math.max(0, diagnostic.column - 1);
+        const endColumn = Math.max(
+          startColumn,
+          (diagnostic.endLine === diagnostic.line
+            ? (diagnostic.endColumn ?? diagnostic.column)
+            : diagnostic.column) - 1,
+        );
 
-          lines[lineIndex] =
-            line.slice(0, startColumn) + replacement + line.slice(endColumn);
+        lines[lineIndex] =
+          line.slice(0, startColumn) + replacement + line.slice(endColumn);
 
-          return {
-            ...document,
-            content: lines.join("\n"),
-          };
-        }),
-      );
-      setStatusMessage(`Applied suggestion: ${replacement}`);
-    },
-    [],
-  );
+        return {
+          ...document,
+          content: lines.join("\n"),
+        };
+      }),
+    );
+    setStatusMessage(`Applied suggestion: ${replacement}`);
+  }, []);
 
   const applyLatexDiagnosticFix = useCallback(
     async (diagnostic: Diagnostic, fix: DiagnosticFix) => {
@@ -2499,8 +2644,7 @@ ${macroEnd}
       }
 
       const openDocumentState = documentsRef.current.find(
-        (document) =>
-          normalizeRelativePath(document.relativePath) === targetPath,
+        (document) => normalizeRelativePath(document.relativePath) === targetPath,
       );
       const content =
         openDocumentState?.content ??
@@ -2699,13 +2843,15 @@ ${macroEnd}
     const editor = editorRef.current;
     if (!editor || !activeDocument) return;
 
-    const relevantChats = reviewChats.filter(chat => chat.filePath === activeDocument.relativePath);
-    const decorations = relevantChats.map(chat => ({
+    const relevantChats = reviewChats.filter(
+      (chat) => chat.filePath === activeDocument.relativePath,
+    );
+    const decorations = relevantChats.map((chat) => ({
       range: new monaco.Range(
         chat.selection.startLine,
         chat.selection.startColumn,
         chat.selection.endLine,
-        chat.selection.endColumn
+        chat.selection.endColumn,
       ),
       options: {
         isWholeLine: false,
@@ -2719,7 +2865,10 @@ ${macroEnd}
       },
     }));
 
-    reviewDecorationsRef.current = editor.deltaDecorations(reviewDecorationsRef.current, decorations);
+    reviewDecorationsRef.current = editor.deltaDecorations(
+      reviewDecorationsRef.current,
+      decorations,
+    );
   }, [activeDocument, reviewChats]);
 
   const latexDecorationsRef = useRef<string[]>([]);
@@ -2731,7 +2880,10 @@ ${macroEnd}
     }
 
     if (settings.showRawLatex) {
-      latexDecorationsRef.current = editor.deltaDecorations(latexDecorationsRef.current, []);
+      latexDecorationsRef.current = editor.deltaDecorations(
+        latexDecorationsRef.current,
+        [],
+      );
       return;
     }
 
@@ -2805,7 +2957,10 @@ ${macroEnd}
       });
     }
 
-    latexDecorationsRef.current = editor.deltaDecorations(latexDecorationsRef.current, ranges);
+    latexDecorationsRef.current = editor.deltaDecorations(
+      latexDecorationsRef.current,
+      ranges,
+    );
   }, [activeDocument, settings.showRawLatex]);
 
   useEffect(() => {
@@ -2860,7 +3015,7 @@ ${macroEnd}
         const word = model.getWordUntilPosition(position);
         const lineContent = model.getLineContent(position.lineNumber);
         const textBeforePointer = lineContent.substring(0, position.column - 1);
-        
+
         const range = {
           startLineNumber: position.lineNumber,
           endLineNumber: position.lineNumber,
@@ -2869,83 +3024,93 @@ ${macroEnd}
         };
 
         // Check if we are inside \cite{...}
-        const citeMatch = textBeforePointer.match(/\\(?:cite|citep|citet|parencite|textcite)[a-zA-Z]*\*?(?:\[[^\]]*\])*{([^}]*)$/);
+        const citeMatch = textBeforePointer.match(
+          /\\(?:cite|citep|citet|parencite|textcite)[a-zA-Z]*\*?(?:\[[^\]]*\])*{([^}]*)$/,
+        );
         if (citeMatch) {
           const suggestions: monaco.languages.CompletionItem[] = [];
           const allEntries = flattenEntries(projectEntriesRef.current);
-          const bibFiles = allEntries.filter(e => e.name.endsWith('.bib'));
+          const bibFiles = allEntries.filter((e) => e.name.endsWith(".bib"));
           for (const bib of bibFiles) {
-             try {
-               const content = await window.latexdo.readFile(
-                 projectIdRef.current,
-                 bib.relativePath,
-               );
-               const regex = /@\w+\s*{\s*([^,]+),/g;
-               let match;
-               while ((match = regex.exec(content)) !== null) {
-                 const key = match[1].trim();
-                 const start = match.index;
-                 const end = content.indexOf('@', start + 1);
-                 const block = end === -1 ? content.slice(start) : content.slice(start, end);
-                 
-                 const titleMatch = block.match(/title\s*=\s*[{"]([^}"]+)[}"]/i);
-                 const authorMatch = block.match(/author\s*=\s*[{"]([^}"]+)[}"]/i);
-                 const yearMatch = block.match(/year\s*=\s*[{"]([^}"]+)[}"]/i);
-                 
-                 const detail = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : 'BibTeX Entry';
-                 let doc = '';
-                 if (authorMatch) doc += `Author: ${authorMatch[1].replace(/\s+/g, ' ').trim()}\n`;
-                 if (yearMatch) doc += `Year: ${yearMatch[1].trim()}`;
-                 
-                 suggestions.push({
-                    label: key,
-                    kind: instance.languages.CompletionItemKind.Reference,
-                    insertText: key,
-                    detail,
-                    documentation: doc,
-                    range,
-                 });
-               }
-             } catch (e) {
-               // Ignore missing/unreadable bib files
-             }
+            try {
+              const content = await window.latexdo.readFile(
+                projectIdRef.current,
+                bib.relativePath,
+              );
+              const regex = /@\w+\s*{\s*([^,]+),/g;
+              let match;
+              while ((match = regex.exec(content)) !== null) {
+                const key = match[1].trim();
+                const start = match.index;
+                const end = content.indexOf("@", start + 1);
+                const block =
+                  end === -1 ? content.slice(start) : content.slice(start, end);
+
+                const titleMatch = block.match(/title\s*=\s*[{"]([^}"]+)[}"]/i);
+                const authorMatch = block.match(/author\s*=\s*[{"]([^}"]+)[}"]/i);
+                const yearMatch = block.match(/year\s*=\s*[{"]([^}"]+)[}"]/i);
+
+                const detail = titleMatch
+                  ? titleMatch[1].replace(/\s+/g, " ").trim()
+                  : "BibTeX Entry";
+                let doc = "";
+                if (authorMatch)
+                  doc += `Author: ${authorMatch[1].replace(/\s+/g, " ").trim()}\n`;
+                if (yearMatch) doc += `Year: ${yearMatch[1].trim()}`;
+
+                suggestions.push({
+                  label: key,
+                  kind: instance.languages.CompletionItemKind.Reference,
+                  insertText: key,
+                  detail,
+                  documentation: doc,
+                  range,
+                });
+              }
+            } catch (e) {
+              // Ignore missing/unreadable bib files
+            }
           }
           return { suggestions };
         }
 
         // Check if we are inside \ref{...}
-        const refMatch = textBeforePointer.match(/\\(?:ref|cref|Cref|autoref|pageref|eqref)[a-zA-Z]*\*?{([^}]*)$/);
+        const refMatch = textBeforePointer.match(
+          /\\(?:ref|cref|Cref|autoref|pageref|eqref)[a-zA-Z]*\*?{([^}]*)$/,
+        );
         if (refMatch) {
           const suggestions: monaco.languages.CompletionItem[] = [];
           const allEntries = flattenEntries(projectEntriesRef.current);
-          const texFiles = allEntries.filter(e => e.name.endsWith('.tex'));
-          
-          const openDocs = new Map(documentsRef.current.map(d => [d.path, d.content]));
-          
+          const texFiles = allEntries.filter((e) => e.name.endsWith(".tex"));
+
+          const openDocs = new Map(
+            documentsRef.current.map((d) => [d.path, d.content]),
+          );
+
           for (const tex of texFiles) {
-             try {
-               let content = openDocs.get(tex.path);
-               if (content === undefined) {
-                 content = await window.latexdo.readFile(
-                   projectIdRef.current,
-                   tex.relativePath,
-                 );
-               }
-               const regex = /\\label\s*{([^}]+)}/g;
-               let match;
-               while ((match = regex.exec(content)) !== null) {
-                 const label = match[1].trim();
-                 suggestions.push({
-                    label,
-                    kind: instance.languages.CompletionItemKind.Reference,
-                    insertText: label,
-                    detail: `Label from ${tex.name}`,
-                    range,
-                 });
-               }
-             } catch (e) {
-               // Ignore missing/unreadable tex files
-             }
+            try {
+              let content = openDocs.get(tex.path);
+              if (content === undefined) {
+                content = await window.latexdo.readFile(
+                  projectIdRef.current,
+                  tex.relativePath,
+                );
+              }
+              const regex = /\\label\s*{([^}]+)}/g;
+              let match;
+              while ((match = regex.exec(content)) !== null) {
+                const label = match[1].trim();
+                suggestions.push({
+                  label,
+                  kind: instance.languages.CompletionItemKind.Reference,
+                  insertText: label,
+                  detail: `Label from ${tex.name}`,
+                  range,
+                });
+              }
+            } catch (e) {
+              // Ignore missing/unreadable tex files
+            }
           }
           // Remove duplicates
           const unique = new Map();
@@ -2954,7 +3119,10 @@ ${macroEnd}
         }
 
         // Default snippet completion (triggered by \)
-        if (textBeforePointer.endsWith('\\' + word.word) || textBeforePointer.endsWith('\\')) {
+        if (
+          textBeforePointer.endsWith("\\" + word.word) ||
+          textBeforePointer.endsWith("\\")
+        ) {
           return {
             suggestions: latexSuggestions.map(([label, insertText]) => ({
               label: `\\${label}`,
@@ -3220,28 +3388,25 @@ ${macroEnd}
     setStatusMessage("Welcome to LatexDo");
   };
 
-  const loadSpellCheckerSettings = useCallback(
-    async () => {
-      setSpellCheckerLoading(true);
-      setSpellCheckerError("");
+  const loadSpellCheckerSettings = useCallback(async () => {
+    setSpellCheckerLoading(true);
+    setSpellCheckerError("");
 
-      try {
-        const nextSettings = await window.latexdo.getSpellCheckerSettings();
-        setSpellCheckerSettings(nextSettings);
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Could not load spell checker settings";
-        setSpellCheckerError(
-          message.replace(/^Error invoking remote method '[^']+': /, ""),
-        );
-      } finally {
-        setSpellCheckerLoading(false);
-      }
-    },
-    [],
-  );
+    try {
+      const nextSettings = await window.latexdo.getSpellCheckerSettings();
+      setSpellCheckerSettings(nextSettings);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not load spell checker settings";
+      setSpellCheckerError(
+        message.replace(/^Error invoking remote method '[^']+': /, ""),
+      );
+    } finally {
+      setSpellCheckerLoading(false);
+    }
+  }, []);
 
   const saveSpellCheckerSettings = useCallback(
     async (
@@ -3252,8 +3417,7 @@ ${macroEnd}
       setSpellCheckerLoading(true);
       setSpellCheckerError("");
       try {
-        const saved =
-          await window.latexdo.updateSpellCheckerSettings(nextSettings);
+        const saved = await window.latexdo.updateSpellCheckerSettings(nextSettings);
         setSpellCheckerSettings(saved);
         if (options?.clearWordDraft) {
           setSpellCheckerWordDraft("");
@@ -3283,9 +3447,7 @@ ${macroEnd}
       setProofreadingSettings(nextSettings);
     } catch (error) {
       const message =
-        error instanceof Error
-          ? error.message
-          : "Could not load proofreading settings";
+        error instanceof Error ? error.message : "Could not load proofreading settings";
       setProofreadingError(
         message.replace(/^Error invoking remote method '[^']+': /, ""),
       );
@@ -3293,14 +3455,10 @@ ${macroEnd}
   }, []);
 
   const saveProofreadingSettings = useCallback(
-    async (
-      nextSettings: ProofreadingSettings,
-      successMessage?: string,
-    ) => {
+    async (nextSettings: ProofreadingSettings, successMessage?: string) => {
       setProofreadingError("");
       try {
-        const saved =
-          await window.latexdo.updateProofreadingSettings(nextSettings);
+        const saved = await window.latexdo.updateProofreadingSettings(nextSettings);
         setProofreadingSettings(saved);
         if (successMessage) {
           setStatusMessage(successMessage);
@@ -3380,10 +3538,7 @@ ${macroEnd}
         return;
       }
 
-      const customWords = uniqueWords([
-        ...spellCheckerSettings.customWords,
-        word,
-      ]);
+      const customWords = uniqueWords([...spellCheckerSettings.customWords, word]);
       if (customWords.length === spellCheckerSettings.customWords.length) {
         setSpellCheckerWordDraft("");
         setSpellCheckerError("");
@@ -3529,9 +3684,7 @@ ${macroEnd}
       await refreshGitStatus();
       setStatusMessage("Created commit");
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Git commit failed",
-      );
+      setStatusMessage(error instanceof Error ? error.message : "Git commit failed");
     } finally {
       setGitActionBusy(null);
     }
@@ -3573,10 +3726,7 @@ ${macroEnd}
           setGitDiffPreview(null);
         }
         setStatusMessage(
-          gitDiscardStatusMessage(
-            result,
-            `Discarded changes in ${relativePath}`,
-          ),
+          gitDiscardStatusMessage(result, `Discarded changes in ${relativePath}`),
         );
       } finally {
         setGitActionBusy(null);
@@ -3634,19 +3784,22 @@ ${macroEnd}
     }
   }, [refreshGitStatus]);
 
-  const openGitCommitDetails = useCallback(async (hash: string, targetPath?: string) => {
-    const currentProject = projectIdRef.current;
-    if (!currentProject) return;
+  const openGitCommitDetails = useCallback(
+    async (hash: string, targetPath?: string) => {
+      const currentProject = projectIdRef.current;
+      if (!currentProject) return;
 
-    setGitActionBusy(`commit:${hash}`);
-    try {
-      const details = await window.latexdo.getGitCommitDetails(currentProject, hash);
-      setGitCommitDetails(details);
-      setGitCommitDetailsTargetPath(targetPath ?? null);
-    } finally {
-      setGitActionBusy(null);
-    }
-  }, []);
+      setGitActionBusy(`commit:${hash}`);
+      try {
+        const details = await window.latexdo.getGitCommitDetails(currentProject, hash);
+        setGitCommitDetails(details);
+        setGitCommitDetailsTargetPath(targetPath ?? null);
+      } finally {
+        setGitActionBusy(null);
+      }
+    },
+    [],
+  );
 
   const openGitCommitRevisionDiff = useCallback(
     async (hash: string, relativePath: string) => {
@@ -3732,8 +3885,7 @@ ${macroEnd}
 
     const rootEntry =
       flattenEntries(projectEntries).find(
-        (entry) =>
-          entry.type === "file" && entry.relativePath === rootFileRef.current,
+        (entry) => entry.type === "file" && entry.relativePath === rootFileRef.current,
       ) ??
       flattenEntries(projectEntries).find(
         (entry) => entry.type === "file" && entry.name.endsWith(".tex"),
@@ -3777,9 +3929,7 @@ ${macroEnd}
           item.name === fileName(targetDiagnosticPath)),
     );
     if (!entry) {
-      setStatusMessage(
-        `Could not locate ${targetDiagnosticPath} in the open project`,
-      );
+      setStatusMessage(`Could not locate ${targetDiagnosticPath} in the open project`);
       return;
     }
 
@@ -3796,7 +3946,9 @@ ${macroEnd}
     requestAnimationFrame(() => {
       revealPendingSource();
     });
-    setStatusMessage(`Opened ${diagnosticLocationLabel(diagnostic, rootFileRef.current)}`);
+    setStatusMessage(
+      `Opened ${diagnosticLocationLabel(diagnostic, rootFileRef.current)}`,
+    );
   };
 
   const openGitFile = useCallback(
@@ -3813,35 +3965,32 @@ ${macroEnd}
     [allProjectEntries, openDocument],
   );
 
-  const openGitDiffEditor = useCallback(
-    async (relativePath: string) => {
-      const currentProject = projectIdRef.current;
-      if (!currentProject) return;
+  const openGitDiffEditor = useCallback(async (relativePath: string) => {
+    const currentProject = projectIdRef.current;
+    if (!currentProject) return;
 
-      setGitActionBusy(`editor-diff:${relativePath}`);
-      try {
-        const snapshot = await window.latexdo.getGitEditorDiff(
-          currentProject,
-          relativePath,
-        );
-        setWelcomeOpen(false);
-        setActivePath("");
-        activePathRef.current = "";
-        setGitDiffSession({
-          ...snapshot,
-          label: `${fileName(relativePath)} (Diff)`,
-        });
-        setStatusMessage(`Opened diff for ${relativePath}`);
-      } finally {
-        setGitActionBusy(null);
-      }
-    },
-    [],
-  );
+    setGitActionBusy(`editor-diff:${relativePath}`);
+    try {
+      const snapshot = await window.latexdo.getGitEditorDiff(
+        currentProject,
+        relativePath,
+      );
+      setWelcomeOpen(false);
+      setActivePath("");
+      activePathRef.current = "";
+      setGitDiffSession({
+        ...snapshot,
+        label: `${fileName(relativePath)} (Diff)`,
+      });
+      setStatusMessage(`Opened diff for ${relativePath}`);
+    } finally {
+      setGitActionBusy(null);
+    }
+  }, []);
 
   const handleAddReviewChat = useCallback(() => {
     const editor = editorRef.current;
-    const document = documentsRef.current.find(d => d.path === activePathRef.current);
+    const document = documentsRef.current.find((d) => d.path === activePathRef.current);
     if (!editor || !document) return;
 
     const selection = editor.getSelection();
@@ -3869,7 +4018,7 @@ ${macroEnd}
       comments: [],
     };
 
-    setReviewChats(prev => {
+    setReviewChats((prev) => {
       const next = [...prev, newChat];
       void saveReviewData(next, rebuttalItems);
       return next;
@@ -3879,7 +4028,7 @@ ${macroEnd}
 
   const handleAddRebuttalToSource = useCallback(() => {
     const editor = editorRef.current;
-    const document = documentsRef.current.find(d => d.path === activePathRef.current);
+    const document = documentsRef.current.find((d) => d.path === activePathRef.current);
     if (!editor || !document) return;
 
     const selection = editor.getSelection();
@@ -3899,11 +4048,13 @@ ${macroEnd}
     const authorAnswer = "Author answer here...";
     const wrappedText = `\\rebuttal{${selectedText}}{${reviewerComment}}{${authorAnswer}}{${revisedText}}`;
 
-    editor.executeEdits("rebuttal-mode", [{
-      range: selection,
-      text: wrappedText,
-      forceMoveMarkers: true
-    }]);
+    editor.executeEdits("rebuttal-mode", [
+      {
+        range: selection,
+        text: wrappedText,
+        forceMoveMarkers: true,
+      },
+    ]);
 
     const newItem: RebuttalItem = {
       id: Date.now().toString(),
@@ -3913,8 +4064,8 @@ ${macroEnd}
       authorComment: authorAnswer,
       modificationMade: revisedText,
     };
-    
-    setRebuttalItems(prev => {
+
+    setRebuttalItems((prev) => {
       const next = [...prev, newItem];
       void saveReviewData(reviewChats, next);
       return next;
@@ -3924,7 +4075,10 @@ ${macroEnd}
 
   const handleGenerateRebuttalLetter = useCallback(async () => {
     const currentProject = projectIdRef.current;
-    if (!currentProject) { setStatusMessage("No project open."); return; }
+    if (!currentProject) {
+      setStatusMessage("No project open.");
+      return;
+    }
 
     try {
       const s = settings;
@@ -3946,7 +4100,9 @@ ${macroEnd}
 
       const tex = generateRebuttalLetter(rebuttalItems, rebuttalSettings);
       if (!tex || tex.length < 50) {
-        setStatusMessage("Generated rebuttal letter is empty — check items and settings.");
+        setStatusMessage(
+          "Generated rebuttal letter is empty — check items and settings.",
+        );
         return;
       }
       const outName = "rebuttal-letter.tex";
@@ -3959,50 +4115,62 @@ ${macroEnd}
     }
   }, [rebuttalItems, refreshProject, settings]);
 
-  const handleAddReviewComment = useCallback((chatId: string, text: string) => {
-    setReviewChats(prev => {
-      const next = prev.map(chat => {
-        if (chat.id === chatId) {
-          return {
-            ...chat,
-            comments: [...chat.comments, {
-              id: Date.now().toString(),
-              author: mode === "reviewer" ? "Reviewer" : "Author",
-              text,
-              timestamp: Date.now(),
-            }]
-          };
-        }
-        return chat;
+  const handleAddReviewComment = useCallback(
+    (chatId: string, text: string) => {
+      setReviewChats((prev) => {
+        const next = prev.map((chat) => {
+          if (chat.id === chatId) {
+            return {
+              ...chat,
+              comments: [
+                ...chat.comments,
+                {
+                  id: Date.now().toString(),
+                  author: mode === "reviewer" ? "Reviewer" : "Author",
+                  text,
+                  timestamp: Date.now(),
+                },
+              ],
+            };
+          }
+          return chat;
+        });
+        void saveReviewData(next, rebuttalItems);
+        return next;
       });
-      void saveReviewData(next, rebuttalItems);
-      return next;
-    });
-  }, [mode, rebuttalItems, saveReviewData]);
+    },
+    [mode, rebuttalItems, saveReviewData],
+  );
 
-  const handleDeleteReviewChat = useCallback((chatId: string) => {
-    if (!window.confirm("Delete this review chat?")) return;
-    setReviewChats(prev => {
-      const next = prev.filter(c => c.id !== chatId);
-      void saveReviewData(next, rebuttalItems);
-      return next;
-    });
-  }, [rebuttalItems, saveReviewData]);
+  const handleDeleteReviewChat = useCallback(
+    (chatId: string) => {
+      if (!window.confirm("Delete this review chat?")) return;
+      setReviewChats((prev) => {
+        const next = prev.filter((c) => c.id !== chatId);
+        void saveReviewData(next, rebuttalItems);
+        return next;
+      });
+    },
+    [rebuttalItems, saveReviewData],
+  );
 
-  const handleJumpToReviewSelection = useCallback(async (chat: ReviewChat) => {
-    const entry = allProjectEntries.find(e => e.relativePath === chat.filePath);
-    if (!entry) return;
+  const handleJumpToReviewSelection = useCallback(
+    async (chat: ReviewChat) => {
+      const entry = allProjectEntries.find((e) => e.relativePath === chat.filePath);
+      if (!entry) return;
 
-    await openDocument(entry);
-    pendingSourceRef.current = {
-      path: entry.path,
-      line: chat.selection.startLine,
-      column: chat.selection.startColumn,
-      endLine: chat.selection.endLine,
-      endColumn: chat.selection.endColumn,
-    };
-    requestAnimationFrame(() => revealPendingSource());
-  }, [allProjectEntries, openDocument, revealPendingSource]);
+      await openDocument(entry);
+      pendingSourceRef.current = {
+        path: entry.path,
+        line: chat.selection.startLine,
+        column: chat.selection.startColumn,
+        endLine: chat.selection.endLine,
+        endColumn: chat.selection.endColumn,
+      };
+      requestAnimationFrame(() => revealPendingSource());
+    },
+    [allProjectEntries, openDocument, revealPendingSource],
+  );
 
   const handleAddRebuttalItem = useCallback(() => {
     const newItem: RebuttalItem = {
@@ -4013,29 +4181,37 @@ ${macroEnd}
       authorComment: "",
       modificationMade: "",
     };
-    setRebuttalItems(prev => {
+    setRebuttalItems((prev) => {
       const next = [...prev, newItem];
       void saveReviewData(reviewChats, next);
       return next;
     });
   }, [reviewChats, saveReviewData]);
 
-  const handleUpdateRebuttalItem = useCallback((id: string, updates: Partial<RebuttalItem>) => {
-    setRebuttalItems(prev => {
-      const next = prev.map(item => item.id === id ? { ...item, ...updates } : item);
-      void saveReviewData(reviewChats, next);
-      return next;
-    });
-  }, [reviewChats, saveReviewData]);
+  const handleUpdateRebuttalItem = useCallback(
+    (id: string, updates: Partial<RebuttalItem>) => {
+      setRebuttalItems((prev) => {
+        const next = prev.map((item) =>
+          item.id === id ? { ...item, ...updates } : item,
+        );
+        void saveReviewData(reviewChats, next);
+        return next;
+      });
+    },
+    [reviewChats, saveReviewData],
+  );
 
-  const handleDeleteRebuttalItem = useCallback((id: string) => {
-    if (!window.confirm("Delete this rebuttal item?")) return;
-    setRebuttalItems(prev => {
-      const next = prev.filter(item => item.id !== id);
-      void saveReviewData(reviewChats, next);
-      return next;
-    });
-  }, [reviewChats, saveReviewData]);
+  const handleDeleteRebuttalItem = useCallback(
+    (id: string) => {
+      if (!window.confirm("Delete this rebuttal item?")) return;
+      setRebuttalItems((prev) => {
+        const next = prev.filter((item) => item.id !== id);
+        void saveReviewData(reviewChats, next);
+        return next;
+      });
+    },
+    [reviewChats, saveReviewData],
+  );
 
   const handleRestoreHistorySnapshot = useCallback(
     async (snapshot: DocumentHistorySnapshot) => {
@@ -4061,7 +4237,9 @@ ${macroEnd}
       }
 
       const savedContent = currentProject
-        ? await window.latexdo.readFile(currentProject, entry.relativePath).catch(() => snapshot.content)
+        ? await window.latexdo
+            .readFile(currentProject, entry.relativePath)
+            .catch(() => snapshot.content)
         : snapshot.content;
 
       setGitDiffSession(null);
@@ -4117,9 +4295,8 @@ ${macroEnd}
     }
 
     const selection = editor.getSelection();
-    const selectedText = selection && !selection.isEmpty()
-      ? model.getValueInRange(selection).trim()
-      : "";
+    const selectedText =
+      selection && !selection.isEmpty() ? model.getValueInRange(selection).trim() : "";
     const isInlineSnippet = code === "$x$";
     const insertText = selectedText
       ? code.replace("x = y", selectedText).replace("$x$", `$${selectedText}$`)
@@ -4129,9 +4306,10 @@ ${macroEnd}
     const column = position?.column ?? model.getLineLength(lineNumber) + 1;
     editor.executeEdits("notation-manager", [
       {
-        range: selection && !selection.isEmpty()
-          ? selection
-          : new monaco.Range(lineNumber, column, lineNumber, column),
+        range:
+          selection && !selection.isEmpty()
+            ? selection
+            : new monaco.Range(lineNumber, column, lineNumber, column),
         text: isInlineSnippet ? insertText : `\n${insertText}\n`,
         forceMoveMarkers: true,
       },
@@ -4209,10 +4387,7 @@ ${macroEnd}
     window.addEventListener("pointerup", handleUp);
   };
 
-  const renderGitChangeRow = (
-    entry: GitStatusEntry,
-    area: "staged" | "changes",
-  ) => {
+  const renderGitChangeRow = (entry: GitStatusEntry, area: "staged" | "changes") => {
     const code = gitStatusCode(entry, area);
     const displayPath = gitDisplayPath(entry.path);
     const directory = fileDirectory(entry.path);
@@ -4230,9 +4405,7 @@ ${macroEnd}
           onClick={() => void previewGitDiff(entry.path)}
           title={`Preview ${displayPath}`}
         >
-          <span className={`scm-status-badge ${gitStatusClass(code)}`}>
-            {code}
-          </span>
+          <span className={`scm-status-badge ${gitStatusClass(code)}`}>{code}</span>
           <span className="scm-file-text">
             <strong>{fileName(displayPath)}</strong>
             <small>{directory}</small>
@@ -4309,7 +4482,11 @@ ${macroEnd}
             aria-label="Toggle sidebar"
             aria-pressed={sidebarVisible}
           >
-            {sidebarVisible ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+            {sidebarVisible ? (
+              <PanelLeftClose size={16} />
+            ) : (
+              <PanelLeftOpen size={16} />
+            )}
           </button>
           <button
             type="button"
@@ -4582,7 +4759,9 @@ ${macroEnd}
                       disabled={gitActionBusy === "commit" || !gitCommitMessage.trim()}
                     >
                       <Check size={13} />
-                      <span>{gitActionBusy === "commit" ? "Committing..." : "Commit"}</span>
+                      <span>
+                        {gitActionBusy === "commit" ? "Committing..." : "Commit"}
+                      </span>
                     </button>
                   </div>
                 ) : null}
@@ -4592,12 +4771,17 @@ ${macroEnd}
                       {gitStatus.entries.length ? (
                         <>
                           <div className="scm-section-header">
-                            <span>Staged Changes <b>{stagedGitEntries.length}</b></span>
+                            <span>
+                              Staged Changes <b>{stagedGitEntries.length}</b>
+                            </span>
                             <button
                               type="button"
                               className="scm-icon-action"
                               onClick={() => void unstageAllGitEntries()}
-                              disabled={!stagedGitEntries.length || gitActionBusy === "unstage-all"}
+                              disabled={
+                                !stagedGitEntries.length ||
+                                gitActionBusy === "unstage-all"
+                              }
                               title="Unstage all"
                               aria-label="Unstage all changes"
                             >
@@ -4605,20 +4789,27 @@ ${macroEnd}
                             </button>
                           </div>
                           {stagedGitEntries.length ? (
-                            stagedGitEntries.map((entry) => renderGitChangeRow(entry, "staged"))
+                            stagedGitEntries.map((entry) =>
+                              renderGitChangeRow(entry, "staged"),
+                            )
                           ) : (
                             <div className="sidebar-empty-state compact">
                               No staged changes.
                             </div>
                           )}
                           <div className="scm-section-header">
-                            <span>Changes <b>{unstagedGitEntries.length}</b></span>
+                            <span>
+                              Changes <b>{unstagedGitEntries.length}</b>
+                            </span>
                             <div className="scm-section-actions">
                               <button
                                 type="button"
                                 className="scm-icon-action"
                                 onClick={() => void stageAllGitEntries()}
-                                disabled={!unstagedGitEntries.length || gitActionBusy === "stage-all"}
+                                disabled={
+                                  !unstagedGitEntries.length ||
+                                  gitActionBusy === "stage-all"
+                                }
                                 title="Stage all"
                                 aria-label="Stage all changes"
                               >
@@ -4628,7 +4819,10 @@ ${macroEnd}
                                 type="button"
                                 className="scm-icon-action danger"
                                 onClick={() => void discardAllGitEntries()}
-                                disabled={!unstagedGitEntries.length || gitActionBusy === "discard-all"}
+                                disabled={
+                                  !unstagedGitEntries.length ||
+                                  gitActionBusy === "discard-all"
+                                }
                                 title="Discard all unstaged changes"
                                 aria-label="Discard all unstaged changes"
                               >
@@ -4637,7 +4831,9 @@ ${macroEnd}
                             </div>
                           </div>
                           {unstagedGitEntries.length ? (
-                            unstagedGitEntries.map((entry) => renderGitChangeRow(entry, "changes"))
+                            unstagedGitEntries.map((entry) =>
+                              renderGitChangeRow(entry, "changes"),
+                            )
                           ) : (
                             <div className="sidebar-empty-state compact">
                               No unstaged changes.
@@ -4666,8 +4862,8 @@ ${macroEnd}
                         ) : (
                           <div className="sidebar-empty-state">
                             Select Diff on a changed file to inspect it here.
-                            </div>
-                          )}
+                          </div>
+                        )}
                       </div>
                       <div className="scm-section-header">
                         <span>Timeline</span>
@@ -4753,7 +4949,9 @@ ${macroEnd}
                       <div className="sidebar-diff-preview">
                         {gitCommitDetails ? (
                           <>
-                            <strong>{gitCommitDetails.summary || gitCommitDetails.hash}</strong>
+                            <strong>
+                              {gitCommitDetails.summary || gitCommitDetails.hash}
+                            </strong>
                             {gitCommitDetailsTargetPath ? (
                               <div className="sidebar-item-actions">
                                 <button
@@ -4810,9 +5008,7 @@ ${macroEnd}
           <div className="document-tabs">
             {welcomeOpen ? (
               <button
-                className={`document-tab welcome-tab ${
-                  showWelcome ? "active" : ""
-                }`}
+                className={`document-tab welcome-tab ${showWelcome ? "active" : ""}`}
                 onClick={showWelcomePage}
               >
                 <AppIcon className="welcome-tab-mark" />
@@ -4878,8 +5074,7 @@ ${macroEnd}
             className="editor-preview"
             style={
               {
-                "--source-width":
-                  previewShown ? `${splitPercent}%` : "100%",
+                "--source-width": previewShown ? `${splitPercent}%` : "100%",
               } as React.CSSProperties
             }
           >
@@ -4996,7 +5191,9 @@ ${macroEnd}
                           <FilePlus2 size={18} />
                           <span>
                             <strong>New File</strong>
-                            <small>Add a .tex, .bib, or text file to this project</small>
+                            <small>
+                              Add a .tex, .bib, or text file to this project
+                            </small>
                           </span>
                         </button>
                       ) : null}
@@ -5079,7 +5276,9 @@ ${macroEnd}
               ) : (
                 <div className="empty-editor">
                   <AppIcon className="empty-logo" />
-                  <h2>{showBlankWorkspace ? "No project is open" : "No editor is open"}</h2>
+                  <h2>
+                    {showBlankWorkspace ? "No project is open" : "No editor is open"}
+                  </h2>
                   <button onClick={showBlankWorkspace ? openProject : showWelcomePage}>
                     {showBlankWorkspace ? "Open Folder" : "Show Welcome"}
                   </button>
@@ -5116,7 +5315,9 @@ ${macroEnd}
                       </button>
                       <span>{pdfScale}%</span>
                       <button
-                        onClick={() => setPdfScale((scale) => Math.min(180, scale + 10))}
+                        onClick={() =>
+                          setPdfScale((scale) => Math.min(180, scale + 10))
+                        }
                         title="Zoom in"
                       >
                         <ZoomIn size={15} />
@@ -5174,7 +5375,10 @@ ${macroEnd}
             <div className="tikz-modal-overlay">
               <div className="tikz-modal-header">
                 <span className="tikz-modal-title">TikZ Drawing Canvas</span>
-                <button className="tikz-modal-close" onClick={() => setTikzCanvasOpen(false)}>
+                <button
+                  className="tikz-modal-close"
+                  onClick={() => setTikzCanvasOpen(false)}
+                >
                   <X size={18} />
                 </button>
               </div>
@@ -5194,7 +5398,12 @@ ${macroEnd}
                         const column = position?.column ?? 1;
                         editor.executeEdits("", [
                           {
-                            range: new monaco.Range(lineNumber, column, lineNumber, column),
+                            range: new monaco.Range(
+                              lineNumber,
+                              column,
+                              lineNumber,
+                              column,
+                            ),
                             text: "\n" + code + "\n",
                           },
                         ]);
@@ -5211,7 +5420,10 @@ ${macroEnd}
             <div className="tikz-modal-overlay">
               <div className="tikz-modal-header">
                 <span className="tikz-modal-title">Table Generator</span>
-                <button className="tikz-modal-close" onClick={() => setTableCanvasOpen(false)}>
+                <button
+                  className="tikz-modal-close"
+                  onClick={() => setTableCanvasOpen(false)}
+                >
                   <X size={18} />
                 </button>
               </div>
@@ -5231,7 +5443,12 @@ ${macroEnd}
                         const column = position?.column ?? 1;
                         editor.executeEdits("", [
                           {
-                            range: new monaco.Range(lineNumber, column, lineNumber, column),
+                            range: new monaco.Range(
+                              lineNumber,
+                              column,
+                              lineNumber,
+                              column,
+                            ),
                             text: "\n" + code + "\n",
                           },
                         ]);
@@ -5251,7 +5468,10 @@ ${macroEnd}
                   <ImageUp size={16} />
                   <span>Figure → TikZ Converter</span>
                 </span>
-                <button className="tikz-modal-close" onClick={() => setTikzConverterOpen(false)}>
+                <button
+                  className="tikz-modal-close"
+                  onClick={() => setTikzConverterOpen(false)}
+                >
                   <X size={18} />
                 </button>
               </div>
@@ -5271,7 +5491,12 @@ ${macroEnd}
                         const column = position?.column ?? 1;
                         editor.executeEdits("", [
                           {
-                            range: new monaco.Range(lineNumber, column, lineNumber, column),
+                            range: new monaco.Range(
+                              lineNumber,
+                              column,
+                              lineNumber,
+                              column,
+                            ),
                             text: "\n" + code + "\n",
                           },
                         ]);
@@ -5291,7 +5516,10 @@ ${macroEnd}
                   <Variable size={16} />
                   <span>Notation Manager</span>
                 </span>
-                <button className="tikz-modal-close" onClick={() => setNotationManagerOpen(false)}>
+                <button
+                  className="tikz-modal-close"
+                  onClick={() => setNotationManagerOpen(false)}
+                >
                   <X size={18} />
                 </button>
               </div>
@@ -5309,10 +5537,7 @@ ${macroEnd}
 
           {panelVisible ? (
             <section className="bottom-panel" style={{ height: panelHeight }}>
-              <div
-                className="panel-resize-handle"
-                onPointerDown={startPanelResize}
-              />
+              <div className="panel-resize-handle" onPointerDown={startPanelResize} />
               <div className="panel-tabs">
                 <button
                   className={activePanel === "problems" ? "active" : ""}
@@ -5365,22 +5590,19 @@ ${macroEnd}
                   <FilePlus2 size={13} />
                   PDF COMPLIANCE
                   {pdfComplianceDiagnostics.length ? (
-                    <span className="count-badge">{pdfComplianceDiagnostics.length}</span>
+                    <span className="count-badge">
+                      {pdfComplianceDiagnostics.length}
+                    </span>
                   ) : null}
                 </button>
                 <div />
-                <button
-                  className="panel-close"
-                  onClick={() => setPanelVisible(false)}
-                >
+                <button className="panel-close" onClick={() => setPanelVisible(false)}>
                   <X size={15} />
                 </button>
               </div>
               <div className="panel-content">
                 <section
-                  className={`panel-pane ${
-                    activePanel === "problems" ? "" : "hidden"
-                  }`}
+                  className={`panel-pane ${activePanel === "problems" ? "" : "hidden"}`}
                 >
                   {diagnostics.length ? (
                     <>
@@ -5402,39 +5624,27 @@ ${macroEnd}
                           <div className="diagnostic-analysis-kicker">
                             <Code2 size={13} />
                             FIX THIS FIRST
-                            <span>
-                              {diagnosticAccuracyLabel(primaryDiagnostic)}
-                            </span>
+                            <span>{diagnosticAccuracyLabel(primaryDiagnostic)}</span>
                           </div>
                           <div className="diagnostic-analysis-body">
                             <div>
-                              <strong>
-                                {diagnosticHeadline(primaryDiagnostic)}
-                              </strong>
+                              <strong>{diagnosticHeadline(primaryDiagnostic)}</strong>
                               <p>
-                                {primaryDiagnostic.detail ??
-                                  primaryDiagnostic.message}
+                                {primaryDiagnostic.detail ?? primaryDiagnostic.message}
                               </p>
                               {primaryDiagnostic.reportedLine &&
                               primaryDiagnostic.reportedLine !==
                                 primaryDiagnostic.line ? (
                                 <small>
-                                  LaTeX stopped at line{" "}
-                                  {primaryDiagnostic.reportedLine}, but source
-                                  analysis traced the cause back to{" "}
-                                  {diagnosticLocationLabel(
-                                    primaryDiagnostic,
-                                    rootFile,
-                                  )}
+                                  LaTeX stopped at line {primaryDiagnostic.reportedLine}
+                                  , but source analysis traced the cause back to{" "}
+                                  {diagnosticLocationLabel(primaryDiagnostic, rootFile)}
                                   .
                                 </small>
                               ) : (
                                 <small>
                                   The first actionable failure is at{" "}
-                                  {diagnosticLocationLabel(
-                                    primaryDiagnostic,
-                                    rootFile,
-                                  )}
+                                  {diagnosticLocationLabel(primaryDiagnostic, rootFile)}
                                   .
                                 </small>
                               )}
@@ -5442,9 +5652,7 @@ ${macroEnd}
                             <div className="diagnostic-analysis-buttons">
                               <button
                                 className="sidebar-mini-action"
-                                onClick={() =>
-                                  void openDiagnostic(primaryDiagnostic)
-                                }
+                                onClick={() => void openDiagnostic(primaryDiagnostic)}
                               >
                                 Go to root cause
                               </button>
@@ -5466,10 +5674,7 @@ ${macroEnd}
                         </div>
                       ) : null}
                       {diagnostics.map((diagnostic, index) => {
-                        const location = diagnosticLocationLabel(
-                          diagnostic,
-                          rootFile,
-                        );
+                        const location = diagnosticLocationLabel(diagnostic, rootFile);
                         return (
                           <article
                             className={`diagnostic-row-card ${diagnostic.severity} ${
@@ -5567,17 +5772,14 @@ ${macroEnd}
                                 ) : null}
                                 {diagnostic.suggestion ? (
                                   <span className="diagnostic-suggestion">
-                                    <strong>How to fix:</strong>{" "}
-                                    {diagnostic.suggestion}
+                                    <strong>How to fix:</strong> {diagnostic.suggestion}
                                   </span>
                                 ) : null}
                                 <span className="diagnostic-compiler-message">
                                   Compiler: {diagnostic.message}
                                 </span>
                               </span>
-                              <span className="diagnostic-location">
-                                {location}
-                              </span>
+                              <span className="diagnostic-location">{location}</span>
                             </button>
                             <div className="diagnostic-actions">
                               <span>
@@ -5612,10 +5814,7 @@ ${macroEnd}
                                     key={`${fix.line}-${fix.column}-${fix.title}`}
                                     title={`${fix.confidence}% confidence`}
                                     onClick={() =>
-                                      void applyLatexDiagnosticFix(
-                                        diagnostic,
-                                        fix,
-                                      )
+                                      void applyLatexDiagnosticFix(diagnostic, fix)
                                     }
                                   >
                                     {fix.title}
@@ -5638,7 +5837,8 @@ ${macroEnd}
                   className={`panel-pane ${activePanel === "output" ? "" : "hidden"}`}
                 >
                   <pre className="build-output">
-                    {compileResult?.output || "Compile the project to see build output."}
+                    {compileResult?.output ||
+                      "Compile the project to see build output."}
                   </pre>
                 </section>
                 {terminalStarted ? (
@@ -5676,15 +5876,29 @@ ${macroEnd}
                                 </span>
                               </div>
                               {items.map((d, i) => (
-                                <div key={i} className={`check-analysis-item check-analysis-item--${d.severity}`}>
+                                <div
+                                  key={i}
+                                  className={`check-analysis-item check-analysis-item--${d.severity}`}
+                                >
                                   <div className="check-analysis-item-icon">
                                     {d.severity === "error" ? "✗" : "!"}
                                   </div>
                                   <div className="check-analysis-item-body">
-                                    <div className="check-analysis-item-message">{d.message}</div>
-                                    {d.detail && <div className="check-analysis-item-detail">{d.detail}</div>}
-                                    {d.suggestion && <div className="check-analysis-item-suggestion">{d.suggestion}</div>}
-                                    {d.suggestion?.includes("fix") || d.suggestion?.includes("Fix") ? (
+                                    <div className="check-analysis-item-message">
+                                      {d.message}
+                                    </div>
+                                    {d.detail && (
+                                      <div className="check-analysis-item-detail">
+                                        {d.detail}
+                                      </div>
+                                    )}
+                                    {d.suggestion && (
+                                      <div className="check-analysis-item-suggestion">
+                                        {d.suggestion}
+                                      </div>
+                                    )}
+                                    {d.suggestion?.includes("fix") ||
+                                    d.suggestion?.includes("Fix") ? (
                                       <div className="check-analysis-item-fix">
                                         <button
                                           className="check-analysis-apply-btn"
@@ -5708,7 +5922,10 @@ ${macroEnd}
                     ) : (
                       <div className="check-analysis-empty">
                         <AlertCircle size={20} />
-                        <span>No check results yet. Open a .tex file to run automated analysis.</span>
+                        <span>
+                          No check results yet. Open a .tex file to run automated
+                          analysis.
+                        </span>
                       </div>
                     )}
                   </section>
@@ -5718,45 +5935,96 @@ ${macroEnd}
                     {structureDiagnostics.length ? (
                       <div className="check-analysis-list">
                         {(() => {
-                          const groups: Record<string, { label: string; diagnostics: Diagnostic[] }> = {};
+                          const groups: Record<
+                            string,
+                            { label: string; diagnostics: Diagnostic[] }
+                          > = {};
                           for (const d of structureDiagnostics) {
                             let key = "other";
                             let label = "Other";
-                            if (d.message.includes("Abstract")) { key = "abstract"; label = "Abstract"; }
-                            else if (d.message.includes("Introduction")) { key = "introduction"; label = "Introduction"; }
-                            else if (d.message.includes("Related Work")) { key = "related"; label = "Related Work"; }
-                            else if (d.message.includes("Method")) { key = "method"; label = "Method"; }
-                            else if (d.message.includes("Results")) { key = "results"; label = "Results"; }
-                            else if (d.message.includes("Conclusion")) { key = "conclusion"; label = "Conclusion"; }
+                            if (d.message.includes("Abstract")) {
+                              key = "abstract";
+                              label = "Abstract";
+                            } else if (d.message.includes("Introduction")) {
+                              key = "introduction";
+                              label = "Introduction";
+                            } else if (d.message.includes("Related Work")) {
+                              key = "related";
+                              label = "Related Work";
+                            } else if (d.message.includes("Method")) {
+                              key = "method";
+                              label = "Method";
+                            } else if (d.message.includes("Results")) {
+                              key = "results";
+                              label = "Results";
+                            } else if (d.message.includes("Conclusion")) {
+                              key = "conclusion";
+                              label = "Conclusion";
+                            }
                             if (!groups[key]) groups[key] = { label, diagnostics: [] };
                             groups[key].diagnostics.push(d);
                           }
                           return Object.entries(groups).map(([key, group]) => {
-                            const passed = group.diagnostics.filter((d) => d.severity !== "error" && !d.detail?.includes("missing") && !d.detail?.includes("not found") && !d.detail?.includes("lacks") && !d.detail?.includes("too short") && !d.detail?.includes("no ") && !d.message.includes("not found"));
-                            const failed = group.diagnostics.filter((d) => !passed.includes(d));
+                            const passed = group.diagnostics.filter(
+                              (d) =>
+                                d.severity !== "error" &&
+                                !d.detail?.includes("missing") &&
+                                !d.detail?.includes("not found") &&
+                                !d.detail?.includes("lacks") &&
+                                !d.detail?.includes("too short") &&
+                                !d.detail?.includes("no ") &&
+                                !d.message.includes("not found"),
+                            );
+                            const failed = group.diagnostics.filter(
+                              (d) => !passed.includes(d),
+                            );
                             return (
                               <div key={key} className="check-analysis-group">
                                 <div className="check-analysis-group-header">
-                                  <span className="check-analysis-group-name">{group.label}</span>
-                                  <span className={`check-analysis-group-count ${failed.length > 0 ? "has-issues" : "all-good"}`}>
-                                    {failed.length > 0 ? `${failed.length} issue${failed.length !== 1 ? "s" : ""}` : "✓ All checks passed"}
+                                  <span className="check-analysis-group-name">
+                                    {group.label}
+                                  </span>
+                                  <span
+                                    className={`check-analysis-group-count ${failed.length > 0 ? "has-issues" : "all-good"}`}
+                                  >
+                                    {failed.length > 0
+                                      ? `${failed.length} issue${failed.length !== 1 ? "s" : ""}`
+                                      : "✓ All checks passed"}
                                   </span>
                                 </div>
                                 {failed.map((d, i) => (
-                                  <div key={i} className={`check-analysis-item check-analysis-item--warning`}>
+                                  <div
+                                    key={i}
+                                    className={`check-analysis-item check-analysis-item--warning`}
+                                  >
                                     <div className="check-analysis-item-icon">!</div>
                                     <div className="check-analysis-item-body">
-                                      <div className="check-analysis-item-message">{d.message}</div>
-                                      {d.detail && <div className="check-analysis-item-detail">{d.detail}</div>}
-                                      {d.suggestion && <div className="check-analysis-item-suggestion">{d.suggestion}</div>}
+                                      <div className="check-analysis-item-message">
+                                        {d.message}
+                                      </div>
+                                      {d.detail && (
+                                        <div className="check-analysis-item-detail">
+                                          {d.detail}
+                                        </div>
+                                      )}
+                                      {d.suggestion && (
+                                        <div className="check-analysis-item-suggestion">
+                                          {d.suggestion}
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 ))}
                                 {passed.length > 0 && (
                                   <div className="check-analysis-passed">
                                     {passed.map((d, i) => (
-                                      <div key={i} className="check-analysis-passed-item">
-                                        <span className="check-analysis-passed-icon">✓</span>
+                                      <div
+                                        key={i}
+                                        className="check-analysis-passed-item"
+                                      >
+                                        <span className="check-analysis-passed-icon">
+                                          ✓
+                                        </span>
                                         <span>{d.message}</span>
                                       </div>
                                     ))}
@@ -5770,7 +6038,10 @@ ${macroEnd}
                     ) : (
                       <div className="check-analysis-empty">
                         <Wand size={20} />
-                        <span>No structure analysis yet. Open a .tex file to check paper structure.</span>
+                        <span>
+                          No structure analysis yet. Open a .tex file to check paper
+                          structure.
+                        </span>
                       </div>
                     )}
                   </section>
@@ -5780,44 +6051,109 @@ ${macroEnd}
                     {pdfComplianceDiagnostics.length ? (
                       <div className="check-analysis-list">
                         {(() => {
-                          const groups: Record<string, { label: string; diagnostics: Diagnostic[] }> = {};
+                          const groups: Record<
+                            string,
+                            { label: string; diagnostics: Diagnostic[] }
+                          > = {};
                           for (const d of pdfComplianceDiagnostics) {
                             let key = "other";
                             let label = "Other";
-                            if (d.message.includes("page") || d.message.includes("Page")) { key = "pages"; label = "Page Count"; }
-                            else if (d.message.includes("Figure") || d.message.includes("figure")) { key = "figures"; label = "Figures"; }
-                            else if (d.message.includes("Citation") || d.message.includes("citation") || d.message.includes("cite") || d.message.includes("Section.*citation")) { key = "citations"; label = "Citations"; }
-                            else if (d.message.includes("Type 3") || d.message.includes("font")) { key = "fonts"; label = "Fonts"; }
-                            else if (d.message.includes("Abstract")) { key = "abstract"; label = "Abstract"; }
+                            if (
+                              d.message.includes("page") ||
+                              d.message.includes("Page")
+                            ) {
+                              key = "pages";
+                              label = "Page Count";
+                            } else if (
+                              d.message.includes("Figure") ||
+                              d.message.includes("figure")
+                            ) {
+                              key = "figures";
+                              label = "Figures";
+                            } else if (
+                              d.message.includes("Citation") ||
+                              d.message.includes("citation") ||
+                              d.message.includes("cite") ||
+                              d.message.includes("Section.*citation")
+                            ) {
+                              key = "citations";
+                              label = "Citations";
+                            } else if (
+                              d.message.includes("Type 3") ||
+                              d.message.includes("font")
+                            ) {
+                              key = "fonts";
+                              label = "Fonts";
+                            } else if (d.message.includes("Abstract")) {
+                              key = "abstract";
+                              label = "Abstract";
+                            }
                             if (!groups[key]) groups[key] = { label, diagnostics: [] };
                             groups[key].diagnostics.push(d);
                           }
                           return Object.entries(groups).map(([key, group]) => {
-                            const passed = group.diagnostics.filter((d) => d.severity !== "error" && !d.detail?.includes("exceed") && !d.detail?.includes("never") && !d.detail?.includes("no ") && !d.detail?.includes("missing") && !d.message.includes("exceed") && !d.message.includes("never"));
-                            const failed = group.diagnostics.filter((d) => !passed.includes(d));
+                            const passed = group.diagnostics.filter(
+                              (d) =>
+                                d.severity !== "error" &&
+                                !d.detail?.includes("exceed") &&
+                                !d.detail?.includes("never") &&
+                                !d.detail?.includes("no ") &&
+                                !d.detail?.includes("missing") &&
+                                !d.message.includes("exceed") &&
+                                !d.message.includes("never"),
+                            );
+                            const failed = group.diagnostics.filter(
+                              (d) => !passed.includes(d),
+                            );
                             return (
                               <div key={key} className="check-analysis-group">
                                 <div className="check-analysis-group-header">
-                                  <span className="check-analysis-group-name">{group.label}</span>
-                                  <span className={`check-analysis-group-count ${failed.length > 0 ? "has-issues" : "all-good"}`}>
-                                    {failed.length > 0 ? `${failed.length} issue${failed.length !== 1 ? "s" : ""}` : "✓ Compliant"}
+                                  <span className="check-analysis-group-name">
+                                    {group.label}
+                                  </span>
+                                  <span
+                                    className={`check-analysis-group-count ${failed.length > 0 ? "has-issues" : "all-good"}`}
+                                  >
+                                    {failed.length > 0
+                                      ? `${failed.length} issue${failed.length !== 1 ? "s" : ""}`
+                                      : "✓ Compliant"}
                                   </span>
                                 </div>
                                 {failed.map((d, i) => (
-                                  <div key={i} className={`check-analysis-item ${d.severity === "error" ? "check-analysis-item--error" : "check-analysis-item--warning"}`}>
-                                    <div className="check-analysis-item-icon">{d.severity === "error" ? "✗" : "!"}</div>
+                                  <div
+                                    key={i}
+                                    className={`check-analysis-item ${d.severity === "error" ? "check-analysis-item--error" : "check-analysis-item--warning"}`}
+                                  >
+                                    <div className="check-analysis-item-icon">
+                                      {d.severity === "error" ? "✗" : "!"}
+                                    </div>
                                     <div className="check-analysis-item-body">
-                                      <div className="check-analysis-item-message">{d.message}</div>
-                                      {d.detail && <div className="check-analysis-item-detail">{d.detail}</div>}
-                                      {d.suggestion && <div className="check-analysis-item-suggestion">{d.suggestion}</div>}
+                                      <div className="check-analysis-item-message">
+                                        {d.message}
+                                      </div>
+                                      {d.detail && (
+                                        <div className="check-analysis-item-detail">
+                                          {d.detail}
+                                        </div>
+                                      )}
+                                      {d.suggestion && (
+                                        <div className="check-analysis-item-suggestion">
+                                          {d.suggestion}
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 ))}
                                 {passed.length > 0 && (
                                   <div className="check-analysis-passed">
                                     {passed.map((d, i) => (
-                                      <div key={i} className="check-analysis-passed-item">
-                                        <span className="check-analysis-passed-icon">✓</span>
+                                      <div
+                                        key={i}
+                                        className="check-analysis-passed-item"
+                                      >
+                                        <span className="check-analysis-passed-icon">
+                                          ✓
+                                        </span>
                                         <span>{d.message}</span>
                                       </div>
                                     ))}
@@ -5831,7 +6167,10 @@ ${macroEnd}
                     ) : (
                       <div className="check-analysis-empty">
                         <FilePlus2 size={20} />
-                        <span>No PDF compliance report yet. Compile your project to generate a compliance report.</span>
+                        <span>
+                          No PDF compliance report yet. Compile your project to generate
+                          a compliance report.
+                        </span>
                       </div>
                     )}
                   </section>
@@ -5895,8 +6234,7 @@ ${macroEnd}
             <div className="dialog-copy">
               <h2>Create new {createDialog}</h2>
               <p>
-                Add it inside <strong>{projectName}</strong>. Nested paths such as
-                {" "}
+                Add it inside <strong>{projectName}</strong>. Nested paths such as{" "}
                 <code>chapters/introduction.tex</code> are supported.
               </p>
             </div>
@@ -5925,11 +6263,7 @@ ${macroEnd}
               >
                 Cancel
               </button>
-              <button
-                type="submit"
-                className="dialog-submit"
-                disabled={creating}
-              >
+              <button type="submit" className="dialog-submit" disabled={creating}>
                 {creating ? "Creating…" : `Create ${createDialog}`}
               </button>
             </div>
@@ -5958,7 +6292,9 @@ ${macroEnd}
               </div>
               <div className="dialog-copy">
                 <h2 id="settings-title">Settings</h2>
-                <p>One place for editor, compiler, spell checker, grammar, and updates.</p>
+                <p>
+                  One place for editor, compiler, spell checker, grammar, and updates.
+                </p>
               </div>
               <button
                 type="button"
@@ -5971,18 +6307,78 @@ ${macroEnd}
             </div>
 
             <div className="settings-tabs">
-              <button className={`settings-tab ${settingsTab === "editor" ? "active" : ""}`} onClick={() => setSettingsTab("editor")}>Editor</button>
-              <button className={`settings-tab ${settingsTab === "language" ? "active" : ""}`} onClick={() => setSettingsTab("language")}>Language</button>
-              <button className={`settings-tab ${settingsTab === "conference" ? "active" : ""}`} onClick={() => setSettingsTab("conference")}>Conference Checker</button>
-              <button className={`settings-tab ${settingsTab === "citation" ? "active" : ""}`} onClick={() => setSettingsTab("citation")}>Citation Assistant</button>
-              <button className={`settings-tab ${settingsTab === "structure" ? "active" : ""}`} onClick={() => setSettingsTab("structure")}>Structure Assistant</button>
-              <button className={`settings-tab ${settingsTab === "reproducibility" ? "active" : ""}`} onClick={() => setSettingsTab("reproducibility")}>Reproducibility</button>
-              <button className={`settings-tab ${settingsTab === "acronym" ? "active" : ""}`} onClick={() => setSettingsTab("acronym")}>Acronym Manager</button>
-              <button className={`settings-tab ${settingsTab === "doctor" ? "active" : ""}`} onClick={() => setSettingsTab("doctor")}>Error Doctor</button>
-              <button className={`settings-tab ${settingsTab === "tikz" ? "active" : ""}`} onClick={() => setSettingsTab("tikz")}>TikZ Converter</button>
-              <button className={`settings-tab ${settingsTab === "notation" ? "active" : ""}`} onClick={() => setSettingsTab("notation")}>Notation</button>
-              <button className={`settings-tab ${settingsTab === "pdf" ? "active" : ""}`} onClick={() => setSettingsTab("pdf")}>PDF Compliance</button>
-              <button className={`settings-tab ${settingsTab === "application" ? "active" : ""}`} onClick={() => setSettingsTab("application")}>Application</button>
+              <button
+                className={`settings-tab ${settingsTab === "editor" ? "active" : ""}`}
+                onClick={() => setSettingsTab("editor")}
+              >
+                Editor
+              </button>
+              <button
+                className={`settings-tab ${settingsTab === "language" ? "active" : ""}`}
+                onClick={() => setSettingsTab("language")}
+              >
+                Language
+              </button>
+              <button
+                className={`settings-tab ${settingsTab === "conference" ? "active" : ""}`}
+                onClick={() => setSettingsTab("conference")}
+              >
+                Conference Checker
+              </button>
+              <button
+                className={`settings-tab ${settingsTab === "citation" ? "active" : ""}`}
+                onClick={() => setSettingsTab("citation")}
+              >
+                Citation Assistant
+              </button>
+              <button
+                className={`settings-tab ${settingsTab === "structure" ? "active" : ""}`}
+                onClick={() => setSettingsTab("structure")}
+              >
+                Structure Assistant
+              </button>
+              <button
+                className={`settings-tab ${settingsTab === "reproducibility" ? "active" : ""}`}
+                onClick={() => setSettingsTab("reproducibility")}
+              >
+                Reproducibility
+              </button>
+              <button
+                className={`settings-tab ${settingsTab === "acronym" ? "active" : ""}`}
+                onClick={() => setSettingsTab("acronym")}
+              >
+                Acronym Manager
+              </button>
+              <button
+                className={`settings-tab ${settingsTab === "doctor" ? "active" : ""}`}
+                onClick={() => setSettingsTab("doctor")}
+              >
+                Error Doctor
+              </button>
+              <button
+                className={`settings-tab ${settingsTab === "tikz" ? "active" : ""}`}
+                onClick={() => setSettingsTab("tikz")}
+              >
+                TikZ Converter
+              </button>
+              <button
+                className={`settings-tab ${settingsTab === "notation" ? "active" : ""}`}
+                onClick={() => setSettingsTab("notation")}
+              >
+                Notation
+              </button>
+              <button
+                className={`settings-tab ${settingsTab === "pdf" ? "active" : ""}`}
+                onClick={() => setSettingsTab("pdf")}
+              >
+                PDF Compliance
+              </button>
+              <button
+                className={`settings-tab ${settingsTab === "application" ? "active" : ""}`}
+                onClick={() => setSettingsTab("application")}
+              >
+                Application
+              </button>
             </div>
 
             <div className="settings-list">
@@ -5996,9 +6392,15 @@ ${macroEnd}
                   <div className="settings-row settings-row-stack">
                     <span>
                       <strong>Theme</strong>
-                      <small>Readable high-contrast palettes for the whole app and editor.</small>
+                      <small>
+                        Readable high-contrast palettes for the whole app and editor.
+                      </small>
                     </span>
-                    <div className="theme-grid" role="radiogroup" aria-label="Application theme">
+                    <div
+                      className="theme-grid"
+                      role="radiogroup"
+                      aria-label="Application theme"
+                    >
                       {colorThemeOptions.map((theme) => (
                         <button
                           key={theme.id}
@@ -6108,7 +6510,10 @@ ${macroEnd}
                   <label className="settings-row settings-toggle">
                     <span>
                       <strong>Show raw LaTeX source</strong>
-                      <small>When off, LaTeX commands are faded so only document text is visible.</small>
+                      <small>
+                        When off, LaTeX commands are faded so only document text is
+                        visible.
+                      </small>
                     </span>
                     <input
                       type="checkbox"
@@ -6134,12 +6539,16 @@ ${macroEnd}
                   <label className="settings-row settings-toggle">
                     <span>
                       <strong>Check spelling while typing</strong>
-                      <small>Show misspellings directly in editable inputs across the app.</small>
+                      <small>
+                        Show misspellings directly in editable inputs across the app.
+                      </small>
                     </span>
                     <input
                       type="checkbox"
                       checked={spellCheckerSettings?.enabled ?? true}
-                      onChange={(event) => toggleSpellCheckerEnabled(event.target.checked)}
+                      onChange={(event) =>
+                        toggleSpellCheckerEnabled(event.target.checked)
+                      }
                       disabled={spellCheckerLoading || !spellCheckerSettings}
                     />
                   </label>
@@ -6147,23 +6556,55 @@ ${macroEnd}
                   <div className="settings-row settings-row-stack">
                     <span>
                       <strong>Spell checker languages</strong>
-                      <small>{spellCheckerSettings?.usesSystemLanguage ? "macOS uses the native spell checker and automatically detects language." : "Choose one or more dictionaries for Windows and Linux spell checking."}</small>
+                      <small>
+                        {spellCheckerSettings?.usesSystemLanguage
+                          ? "macOS uses the native spell checker and automatically detects language."
+                          : "Choose one or more dictionaries for Windows and Linux spell checking."}
+                      </small>
                     </span>
                     {spellCheckerSettings?.usesSystemLanguage ? (
-                      <div className="spellchecker-note">Language selection is controlled by the system spell checker on macOS.</div>
+                      <div className="spellchecker-note">
+                        Language selection is controlled by the system spell checker on
+                        macOS.
+                      </div>
                     ) : (
                       <div className="spellchecker-language-panel">
-                        <input type="text" value={spellCheckerLanguageQuery} onChange={(event) => setSpellCheckerLanguageQuery(event.target.value)} placeholder="Filter languages" spellCheck={false} disabled={spellCheckerLoading || !spellCheckerSettings} />
+                        <input
+                          type="text"
+                          value={spellCheckerLanguageQuery}
+                          onChange={(event) =>
+                            setSpellCheckerLanguageQuery(event.target.value)
+                          }
+                          placeholder="Filter languages"
+                          spellCheck={false}
+                          disabled={spellCheckerLoading || !spellCheckerSettings}
+                        />
                         <div className="spellchecker-language-list">
                           {filteredSpellCheckerLanguages.length ? (
                             filteredSpellCheckerLanguages.map((language) => (
-                              <label key={language} className="spellchecker-language-option">
-                                <input type="checkbox" checked={spellCheckerSettings?.languages.includes(language) ?? false} onChange={() => toggleSpellCheckerLanguage(language)} disabled={spellCheckerLoading || !spellCheckerSettings} />
+                              <label
+                                key={language}
+                                className="spellchecker-language-option"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={
+                                    spellCheckerSettings?.languages.includes(
+                                      language,
+                                    ) ?? false
+                                  }
+                                  onChange={() => toggleSpellCheckerLanguage(language)}
+                                  disabled={
+                                    spellCheckerLoading || !spellCheckerSettings
+                                  }
+                                />
                                 <span>{language}</span>
                               </label>
                             ))
                           ) : (
-                            <div className="spellchecker-note compact">No language matches that filter.</div>
+                            <div className="spellchecker-note compact">
+                              No language matches that filter.
+                            </div>
                           )}
                         </div>
                       </div>
@@ -6173,34 +6614,109 @@ ${macroEnd}
                   <div className="settings-row settings-row-stack">
                     <span>
                       <strong>Custom words</strong>
-                      <small>Add project-specific terms, package names, and citation keys so they stop showing as misspellings.</small>
+                      <small>
+                        Add project-specific terms, package names, and citation keys so
+                        they stop showing as misspellings.
+                      </small>
                     </span>
-                    <form className="spellchecker-word-form" onSubmit={addSpellCheckerWord}>
-                      <input type="text" value={spellCheckerWordDraft} onChange={(event) => setSpellCheckerWordDraft(event.target.value)} placeholder="Add a custom word" spellCheck={false} disabled={spellCheckerLoading || !spellCheckerSettings} />
-                      <button type="submit" className="dialog-submit" disabled={spellCheckerLoading || !spellCheckerSettings}>Add word</button>
+                    <form
+                      className="spellchecker-word-form"
+                      onSubmit={addSpellCheckerWord}
+                    >
+                      <input
+                        type="text"
+                        value={spellCheckerWordDraft}
+                        onChange={(event) =>
+                          setSpellCheckerWordDraft(event.target.value)
+                        }
+                        placeholder="Add a custom word"
+                        spellCheck={false}
+                        disabled={spellCheckerLoading || !spellCheckerSettings}
+                      />
+                      <button
+                        type="submit"
+                        className="dialog-submit"
+                        disabled={spellCheckerLoading || !spellCheckerSettings}
+                      >
+                        Add word
+                      </button>
                     </form>
-                    <div className="spellchecker-chip-list">{(spellCheckerSettings?.customWords ?? []).length ? ((spellCheckerSettings?.customWords ?? []).map((word) => (<span key={word} className="spellchecker-chip">{word}</span>))) : (<div className="spellchecker-note compact">No custom words added yet.</div>)}</div>
+                    <div className="spellchecker-chip-list">
+                      {(spellCheckerSettings?.customWords ?? []).length ? (
+                        (spellCheckerSettings?.customWords ?? []).map((word) => (
+                          <span key={word} className="spellchecker-chip">
+                            {word}
+                          </span>
+                        ))
+                      ) : (
+                        <div className="spellchecker-note compact">
+                          No custom words added yet.
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <label className="settings-row settings-toggle">
                     <span>
                       <strong>Grammar and style checking</strong>
-                      <small>Run LanguageTool-compatible proofreading on natural-language text while ignoring LaTeX commands, math, and citations.</small>
+                      <small>
+                        Run LanguageTool-compatible proofreading on natural-language
+                        text while ignoring LaTeX commands, math, and citations.
+                      </small>
                     </span>
-                    <input type="checkbox" checked={proofreadingSettings?.enabled ?? true} onChange={(event) => { if (!proofreadingSettings) return; void saveProofreadingSettings({ ...proofreadingSettings, enabled: event.target.checked }, event.target.checked ? "Grammar checker enabled" : "Grammar checker disabled"); }} disabled={!proofreadingSettings} />
+                    <input
+                      type="checkbox"
+                      checked={proofreadingSettings?.enabled ?? true}
+                      onChange={(event) => {
+                        if (!proofreadingSettings) return;
+                        void saveProofreadingSettings(
+                          { ...proofreadingSettings, enabled: event.target.checked },
+                          event.target.checked
+                            ? "Grammar checker enabled"
+                            : "Grammar checker disabled",
+                        );
+                      }}
+                      disabled={!proofreadingSettings}
+                    />
                   </label>
 
                   <div className="settings-row settings-row-stack">
                     <span>
                       <strong>Proofreading service</strong>
-                      <small>Use the public LanguageTool API by default, or point LatexDo to your own compatible server.</small>
+                      <small>
+                        Use the public LanguageTool API by default, or point LatexDo to
+                        your own compatible server.
+                      </small>
                     </span>
                     <div className="spellchecker-language-panel">
-                      <input type="text" value={proofreadingSettings?.serverUrl ?? ""} onChange={(event) => { setProofreadingSettings((current) => current ? { ...current, serverUrl: event.target.value } : current); }} placeholder="https://api.languagetool.org/v2/check" spellCheck={false} disabled={!proofreadingSettings} />
+                      <input
+                        type="text"
+                        value={proofreadingSettings?.serverUrl ?? ""}
+                        onChange={(event) => {
+                          setProofreadingSettings((current) =>
+                            current
+                              ? { ...current, serverUrl: event.target.value }
+                              : current,
+                          );
+                        }}
+                        placeholder="https://api.languagetool.org/v2/check"
+                        spellCheck={false}
+                        disabled={!proofreadingSettings}
+                      />
                       <div className="spellchecker-grid">
                         <label className="spellchecker-field">
                           <span>Language</span>
-                          <select value={proofreadingSettings?.language ?? "auto"} onChange={(event) => { setProofreadingSettings((current) => current ? { ...current, language: event.target.value } : current); }} disabled={!proofreadingSettings}>
+                          <select
+                            value={proofreadingSettings?.language ?? "auto"}
+                            onChange={(event) => {
+                              setProofreadingSettings((current) =>
+                                current
+                                  ? { ...current, language: event.target.value }
+                                  : current,
+                              );
+                            }}
+                            disabled={!proofreadingSettings}
+                          >
                             <option value="auto">Automatic</option>
                             <option value="en-US">English (US)</option>
                             <option value="en-GB">English (UK)</option>
@@ -6213,16 +6729,66 @@ ${macroEnd}
                         </label>
                         <label className="spellchecker-field">
                           <span>Mother tongue</span>
-                          <input type="text" value={proofreadingSettings?.motherTongue ?? ""} onChange={(event) => { setProofreadingSettings((current) => current ? { ...current, motherTongue: event.target.value } : current); }} placeholder="Optional, e.g. en" spellCheck={false} disabled={!proofreadingSettings} />
+                          <input
+                            type="text"
+                            value={proofreadingSettings?.motherTongue ?? ""}
+                            onChange={(event) => {
+                              setProofreadingSettings((current) =>
+                                current
+                                  ? { ...current, motherTongue: event.target.value }
+                                  : current,
+                              );
+                            }}
+                            placeholder="Optional, e.g. en"
+                            spellCheck={false}
+                            disabled={!proofreadingSettings}
+                          />
                         </label>
                       </div>
                       <label className="spellchecker-inline-toggle">
-                        <input type="checkbox" checked={proofreadingSettings?.picky ?? false} onChange={(event) => { setProofreadingSettings((current) => current ? { ...current, picky: event.target.checked } : current); }} disabled={!proofreadingSettings} />
+                        <input
+                          type="checkbox"
+                          checked={proofreadingSettings?.picky ?? false}
+                          onChange={(event) => {
+                            setProofreadingSettings((current) =>
+                              current
+                                ? { ...current, picky: event.target.checked }
+                                : current,
+                            );
+                          }}
+                          disabled={!proofreadingSettings}
+                        />
                         <span>Enable picky mode for stricter style suggestions</span>
                       </label>
                       <div className="settings-update-actions">
-                        <button type="button" className="dialog-cancel" onClick={() => { if (!proofreadingSettings) return; void saveProofreadingSettings(proofreadingSettings, "Proofreading settings saved"); }} disabled={!proofreadingSettings}>Save grammar settings</button>
-                        <button type="button" className="dialog-submit" onClick={() => void runProofreading()} disabled={!proofreadingSettings || !proofreadingSettings.enabled || proofreadingLoading || !activeDocument || !supportsProofreading(activeDocument.name)}>{proofreadingLoading ? "Checking..." : "Proofread now"}</button>
+                        <button
+                          type="button"
+                          className="dialog-cancel"
+                          onClick={() => {
+                            if (!proofreadingSettings) return;
+                            void saveProofreadingSettings(
+                              proofreadingSettings,
+                              "Proofreading settings saved",
+                            );
+                          }}
+                          disabled={!proofreadingSettings}
+                        >
+                          Save grammar settings
+                        </button>
+                        <button
+                          type="button"
+                          className="dialog-submit"
+                          onClick={() => void runProofreading()}
+                          disabled={
+                            !proofreadingSettings ||
+                            !proofreadingSettings.enabled ||
+                            proofreadingLoading ||
+                            !activeDocument ||
+                            !supportsProofreading(activeDocument.name)
+                          }
+                        >
+                          {proofreadingLoading ? "Checking..." : "Proofread now"}
+                        </button>
                       </div>
                       <div className="spellchecker-note compact">
                         {!proofreadingSettings?.enabled
@@ -6236,8 +6802,22 @@ ${macroEnd}
                     </div>
                   </div>
 
-                  {spellCheckerError ? (<div className="settings-row settings-row-stack settings-inline-error"><div className="dialog-error"><CircleAlert size={14} />{spellCheckerError}</div></div>) : null}
-                  {proofreadingError ? (<div className="settings-row settings-row-stack settings-inline-error"><div className="dialog-error"><CircleAlert size={14} />{proofreadingError}</div></div>) : null}
+                  {spellCheckerError ? (
+                    <div className="settings-row settings-row-stack settings-inline-error">
+                      <div className="dialog-error">
+                        <CircleAlert size={14} />
+                        {spellCheckerError}
+                      </div>
+                    </div>
+                  ) : null}
+                  {proofreadingError ? (
+                    <div className="settings-row settings-row-stack settings-inline-error">
+                      <div className="dialog-error">
+                        <CircleAlert size={14} />
+                        {proofreadingError}
+                      </div>
+                    </div>
+                  ) : null}
                 </>
               ) : null}
 
@@ -6245,7 +6825,10 @@ ${macroEnd}
                 <>
                   <div className="settings-section-heading">
                     <strong>Conference / Journal Submission Checker</strong>
-                    <span>Validate your manuscript against conference and journal submission guidelines.</span>
+                    <span>
+                      Validate your manuscript against conference and journal submission
+                      guidelines.
+                    </span>
                   </div>
 
                   <label className="settings-row settings-toggle">
@@ -6253,7 +6836,16 @@ ${macroEnd}
                       <strong>Enable conference checker</strong>
                       <small>Run submission-format checks on your LaTeX source.</small>
                     </span>
-                    <input type="checkbox" checked={settings.conferenceCheckerEnabled} onChange={(event) => setSettings((c) => ({ ...c, conferenceCheckerEnabled: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.conferenceCheckerEnabled}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          conferenceCheckerEnabled: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   <label className="settings-row">
@@ -6261,7 +6853,19 @@ ${macroEnd}
                       <strong>Select template</strong>
                       <small>Choose the target venue template.</small>
                     </span>
-                    <select value={settings.conferenceTemplate === "custom" ? "custom" : settings.conferenceTemplate} onChange={(event) => setSettings((c) => ({ ...c, conferenceTemplate: event.target.value }))}>
+                    <select
+                      value={
+                        settings.conferenceTemplate === "custom"
+                          ? "custom"
+                          : settings.conferenceTemplate
+                      }
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          conferenceTemplate: event.target.value,
+                        }))
+                      }
+                    >
                       <option value="ieee">IEEE</option>
                       <option value="acm">ACM</option>
                       <option value="springer">Springer</option>
@@ -6278,35 +6882,102 @@ ${macroEnd}
                         <strong>Custom template</strong>
                         <small>Describe your template or paste document class.</small>
                       </span>
-                      <input type="text" value={settings.conferenceChecker_customTemplate} onChange={(event) => setSettings((c) => ({ ...c, conferenceChecker_customTemplate: event.target.value }))} placeholder="e.g., \\documentclass[twocolumn]{article}" />
+                      <input
+                        type="text"
+                        value={settings.conferenceChecker_customTemplate}
+                        onChange={(event) =>
+                          setSettings((c) => ({
+                            ...c,
+                            conferenceChecker_customTemplate: event.target.value,
+                          }))
+                        }
+                        placeholder="e.g., \\documentclass[twocolumn]{article}"
+                      />
                     </div>
                   ) : null}
 
-                  <div className="settings-section-heading" style={{ marginTop: 16, fontSize: 12, opacity: 0.7 }}>
+                  <div
+                    className="settings-section-heading"
+                    style={{ marginTop: 16, fontSize: 12, opacity: 0.7 }}
+                  >
                     <strong>Checks to perform</strong>
                   </div>
 
                   {[
                     ["checkMargins", "Margins", "Check for incorrect margin settings."],
-                    ["checkFontSize", "Font size", "Warn if font size does not match template requirements."],
-                    ["checkAbstractLength", "Abstract length", "Flag abstracts that exceed the word limit."],
-                    ["checkKeywords", "Missing keywords", "Ensure the document has keywords defined."],
-                    ["checkFigureReferences", "Figure references", "Find figures that are not referenced in the text."],
-                    ["checkTableReferences", "Table references", "Find tables that are not referenced in the text."],
-                    ["checkBibliographyStyle", "Bibliography style", "Verify bibliography style matches the template."],
-                    ["checkPageLimit", "Page limit", "Rough check for going over the page limit."],
-                    ["checkAuthorInfo", "Author information", "Check for missing author name, affiliation, or email."],
-                    ["checkAnonymousReview", "Anonymous review", "Detect potential author-identifying information for double-blind submissions."],
-                    ["checkFigureResolution", "Figure resolution", "Check included image formats and warn about low-resolution formats."],
-                    ["checkEmbeddedFonts", "Embedded fonts", "Basic check for font usage that may cause PDF issues."],
-                    ["checkCompiler", "Compiler selection", "Check if selected compiler is appropriate for used packages."],
+                    [
+                      "checkFontSize",
+                      "Font size",
+                      "Warn if font size does not match template requirements.",
+                    ],
+                    [
+                      "checkAbstractLength",
+                      "Abstract length",
+                      "Flag abstracts that exceed the word limit.",
+                    ],
+                    [
+                      "checkKeywords",
+                      "Missing keywords",
+                      "Ensure the document has keywords defined.",
+                    ],
+                    [
+                      "checkFigureReferences",
+                      "Figure references",
+                      "Find figures that are not referenced in the text.",
+                    ],
+                    [
+                      "checkTableReferences",
+                      "Table references",
+                      "Find tables that are not referenced in the text.",
+                    ],
+                    [
+                      "checkBibliographyStyle",
+                      "Bibliography style",
+                      "Verify bibliography style matches the template.",
+                    ],
+                    [
+                      "checkPageLimit",
+                      "Page limit",
+                      "Rough check for going over the page limit.",
+                    ],
+                    [
+                      "checkAuthorInfo",
+                      "Author information",
+                      "Check for missing author name, affiliation, or email.",
+                    ],
+                    [
+                      "checkAnonymousReview",
+                      "Anonymous review",
+                      "Detect potential author-identifying information for double-blind submissions.",
+                    ],
+                    [
+                      "checkFigureResolution",
+                      "Figure resolution",
+                      "Check included image formats and warn about low-resolution formats.",
+                    ],
+                    [
+                      "checkEmbeddedFonts",
+                      "Embedded fonts",
+                      "Basic check for font usage that may cause PDF issues.",
+                    ],
+                    [
+                      "checkCompiler",
+                      "Compiler selection",
+                      "Check if selected compiler is appropriate for used packages.",
+                    ],
                   ].map(([key, label, desc]) => (
                     <label key={key} className="settings-row settings-toggle">
                       <span>
                         <strong>{label}</strong>
                         <small>{desc}</small>
                       </span>
-                      <input type="checkbox" checked={getSetting(key, settings)} onChange={(event) => setSettings((c) => ({ ...c, [key]: event.target.checked }))} />
+                      <input
+                        type="checkbox"
+                        checked={getSetting(key, settings)}
+                        onChange={(event) =>
+                          setSettings((c) => ({ ...c, [key]: event.target.checked }))
+                        }
+                      />
                     </label>
                   ))}
                 </>
@@ -6316,7 +6987,10 @@ ${macroEnd}
                 <>
                   <div className="settings-section-heading">
                     <strong>Smart Citation Assistant</strong>
-                    <span>Detect missing citations, unused references, broken links, and more.</span>
+                    <span>
+                      Detect missing citations, unused references, broken links, and
+                      more.
+                    </span>
                   </div>
 
                   <label className="settings-row settings-toggle">
@@ -6324,24 +6998,67 @@ ${macroEnd}
                       <strong>Enable citation assistant</strong>
                       <small>Run citation-related checks on your LaTeX source.</small>
                     </span>
-                    <input type="checkbox" checked={settings.citationAssistantEnabled} onChange={(event) => setSettings((c) => ({ ...c, citationAssistantEnabled: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.citationAssistantEnabled}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          citationAssistantEnabled: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   {[
-                    ["detectMissingCitations", "Detect missing citations", "Find paragraphs that make technical claims but have no citations."],
-                    ["detectUnusedEntries", "Detect unused entries", "Check for BibTeX entries that are never cited."],
-                    ["detectDuplicateReferences", "Detect duplicate references", "Find the same paper cited under different keys."],
-                    ["detectBrokenLinks", "Detect broken links", "Check for malformed DOI, arXiv, and URL links."],
-                    ["suggestCitationKeys", "Suggest citation keys", "Auto-suggest citations for sentences with factual claims."],
-                    ["importMetadataSources", "Import from metadata sources", "Enable DOI/arXiv metadata import."],
-                    ["warnOldCitations", "Warn about old citations", "Flag citations older than 5 years and suggest newer surveys."],
+                    [
+                      "detectMissingCitations",
+                      "Detect missing citations",
+                      "Find paragraphs that make technical claims but have no citations.",
+                    ],
+                    [
+                      "detectUnusedEntries",
+                      "Detect unused entries",
+                      "Check for BibTeX entries that are never cited.",
+                    ],
+                    [
+                      "detectDuplicateReferences",
+                      "Detect duplicate references",
+                      "Find the same paper cited under different keys.",
+                    ],
+                    [
+                      "detectBrokenLinks",
+                      "Detect broken links",
+                      "Check for malformed DOI, arXiv, and URL links.",
+                    ],
+                    [
+                      "suggestCitationKeys",
+                      "Suggest citation keys",
+                      "Auto-suggest citations for sentences with factual claims.",
+                    ],
+                    [
+                      "importMetadataSources",
+                      "Import from metadata sources",
+                      "Enable DOI/arXiv metadata import.",
+                    ],
+                    [
+                      "warnOldCitations",
+                      "Warn about old citations",
+                      "Flag citations older than 5 years and suggest newer surveys.",
+                    ],
                   ].map(([key, label, desc]) => (
                     <label key={key} className="settings-row settings-toggle">
                       <span>
                         <strong>{label}</strong>
                         <small>{desc}</small>
                       </span>
-                      <input type="checkbox" checked={getSetting(key, settings)} onChange={(event) => setSettings((c) => ({ ...c, [key]: event.target.checked }))} />
+                      <input
+                        type="checkbox"
+                        checked={getSetting(key, settings)}
+                        onChange={(event) =>
+                          setSettings((c) => ({ ...c, [key]: event.target.checked }))
+                        }
+                      />
                     </label>
                   ))}
                 </>
@@ -6351,7 +7068,10 @@ ${macroEnd}
                 <>
                   <div className="settings-section-heading">
                     <strong>Research Structure Assistant</strong>
-                    <span>Check whether your paper's structure meets academic writing standards.</span>
+                    <span>
+                      Check whether your paper's structure meets academic writing
+                      standards.
+                    </span>
                   </div>
 
                   <label className="settings-row settings-toggle">
@@ -6359,23 +7079,62 @@ ${macroEnd}
                       <strong>Enable structure assistant</strong>
                       <small>Run structure quality checks on your LaTeX source.</small>
                     </span>
-                    <input type="checkbox" checked={settings.structureAssistantEnabled} onChange={(event) => setSettings((c) => ({ ...c, structureAssistantEnabled: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.structureAssistantEnabled}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          structureAssistantEnabled: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   {[
-                    ["checkAbstractStructure", "Abstract structure", "Check if abstract includes problem, method, result, and contribution."],
-                    ["checkIntroductionStructure", "Introduction structure", "Check if introduction has motivation, gap, and contribution."],
-                    ["checkRelatedWorkLength", "Related work length", "Warn if the related work section is too short."],
-                    ["checkMethodReproducibility", "Method reproducibility", "Check for reproducibility details in the method section."],
-                    ["checkResultsDiscussion", "Results discussion", "Ensure results are accompanied by discussion and analysis."],
-                    ["checkConclusionClaims", "Conclusion claims", "Warn if conclusion introduces new claims not supported earlier."],
+                    [
+                      "checkAbstractStructure",
+                      "Abstract structure",
+                      "Check if abstract includes problem, method, result, and contribution.",
+                    ],
+                    [
+                      "checkIntroductionStructure",
+                      "Introduction structure",
+                      "Check if introduction has motivation, gap, and contribution.",
+                    ],
+                    [
+                      "checkRelatedWorkLength",
+                      "Related work length",
+                      "Warn if the related work section is too short.",
+                    ],
+                    [
+                      "checkMethodReproducibility",
+                      "Method reproducibility",
+                      "Check for reproducibility details in the method section.",
+                    ],
+                    [
+                      "checkResultsDiscussion",
+                      "Results discussion",
+                      "Ensure results are accompanied by discussion and analysis.",
+                    ],
+                    [
+                      "checkConclusionClaims",
+                      "Conclusion claims",
+                      "Warn if conclusion introduces new claims not supported earlier.",
+                    ],
                   ].map(([key, label, desc]) => (
                     <label key={key} className="settings-row settings-toggle">
                       <span>
                         <strong>{label}</strong>
                         <small>{desc}</small>
                       </span>
-                      <input type="checkbox" checked={getSetting(key, settings)} onChange={(event) => setSettings((c) => ({ ...c, [key]: event.target.checked }))} />
+                      <input
+                        type="checkbox"
+                        checked={getSetting(key, settings)}
+                        onChange={(event) =>
+                          setSettings((c) => ({ ...c, [key]: event.target.checked }))
+                        }
+                      />
                     </label>
                   ))}
                 </>
@@ -6385,32 +7144,81 @@ ${macroEnd}
                 <>
                   <div className="settings-section-heading">
                     <strong>Reproducibility Checklist</strong>
-                    <span>Check that your paper includes all information needed for reproducibility.</span>
+                    <span>
+                      Check that your paper includes all information needed for
+                      reproducibility.
+                    </span>
                   </div>
 
                   <label className="settings-row settings-toggle">
                     <span>
                       <strong>Enable reproducibility checks</strong>
-                      <small>Run checks for code, data, and experiment reproducibility details.</small>
+                      <small>
+                        Run checks for code, data, and experiment reproducibility
+                        details.
+                      </small>
                     </span>
-                    <input type="checkbox" checked={settings.reproducibilityEnabled} onChange={(event) => setSettings((c) => ({ ...c, reproducibilityEnabled: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.reproducibilityEnabled}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          reproducibilityEnabled: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   {[
-                    ["checkCodeLink", "Code availability", "Ensure a link to source code is provided (e.g., GitHub, Zenodo)."],
-                    ["checkDatasetLink", "Dataset availability", "Check that datasets are linked or their availability is mentioned."],
-                    ["checkLicenseMentioned", "License information", "Verify the license for code/data is stated."],
-                    ["checkHyperparameters", "Hyperparameters", "Confirm hyperparameters are listed for ML experiments."],
-                    ["checkHardwareDetails", "Hardware details", "Check that GPU/CPU and computing resources are described."],
-                    ["checkRandomSeeds", "Random seeds", "Ensure random seeds are mentioned for reproducibility."],
-                    ["checkEvaluationMetrics", "Evaluation metrics", "Check that metrics are defined and computation is described."],
+                    [
+                      "checkCodeLink",
+                      "Code availability",
+                      "Ensure a link to source code is provided (e.g., GitHub, Zenodo).",
+                    ],
+                    [
+                      "checkDatasetLink",
+                      "Dataset availability",
+                      "Check that datasets are linked or their availability is mentioned.",
+                    ],
+                    [
+                      "checkLicenseMentioned",
+                      "License information",
+                      "Verify the license for code/data is stated.",
+                    ],
+                    [
+                      "checkHyperparameters",
+                      "Hyperparameters",
+                      "Confirm hyperparameters are listed for ML experiments.",
+                    ],
+                    [
+                      "checkHardwareDetails",
+                      "Hardware details",
+                      "Check that GPU/CPU and computing resources are described.",
+                    ],
+                    [
+                      "checkRandomSeeds",
+                      "Random seeds",
+                      "Ensure random seeds are mentioned for reproducibility.",
+                    ],
+                    [
+                      "checkEvaluationMetrics",
+                      "Evaluation metrics",
+                      "Check that metrics are defined and computation is described.",
+                    ],
                   ].map(([key, label, desc]) => (
                     <label key={key} className="settings-row settings-toggle">
                       <span>
                         <strong>{label}</strong>
                         <small>{desc}</small>
                       </span>
-                      <input type="checkbox" checked={getSetting(key, settings)} onChange={(event) => setSettings((c) => ({ ...c, [key]: event.target.checked }))} />
+                      <input
+                        type="checkbox"
+                        checked={getSetting(key, settings)}
+                        onChange={(event) =>
+                          setSettings((c) => ({ ...c, [key]: event.target.checked }))
+                        }
+                      />
                     </label>
                   ))}
                 </>
@@ -6420,29 +7228,65 @@ ${macroEnd}
                 <>
                   <div className="settings-section-heading">
                     <strong>Acronym & Glossary Manager</strong>
-                    <span>Automatically detect acronym definitions, duplicates, and usage issues.</span>
+                    <span>
+                      Automatically detect acronym definitions, duplicates, and usage
+                      issues.
+                    </span>
                   </div>
 
                   <label className="settings-row settings-toggle">
                     <span>
                       <strong>Enable acronym manager</strong>
-                      <small>Run acronym consistency checks on your LaTeX source.</small>
+                      <small>
+                        Run acronym consistency checks on your LaTeX source.
+                      </small>
                     </span>
-                    <input type="checkbox" checked={settings.acronymManagerEnabled} onChange={(event) => setSettings((c) => ({ ...c, acronymManagerEnabled: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.acronymManagerEnabled}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          acronymManagerEnabled: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   {[
-                    ["checkUndefinedAcronym", "Undefined acronyms", "Warn when an acronym is used without prior definition."],
-                    ["checkDuplicateDefinition", "Duplicate definitions", "Warn if the same acronym is defined multiple times."],
-                    ["checkUnusedAcronym", "Unused acronyms", "Warn if an acronym is defined but never used again."],
-                    ["checkConflictingDefinitions", "Conflicting definitions", "Warn if different full forms map to the same acronym."],
+                    [
+                      "checkUndefinedAcronym",
+                      "Undefined acronyms",
+                      "Warn when an acronym is used without prior definition.",
+                    ],
+                    [
+                      "checkDuplicateDefinition",
+                      "Duplicate definitions",
+                      "Warn if the same acronym is defined multiple times.",
+                    ],
+                    [
+                      "checkUnusedAcronym",
+                      "Unused acronyms",
+                      "Warn if an acronym is defined but never used again.",
+                    ],
+                    [
+                      "checkConflictingDefinitions",
+                      "Conflicting definitions",
+                      "Warn if different full forms map to the same acronym.",
+                    ],
                   ].map(([key, label, desc]) => (
                     <label key={key} className="settings-row settings-toggle">
                       <span>
                         <strong>{label}</strong>
                         <small>{desc}</small>
                       </span>
-                      <input type="checkbox" checked={getSetting(key, settings)} onChange={(event) => setSettings((c) => ({ ...c, [key]: event.target.checked }))} />
+                      <input
+                        type="checkbox"
+                        checked={getSetting(key, settings)}
+                        onChange={(event) =>
+                          setSettings((c) => ({ ...c, [key]: event.target.checked }))
+                        }
+                      />
                     </label>
                   ))}
                 </>
@@ -6452,28 +7296,60 @@ ${macroEnd}
                 <>
                   <div className="settings-section-heading">
                     <strong>LaTeX Error Doctor</strong>
-                    <span>Smart error explanations with one-click fix suggestions.</span>
+                    <span>
+                      Smart error explanations with one-click fix suggestions.
+                    </span>
                   </div>
 
                   <label className="settings-row settings-toggle">
                     <span>
                       <strong>Enable Error Doctor</strong>
-                      <small>Analyze compile output and provide intelligent error explanations.</small>
+                      <small>
+                        Analyze compile output and provide intelligent error
+                        explanations.
+                      </small>
                     </span>
-                    <input type="checkbox" checked={settings.errorDoctorEnabled} onChange={(event) => setSettings((c) => ({ ...c, errorDoctorEnabled: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.errorDoctorEnabled}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          errorDoctorEnabled: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   {[
-                    ["explainErrors", "Explain errors", "Show human-readable explanations for LaTeX errors."],
-                    ["suggestFixes", "Suggest fixes", "Provide actionable fix suggestions for common errors."],
-                    ["autoFixCommon", "Auto-fix common errors", "Automatically apply one-click fixes for simple errors (e.g., underscore escaping)."],
+                    [
+                      "explainErrors",
+                      "Explain errors",
+                      "Show human-readable explanations for LaTeX errors.",
+                    ],
+                    [
+                      "suggestFixes",
+                      "Suggest fixes",
+                      "Provide actionable fix suggestions for common errors.",
+                    ],
+                    [
+                      "autoFixCommon",
+                      "Auto-fix common errors",
+                      "Automatically apply one-click fixes for simple errors (e.g., underscore escaping).",
+                    ],
                   ].map(([key, label, desc]) => (
                     <label key={key} className="settings-row settings-toggle">
                       <span>
                         <strong>{label}</strong>
                         <small>{desc}</small>
                       </span>
-                      <input type="checkbox" checked={getSetting(key, settings)} onChange={(event) => setSettings((c) => ({ ...c, [key]: event.target.checked }))} />
+                      <input
+                        type="checkbox"
+                        checked={getSetting(key, settings)}
+                        onChange={(event) =>
+                          setSettings((c) => ({ ...c, [key]: event.target.checked }))
+                        }
+                      />
                     </label>
                   ))}
                 </>
@@ -6483,23 +7359,48 @@ ${macroEnd}
                 <>
                   <div className="settings-section-heading">
                     <strong>Figure → TikZ Converter</strong>
-                    <span>Upload images and automatically generate editable TikZ code.</span>
+                    <span>
+                      Upload images and automatically generate editable TikZ code.
+                    </span>
                   </div>
 
                   <label className="settings-row settings-toggle">
                     <span>
                       <strong>Enable TikZ converter</strong>
-                      <small>Show the Figure → TikZ converter button in the activity bar.</small>
+                      <small>
+                        Show the Figure → TikZ converter button in the activity bar.
+                      </small>
                     </span>
-                    <input type="checkbox" checked={settings.tikzConverterEnabled} onChange={(event) => setSettings((c) => ({ ...c, tikzConverterEnabled: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.tikzConverterEnabled}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          tikzConverterEnabled: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   <label className="settings-row settings-toggle">
                     <span>
                       <strong>Auto-open on image copy</strong>
-                      <small>Automatically open converter when an image is detected in clipboard.</small>
+                      <small>
+                        Automatically open converter when an image is detected in
+                        clipboard.
+                      </small>
                     </span>
-                    <input type="checkbox" checked={settings.tikzConverterAutoOpen} onChange={(event) => setSettings((c) => ({ ...c, tikzConverterAutoOpen: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.tikzConverterAutoOpen}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          tikzConverterAutoOpen: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
                 </>
               ) : null}
@@ -6508,39 +7409,86 @@ ${macroEnd}
                 <>
                   <div className="settings-section-heading">
                     <strong>Notation Manager</strong>
-                    <span>Detect, define, and manage mathematical notation in your LaTeX documents.</span>
+                    <span>
+                      Detect, define, and manage mathematical notation in your LaTeX
+                      documents.
+                    </span>
                   </div>
 
                   <label className="settings-row settings-toggle">
                     <span>
                       <strong>Enable notation manager</strong>
-                      <small>Show the Notation Manager button in the activity bar.</small>
+                      <small>
+                        Show the Notation Manager button in the activity bar.
+                      </small>
                     </span>
-                    <input type="checkbox" checked={settings.notationManagerEnabled} onChange={(event) => setSettings((c) => ({ ...c, notationManagerEnabled: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.notationManagerEnabled}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          notationManagerEnabled: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   <label className="settings-row settings-toggle">
                     <span>
                       <strong>Detect notation</strong>
-                      <small>Scan documents for mathematical symbols and notation.</small>
+                      <small>
+                        Scan documents for mathematical symbols and notation.
+                      </small>
                     </span>
-                    <input type="checkbox" checked={settings.detectNotation} onChange={(event) => setSettings((c) => ({ ...c, detectNotation: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.detectNotation}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          detectNotation: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   <label className="settings-row settings-toggle">
                     <span>
                       <strong>Detect notation conflicts</strong>
-                      <small>Flag symbols that are visually or semantically similar.</small>
+                      <small>
+                        Flag symbols that are visually or semantically similar.
+                      </small>
                     </span>
-                    <input type="checkbox" checked={settings.detectNotationConflicts} onChange={(event) => setSettings((c) => ({ ...c, detectNotationConflicts: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.detectNotationConflicts}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          detectNotationConflicts: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   <label className="settings-row settings-toggle">
                     <span>
                       <strong>Detect undefined notation</strong>
-                      <small>Warn when a symbol is used without a preceding definition.</small>
+                      <small>
+                        Warn when a symbol is used without a preceding definition.
+                      </small>
                     </span>
-                    <input type="checkbox" checked={settings.detectUndefinedNotation} onChange={(event) => setSettings((c) => ({ ...c, detectUndefinedNotation: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.detectUndefinedNotation}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          detectUndefinedNotation: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
                 </>
               ) : null}
@@ -6549,7 +7497,10 @@ ${macroEnd}
                 <>
                   <div className="settings-section-heading">
                     <strong>PDF Compliance Report</strong>
-                    <span>Check compiled PDF against conference guidelines and best practices.</span>
+                    <span>
+                      Check compiled PDF against conference guidelines and best
+                      practices.
+                    </span>
                   </div>
 
                   <label className="settings-row settings-toggle">
@@ -6557,7 +7508,16 @@ ${macroEnd}
                       <strong>Enable PDF compliance checks</strong>
                       <small>Run compliance checks after each compilation.</small>
                     </span>
-                    <input type="checkbox" checked={settings.pdfComplianceEnabled} onChange={(event) => setSettings((c) => ({ ...c, pdfComplianceEnabled: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.pdfComplianceEnabled}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          pdfComplianceEnabled: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   <div className="settings-section-subheading">Page count</div>
@@ -6567,7 +7527,16 @@ ${macroEnd}
                       <strong>Check page count</strong>
                       <small>Warn if the PDF exceeds the page limit.</small>
                     </span>
-                    <input type="checkbox" checked={settings.checkPageCount} onChange={(event) => setSettings((c) => ({ ...c, checkPageCount: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.checkPageCount}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          checkPageCount: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   <label className="settings-row">
@@ -6575,7 +7544,19 @@ ${macroEnd}
                       <strong>Maximum pages</strong>
                       <small>Conference page limit.</small>
                     </span>
-                    <input type="number" className="settings-number-input" min={1} max={100} value={settings.maxPages} onChange={(event) => setSettings((c) => ({ ...c, maxPages: parseInt(event.target.value, 10) || 8 }))} />
+                    <input
+                      type="number"
+                      className="settings-number-input"
+                      min={1}
+                      max={100}
+                      value={settings.maxPages}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          maxPages: parseInt(event.target.value, 10) || 8,
+                        }))
+                      }
+                    />
                   </label>
 
                   <div className="settings-section-subheading">Figures</div>
@@ -6585,7 +7566,16 @@ ${macroEnd}
                       <strong>Check unreferenced figures</strong>
                       <small>Detect figures that have no \\ref{} in text.</small>
                     </span>
-                    <input type="checkbox" checked={settings.checkUnreferencedFigures} onChange={(event) => setSettings((c) => ({ ...c, checkUnreferencedFigures: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.checkUnreferencedFigures}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          checkUnreferencedFigures: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   <div className="settings-section-subheading">Citations</div>
@@ -6595,7 +7585,16 @@ ${macroEnd}
                       <strong>Check uncited citations</strong>
                       <small>Detect bibliography entries never cited in text.</small>
                     </span>
-                    <input type="checkbox" checked={settings.checkUncitedCitations} onChange={(event) => setSettings((c) => ({ ...c, checkUncitedCitations: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.checkUncitedCitations}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          checkUncitedCitations: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   <label className="settings-row settings-toggle">
@@ -6603,7 +7602,16 @@ ${macroEnd}
                       <strong>Check sections with no citations</strong>
                       <small>Flag sections that lack any citations.</small>
                     </span>
-                    <input type="checkbox" checked={settings.checkSectionsWithNoCitations} onChange={(event) => setSettings((c) => ({ ...c, checkSectionsWithNoCitations: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.checkSectionsWithNoCitations}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          checkSectionsWithNoCitations: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   <div className="settings-section-subheading">Fonts</div>
@@ -6613,7 +7621,16 @@ ${macroEnd}
                       <strong>Check for Type 3 fonts</strong>
                       <small>Warn if the PDF uses bitmap fonts.</small>
                     </span>
-                    <input type="checkbox" checked={settings.checkType3Fonts} onChange={(event) => setSettings((c) => ({ ...c, checkType3Fonts: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.checkType3Fonts}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          checkType3Fonts: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   <div className="settings-section-subheading">Abstract</div>
@@ -6623,7 +7640,16 @@ ${macroEnd}
                       <strong>Check abstract word count</strong>
                       <small>Warn if abstract exceeds the recommended limit.</small>
                     </span>
-                    <input type="checkbox" checked={settings.checkAbstractWordCount} onChange={(event) => setSettings((c) => ({ ...c, checkAbstractWordCount: event.target.checked }))} />
+                    <input
+                      type="checkbox"
+                      checked={settings.checkAbstractWordCount}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          checkAbstractWordCount: event.target.checked,
+                        }))
+                      }
+                    />
                   </label>
 
                   <label className="settings-row">
@@ -6631,7 +7657,19 @@ ${macroEnd}
                       <strong>Max abstract words</strong>
                       <small>Recommended abstract word limit.</small>
                     </span>
-                    <input type="number" className="settings-number-input" min={50} max={500} value={settings.maxAbstractWords} onChange={(event) => setSettings((c) => ({ ...c, maxAbstractWords: parseInt(event.target.value, 10) || 250 }))} />
+                    <input
+                      type="number"
+                      className="settings-number-input"
+                      min={50}
+                      max={500}
+                      value={settings.maxAbstractWords}
+                      onChange={(event) =>
+                        setSettings((c) => ({
+                          ...c,
+                          maxAbstractWords: parseInt(event.target.value, 10) || 250,
+                        }))
+                      }
+                    />
                   </label>
                 </>
               ) : null}
@@ -6646,11 +7684,34 @@ ${macroEnd}
                   <div className="settings-row update-row">
                     <span>
                       <strong>App updates</strong>
-                      <small>{checkingUpdates ? "Checking for the latest release…" : updateInfo?.updateAvailable ? `Version ${updateInfo.latestVersion} is available. You are on ${updateInfo.currentVersion}.` : updateInfo?.latestVersion ? `You are up to date on version ${updateInfo.currentVersion}.` : updateInfo?.error ? updateInfo.error : "Check GitHub releases for updates."}</small>
+                      <small>
+                        {checkingUpdates
+                          ? "Checking for the latest release…"
+                          : updateInfo?.updateAvailable
+                            ? `Version ${updateInfo.latestVersion} is available. You are on ${updateInfo.currentVersion}.`
+                            : updateInfo?.latestVersion
+                              ? `You are up to date on version ${updateInfo.currentVersion}.`
+                              : updateInfo?.error
+                                ? updateInfo.error
+                                : "Check GitHub releases for updates."}
+                      </small>
                     </span>
                     <div className="settings-update-actions">
-                      <button type="button" className="dialog-cancel" onClick={() => void checkForUpdates()} disabled={checkingUpdates}>{checkingUpdates ? "Checking…" : "Check now"}</button>
-                      <button type="button" className="dialog-submit" onClick={() => void window.latexdo.openReleasesPage()}>View releases</button>
+                      <button
+                        type="button"
+                        className="dialog-cancel"
+                        onClick={() => void checkForUpdates()}
+                        disabled={checkingUpdates}
+                      >
+                        {checkingUpdates ? "Checking…" : "Check now"}
+                      </button>
+                      <button
+                        type="button"
+                        className="dialog-submit"
+                        onClick={() => void window.latexdo.openReleasesPage()}
+                      >
+                        View releases
+                      </button>
                     </div>
                   </div>
                 </>
@@ -6679,7 +7740,6 @@ ${macroEnd}
           </section>
         </div>
       ) : null}
-
     </div>
   );
 }

@@ -70,7 +70,10 @@ function readBraceArgument(content: string, startIndex: number): BraceArgument |
   return null;
 }
 
-function splitTrailingPunctuation(content: string, index: number): {
+function splitTrailingPunctuation(
+  content: string,
+  index: number,
+): {
   punctuation: string;
   nextIndex: number;
 } {

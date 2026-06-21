@@ -16,12 +16,7 @@ export function latexCompletionSource(getIndex: () => LatexIndex) {
           label: entry.key,
           type: "reference",
           detail: [entry.type, entry.author, entry.year].filter(Boolean).join(" · "),
-          info: [
-            entry.title,
-            entry.journal,
-            entry.publisher,
-            entry.sourceFile,
-          ]
+          info: [entry.title, entry.journal, entry.publisher, entry.sourceFile]
             .filter(Boolean)
             .join("\n"),
         })),

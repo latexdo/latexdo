@@ -108,7 +108,18 @@ describe("Utility functions", () => {
         severity: "warning" as const,
         source: "latex" as const,
         message: "Test",
-        fixes: [{ title: "Fix", expectedText: "old", replacement: "new", line: 1, column: 1, endLine: 1, endColumn: 5, confidence: 0.9 }],
+        fixes: [
+          {
+            title: "Fix",
+            expectedText: "old",
+            replacement: "new",
+            line: 1,
+            column: 1,
+            endLine: 1,
+            endColumn: 5,
+            confidence: 0.9,
+          },
+        ],
         isPrimary: true,
         priority: 1,
       };

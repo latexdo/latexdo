@@ -43,15 +43,17 @@ export const RebuttalSidebar: React.FC<RebuttalSidebarProps> = ({
           <div className="sidebar-empty">
             <History size={32} />
             <p>No rebuttal items yet.</p>
-            <p className="sub-text">Click "New Rebuttal Item" to track your responses to reviewer comments.</p>
+            <p className="sub-text">
+              Click "New Rebuttal Item" to track your responses to reviewer comments.
+            </p>
           </div>
         ) : (
           items.map((item) => (
             <div key={item.id} className="sidebar-item-card rebuttal-item-card">
               <div className="rebuttal-item-header">
                 <strong>Rebuttal Item</strong>
-                <button 
-                  className="small-icon delete-button" 
+                <button
+                  className="small-icon delete-button"
                   onClick={() => onDeleteItem(item.id)}
                   title="Delete rebuttal item"
                   aria-label="Delete rebuttal item"
@@ -64,7 +66,9 @@ export const RebuttalSidebar: React.FC<RebuttalSidebarProps> = ({
                 <label>Text</label>
                 <textarea
                   value={item.originalText ?? ""}
-                  onChange={(e) => onUpdateItem(item.id, { originalText: e.target.value })}
+                  onChange={(e) =>
+                    onUpdateItem(item.id, { originalText: e.target.value })
+                  }
                   placeholder="The manuscript text being discussed."
                 />
               </div>
@@ -73,7 +77,9 @@ export const RebuttalSidebar: React.FC<RebuttalSidebarProps> = ({
                 <label>Reviewer Comment</label>
                 <textarea
                   value={item.reviewerComment}
-                  onChange={(e) => onUpdateItem(item.id, { reviewerComment: e.target.value })}
+                  onChange={(e) =>
+                    onUpdateItem(item.id, { reviewerComment: e.target.value })
+                  }
                   placeholder="What did the reviewer say?"
                 />
               </div>
@@ -82,7 +88,9 @@ export const RebuttalSidebar: React.FC<RebuttalSidebarProps> = ({
                 <label>Author Answer</label>
                 <textarea
                   value={item.authorComment}
-                  onChange={(e) => onUpdateItem(item.id, { authorComment: e.target.value })}
+                  onChange={(e) =>
+                    onUpdateItem(item.id, { authorComment: e.target.value })
+                  }
                   placeholder="How do you respond?"
                 />
               </div>

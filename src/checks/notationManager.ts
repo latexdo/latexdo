@@ -64,13 +64,15 @@ const NOTATION_PATTERNS = [
 function extractSymbols(expr: string): Set<string> {
   const symbols = new Set<string>();
 
-  const calPattern = /\\(?:mathcal|mathrm|mathbf|mathit|mathbb|mathsf|mathtt|mathscr|mathfrak)\{(\w)\}/g;
+  const calPattern =
+    /\\(?:mathcal|mathrm|mathbf|mathit|mathbb|mathsf|mathtt|mathscr|mathfrak)\{(\w)\}/g;
   let m: RegExpExecArray | null;
   while ((m = calPattern.exec(expr)) !== null) {
     symbols.add(`\\mathcal{${m[1]}}`);
   }
 
-  const greekPattern = /\\(alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|vartheta|iota|kappa|lambda|mu|nu|xi|omicron|pi|varpi|rho|varrho|sigma|varsigma|tau|upsilon|phi|varphi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Phi|Psi|Omega)/g;
+  const greekPattern =
+    /\\(alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|vartheta|iota|kappa|lambda|mu|nu|xi|omicron|pi|varpi|rho|varrho|sigma|varsigma|tau|upsilon|phi|varphi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Phi|Psi|Omega)/g;
   while ((m = greekPattern.exec(expr)) !== null) {
     symbols.add(`\\${m[1]}`);
   }
@@ -78,18 +80,27 @@ function extractSymbols(expr: string): Set<string> {
   const cmdPattern = /\\([a-zA-Z]+)/g;
   while ((m = cmdPattern.exec(expr)) !== null) {
     const cmd = m[1];
-    if (cmd.length > 1 && !/^(?:mathcal|mathrm|mathbf|mathit|mathbb|mathsf|mathtt|mathscr|mathfrak|alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|vartheta|iota|kappa|lambda|mu|nu|xi|omicron|pi|varpi|rho|varrho|sigma|varsigma|tau|upsilon|phi|varphi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Phi|Psi|Omega|begin|end|label|ref|cite|text|quad|qquad|left|right|big|bigg|Big|Bigg|displaystyle|textstyle|scriptstyle|scriptscriptstyle|over|frac|sqrt|sum|prod|int|iint|iiint|oint|otimes|oplus|otimes|wedge|vee|cap|cup|subset|supset|subseteq|supseteq|in|notin|to|rightarrow|leftarrow|Rightarrow|Leftarrow|mapsto|approx|sim|simeq|cong|equiv|propto|infty|partial|nabla|times|div|cdo|ast|star|circ|bullet|cdot|ldots|cdots|vdots|ddots|forall|exists|neg|emptyset|varnothing|Re|Im|log|ln|exp|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|sinh|cosh|tanh|coth|max|min|sup|inf|lim|det|dim|hom|ker|tr|Pr|E|Var|Cov|Corr|operatorname)/.test(cmd)) {
+    if (
+      cmd.length > 1 &&
+      !/^(?:mathcal|mathrm|mathbf|mathit|mathbb|mathsf|mathtt|mathscr|mathfrak|alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|vartheta|iota|kappa|lambda|mu|nu|xi|omicron|pi|varpi|rho|varrho|sigma|varsigma|tau|upsilon|phi|varphi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Phi|Psi|Omega|begin|end|label|ref|cite|text|quad|qquad|left|right|big|bigg|Big|Bigg|displaystyle|textstyle|scriptstyle|scriptscriptstyle|over|frac|sqrt|sum|prod|int|iint|iiint|oint|otimes|oplus|otimes|wedge|vee|cap|cup|subset|supset|subseteq|supseteq|in|notin|to|rightarrow|leftarrow|Rightarrow|Leftarrow|mapsto|approx|sim|simeq|cong|equiv|propto|infty|partial|nabla|times|div|cdo|ast|star|circ|bullet|cdot|ldots|cdots|vdots|ddots|forall|exists|neg|emptyset|varnothing|Re|Im|log|ln|exp|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|sinh|cosh|tanh|coth|max|min|sup|inf|lim|det|dim|hom|ker|tr|Pr|E|Var|Cov|Corr|operatorname)/.test(
+        cmd,
+      )
+    ) {
       symbols.add(`\\${cmd}`);
     }
   }
 
-  const varPattern = /\b([a-zA-Z])(?:(\s*_\s*\{?[a-zA-Z0-9]+\}?)(\s*\^\s*\{?[a-zA-Z0-9]+\}?)?|\s*\^\s*\{?[a-zA-Z0-9]+\}?)?/g;
+  const varPattern =
+    /\b([a-zA-Z])(?:(\s*_\s*\{?[a-zA-Z0-9]+\}?)(\s*\^\s*\{?[a-zA-Z0-9]+\}?)?|\s*\^\s*\{?[a-zA-Z0-9]+\}?)?/g;
   while ((m = varPattern.exec(expr)) !== null) {
     const base = m[1];
     const sub = m[2] || "";
     const sup = m[3] || "";
     const full = base + sub + sup;
-    if (/^[a-zA-Z]$/.test(base) && !/^[a-zA-Z]{2,}$/.test(expr.slice(m.index, m.index + full.length).trim())) {
+    if (
+      /^[a-zA-Z]$/.test(base) &&
+      !/^[a-zA-Z]{2,}$/.test(expr.slice(m.index, m.index + full.length).trim())
+    ) {
       symbols.add(full.trim());
     }
   }
@@ -134,8 +145,7 @@ export function analyzeNotation(content: string): NotedSymbol[] {
       if (symbolMap.has(sym)) {
         const existing = symbolMap.get(sym)!;
         existing.usageCount++;
-        if (!existing.environments.includes("math"))
-          existing.environments.push("math");
+        if (!existing.environments.includes("math")) existing.environments.push("math");
         if (defined && !existing.defined) {
           existing.defined = true;
           existing.definitionLine = line;

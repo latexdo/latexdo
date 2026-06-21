@@ -8,7 +8,12 @@ function esc(s: string): string {
 }
 
 function firstNonEmptyLine(value: string, fallback: string): string {
-  return value.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() || fallback;
+  return (
+    value
+      .split(/\r?\n/)
+      .find((line) => line.trim().length > 0)
+      ?.trim() || fallback
+  );
 }
 
 function textOrFallback(value: string | undefined, fallback: string): string {
@@ -355,7 +360,10 @@ function reviewerSections(items: RebuttalItem[]): string {
 
   for (const item of items) {
     const label = `R${reviewerNum}`;
-    const originalText = textOrFallback(item.originalText, "No manuscript text recorded.");
+    const originalText = textOrFallback(
+      item.originalText,
+      "No manuscript text recorded.",
+    );
     parts.push("");
     parts.push(
       `\\begin{ReviewCard}{${esc(firstNonEmptyLine(item.reviewerComment, "Comment"))}}{${label}}`,
@@ -367,7 +375,9 @@ function reviewerSections(items: RebuttalItem[]): string {
     parts.push("");
 
     parts.push("\\begin{ReviewerComment}");
-    parts.push(esc(textOrFallback(item.reviewerComment, "No reviewer comment recorded.")));
+    parts.push(
+      esc(textOrFallback(item.reviewerComment, "No reviewer comment recorded.")),
+    );
     parts.push("\\end{ReviewerComment}");
     parts.push("");
 

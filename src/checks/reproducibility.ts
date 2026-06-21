@@ -126,7 +126,7 @@ function checkHyperparametersImpl(content: string): Diagnostic[] {
         1,
         "Hyperparameters not listed",
         "Reproducible ML research should list all hyperparameters used in experiments",
-        'Add a table or paragraph listing key hyperparameters (learning rate, batch size, epochs, optimizer, etc.) in the experimental setup section',
+        "Add a table or paragraph listing key hyperparameters (learning rate, batch size, epochs, optimizer, etc.) in the experimental setup section",
       ),
     );
   }
@@ -239,11 +239,15 @@ export function runReproducibilityChecks(
 
   if (settings.checkCodeLink) diagnostics.push(...checkCodeLinkImpl(content));
   if (settings.checkDatasetLink) diagnostics.push(...checkDatasetLinkImpl(content));
-  if (settings.checkLicenseMentioned) diagnostics.push(...checkLicenseMentionedImpl(content));
-  if (settings.checkHyperparameters) diagnostics.push(...checkHyperparametersImpl(content));
-  if (settings.checkHardwareDetails) diagnostics.push(...checkHardwareDetailsImpl(content));
+  if (settings.checkLicenseMentioned)
+    diagnostics.push(...checkLicenseMentionedImpl(content));
+  if (settings.checkHyperparameters)
+    diagnostics.push(...checkHyperparametersImpl(content));
+  if (settings.checkHardwareDetails)
+    diagnostics.push(...checkHardwareDetailsImpl(content));
   if (settings.checkRandomSeeds) diagnostics.push(...checkRandomSeedsImpl(content));
-  if (settings.checkEvaluationMetrics) diagnostics.push(...checkEvaluationMetricsImpl(content));
+  if (settings.checkEvaluationMetrics)
+    diagnostics.push(...checkEvaluationMetricsImpl(content));
 
   return diagnostics;
 }

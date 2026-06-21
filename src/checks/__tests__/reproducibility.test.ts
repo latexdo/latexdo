@@ -14,12 +14,16 @@ const defaultSettings: ReproducibilitySettings = {
 };
 
 function makeDoc(content: string): string {
-  return "\\documentclass{article}\n\\begin{document}\n" + content + "\n\\end{document}\n";
+  return (
+    "\\documentclass{article}\n\\begin{document}\n" + content + "\n\\end{document}\n"
+  );
 }
 
 describe("runReproducibilityChecks", () => {
   it("returns empty when disabled", () => {
-    expect(runReproducibilityChecks("content", { ...defaultSettings, enabled: false })).toHaveLength(0);
+    expect(
+      runReproducibilityChecks("content", { ...defaultSettings, enabled: false }),
+    ).toHaveLength(0);
   });
 
   it("returns empty when content is empty", () => {
@@ -33,22 +37,34 @@ describe("runReproducibilityChecks", () => {
     });
 
     it("detects GitHub URL", () => {
-      const result = runReproducibilityChecks(makeDoc("Code at \\url{https://github.com/user/repo}."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("Code at \\url{https://github.com/user/repo}."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("Code availability"))).toBe(false);
     });
 
     it("detects \\github command", () => {
-      const result = runReproducibilityChecks(makeDoc("\\github{user/repo}."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("\\github{user/repo}."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("Code availability"))).toBe(false);
     });
 
     it("detects 'code availability' phrase", () => {
-      const result = runReproducibilityChecks(makeDoc("Code availability statement."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("Code availability statement."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("Code availability"))).toBe(false);
     });
 
     it("skips when disabled", () => {
-      const result = runReproducibilityChecks(makeDoc("Hello."), { ...defaultSettings, checkCodeLink: false });
+      const result = runReproducibilityChecks(makeDoc("Hello."), {
+        ...defaultSettings,
+        checkCodeLink: false,
+      });
       expect(result.some((d) => d.message.includes("Code"))).toBe(false);
     });
   });
@@ -60,22 +76,34 @@ describe("runReproducibilityChecks", () => {
     });
 
     it("detects Zenodo URL", () => {
-      const result = runReproducibilityChecks(makeDoc("Data at \\url{https://zenodo.org/record/12345}."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("Data at \\url{https://zenodo.org/record/12345}."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("Dataset"))).toBe(false);
     });
 
     it("detects Figshare URL", () => {
-      const result = runReproducibilityChecks(makeDoc("Data at \\url{https://figshare.com/12345}."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("Data at \\url{https://figshare.com/12345}."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("Dataset"))).toBe(false);
     });
 
     it("detects 'data availability' phrase", () => {
-      const result = runReproducibilityChecks(makeDoc("Data availability statement."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("Data availability statement."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("Dataset"))).toBe(false);
     });
 
     it("skips when disabled", () => {
-      const result = runReproducibilityChecks(makeDoc("Hello."), { ...defaultSettings, checkDatasetLink: false });
+      const result = runReproducibilityChecks(makeDoc("Hello."), {
+        ...defaultSettings,
+        checkDatasetLink: false,
+      });
       expect(result.some((d) => d.message.includes("Dataset"))).toBe(false);
     });
   });
@@ -87,22 +115,34 @@ describe("runReproducibilityChecks", () => {
     });
 
     it("detects MIT license", () => {
-      const result = runReproducibilityChecks(makeDoc("Released under MIT License."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("Released under MIT License."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("License"))).toBe(false);
     });
 
     it("detects Apache 2.0", () => {
-      const result = runReproducibilityChecks(makeDoc("Apache 2.0 license."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("Apache 2.0 license."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("License"))).toBe(false);
     });
 
     it("detects Creative Commons", () => {
-      const result = runReproducibilityChecks(makeDoc("Creative Commons license."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("Creative Commons license."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("License"))).toBe(false);
     });
 
     it("skips when disabled", () => {
-      const result = runReproducibilityChecks(makeDoc("Hello."), { ...defaultSettings, checkLicenseMentioned: false });
+      const result = runReproducibilityChecks(makeDoc("Hello."), {
+        ...defaultSettings,
+        checkLicenseMentioned: false,
+      });
       expect(result.some((d) => d.message.includes("License"))).toBe(false);
     });
   });
@@ -114,22 +154,34 @@ describe("runReproducibilityChecks", () => {
     });
 
     it("detects learning rate mention", () => {
-      const result = runReproducibilityChecks(makeDoc("Learning rate is 0.001."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("Learning rate is 0.001."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("Hyperparameters"))).toBe(false);
     });
 
     it("detects batch size", () => {
-      const result = runReproducibilityChecks(makeDoc("Batch size is 64."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("Batch size is 64."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("Hyperparameters"))).toBe(false);
     });
 
     it("detects epoch count", () => {
-      const result = runReproducibilityChecks(makeDoc("We train for 100 epochs."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("We train for 100 epochs."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("Hyperparameters"))).toBe(false);
     });
 
     it("skips when disabled", () => {
-      const result = runReproducibilityChecks(makeDoc("Hello."), { ...defaultSettings, checkHyperparameters: false });
+      const result = runReproducibilityChecks(makeDoc("Hello."), {
+        ...defaultSettings,
+        checkHyperparameters: false,
+      });
       expect(result.some((d) => d.message.includes("Hyperparameters"))).toBe(false);
     });
   });
@@ -141,22 +193,34 @@ describe("runReproducibilityChecks", () => {
     });
 
     it("detects GPU mention", () => {
-      const result = runReproducibilityChecks(makeDoc("Trained on NVIDIA A100 GPU."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("Trained on NVIDIA A100 GPU."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("Hardware"))).toBe(false);
     });
 
     it("detects CPU mention", () => {
-      const result = runReproducibilityChecks(makeDoc("Experiments on Intel Xeon CPU."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("Experiments on Intel Xeon CPU."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("Hardware"))).toBe(false);
     });
 
     it("detects runtime mention", () => {
-      const result = runReproducibilityChecks(makeDoc("Training time: 2 hours."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("Training time: 2 hours."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("Hardware"))).toBe(false);
     });
 
     it("skips when disabled", () => {
-      const result = runReproducibilityChecks(makeDoc("Hello."), { ...defaultSettings, checkHardwareDetails: false });
+      const result = runReproducibilityChecks(makeDoc("Hello."), {
+        ...defaultSettings,
+        checkHardwareDetails: false,
+      });
       expect(result.some((d) => d.message.includes("Hardware"))).toBe(false);
     });
   });
@@ -168,27 +232,42 @@ describe("runReproducibilityChecks", () => {
     });
 
     it("detects 'random seed' phrase", () => {
-      const result = runReproducibilityChecks(makeDoc("Random seed is set to 42."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("Random seed is set to 42."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("seeds"))).toBe(false);
     });
 
     it("detects numpy seed", () => {
-      const result = runReproducibilityChecks(makeDoc("numpy.random.seed(42)."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("numpy.random.seed(42)."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("seeds"))).toBe(false);
     });
 
     it("detects torch manual seed", () => {
-      const result = runReproducibilityChecks(makeDoc("torch.manual_seed(42)."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("torch.manual_seed(42)."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("seeds"))).toBe(false);
     });
 
     it("detects 'deterministic'", () => {
-      const result = runReproducibilityChecks(makeDoc("Deterministic mode enabled."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("Deterministic mode enabled."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("seeds"))).toBe(false);
     });
 
     it("skips when disabled", () => {
-      const result = runReproducibilityChecks(makeDoc("Hello."), { ...defaultSettings, checkRandomSeeds: false });
+      const result = runReproducibilityChecks(makeDoc("Hello."), {
+        ...defaultSettings,
+        checkRandomSeeds: false,
+      });
       expect(result.some((d) => d.message.includes("seeds"))).toBe(false);
     });
   });
@@ -200,12 +279,18 @@ describe("runReproducibilityChecks", () => {
     });
 
     it("detects accuracy mention", () => {
-      const result = runReproducibilityChecks(makeDoc("Accuracy is 95%."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("Accuracy is 95%."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("metrics"))).toBe(false);
     });
 
     it("detects F1 score", () => {
-      const result = runReproducibilityChecks(makeDoc("F1-score of 0.9."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("F1-score of 0.9."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("metrics"))).toBe(false);
     });
 
@@ -215,19 +300,27 @@ describe("runReproducibilityChecks", () => {
     });
 
     it("detects BLEU", () => {
-      const result = runReproducibilityChecks(makeDoc("BLEU score of 35."), defaultSettings);
+      const result = runReproducibilityChecks(
+        makeDoc("BLEU score of 35."),
+        defaultSettings,
+      );
       expect(result.some((d) => d.message.includes("metrics"))).toBe(false);
     });
 
     it("skips when disabled", () => {
-      const result = runReproducibilityChecks(makeDoc("Hello."), { ...defaultSettings, checkEvaluationMetrics: false });
+      const result = runReproducibilityChecks(makeDoc("Hello."), {
+        ...defaultSettings,
+        checkEvaluationMetrics: false,
+      });
       expect(result.some((d) => d.message.includes("metrics"))).toBe(false);
     });
   });
 
   describe("Edge cases", () => {
     it("handles content with all checks passing", () => {
-      const doc = makeDoc(`Code at \\url{https://github.com/user/repo}. Data at \\url{https://zenodo.org/12345}. MIT License. Learning rate 0.001, batch 64. NVIDIA A100 GPU. Random seed 42. Accuracy 95%.`);
+      const doc = makeDoc(
+        `Code at \\url{https://github.com/user/repo}. Data at \\url{https://zenodo.org/12345}. MIT License. Learning rate 0.001, batch 64. NVIDIA A100 GPU. Random seed 42. Accuracy 95%.`,
+      );
       const result = runReproducibilityChecks(doc, defaultSettings);
       expect(result).toHaveLength(0);
     });
@@ -239,7 +332,10 @@ describe("runReproducibilityChecks", () => {
     });
 
     it("handles empty document with preamble only", () => {
-      const result = runReproducibilityChecks("\\documentclass{article}", defaultSettings);
+      const result = runReproducibilityChecks(
+        "\\documentclass{article}",
+        defaultSettings,
+      );
       expect(Array.isArray(result)).toBe(true);
     });
   });

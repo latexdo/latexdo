@@ -23,7 +23,10 @@ function makeDoc(sections: Record<string, string>): string {
 
 describe("runStructureChecks", () => {
   it("returns empty when disabled", () => {
-    const result = runStructureChecks("some content", { ...defaultSettings, enabled: false });
+    const result = runStructureChecks("some content", {
+      ...defaultSettings,
+      enabled: false,
+    });
     expect(result).toHaveLength(0);
   });
 
@@ -40,32 +43,40 @@ describe("runStructureChecks", () => {
     });
 
     it("warns when abstract is too short", () => {
-      const doc = "\\begin{document}\n\\begin{abstract}\nShort.\n\\end{abstract}\n\\end{document}";
+      const doc =
+        "\\begin{document}\n\\begin{abstract}\nShort.\n\\end{abstract}\n\\end{document}";
       const result = runStructureChecks(doc, defaultSettings);
       expect(result.some((d) => d.message.includes("very short"))).toBe(true);
     });
 
     it("passes when abstract has all elements", () => {
-      const doc = "\\begin{document}\n\\begin{abstract}\nThe problem of X remains challenging. We propose a novel method to address it. Our experiments achieve state-of-the-art results. The key contribution is a new framework. This text is now long enough to pass the word count threshold.\n\\end{abstract}\n\\end{document}";
+      const doc =
+        "\\begin{document}\n\\begin{abstract}\nThe problem of X remains challenging. We propose a novel method to address it. Our experiments achieve state-of-the-art results. The key contribution is a new framework. This text is now long enough to pass the word count threshold.\n\\end{abstract}\n\\end{document}";
       const result = runStructureChecks(doc, defaultSettings);
       expect(result.some((d) => d.message.includes("Abstract missing"))).toBe(false);
     });
 
     it("detects abstract with abstract command", () => {
-      const doc = "\\begin{document}\n\\abstract{The problem is hard. We propose a novel solution. Our experimental results show improvement. The key contribution is a new framework. This text is long enough to pass the minimum word count threshold for a proper abstract. Additional sentences make this abstract longer than before. We continue writing until we exceed fifty words which is the required minimum. This should be enough now.}\n\\end{document}";
+      const doc =
+        "\\begin{document}\n\\abstract{The problem is hard. We propose a novel solution. Our experimental results show improvement. The key contribution is a new framework. This text is long enough to pass the minimum word count threshold for a proper abstract. Additional sentences make this abstract longer than before. We continue writing until we exceed fifty words which is the required minimum. This should be enough now.}\n\\end{document}";
       const result = runStructureChecks(doc, defaultSettings);
       expect(result.some((d) => d.message.includes("very short"))).toBe(false);
     });
 
     it("warns about missing elements in abstract", () => {
-      const doc = "\\begin{document}\n\\begin{abstract}\nThe problem is challenging. The text is now long enough to pass the word count threshold easily.\n\\end{abstract}\n\\end{document}";
+      const doc =
+        "\\begin{document}\n\\begin{abstract}\nThe problem is challenging. The text is now long enough to pass the word count threshold easily.\n\\end{abstract}\n\\end{document}";
       const result = runStructureChecks(doc, defaultSettings);
       expect(result.some((d) => d.message.includes("Abstract missing"))).toBe(true);
     });
 
     it("skips abstract checks when disabled", () => {
-      const doc = "\\begin{document}\n\\begin{abstract}\nShort.\n\\end{abstract}\n\\end{document}";
-      const result = runStructureChecks(doc, { ...defaultSettings, checkAbstractStructure: false });
+      const doc =
+        "\\begin{document}\n\\begin{abstract}\nShort.\n\\end{abstract}\n\\end{document}";
+      const result = runStructureChecks(doc, {
+        ...defaultSettings,
+        checkAbstractStructure: false,
+      });
       expect(result.some((d) => d.message.includes("Abstract"))).toBe(false);
     });
   });
@@ -74,24 +85,37 @@ describe("runStructureChecks", () => {
     it("warns when introduction is missing", () => {
       const doc = makeDoc({ "Related Work": "Some review." });
       const result = runStructureChecks(doc, defaultSettings);
-      expect(result.some((d) => d.message.includes("Introduction section not found"))).toBe(true);
+      expect(
+        result.some((d) => d.message.includes("Introduction section not found")),
+      ).toBe(true);
     });
 
     it("warns when introduction lacks elements", () => {
-      const doc = makeDoc({ Introduction: "We do X. This is a paper.", "Method": "Something." });
+      const doc = makeDoc({
+        Introduction: "We do X. This is a paper.",
+        Method: "Something.",
+      });
       const result = runStructureChecks(doc, defaultSettings);
       expect(result.some((d) => d.message.includes("Introduction missing"))).toBe(true);
     });
 
     it("passes when introduction has all elements", () => {
-      const doc = makeDoc({ Introduction: "This problem is important and widespread. However existing methods are limited. We propose a novel contribution. The rest of this paper is organized as follows." });
+      const doc = makeDoc({
+        Introduction:
+          "This problem is important and widespread. However existing methods are limited. We propose a novel contribution. The rest of this paper is organized as follows.",
+      });
       const result = runStructureChecks(doc, defaultSettings);
-      expect(result.some((d) => d.message.includes("Introduction missing"))).toBe(false);
+      expect(result.some((d) => d.message.includes("Introduction missing"))).toBe(
+        false,
+      );
     });
 
     it("skips introduction checks when disabled", () => {
       const doc = makeDoc({ Introduction: "Hi." });
-      const result = runStructureChecks(doc, { ...defaultSettings, checkIntroductionStructure: false });
+      const result = runStructureChecks(doc, {
+        ...defaultSettings,
+        checkIntroductionStructure: false,
+      });
       expect(result.some((d) => d.message.includes("Introduction"))).toBe(false);
     });
   });
@@ -100,18 +124,25 @@ describe("runStructureChecks", () => {
     it("warns when related work section is missing", () => {
       const doc = makeDoc({ Introduction: "Hello." });
       const result = runStructureChecks(doc, defaultSettings);
-      expect(result.some((d) => d.message.includes("Related Work section not found"))).toBe(true);
+      expect(
+        result.some((d) => d.message.includes("Related Work section not found")),
+      ).toBe(true);
     });
 
     it("warns when related work is too brief", () => {
-      const doc = makeDoc({ "Related Work": "Prior work exists. It is limited.\n\\cite{ref1}" });
+      const doc = makeDoc({
+        "Related Work": "Prior work exists. It is limited.\n\\cite{ref1}",
+      });
       const result = runStructureChecks(doc, defaultSettings);
       expect(result.some((d) => d.message.includes("too brief"))).toBe(true);
     });
 
     it("skips related work checks when disabled", () => {
       const doc = makeDoc({ "Related Work": "Brief." });
-      const result = runStructureChecks(doc, { ...defaultSettings, checkRelatedWorkLength: false });
+      const result = runStructureChecks(doc, {
+        ...defaultSettings,
+        checkRelatedWorkLength: false,
+      });
       expect(result.some((d) => d.message.includes("Related Work"))).toBe(false);
     });
   });
@@ -120,18 +151,29 @@ describe("runStructureChecks", () => {
     it("warns when method section is missing", () => {
       const doc = makeDoc({ Introduction: "Hi." });
       const result = runStructureChecks(doc, defaultSettings);
-      expect(result.some((d) => d.message.includes("Method/Methodology section not found"))).toBe(true);
+      expect(
+        result.some((d) => d.message.includes("Method/Methodology section not found")),
+      ).toBe(true);
     });
 
     it("warns when method lacks reproducibility details", () => {
       const doc = makeDoc({ Method: "We do X." });
       const result = runStructureChecks(doc, defaultSettings);
-      expect(result.some((d) => d.message.includes("Method section missing") || d.message.includes("missing"))).toBe(true);
+      expect(
+        result.some(
+          (d) =>
+            d.message.includes("Method section missing") ||
+            d.message.includes("missing"),
+        ),
+      ).toBe(true);
     });
 
     it("skips method checks when disabled", () => {
       const doc = makeDoc({ Method: "Brief." });
-      const result = runStructureChecks(doc, { ...defaultSettings, checkMethodReproducibility: false });
+      const result = runStructureChecks(doc, {
+        ...defaultSettings,
+        checkMethodReproducibility: false,
+      });
       expect(result.some((d) => d.message.includes("Method"))).toBe(false);
     });
   });
@@ -140,7 +182,9 @@ describe("runStructureChecks", () => {
     it("warns when results section is missing", () => {
       const doc = makeDoc({ Introduction: "Hi." });
       const result = runStructureChecks(doc, defaultSettings);
-      expect(result.some((d) => d.message.includes("Results/Experiments section not found"))).toBe(true);
+      expect(
+        result.some((d) => d.message.includes("Results/Experiments section not found")),
+      ).toBe(true);
     });
 
     it("warns when results lack proper elements", () => {
@@ -151,7 +195,10 @@ describe("runStructureChecks", () => {
 
     it("skips results checks when disabled", () => {
       const doc = makeDoc({ Results: "Brief." });
-      const result = runStructureChecks(doc, { ...defaultSettings, checkResultsDiscussion: false });
+      const result = runStructureChecks(doc, {
+        ...defaultSettings,
+        checkResultsDiscussion: false,
+      });
       expect(result.some((d) => d.message.includes("Results"))).toBe(false);
     });
   });
@@ -160,7 +207,9 @@ describe("runStructureChecks", () => {
     it("warns when conclusion is missing", () => {
       const doc = makeDoc({ Introduction: "Hi." });
       const result = runStructureChecks(doc, defaultSettings);
-      expect(result.some((d) => d.message.includes("Conclusion section not found"))).toBe(true);
+      expect(
+        result.some((d) => d.message.includes("Conclusion section not found")),
+      ).toBe(true);
     });
 
     it("warns when conclusion lacks elements", () => {
@@ -171,14 +220,20 @@ describe("runStructureChecks", () => {
 
     it("skips conclusion checks when disabled", () => {
       const doc = makeDoc({ Conclusion: "Hi." });
-      const result = runStructureChecks(doc, { ...defaultSettings, checkConclusionClaims: false });
+      const result = runStructureChecks(doc, {
+        ...defaultSettings,
+        checkConclusionClaims: false,
+      });
       expect(result.some((d) => d.message.includes("Conclusion"))).toBe(false);
     });
   });
 
   describe("Edge cases", () => {
     it("handles empty input gracefully", () => {
-      const result = runStructureChecks("\\begin{document}\\end{document}", defaultSettings);
+      const result = runStructureChecks(
+        "\\begin{document}\\end{document}",
+        defaultSettings,
+      );
       expect(Array.isArray(result)).toBe(true);
     });
 
@@ -195,15 +250,21 @@ describe("runStructureChecks", () => {
     });
 
     it("handles unicode math symbols", () => {
-      const doc = "\\begin{document}\n\\begin{abstract}\n∀ problem ∃ solution. We propose a novel method. Results show improvement. Our contribution is key. This text is long enough.\n\\end{abstract}\n\\end{document}";
+      const doc =
+        "\\begin{document}\n\\begin{abstract}\n∀ problem ∃ solution. We propose a novel method. Results show improvement. Our contribution is key. This text is long enough.\n\\end{abstract}\n\\end{document}";
       const result = runStructureChecks(doc, defaultSettings);
       expect(Array.isArray(result)).toBe(true);
     });
 
     it("handles nested section titles", () => {
-      const doc = makeDoc({ Introduction: "Motivation: important. Gap: however limited. Contribution: we propose. Roadmap: section." });
+      const doc = makeDoc({
+        Introduction:
+          "Motivation: important. Gap: however limited. Contribution: we propose. Roadmap: section.",
+      });
       const result = runStructureChecks(doc, defaultSettings);
-      expect(result.some((d) => d.message.includes("Introduction missing"))).toBe(false);
+      expect(result.some((d) => d.message.includes("Introduction missing"))).toBe(
+        false,
+      );
     });
   });
 });

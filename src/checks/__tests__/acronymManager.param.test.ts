@@ -2,7 +2,13 @@ import { describe, it, expect } from "vitest";
 import { runAcronymChecks } from "../acronymManager";
 import type { AcronymManagerSettings } from "../../types";
 
-const full: AcronymManagerSettings = { enabled: true, checkUndefinedAcronym: true, checkDuplicateDefinition: true, checkUnusedAcronym: true, checkConflictingDefinitions: true };
+const full: AcronymManagerSettings = {
+  enabled: true,
+  checkUndefinedAcronym: true,
+  checkDuplicateDefinition: true,
+  checkUnusedAcronym: true,
+  checkConflictingDefinitions: true,
+};
 
 function makeDoc(body: string): string {
   return "\\documentclass{article}\n\\begin{document}\n" + body + "\n\\end{document}\n";
@@ -34,17 +40,32 @@ const undefinedPatterns = [
 describe("Undefined acronym detection — parameterized", () => {
   it.each(undefinedPatterns)("detects '$ac'", ({ text }) => {
     const result = runAcronymChecks(makeDoc(text), full);
-    expect(result.some((d) => d.message.includes("used without definition"))).toBe(true);
+    expect(result.some((d) => d.message.includes("used without definition"))).toBe(
+      true,
+    );
   });
 });
 
 // ── Common words NOT flagged ─────────────────────────────────────────────
-const commonWords = ["The", "And", "For", "But", "Not", "Are", "Has", "Was", "Can", "May"];
+const commonWords = [
+  "The",
+  "And",
+  "For",
+  "But",
+  "Not",
+  "Are",
+  "Has",
+  "Was",
+  "Can",
+  "May",
+];
 describe("Common words not flagged — parameterized", () => {
   it.each(commonWords)("does not flag '%s'", (word) => {
     const doc = makeDoc(`The ${word} is a common word that should not be flagged.`);
     const result = runAcronymChecks(doc, full);
-    expect(result.filter((d) => d.message.includes("used without definition"))).toHaveLength(0);
+    expect(
+      result.filter((d) => d.message.includes("used without definition")),
+    ).toHaveLength(0);
   });
 });
 
@@ -55,7 +76,10 @@ const definitionPatterns = [
   { text: "Long Short-Term Memory (LSTM) ... The LSTM.", ac: "LSTM" },
   { text: "Generative Adversarial Network (GAN) ... The GAN.", ac: "GAN" },
   { text: "Variational Autoencoder (VAE) ... The VAE.", ac: "VAE" },
-  { text: "Bidirectional Encoder Representations from Transformers (BERT) ... The BERT.", ac: "BERT" },
+  {
+    text: "Bidirectional Encoder Representations from Transformers (BERT) ... The BERT.",
+    ac: "BERT",
+  },
   { text: "Generative Pre-trained Transformer (GPT) ... The GPT.", ac: "GPT" },
   { text: "Rectified Linear Unit (ReLU) ... The ReLU.", ac: "ReLU" },
   { text: "Graphics Processing Unit (GPU) ... The GPU.", ac: "GPU" },
@@ -66,7 +90,9 @@ const definitionPatterns = [
 describe("Acronym definition patterns — parameterized", () => {
   it.each(definitionPatterns)("defines '$ac' then uses it", ({ text }) => {
     const result = runAcronymChecks(makeDoc(text), full);
-    expect(result.filter((d) => d.message.includes("used without definition"))).toHaveLength(0);
+    expect(
+      result.filter((d) => d.message.includes("used without definition")),
+    ).toHaveLength(0);
   });
 });
 
@@ -76,38 +102,73 @@ describe("Check toggling — parameterized", () => {
     const doc = makeDoc("CNN is used.");
     const enabled = runAcronymChecks(doc, { ...full, checkUndefinedAcronym: true });
     const disabled = runAcronymChecks(doc, { ...full, checkUndefinedAcronym: false });
-    expect(enabled.some((d) => d.message.toLowerCase().includes("used without definition"))).toBe(true);
-    expect(disabled.some((d) => d.message.toLowerCase().includes("used without definition"))).toBe(false);
+    expect(
+      enabled.some((d) => d.message.toLowerCase().includes("used without definition")),
+    ).toBe(true);
+    expect(
+      disabled.some((d) => d.message.toLowerCase().includes("used without definition")),
+    ).toBe(false);
   });
   it("disabling duplicate definition removes its diagnostics", () => {
-    const doc = makeDoc("Artificial Neural Network (ANN). Convolutional Neural Network (ANN).");
+    const doc = makeDoc(
+      "Artificial Neural Network (ANN). Convolutional Neural Network (ANN).",
+    );
     const enabled = runAcronymChecks(doc, { ...full, checkDuplicateDefinition: true });
-    const disabled = runAcronymChecks(doc, { ...full, checkDuplicateDefinition: false });
-    expect(enabled.some((d) => d.message.toLowerCase().includes("defined multiple times"))).toBe(true);
-    expect(disabled.some((d) => d.message.toLowerCase().includes("defined multiple times"))).toBe(false);
+    const disabled = runAcronymChecks(doc, {
+      ...full,
+      checkDuplicateDefinition: false,
+    });
+    expect(
+      enabled.some((d) => d.message.toLowerCase().includes("defined multiple times")),
+    ).toBe(true);
+    expect(
+      disabled.some((d) => d.message.toLowerCase().includes("defined multiple times")),
+    ).toBe(false);
   });
   it("disabling unused acronym removes its diagnostics", () => {
     const doc = makeDoc("Artificial Neural Network (ANN) and other content.");
     const enabled = runAcronymChecks(doc, { ...full, checkUnusedAcronym: true });
     const disabled = runAcronymChecks(doc, { ...full, checkUnusedAcronym: false });
-    expect(enabled.some((d) => d.message.toLowerCase().includes("never used again"))).toBe(true);
-    expect(disabled.some((d) => d.message.toLowerCase().includes("never used again"))).toBe(false);
+    expect(
+      enabled.some((d) => d.message.toLowerCase().includes("never used again")),
+    ).toBe(true);
+    expect(
+      disabled.some((d) => d.message.toLowerCase().includes("never used again")),
+    ).toBe(false);
   });
   it("disabling conflicting definitions removes its diagnostics", () => {
     const doc = makeDoc("Convolutional (CNN). Capsule (CNN).");
-    const enabled = runAcronymChecks(doc, { ...full, checkConflictingDefinitions: true });
-    const disabled = runAcronymChecks(doc, { ...full, checkConflictingDefinitions: false });
-    expect(enabled.some((d) => d.message.toLowerCase().includes("conflicting"))).toBe(true);
-    expect(disabled.some((d) => d.message.toLowerCase().includes("conflicting"))).toBe(false);
+    const enabled = runAcronymChecks(doc, {
+      ...full,
+      checkConflictingDefinitions: true,
+    });
+    const disabled = runAcronymChecks(doc, {
+      ...full,
+      checkConflictingDefinitions: false,
+    });
+    expect(enabled.some((d) => d.message.toLowerCase().includes("conflicting"))).toBe(
+      true,
+    );
+    expect(disabled.some((d) => d.message.toLowerCase().includes("conflicting"))).toBe(
+      false,
+    );
   });
 });
 
 // ── Edge cases ──────────────────────────────────────────────────────────
 const edgeCases = [
   { desc: "empty document", doc: makeDoc("") },
-  { desc: "no acronyms", doc: makeDoc("This paper presents a new method for solving problems in computer science.") },
+  {
+    desc: "no acronyms",
+    doc: makeDoc(
+      "This paper presents a new method for solving problems in computer science.",
+    ),
+  },
   { desc: "unicode text", doc: makeDoc("∀x ∃y: CNN model works") },
-  { desc: "very long document", doc: makeDoc(Array(5000).fill("word").join(" ") + " CNN ") },
+  {
+    desc: "very long document",
+    doc: makeDoc(Array(5000).fill("word").join(" ") + " CNN "),
+  },
   { desc: "acronyms in math mode", doc: makeDoc("The $CNN$ and $RNN$ are compared.") },
 ];
 describe("Edge cases — parameterized", () => {

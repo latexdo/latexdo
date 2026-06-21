@@ -11,7 +11,10 @@ const defaultSettings: ErrorDoctorSettings = {
 
 describe("analyzeCompileOutput", () => {
   it("returns empty when disabled", () => {
-    const result = analyzeCompileOutput("output", "content", { ...defaultSettings, enabled: false });
+    const result = analyzeCompileOutput("output", "content", {
+      ...defaultSettings,
+      enabled: false,
+    });
     expect(result.diagnostics).toHaveLength(0);
   });
 
@@ -23,7 +26,9 @@ describe("analyzeCompileOutput", () => {
   it("detects undefined control sequence", () => {
     const output = "! Undefined control sequence.\nl.10 \\unknowncmd\n?";
     const result = analyzeCompileOutput(output, "\\unknowncmd", defaultSettings);
-    expect(result.diagnostics.some((d) => d.message.includes("Undefined control sequence"))).toBe(true);
+    expect(
+      result.diagnostics.some((d) => d.message.includes("Undefined control sequence")),
+    ).toBe(true);
   });
 
   it("detects file not found error", () => {
@@ -39,7 +44,8 @@ describe("analyzeCompileOutput", () => {
   });
 
   it("detects runaway argument", () => {
-    const output = "Runaway argument?\n! Paragraph ended before \\section was complete.";
+    const output =
+      "Runaway argument?\n! Paragraph ended before \\section was complete.";
     const result = analyzeCompileOutput(output, "", defaultSettings);
     expect(result.diagnostics.some((d) => d.message.includes("Runaway"))).toBe(true);
   });
@@ -71,12 +77,18 @@ describe("analyzeCompileOutput", () => {
 
   it("returns empty diagnostics when explainErrors is disabled", () => {
     const output = "! Undefined control sequence.\nl.10 \\unknowncmd";
-    const result = analyzeCompileOutput(output, "\\unknowncmd", { ...defaultSettings, explainErrors: false });
+    const result = analyzeCompileOutput(output, "\\unknowncmd", {
+      ...defaultSettings,
+      explainErrors: false,
+    });
     expect(result.diagnostics.filter((d) => d.severity === "error")).toHaveLength(0);
   });
 
   it("handles multiple errors in output", () => {
-    const output = ["! Undefined control sequence.\nl.10 \\unknowncmd", "! LaTeX Error: File `x.sty' not found."].join("\n");
+    const output = [
+      "! Undefined control sequence.\nl.10 \\unknowncmd",
+      "! LaTeX Error: File `x.sty' not found.",
+    ].join("\n");
     const result = analyzeCompileOutput(output, "", defaultSettings);
     expect(result.diagnostics.length).toBeGreaterThan(0);
   });

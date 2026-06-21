@@ -182,10 +182,7 @@ const SYMBOL_PALETTE = [
   { latex: "\\circ", display: "∘" },
 ];
 
-export function NotationManager({
-  content,
-  onInsertCode,
-}: NotationManagerProps) {
+export function NotationManager({ content, onInsertCode }: NotationManagerProps) {
   const [customEntries, setCustomEntries] = useState<NotationEntry[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<NotationTab>("templates");
@@ -201,9 +198,7 @@ export function NotationManager({
     if (!searchQuery) return SYMBOL_PALETTE;
     const q = searchQuery.toLowerCase();
     return SYMBOL_PALETTE.filter(
-      (s) =>
-        s.latex.toLowerCase().includes(q) ||
-        s.display.toLowerCase().includes(q),
+      (s) => s.latex.toLowerCase().includes(q) || s.display.toLowerCase().includes(q),
     );
   }, [searchQuery]);
 
@@ -285,12 +280,8 @@ export function NotationManager({
                   onClick={() => handleInsertEquation(tpl.code)}
                   title={tpl.desc}
                 >
-                  <span className="notation-manager-template-label">
-                    {tpl.label}
-                  </span>
-                  <span className="notation-manager-template-desc">
-                    {tpl.desc}
-                  </span>
+                  <span className="notation-manager-template-label">{tpl.label}</span>
+                  <span className="notation-manager-template-desc">{tpl.desc}</span>
                 </button>
               ))}
             </div>
@@ -322,12 +313,8 @@ export function NotationManager({
                   onClick={() => handleCopy(sym.latex)}
                   title={`${sym.latex} — Click to copy`}
                 >
-                  <span className="notation-manager-symbol-display">
-                    {sym.display}
-                  </span>
-                  <span className="notation-manager-symbol-latex">
-                    {sym.latex}
-                  </span>
+                  <span className="notation-manager-symbol-display">{sym.display}</span>
+                  <span className="notation-manager-symbol-latex">{sym.latex}</span>
                 </button>
               ))}
             </div>
@@ -388,9 +375,7 @@ export function NotationManager({
                 ))}
               </div>
             ) : (
-              <div className="notation-manager-empty">
-                No custom notation yet.
-              </div>
+              <div className="notation-manager-empty">No custom notation yet.</div>
             )}
           </div>
         ) : null}

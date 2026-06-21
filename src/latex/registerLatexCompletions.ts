@@ -16,7 +16,7 @@ export function registerLatexCompletions(getIndex: () => LatexIndex) {
         position.lineNumber,
         context.rangeStartColumn,
         position.lineNumber,
-        context.rangeEndColumn
+        context.rangeEndColumn,
       );
       if (context.type === "citation") {
         return {

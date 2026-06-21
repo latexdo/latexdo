@@ -1,10 +1,7 @@
 import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 import path from "node:path";
-import type {
-  SyncTexPdfLocation,
-  SyncTexSourceLocation,
-} from "./types.js";
+import type { SyncTexPdfLocation, SyncTexSourceLocation } from "./types.js";
 
 const executableCandidates =
   process.platform === "darwin"
@@ -108,13 +105,7 @@ export async function forwardSyncTex(
   column: number,
 ): Promise<SyncTexPdfLocation | null> {
   const records = await runSynctex(
-    [
-      "view",
-      "-i",
-      `${line}:${column}:${inputPath}`,
-      "-o",
-      pdfPath,
-    ],
+    ["view", "-i", `${line}:${column}:${inputPath}`, "-o", pdfPath],
     projectPath,
   );
   const record = records[0];

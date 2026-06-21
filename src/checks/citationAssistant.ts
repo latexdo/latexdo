@@ -25,10 +25,12 @@ function makeDiagnostic(
 function detectMissingCitationsImpl(content: string): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
-  const sectionOrParaBreak = /\n\s*\n|\\section\b|\\subsection\b|\\subsubsection\b|\\paragraph\b/;
+  const sectionOrParaBreak =
+    /\n\s*\n|\\section\b|\\subsection\b|\\subsubsection\b|\\paragraph\b/;
   const paragraphs = content.split(sectionOrParaBreak);
 
-  const claimWords = /\b(proposed|method|approach|technique|achieves|outperforms|state.of.the.art|state-of-the-art|accuracy|experimental|results|demonstrate|introduce|novel|efficient|robust|improves|enhances|framework|algorithm|system|model)\b/i;
+  const claimWords =
+    /\b(proposed|method|approach|technique|achieves|outperforms|state.of.the.art|state-of-the-art|accuracy|experimental|results|demonstrate|introduce|novel|efficient|robust|improves|enhances|framework|algorithm|system|model)\b/i;
   const citeRegex = /\\cite(?:[tp]?\*?)?\{[^}]*\}/g;
 
   let cursor = 0;
@@ -94,7 +96,7 @@ function detectUnusedEntriesImpl(content: string): Diagnostic[] {
           1,
           "No bibliography found in document",
           "The document does not contain \\thebibliography, \\bibliography, or \\addbibresource",
-          'Add a bibliography using \\bibliography{refs} or \\begin{thebibliography}...\\end{thebibliography}',
+          "Add a bibliography using \\bibliography{refs} or \\begin{thebibliography}...\\end{thebibliography}",
         ),
       );
     }
@@ -133,7 +135,10 @@ function detectDuplicateReferencesImpl(content: string): Diagnostic[] {
   const allCitedKeys: string[] = [];
   let match: RegExpExecArray | null;
   while ((match = citeRegex.exec(content)) !== null) {
-    const keys = match[1].split(",").map((k) => k.trim()).filter(Boolean);
+    const keys = match[1]
+      .split(",")
+      .map((k) => k.trim())
+      .filter(Boolean);
     allCitedKeys.push(...keys);
   }
 
@@ -152,7 +157,10 @@ function detectDuplicateReferencesImpl(content: string): Diagnostic[] {
   for (let i = 0; i < bibitemKeys.length; i++) {
     const key = bibitemKeys[i];
     if (seenBibitem.has(key)) {
-      const line = findLine(content, content.indexOf(`\\bibitem` + (i > 0 ? `[${key}]` : `{${key}}`)));
+      const line = findLine(
+        content,
+        content.indexOf(`\\bibitem` + (i > 0 ? `[${key}]` : `{${key}}`)),
+      );
       diagnostics.push(
         makeDiagnostic(
           line,
@@ -204,9 +212,10 @@ function levenshteinDistance(a: string, b: string): number {
   for (let j = 0; j <= n; j++) dp[0][j] = j;
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
-      dp[i][j] = a[i - 1] === b[j - 1]
-        ? dp[i - 1][j - 1]
-        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      dp[i][j] =
+        a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
     }
   }
   return dp[m][n];
@@ -267,7 +276,11 @@ function detectBrokenLinksImpl(content: string): Diagnostic[] {
     const url = match[1].trim();
     const line = findLine(content, match.index);
 
-    if (!/^https?:\/\//.test(url) && !/^ftp:\/\//.test(url) && !url.startsWith("www.")) {
+    if (
+      !/^https?:\/\//.test(url) &&
+      !/^ftp:\/\//.test(url) &&
+      !url.startsWith("www.")
+    ) {
       diagnostics.push(
         makeDiagnostic(
           line,
@@ -401,12 +414,14 @@ function warnOldCitationsImpl(content: string): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
   const yearRegex = /\(?(19\d{2}|20\d{2})\)?/g;
-  const bibitemRegex = /\\bibitem\s*(?:\[[^\]]*\])?\s*\{[^}]+\}\s*([^]*?)(?=\\bibitem|\n\s*\\end\{thebibliography\}|$)/gi;
+  const bibitemRegex =
+    /\\bibitem\s*(?:\[[^\]]*\])?\s*\{[^}]+\}\s*([^]*?)(?=\\bibitem|\n\s*\\end\{thebibliography\}|$)/gi;
 
   const years: { year: number; line: number; key?: string }[] = [];
   let match: RegExpExecArray | null;
 
-  const inlineYearRegex = /\\bibitem\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}\s*([^]*?)(?=\\bibitem|\\end\{thebibliography\}|$)/g;
+  const inlineYearRegex =
+    /\\bibitem\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}\s*([^]*?)(?=\\bibitem|\\end\{thebibliography\}|$)/g;
   while ((match = inlineYearRegex.exec(content)) !== null) {
     const key = match[1].trim();
     const entryText = match[2];
@@ -442,7 +457,9 @@ function warnOldCitationsImpl(content: string): Diagnostic[] {
           1,
           `All citations are from ${lastYear} or earlier; consider checking for recent work`,
           "All bibliographic references are more than 5 years old, which may indicate the paper has not incorporated recent developments",
-          "Search for surveys or recent papers published after " + (lastYear + 1) + " to ensure the literature review is current",
+          "Search for surveys or recent papers published after " +
+            (lastYear + 1) +
+            " to ensure the literature review is current",
         ),
       );
     }

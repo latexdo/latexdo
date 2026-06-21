@@ -12,12 +12,7 @@ if (typeof HTMLCanvasElement !== "undefined") {
       fill: () => {},
       fillRect: () => {},
       fillText: () => {},
-      getImageData: (
-        _x: number,
-        _y: number,
-        width: number,
-        height: number,
-      ) => ({
+      getImageData: (_x: number, _y: number, width: number, height: number) => ({
         data: new Uint8ClampedArray(width * height * 4),
       }),
       lineTo: () => {},

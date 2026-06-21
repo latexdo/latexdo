@@ -18,10 +18,7 @@ interface FileTreeProps {
   onOpen: (entry: ProjectEntry) => void;
   onCompileFile?: (entry: ProjectEntry) => void;
   onSetRootFile?: (entry: ProjectEntry) => void;
-  onMoveEntry?: (
-    sourcePath: string,
-    destination: ProjectEntry | null,
-  ) => void;
+  onMoveEntry?: (sourcePath: string, destination: ProjectEntry | null) => void;
   onCreateFileInDirectory?: (entry: ProjectEntry) => void;
   onCreateFolderInDirectory?: (entry: ProjectEntry) => void;
   menuPath?: string | null;
@@ -30,8 +27,10 @@ interface FileTreeProps {
   onDragStartPath?: (path: string | null) => void;
 }
 
-interface TreeRowProps
-  extends Omit<FileTreeProps, "entries" | "menuPath" | "onToggleMenu" | "draggedPath" | "onDragStartPath"> {
+interface TreeRowProps extends Omit<
+  FileTreeProps,
+  "entries" | "menuPath" | "onToggleMenu" | "draggedPath" | "onDragStartPath"
+> {
   entry: ProjectEntry;
   menuPath: string | null;
   onToggleMenu: (path: string | null) => void;
@@ -91,9 +90,7 @@ function findEntryByPath(
     if (entry.path === targetPath) {
       return entry;
     }
-    const child = entry.children
-      ? findEntryByPath(entry.children, targetPath)
-      : null;
+    const child = entry.children ? findEntryByPath(entry.children, targetPath) : null;
     if (child) {
       return child;
     }
@@ -122,8 +119,7 @@ function TreeRow({
   const toggleMenu = onToggleMenu ?? (() => {});
   const menuOpen = menuPath === entry.path;
   const isDropTarget =
-    entry.type === "directory" &&
-    canDropIntoDirectory(draggedPath, entry.path);
+    entry.type === "directory" && canDropIntoDirectory(draggedPath, entry.path);
 
   const clearExpandTimer = () => {
     if (expandTimerRef.current !== null) {
@@ -192,11 +188,7 @@ function TreeRow({
             }
           }}
           onDragLeave={(event) => {
-            if (
-              event.currentTarget.contains(
-                event.relatedTarget as Node | null,
-              )
-            ) {
+            if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
               return;
             }
             clearExpandTimer();
@@ -383,9 +375,7 @@ export default function FileTree({
   const draggedPath = controlledDraggedPath ?? draggedPathState;
   const setDraggedPath = controlledSetDraggedPath ?? setDraggedPathState;
   const draggedEntry =
-    depth === 0 && draggedPath
-      ? findEntryByPath(entries, draggedPath)
-      : null;
+    depth === 0 && draggedPath ? findEntryByPath(entries, draggedPath) : null;
   const canDropAtRoot = Boolean(
     draggedEntry && normalizeTreePath(draggedEntry.relativePath).includes("/"),
   );

@@ -66,9 +66,7 @@ vi.mock("@xterm/addon-fit", () => ({
 }));
 
 describe("TerminalPanel", () => {
-  let terminalDataCallback:
-    | ((payload: { id: number; data: string }) => void)
-    | null;
+  let terminalDataCallback: ((payload: { id: number; data: string }) => void) | null;
   let terminalExitCallback:
     | ((payload: { id: number; exitCode: number }) => void)
     | null;
@@ -129,11 +127,7 @@ describe("TerminalPanel", () => {
 
   it("creates, writes to, copies from, and disposes the owned terminal session", async () => {
     const { unmount } = render(
-      <TerminalPanel
-        projectId="project-1"
-        workspacePath="/Users/omar/paper"
-        active
-      />,
+      <TerminalPanel projectId="project-1" workspacePath="/Users/omar/paper" active />,
     );
 
     await waitFor(() => {
@@ -159,9 +153,7 @@ describe("TerminalPanel", () => {
       terminal.emitSelection("selected output");
     });
     fireEvent.click(screen.getByRole("button", { name: /copy/i }));
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      "selected output",
-    );
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith("selected output");
 
     act(() => {
       terminalExitCallback?.({ id: 7, exitCode: 0 });

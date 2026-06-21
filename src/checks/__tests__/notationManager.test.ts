@@ -39,7 +39,8 @@ describe("analyzeNotation", () => {
   });
 
   it("reports first use line", () => {
-    const doc = "\\begin{document}\n\\section{Intro}\nThe term $\\lambda$ is used.\n\\end{document}";
+    const doc =
+      "\\begin{document}\n\\section{Intro}\nThe term $\\lambda$ is used.\n\\end{document}";
     const result = analyzeNotation(doc);
     const lambda = result.find((s) => s.symbol.includes("\\lambda"));
     expect(lambda).toBeDefined();
@@ -91,20 +92,25 @@ describe("runNotationChecks", () => {
   });
 
   it("handles equations and text mixed", () => {
-    const doc = makeDoc("The $\\alpha$ and $\\beta$ are hyperparameters. The loss $\\mathcal{L}$ is minimized.");
+    const doc = makeDoc(
+      "The $\\alpha$ and $\\beta$ are hyperparameters. The loss $\\mathcal{L}$ is minimized.",
+    );
     const result = runNotationChecks(doc, defaultSettings);
     expect(result.symbols.length).toBeGreaterThanOrEqual(3);
   });
 
   it("handles content with no math", () => {
-    const doc = makeDoc("This is a plain text paper without any math equations or symbols whatsoever.");
+    const doc = makeDoc(
+      "This is a plain text paper without any math equations or symbols whatsoever.",
+    );
     const result = runNotationChecks(doc, defaultSettings);
     expect(result.diagnostics.length).toBeGreaterThan(0);
     expect(result.symbols).toHaveLength(0);
   });
 
   it("tracks first-use section", () => {
-    const doc = "\\documentclass{article}\n\\begin{document}\n\\section{Method}\nWe use $\\phi$.\n\\section{Results}\nThe $\\phi$ is tuned.\n\\end{document}";
+    const doc =
+      "\\documentclass{article}\n\\begin{document}\n\\section{Method}\nWe use $\\phi$.\n\\section{Results}\nThe $\\phi$ is tuned.\n\\end{document}";
     const result = runNotationChecks(doc, defaultSettings);
     const phi = result.symbols.find((s) => s.symbol === "\\phi");
     expect(phi?.firstUseSection).toContain("Method");
@@ -113,19 +119,31 @@ describe("runNotationChecks", () => {
   it("skips symbol check when detectSymbols is disabled", () => {
     const doc = makeDoc("$\\theta$ appears.");
     const result = runNotationChecks(doc, { ...defaultSettings, detectSymbols: false });
-    const noMathDiags = result.diagnostics.filter((d) => d.message.includes("No mathematical notation"));
+    const noMathDiags = result.diagnostics.filter((d) =>
+      d.message.includes("No mathematical notation"),
+    );
     expect(noMathDiags).toHaveLength(0);
   });
 
   it("skips conflict detection when detectConflicts is disabled", () => {
-    const result = runNotationChecks("$\\theta$ and $\\vartheta$ and $x$", { ...defaultSettings, detectConflicts: false });
-    const conflictDiags = result.diagnostics.filter((d) => d.message.includes("conflict"));
+    const result = runNotationChecks("$\\theta$ and $\\vartheta$ and $x$", {
+      ...defaultSettings,
+      detectConflicts: false,
+    });
+    const conflictDiags = result.diagnostics.filter((d) =>
+      d.message.includes("conflict"),
+    );
     expect(conflictDiags).toHaveLength(0);
   });
 
   it("skips undefined detection when detectUndefinedNotation is disabled", () => {
-    const result = runNotationChecks("$\\theta$", { ...defaultSettings, detectUndefinedNotation: false });
-    const undefinedDiags = result.diagnostics.filter((d) => d.message.includes("without explicit definition"));
+    const result = runNotationChecks("$\\theta$", {
+      ...defaultSettings,
+      detectUndefinedNotation: false,
+    });
+    const undefinedDiags = result.diagnostics.filter((d) =>
+      d.message.includes("without explicit definition"),
+    );
     expect(undefinedDiags).toHaveLength(0);
   });
 });

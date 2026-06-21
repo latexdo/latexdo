@@ -63,10 +63,7 @@ describe("ReviewSidebar", () => {
     fireEvent.change(textarea, { target: { value: "Add a citation here." } });
     fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
 
-    expect(onAddComment).toHaveBeenCalledWith(
-      "chat-1",
-      "Add a citation here.",
-    );
+    expect(onAddComment).toHaveBeenCalledWith("chat-1", "Add a citation here.");
     expect(textarea).toHaveValue("");
 
     fireEvent.click(screen.getByTitle("Delete review chat"));

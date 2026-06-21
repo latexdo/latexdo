@@ -3,10 +3,7 @@ import type { CitationEntry } from "./latexIndex";
 
 function cleanBibValue(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
-  return value
-    .replace(/[{}]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return value.replace(/[{}]/g, "").replace(/\s+/g, " ").trim();
 }
 
 export function parseBibFile(content: string, sourceFile: string): CitationEntry[] {

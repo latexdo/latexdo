@@ -148,7 +148,8 @@ function checkUncitedCitations(content: string): Diagnostic[] {
 function checkSectionsWithNoCitations(content: string): Diagnostic[] {
   const diag: Diagnostic[] = [];
 
-  const sectionRegex = /\\section\s*\{([^}]+)\}\s*([\s\S]*?)(?=\\section\s*\{|\\bibliography|\\end\s*\{document\}|\\appendix)/g;
+  const sectionRegex =
+    /\\section\s*\{([^}]+)\}\s*([\s\S]*?)(?=\\section\s*\{|\\bibliography|\\end\s*\{document\}|\\appendix)/g;
   let match: RegExpExecArray | null;
   while ((match = sectionRegex.exec(content)) !== null) {
     const sectionName = match[1];
@@ -183,7 +184,9 @@ function checkAbstractWordCount(content: string, maxWords: number): Diagnostic[]
   let abstractText = "";
   let abstractLine = 1;
 
-  const envMatch = content.match(/\\begin\s*\{abstract\}\s*([\s\S]*?)\\end\s*\{abstract\}/);
+  const envMatch = content.match(
+    /\\begin\s*\{abstract\}\s*([\s\S]*?)\\end\s*\{abstract\}/,
+  );
   const cmdMatch = content.match(/\\abstract\s*\{([^}]+)\}/);
 
   if (envMatch) {
@@ -196,7 +199,9 @@ function checkAbstractWordCount(content: string, maxWords: number): Diagnostic[]
 
   if (!abstractText) return diag;
 
-  const cleaned = abstractText.replace(/\\[a-zA-Z]+(?:\[[^\]]*\])?\{[^}]*\}/g, "").replace(/[{}]/g, "");
+  const cleaned = abstractText
+    .replace(/\\[a-zA-Z]+(?:\[[^\]]*\])?\{[^}]*\}/g, "")
+    .replace(/[{}]/g, "");
   const wordCount = countWords(cleaned);
 
   if (wordCount > maxWords) {

@@ -50,7 +50,12 @@ export interface Diagnostic {
   detail?: string;
   suggestion?: string;
   sourceLine?: string;
-  source?: "latex" | "proofread" | "structure-assistant" | "citation-assistant" | "pdf-compliance";
+  source?:
+    | "latex"
+    | "proofread"
+    | "structure-assistant"
+    | "citation-assistant"
+    | "pdf-compliance";
   code?: string;
   replacements?: string[];
   title?: string;
@@ -219,7 +224,14 @@ export interface RebuttalItem {
   modificationMade: string;
 }
 
-export type ConferenceTemplate = "ieee" | "acm" | "springer" | "elsevier" | "neurips" | "cvpr" | "custom";
+export type ConferenceTemplate =
+  | "ieee"
+  | "acm"
+  | "springer"
+  | "elsevier"
+  | "neurips"
+  | "cvpr"
+  | "custom";
 
 export interface ConferenceCheckerSettings {
   enabled: boolean;
@@ -296,7 +308,10 @@ export interface ErrorFix {
   errorRegex: RegExp;
   title: string;
   explanation: string;
-  getFixes: (match: RegExpExecArray, lines: string[]) => { find: string; replace: string; line: number }[];
+  getFixes: (
+    match: RegExpExecArray,
+    lines: string[],
+  ) => { find: string; replace: string; line: number }[];
 }
 
 export interface NotationManagerSettings {

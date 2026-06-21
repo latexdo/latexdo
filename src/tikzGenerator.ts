@@ -131,7 +131,7 @@ function genCircle(s: DrawShape, ch: number): string {
   const opts = drawOptions(s);
   const cx = s.x + s.w / 2;
   const cy = s.y + s.h / 2;
-  const r = round(Math.min(s.w, s.h) / 2 * SCALE);
+  const r = round((Math.min(s.w, s.h) / 2) * SCALE);
   let code = `  \\draw${opts} ${tikzPt(cx, cy, ch)} circle (${r});`;
   if (s.label) {
     code += `\n  \\node at ${tikzPt(cx, cy, ch)} {${s.label}};`;
@@ -143,8 +143,8 @@ function genEllipse(s: DrawShape, ch: number): string {
   const opts = drawOptions(s);
   const cx = s.x + s.w / 2;
   const cy = s.y + s.h / 2;
-  const rx = round(s.w / 2 * SCALE);
-  const ry = round(s.h / 2 * SCALE);
+  const rx = round((s.w / 2) * SCALE);
+  const ry = round((s.h / 2) * SCALE);
   let code = `  \\draw${opts} ${tikzPt(cx, cy, ch)} ellipse (${rx} and ${ry});`;
   if (s.label) {
     code += `\n  \\node at ${tikzPt(cx, cy, ch)} {${s.label}};`;
@@ -179,7 +179,9 @@ function genText(s: DrawShape, ch: number): string {
     opts.push(`text=${tikzColor(s.stroke)}`);
   }
   if (s.fontSize && s.fontSize !== 14) {
-    opts.push(`font=\\fontsize{${round(s.fontSize * 0.75)}}{${round(s.fontSize * 0.9)}}\\selectfont`);
+    opts.push(
+      `font=\\fontsize{${round(s.fontSize * 0.75)}}{${round(s.fontSize * 0.9)}}\\selectfont`,
+    );
   }
   if (s.rotation !== 0) {
     opts.push(`rotate=${round(s.rotation)}`);
@@ -240,9 +242,9 @@ function genParallelogram(s: DrawShape, ch: number): string {
 }
 
 function genCylinder(s: DrawShape, ch: number): string {
-  const rx = round(s.w / 2 * SCALE);
+  const rx = round((s.w / 2) * SCALE);
   const ry = round(Math.max(s.h * 0.15, 2) * SCALE);
-  
+
   const cx = s.x + s.w / 2;
   const topY = s.y + s.h * 0.15;
   const bottomY = s.y + s.h - s.h * 0.15;
@@ -258,10 +260,10 @@ function genCylinder(s: DrawShape, ch: number): string {
     code += `  \\fill[${tikzColor(s.fill)}] ${topLeft} -- ${bottomLeft} arc (180:360:${rx} and ${ry}) -- ${topRight} -- cycle;\n`;
     code += `  \\fill[${tikzColor(s.fill)}] ${topCenter} ellipse (${rx} and ${ry});\n`;
   }
-  
+
   let drawOpt = "draw";
   if (s.stroke && s.stroke !== "#000000") drawOpt += `=${tikzColor(s.stroke)}`;
-  
+
   code += `  \\draw[${drawOpt}] ${topCenter} ellipse (${rx} and ${ry});\n`;
   code += `  \\draw[${drawOpt}] ${topLeft} -- ${bottomLeft} arc (180:360:${rx} and ${ry}) -- ${topRight};`;
 
@@ -275,8 +277,8 @@ function genCylinder(s: DrawShape, ch: number): string {
 function genGrid(s: DrawShape, ch: number): string {
   let styleOpts = "step=0.5cm, gray, very thin";
   if (s.stroke && s.stroke !== "#000000") styleOpts += `, ${tikzColor(s.stroke)}`;
-  const p1 = tikzPt(s.x, s.y + s.h, ch); 
-  const p2 = tikzPt(s.x + s.w, s.y, ch); 
+  const p1 = tikzPt(s.x, s.y + s.h, ch);
+  const p2 = tikzPt(s.x + s.w, s.y, ch);
   return `  \\draw[${styleOpts}] ${p1} grid ${p2};`;
 }
 
@@ -327,11 +329,7 @@ export function generateTikzCode(
     })
     .filter(Boolean);
 
-  return (
-    "\\begin{tikzpicture}\n" +
-    lines.join("\n") +
-    "\n\\end{tikzpicture}"
-  );
+  return "\\begin{tikzpicture}\n" + lines.join("\n") + "\n\\end{tikzpicture}";
 }
 
 /** Full document wrapper that can be compiled standalone */

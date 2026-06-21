@@ -4,13 +4,37 @@ import type { LatexCompletionContext } from "../completionContext";
 
 // ── Citation command variants ────────────────────────────────────────────
 const citeCommands = [
-  "cite", "citep", "citet", "citealp",
-  "parencite", "textcite", "autocite", "footcite",
+  "cite",
+  "citep",
+  "citet",
+  "citealp",
+  "parencite",
+  "textcite",
+  "autocite",
+  "footcite",
 ];
 const citeTests = citeCommands.flatMap((cmd) => [
-  { desc: `\\${cmd}{} at end`, line: `\\${cmd}{}`, col: `\\${cmd}{`.length + 1, type: "citation" as const, text: "" },
-  { desc: `\\${cmd}{ref1}`, line: `\\${cmd}{ref1}`, col: `\\${cmd}{ref1`.length + 1, type: "citation" as const, text: "ref1" },
-  { desc: `\\${cmd}{key with spaces}`, line: `\\${cmd}{key with spaces}`, col: `\\${cmd}{key with spaces`.length + 1, type: "citation" as const, text: "key with spaces" },
+  {
+    desc: `\\${cmd}{} at end`,
+    line: `\\${cmd}{}`,
+    col: `\\${cmd}{`.length + 1,
+    type: "citation" as const,
+    text: "",
+  },
+  {
+    desc: `\\${cmd}{ref1}`,
+    line: `\\${cmd}{ref1}`,
+    col: `\\${cmd}{ref1`.length + 1,
+    type: "citation" as const,
+    text: "ref1",
+  },
+  {
+    desc: `\\${cmd}{key with spaces}`,
+    line: `\\${cmd}{key with spaces}`,
+    col: `\\${cmd}{key with spaces`.length + 1,
+    type: "citation" as const,
+    text: "key with spaces",
+  },
 ]);
 describe("Citation command context — parameterized", () => {
   it.each(citeTests)("$desc", ({ line, col, type, text }) => {
@@ -26,9 +50,27 @@ describe("Citation command context — parameterized", () => {
 // ── Reference command variants ───────────────────────────────────────────
 const refCommands = ["ref", "eqref", "autoref", "cref", "Cref", "pageref"];
 const refTests = refCommands.flatMap((cmd) => [
-  { desc: `\\${cmd}{} at end`, line: `\\${cmd}{}`, col: `\\${cmd}{`.length + 1, type: "reference" as const, text: "" },
-  { desc: `\\${cmd}{sec:intro}`, line: `\\${cmd}{sec:intro}`, col: `\\${cmd}{sec:intro`.length + 1, type: "reference" as const, text: "sec:intro" },
-  { desc: `\\${cmd}{fig:overview}`, line: `\\${cmd}{fig:overview}`, col: `\\${cmd}{fig:overview`.length + 1, type: "reference" as const, text: "fig:overview" },
+  {
+    desc: `\\${cmd}{} at end`,
+    line: `\\${cmd}{}`,
+    col: `\\${cmd}{`.length + 1,
+    type: "reference" as const,
+    text: "",
+  },
+  {
+    desc: `\\${cmd}{sec:intro}`,
+    line: `\\${cmd}{sec:intro}`,
+    col: `\\${cmd}{sec:intro`.length + 1,
+    type: "reference" as const,
+    text: "sec:intro",
+  },
+  {
+    desc: `\\${cmd}{fig:overview}`,
+    line: `\\${cmd}{fig:overview}`,
+    col: `\\${cmd}{fig:overview`.length + 1,
+    type: "reference" as const,
+    text: "fig:overview",
+  },
 ]);
 describe("Reference command context — parameterized", () => {
   it.each(refTests)("$desc", ({ line, col, type, text }) => {
@@ -51,8 +93,11 @@ const nullCases = [
   { desc: "brace but no command", line: "{arg}", col: 4 },
   { desc: "unknown command with brace", line: "\\foo{bar}", col: 7 },
   { desc: "cursor before brace", line: "\\cite{ref1}", col: 5 },
-  { desc: "nested braces", line: "\\cite[see][p.5]{ref1}", col: `\\cite[see][p.5]{re`.length + 1 },
-
+  {
+    desc: "nested braces",
+    line: "\\cite[see][p.5]{ref1}",
+    col: `\\cite[see][p.5]{re`.length + 1,
+  },
 ];
 describe("Null (no match) — parameterized", () => {
   it.each(nullCases)("returns null for $desc", ({ line, col }) => {
@@ -62,9 +107,27 @@ describe("Null (no match) — parameterized", () => {
 
 // ── Range calculation ────────────────────────────────────────────────────
 const rangeTests = [
-  { desc: "simple cite", cmd: "cite", arg: "ref1", line: "\\cite{ref1}", type: "citation" as const },
-  { desc: "simple ref", cmd: "eqref", arg: "eq:loss", line: "\\eqref{eq:loss}", type: "reference" as const },
-  { desc: "multi-char cmd", cmd: "textcite", arg: "author99", line: "\\textcite{author99}", type: "citation" as const },
+  {
+    desc: "simple cite",
+    cmd: "cite",
+    arg: "ref1",
+    line: "\\cite{ref1}",
+    type: "citation" as const,
+  },
+  {
+    desc: "simple ref",
+    cmd: "eqref",
+    arg: "eq:loss",
+    line: "\\eqref{eq:loss}",
+    type: "reference" as const,
+  },
+  {
+    desc: "multi-char cmd",
+    cmd: "textcite",
+    arg: "author99",
+    line: "\\textcite{author99}",
+    type: "citation" as const,
+  },
 ];
 describe("Range calculation — parameterized", () => {
   it.each(rangeTests)("$desc: $line", ({ line, arg, type, cmd }) => {
@@ -82,9 +145,27 @@ describe("Range calculation — parameterized", () => {
 
 // ── Partial typing ───────────────────────────────────────────────────────
 const partialTests = [
-  { desc: "single char typed", cmd: "cite", partial: "r", line: "\\cite{r", type: "citation" as const },
-  { desc: "mid-typing", cmd: "ref", partial: "fig:tes", line: "\\ref{fig:tes", type: "reference" as const },
-  { desc: "multi-char cmd partial", cmd: "autocite", partial: "keywor", line: "\\autocite{keywor", type: "citation" as const },
+  {
+    desc: "single char typed",
+    cmd: "cite",
+    partial: "r",
+    line: "\\cite{r",
+    type: "citation" as const,
+  },
+  {
+    desc: "mid-typing",
+    cmd: "ref",
+    partial: "fig:tes",
+    line: "\\ref{fig:tes",
+    type: "reference" as const,
+  },
+  {
+    desc: "multi-char cmd partial",
+    cmd: "autocite",
+    partial: "keywor",
+    line: "\\autocite{keywor",
+    type: "citation" as const,
+  },
 ];
 describe("Partial typing — parameterized", () => {
   it.each(partialTests)("$desc", ({ line, type, partial }) => {
@@ -104,14 +185,38 @@ const edgeCases = [
   { desc: "hyphen in key", line: "\\ref{sec-intro}", col: "\\ref{sec-intr".length + 1 },
   { desc: "underscore in key", line: "\\cite{my_ref}", col: "\\cite{my_re".length + 1 },
   { desc: "dot in key", line: "\\ref{fig.1}", col: "\\ref{fig.".length + 1 },
-  { desc: "colon in key", line: "\\cite{doi:10.1000/test}", col: "\\cite{doi:10.1000/tes".length + 1 },
+  {
+    desc: "colon in key",
+    line: "\\cite{doi:10.1000/test}",
+    col: "\\cite{doi:10.1000/tes".length + 1,
+  },
   { desc: "forward slash in key", line: "\\ref{sec/2}", col: "\\ref{sec/".length + 1 },
-  { desc: "very long key", line: "\\cite{" + "a".repeat(100) + "}", col: ("\\cite{" + "a".repeat(80) + "").length + 1 },
-  { desc: "empty cite with following text", line: "\\cite{} and then some", col: "\\cite{}".length },
+  {
+    desc: "very long key",
+    line: "\\cite{" + "a".repeat(100) + "}",
+    col: ("\\cite{" + "a".repeat(80) + "").length + 1,
+  },
+  {
+    desc: "empty cite with following text",
+    line: "\\cite{} and then some",
+    col: "\\cite{}".length,
+  },
   { desc: "command at line start", line: "\\cite{ref1}", col: "\\cite{ref".length + 1 },
-  { desc: "command at end of text", line: "text \\cite{ref1}", col: "text \\cite{ref1}".length + 1 },
-  { desc: "command with trailing space", line: "\\cite{ref1} ", col: "\\cite{ref1}".length + 1 },
-  { desc: "multiple braces after", line: "\\cite{ref1}}}}}", col: "\\cite{re".length + 1 },
+  {
+    desc: "command at end of text",
+    line: "text \\cite{ref1}",
+    col: "text \\cite{ref1}".length + 1,
+  },
+  {
+    desc: "command with trailing space",
+    line: "\\cite{ref1} ",
+    col: "\\cite{ref1}".length + 1,
+  },
+  {
+    desc: "multiple braces after",
+    line: "\\cite{ref1}}}}}",
+    col: "\\cite{re".length + 1,
+  },
 ];
 describe("Edge cases — parameterized", () => {
   it.each(edgeCases)("handles $desc", ({ line, col }) => {

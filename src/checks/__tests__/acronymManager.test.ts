@@ -32,7 +32,9 @@ describe("runAcronymChecks", () => {
     });
 
     it("passes when acronym is defined as FullForm (ACRONYM)", () => {
-      const doc = makeDoc("Convolutional Neural Network (CNN) ... The CNN model achieved good results.");
+      const doc = makeDoc(
+        "Convolutional Neural Network (CNN) ... The CNN model achieved good results.",
+      );
       const result = runAcronymChecks(doc, defaultSettings);
       expect(result.some((d) => d.message.includes("CNN"))).toBe(false);
     });
@@ -40,34 +42,48 @@ describe("runAcronymChecks", () => {
     it("handles multiple undefined acronyms", () => {
       const doc = makeDoc("The CNN and RNN models were compared.");
       const result = runAcronymChecks(doc, defaultSettings);
-      const undefinedOnes = result.filter((d) => d.message.includes("used without definition"));
+      const undefinedOnes = result.filter((d) =>
+        d.message.includes("used without definition"),
+      );
       expect(undefinedOnes.length).toBeGreaterThanOrEqual(2);
     });
 
     it("does not flag common short words as acronyms", () => {
       const doc = makeDoc("The and for are not acronyms. A and I are too short.");
       const result = runAcronymChecks(doc, defaultSettings);
-      const undefinedAll = result.filter((d) => d.message.includes("undefined acronym"));
+      const undefinedAll = result.filter((d) =>
+        d.message.includes("undefined acronym"),
+      );
       expect(undefinedAll.length).toBe(0);
     });
 
     it("skips when disabled", () => {
       const doc = makeDoc("The CNN model.");
-      const result = runAcronymChecks(doc, { ...defaultSettings, checkUndefinedAcronym: false });
+      const result = runAcronymChecks(doc, {
+        ...defaultSettings,
+        checkUndefinedAcronym: false,
+      });
       expect(result.some((d) => d.message.includes("undefined acronym"))).toBe(false);
     });
   });
 
   describe("Duplicate definitions", () => {
     it("detects duplicate acronym definition (same ACRONYM in two places)", () => {
-      const doc = makeDoc("Convolutional Neural Network (CNN) ... Cascade Neural Network (CNN)");
+      const doc = makeDoc(
+        "Convolutional Neural Network (CNN) ... Cascade Neural Network (CNN)",
+      );
       const result = runAcronymChecks(doc, defaultSettings);
-      expect(result.some((d) => d.message.includes("defined multiple times"))).toBe(true);
+      expect(result.some((d) => d.message.includes("defined multiple times"))).toBe(
+        true,
+      );
     });
 
     it("skips when disabled", () => {
       const doc = makeDoc("A (CNN) ... B (CNN)");
-      const result = runAcronymChecks(doc, { ...defaultSettings, checkDuplicateDefinition: false });
+      const result = runAcronymChecks(doc, {
+        ...defaultSettings,
+        checkDuplicateDefinition: false,
+      });
       expect(result.some((d) => d.message.includes("duplicate"))).toBe(false);
     });
   });
@@ -80,14 +96,19 @@ describe("runAcronymChecks", () => {
     });
 
     it("passes when defined acronym is later used", () => {
-      const doc = makeDoc("Convolutional Neural Network (CNN) ... The CNN model works well.");
+      const doc = makeDoc(
+        "Convolutional Neural Network (CNN) ... The CNN model works well.",
+      );
       const result = runAcronymChecks(doc, defaultSettings);
       expect(result.some((d) => d.message.includes("unused"))).toBe(false);
     });
 
     it("skips when disabled", () => {
       const doc = makeDoc("Full Form (FF) is defined.");
-      const result = runAcronymChecks(doc, { ...defaultSettings, checkUnusedAcronym: false });
+      const result = runAcronymChecks(doc, {
+        ...defaultSettings,
+        checkUnusedAcronym: false,
+      });
       expect(result.some((d) => d.message.includes("unused"))).toBe(false);
     });
   });
@@ -96,12 +117,19 @@ describe("runAcronymChecks", () => {
     it("detects conflicting definitions for same acronym", () => {
       const doc = makeDoc("Convolutional (CNN) and Cascade (CNN)");
       const result = runAcronymChecks(doc, defaultSettings);
-      expect(result.some((d) => d.message.includes("conflicting") || d.message.includes("Conflicting"))).toBe(true);
+      expect(
+        result.some(
+          (d) => d.message.includes("conflicting") || d.message.includes("Conflicting"),
+        ),
+      ).toBe(true);
     });
 
     it("skips when disabled", () => {
       const doc = makeDoc("A (CNN) ... B (CNN)");
-      const result = runAcronymChecks(doc, { ...defaultSettings, checkConflictingDefinitions: false });
+      const result = runAcronymChecks(doc, {
+        ...defaultSettings,
+        checkConflictingDefinitions: false,
+      });
       expect(result.some((d) => d.message.includes("conflicting"))).toBe(false);
     });
   });
@@ -126,7 +154,9 @@ describe("runAcronymChecks", () => {
     });
 
     it("handles acronyms defined with parentheses after a long text", () => {
-      const doc = makeDoc("A very long description of something called Convolutional Neural Network (CNN) ... then CNN is used throughout.");
+      const doc = makeDoc(
+        "A very long description of something called Convolutional Neural Network (CNN) ... then CNN is used throughout.",
+      );
       const result = runAcronymChecks(doc, defaultSettings);
       expect(result.some((d) => d.message.includes("CNN"))).toBe(false);
     });

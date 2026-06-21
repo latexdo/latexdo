@@ -113,7 +113,11 @@ function installLatexDoMock(options?: {
     openProject: vi.fn().mockResolvedValue(project),
     createProject: vi.fn().mockResolvedValue(project),
     listProject: vi.fn().mockResolvedValue(entries),
-    readFile: vi.fn().mockResolvedValue("\\documentclass{article}\n\\begin{document}\nText\n\\end{document}\n"),
+    readFile: vi
+      .fn()
+      .mockResolvedValue(
+        "\\documentclass{article}\n\\begin{document}\nText\n\\end{document}\n",
+      ),
     writeFile: vi.fn().mockResolvedValue(undefined),
     fileExists: vi.fn().mockResolvedValue(false),
     createFile: vi.fn().mockResolvedValue("chapter.tex"),
@@ -157,11 +161,15 @@ function installLatexDoMock(options?: {
     checkForUpdates: vi.fn().mockResolvedValue(defaultUpdateResult),
     openReleasesPage: vi.fn().mockResolvedValue(undefined),
     getSpellCheckerSettings: vi.fn().mockResolvedValue(defaultSpellCheckerSettings),
-    updateSpellCheckerSettings: vi.fn(async (settings: SpellCheckerSettings) => settings),
-    getProofreadingSettings: vi.fn().mockResolvedValue(
-      options?.proofreadingSettings ?? defaultProofreadingSettings,
+    updateSpellCheckerSettings: vi.fn(
+      async (settings: SpellCheckerSettings) => settings,
     ),
-    updateProofreadingSettings: vi.fn(async (settings: ProofreadingSettings) => settings),
+    getProofreadingSettings: vi
+      .fn()
+      .mockResolvedValue(options?.proofreadingSettings ?? defaultProofreadingSettings),
+    updateProofreadingSettings: vi.fn(
+      async (settings: ProofreadingSettings) => settings,
+    ),
     proofreadDocument: vi.fn().mockResolvedValue({
       diagnostics: [],
       output: "No issues found.",
@@ -229,14 +237,10 @@ describe("App critical UI controls", () => {
     fireEvent.click(screen.getByLabelText(/open settings/i));
     fireEvent.click(screen.getByRole("button", { name: "Language" }));
 
-    expect(
-      await screen.findByText(/Proofreading is disabled/i),
-    ).toBeVisible();
+    expect(await screen.findByText(/Proofreading is disabled/i)).toBeVisible();
     expect(screen.getByRole("button", { name: /proofread now/i })).toBeDisabled();
 
-    const grammarToggle = screen.getByLabelText(
-      /Grammar and style checking/i,
-    );
+    const grammarToggle = screen.getByLabelText(/Grammar and style checking/i);
     expect(grammarToggle).not.toBeChecked();
 
     fireEvent.click(grammarToggle);
