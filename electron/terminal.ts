@@ -2,14 +2,22 @@ import { app, ipcMain } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { access, stat } from "node:fs/promises";
 import os from "node:os";
+import path from "node:path";
 import pty from "node-pty";
 
-type PtySession = {
+type TerminalSessionMetadata = {
+  id: number;
+  ownerWebContentsId: number;
+  projectId: string;
+  cwd: string;
+};
+
+type PtySession = TerminalSessionMetadata & {
   kind: "pty";
   process: pty.IPty;
 };
 
-type PipeSession = {
+type PipeSession = TerminalSessionMetadata & {
   kind: "pipe";
   process: ChildProcessWithoutNullStreams;
 };
@@ -22,34 +30,11 @@ type TerminalProjectRegistry = {
 
 const terminals = new Map<number, TerminalSession>();
 let nextTerminalId = 1;
-
-async function canUseDirectory(target: string | undefined): Promise<boolean> {
-  if (!target) return false;
-
-  try {
-    const details = await stat(target);
-    return details.isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-async function pickWorkingDirectory(preferred?: string): Promise<string> {
-  const candidates = [
-    preferred,
-    process.env.HOME,
-    app.getPath("home"),
-    process.cwd(),
-  ];
-
-  for (const candidate of candidates) {
-    if (await canUseDirectory(candidate)) {
-      return candidate!;
-    }
-  }
-
-  return os.homedir();
-}
+const minTerminalCols = 10;
+const maxTerminalCols = 300;
+const minTerminalRows = 5;
+const maxTerminalRows = 100;
+const maxTerminalWriteLength = 32 * 1024;
 
 async function canExecute(filePath: string | undefined): Promise<boolean> {
   if (!filePath) return false;
@@ -167,86 +152,220 @@ function sendTerminalExit(
   id: number,
   exitCode: number,
 ) {
-  sender.send("terminal:exit", { id, exitCode });
+  const session = terminals.get(id);
+  if (!session || session.ownerWebContentsId !== sender.id) return;
+
   terminals.delete(id);
+  if (!sender.isDestroyed()) {
+    sender.send("terminal:exit", { id, exitCode });
+  }
+}
+
+function sendTerminalData(
+  sender: Electron.WebContents,
+  id: number,
+  data: string,
+) {
+  const session = terminals.get(id);
+  if (!session || session.ownerWebContentsId !== sender.id) return;
+
+  if (!sender.isDestroyed()) {
+    sender.send("terminal:data", { id, data });
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isInside(parent: string, child: string): boolean {
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  return (
+    relative === "" ||
+    (!relative.startsWith("..") && !path.isAbsolute(relative))
+  );
+}
+
+function parseProjectId(options: unknown): string {
+  if (!isRecord(options) || typeof options.projectId !== "string") {
+    throw new Error("Open a project before starting a terminal.");
+  }
+
+  const projectId = options.projectId.trim();
+  if (!projectId) {
+    throw new Error("Open a project before starting a terminal.");
+  }
+
+  return projectId;
+}
+
+async function resolveTerminalCwd(
+  projects: TerminalProjectRegistry,
+  projectId: string,
+): Promise<string> {
+  const projectRoot = path.resolve(projects.getProjectRoot(projectId));
+  const details = await stat(projectRoot);
+  if (!details.isDirectory()) {
+    throw new Error("The selected project root is not a directory.");
+  }
+
+  const cwd = projectRoot;
+  if (!isInside(projectRoot, cwd)) {
+    throw new Error("Terminal working directory must be inside the project.");
+  }
+
+  return cwd;
+}
+
+function isValidTerminalId(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function parseTerminalSize(
+  cols: unknown,
+  rows: unknown,
+): { cols: number; rows: number } | null {
+  if (
+    typeof cols !== "number" ||
+    typeof rows !== "number" ||
+    !Number.isInteger(cols) ||
+    !Number.isInteger(rows) ||
+    cols < minTerminalCols ||
+    cols > maxTerminalCols ||
+    rows < minTerminalRows ||
+    rows > maxTerminalRows
+  ) {
+    return null;
+  }
+
+  return { cols, rows };
+}
+
+function getOwnedTerminal(
+  event: Electron.IpcMainEvent,
+  payload: unknown,
+): TerminalSession | null {
+  if (!isRecord(payload) || !isValidTerminalId(payload.id)) {
+    return null;
+  }
+
+  const session = terminals.get(payload.id);
+  if (!session || session.ownerWebContentsId !== event.sender.id) {
+    return null;
+  }
+
+  return session;
+}
+
+function registerTerminalSession(
+  sender: Electron.WebContents,
+  session: TerminalSession,
+) {
+  terminals.set(session.id, session);
+  sender.once("destroyed", () => {
+    const activeSession = terminals.get(session.id);
+    if (activeSession && activeSession.ownerWebContentsId === sender.id) {
+      disposeTerminalSession(activeSession);
+    }
+  });
+}
+
+function disposeTerminalSession(session: TerminalSession) {
+  terminals.delete(session.id);
+  try {
+    session.process.kill();
+  } catch {
+    // The process may already be gone.
+  }
 }
 
 export function registerTerminalIpc(projects: TerminalProjectRegistry) {
-  ipcMain.handle(
-    "terminal:create",
-    async (event, options?: { projectId?: string }) => {
-      const id = nextTerminalId++;
-      const shell = await pickShell();
-      const projectRoot = options?.projectId
-        ? projects.getProjectRoot(options.projectId)
-        : undefined;
-      const cwd = await pickWorkingDirectory(projectRoot);
-      const env = buildTerminalEnv(shell, cwd);
+  ipcMain.handle("terminal:create", async (event, options?: unknown) => {
+    const projectId = parseProjectId(options);
+    const cwd = await resolveTerminalCwd(projects, projectId);
+    const id = nextTerminalId++;
+    const ownerWebContentsId = event.sender.id;
+    const shell = await pickShell();
+    const env = buildTerminalEnv(shell, cwd);
+    const sessionMetadata = {
+      id,
+      ownerWebContentsId,
+      projectId,
+      cwd,
+    };
+    let mode: "pty" | "pipe";
 
-      try {
-        const terminalProcess = pty.spawn(shell, shellArgs(shell, "pty"), {
-          name: "xterm-256color",
-          cols: 80,
-          rows: 24,
-          cwd,
-          env,
+    try {
+      const terminalProcess = pty.spawn(shell, shellArgs(shell, "pty"), {
+        name: "xterm-256color",
+        cols: 80,
+        rows: 24,
+        cwd,
+        env,
+      });
+
+      registerTerminalSession(event.sender, {
+        ...sessionMetadata,
+        kind: "pty",
+          process: terminalProcess,
         });
+      mode = "pty";
 
-        terminals.set(id, { kind: "pty", process: terminalProcess });
+      terminalProcess.onData((data) => {
+        sendTerminalData(event.sender, id, data);
+      });
 
-        terminalProcess.onData((data) => {
-          event.sender.send("terminal:data", { id, data });
+      terminalProcess.onExit((res) => {
+        const exitCode = (res && (res as any).exitCode) ?? 0;
+        sendTerminalExit(event.sender, id, exitCode);
+      });
+    } catch (error) {
+      const fallbackShell = await pickFallbackShell();
+      const fallbackEnv = buildTerminalEnv(fallbackShell, cwd);
+      const child = spawn(fallbackShell, shellArgs(fallbackShell, "pipe"), {
+        cwd,
+        env: fallbackEnv,
+        stdio: "pipe",
+      });
+
+      registerTerminalSession(event.sender, {
+        ...sessionMetadata,
+          kind: "pipe",
+          process: child,
         });
+      mode = "pipe";
 
-        terminalProcess.onExit((res) => {
-          const exitCode = (res && (res as any).exitCode) ?? 0;
-          sendTerminalExit(event.sender, id, exitCode);
-        });
-      } catch (error) {
-        const fallbackShell = await pickFallbackShell();
-        const fallbackEnv = buildTerminalEnv(fallbackShell, cwd);
-        const child = spawn(fallbackShell, shellArgs(fallbackShell, "pipe"), {
-          cwd,
-          env: fallbackEnv,
-          stdio: "pipe",
-        });
+      child.stdout.on("data", (data: Buffer) => {
+        sendTerminalData(event.sender, id, data.toString("utf8"));
+      });
 
-        terminals.set(id, { kind: "pipe", process: child });
+      child.stderr.on("data", (data: Buffer) => {
+        sendTerminalData(event.sender, id, data.toString("utf8"));
+      });
 
-        child.stdout.on("data", (data: Buffer) => {
-          event.sender.send("terminal:data", {
-            id,
-            data: data.toString("utf8"),
-          });
-        });
+      child.on("exit", (exitCode) => {
+        sendTerminalExit(event.sender, id, exitCode ?? 0);
+      });
 
-        child.stderr.on("data", (data: Buffer) => {
-          event.sender.send("terminal:data", {
-            id,
-            data: data.toString("utf8"),
-          });
-        });
+      child.on("error", (childError) => {
+        sendTerminalData(
+          event.sender,
+          id,
+          `[terminal failed to start] ${childError.message}\r\n`,
+        );
+        sendTerminalExit(event.sender, id, 1);
+      });
+    }
 
-        child.on("exit", (exitCode) => {
-          sendTerminalExit(event.sender, id, exitCode ?? 0);
-        });
+    return { id, mode };
+  });
 
-        child.on("error", (childError) => {
-          event.sender.send("terminal:data", {
-            id,
-            data: `[terminal failed to start] ${childError.message}\r\n`,
-          });
-          sendTerminalExit(event.sender, id, 1);
-        });
-      }
-
-      return { id, mode: terminals.get(id)?.kind === "pty" ? "pty" : "pipe" };
-    },
-  );
-
-  ipcMain.on("terminal:write", (_event, payload: { id: number; data: string }) => {
-    const session = terminals.get(payload.id);
+  ipcMain.on("terminal:write", (event, payload: unknown) => {
+    const session = getOwnedTerminal(event, payload);
     if (!session) return;
+    if (!isRecord(payload) || typeof payload.data !== "string") return;
+    if (payload.data.length > maxTerminalWriteLength) return;
+    if (!payload.data) return;
 
     if (session.kind === "pty") {
       session.process.write(payload.data);
@@ -256,25 +375,20 @@ export function registerTerminalIpc(projects: TerminalProjectRegistry) {
     session.process.stdin.write(payload.data);
   });
 
-  ipcMain.on(
-    "terminal:resize",
-    (_event, payload: { id: number; cols: number; rows: number }) => {
-      const session = terminals.get(payload.id);
-      if (!session || session.kind !== "pty") return;
+  ipcMain.on("terminal:resize", (event, payload: unknown) => {
+    const session = getOwnedTerminal(event, payload);
+    if (!session || session.kind !== "pty") return;
+    if (!isRecord(payload)) return;
+    const size = parseTerminalSize(payload.cols, payload.rows);
+    if (!size) return;
 
-      session.process.resize(payload.cols, payload.rows);
-    },
-  );
+    session.process.resize(size.cols, size.rows);
+  });
 
-  ipcMain.on("terminal:dispose", (_event, payload: { id: number }) => {
-    const session = terminals.get(payload.id);
+  ipcMain.on("terminal:dispose", (event, payload: unknown) => {
+    const session = getOwnedTerminal(event, payload);
     if (!session) return;
 
-    if (session.kind === "pty") {
-      session.process.kill();
-    } else {
-      session.process.kill();
-    }
-    terminals.delete(payload.id);
+    disposeTerminalSession(session);
   });
 }

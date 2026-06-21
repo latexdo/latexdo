@@ -244,44 +244,57 @@ export function TerminalPanel({
       return true;
     });
 
-    window.terminalApi.create(projectId ? { projectId } : undefined).then(({ id, mode }) => {
-      if (disposed) {
-        window.terminalApi.dispose(id);
-        return;
-      }
-
-      terminalIdRef.current = id;
-      sessionModeRef.current = mode;
-      setSessionMode(mode);
-      setSessionState("ready");
-      setSessionStatus(mode === "pty" ? "PTY shell ready" : "Fallback shell ready");
-
-      removeDataListener = window.terminalApi.onData((payload) => {
-        if (payload.id === id) {
-          terminal.write(payload.data);
-        }
-      });
-
-      removeExitListener = window.terminalApi.onExit((payload) => {
-        if (payload.id === id) {
-          inputBufferRef.current = "";
-          setSessionState("exited");
-          setSessionStatus(`Exited with code ${payload.exitCode}`);
-          terminal.writeln("");
-          terminal.writeln(`[process exited with code ${payload.exitCode}]`);
-        }
-      });
-
-      fitAndResize();
-    }).catch((err) => {
-      if (disposed) return;
+    if (!projectId) {
       setSessionState("error");
-      setSessionStatus("Failed to start");
-      terminal.writeln("");
-      terminal.writeln("[failed to start terminal session]");
-      terminal.writeln(err instanceof Error ? err.message : String(err));
-      console.error("Failed to create terminal:", err);
-    });
+      setSessionStatus("Open a project first");
+      terminal.writeln("[open a project to start a terminal]");
+    } else {
+      window.terminalApi
+        .create({ projectId })
+        .then(({ id, mode }) => {
+          if (disposed) {
+            window.terminalApi.dispose(id);
+            return;
+          }
+
+          terminalIdRef.current = id;
+          sessionModeRef.current = mode;
+          setSessionMode(mode);
+          setSessionState("ready");
+          setSessionStatus(
+            mode === "pty" ? "PTY shell ready" : "Fallback shell ready",
+          );
+
+          removeDataListener = window.terminalApi.onData((payload) => {
+            if (payload.id === id) {
+              terminal.write(payload.data);
+            }
+          });
+
+          removeExitListener = window.terminalApi.onExit((payload) => {
+            if (payload.id === id) {
+              inputBufferRef.current = "";
+              setSessionState("exited");
+              setSessionStatus(`Exited with code ${payload.exitCode}`);
+              terminal.writeln("");
+              terminal.writeln(
+                `[process exited with code ${payload.exitCode}]`,
+              );
+            }
+          });
+
+          fitAndResize();
+        })
+        .catch((err) => {
+          if (disposed) return;
+          setSessionState("error");
+          setSessionStatus("Failed to start");
+          terminal.writeln("");
+          terminal.writeln("[failed to start terminal session]");
+          terminal.writeln(err instanceof Error ? err.message : String(err));
+          console.error("Failed to create terminal:", err);
+        });
+    }
 
     const resizeObserver = new ResizeObserver(() => {
       fitAndResize();
