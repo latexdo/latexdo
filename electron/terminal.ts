@@ -280,115 +280,134 @@ function disposeTerminalSession(session: TerminalSession) {
 }
 
 export function registerTerminalIpc(projects: TerminalProjectRegistry) {
-  ipcMain.handle("terminal:create", async (event, options?: unknown) => {
-    const projectId = parseProjectId(options);
-    const cwd = await resolveTerminalCwd(projects, projectId);
-    const id = nextTerminalId++;
-    const ownerWebContentsId = event.sender.id;
-    const shell = await pickShell();
-    const env = buildTerminalEnv(shell, cwd);
-    const sessionMetadata = {
-      id,
-      ownerWebContentsId,
-      projectId,
-      cwd,
-    };
-    let mode: "pty" | "pipe";
+  ipcMain.handle(
+    "terminal:create",
+    async (event, options?: unknown, ...extraArgs: unknown[]) => {
+      if (extraArgs.length) {
+        throw new Error("Invalid IPC input for terminal:create.");
+      }
 
-    try {
-      const terminalProcess = pty.spawn(shell, shellArgs(shell, "pty"), {
-        name: "xterm-256color",
-        cols: 80,
-        rows: 24,
+      const projectId = parseProjectId(options);
+      const cwd = await resolveTerminalCwd(projects, projectId);
+      const id = nextTerminalId++;
+      const ownerWebContentsId = event.sender.id;
+      const shell = await pickShell();
+      const env = buildTerminalEnv(shell, cwd);
+      const sessionMetadata = {
+        id,
+        ownerWebContentsId,
+        projectId,
         cwd,
-        env,
-      });
+      };
+      let mode: "pty" | "pipe";
 
-      registerTerminalSession(event.sender, {
-        ...sessionMetadata,
-        kind: "pty",
+      try {
+        const terminalProcess = pty.spawn(shell, shellArgs(shell, "pty"), {
+          name: "xterm-256color",
+          cols: 80,
+          rows: 24,
+          cwd,
+          env,
+        });
+
+        registerTerminalSession(event.sender, {
+          ...sessionMetadata,
+          kind: "pty",
           process: terminalProcess,
         });
-      mode = "pty";
+        mode = "pty";
 
-      terminalProcess.onData((data) => {
-        sendTerminalData(event.sender, id, data);
-      });
+        terminalProcess.onData((data) => {
+          sendTerminalData(event.sender, id, data);
+        });
 
-      terminalProcess.onExit((res) => {
-        const exitCode = (res && (res as any).exitCode) ?? 0;
-        sendTerminalExit(event.sender, id, exitCode);
-      });
-    } catch (error) {
-      const fallbackShell = await pickFallbackShell();
-      const fallbackEnv = buildTerminalEnv(fallbackShell, cwd);
-      const child = spawn(fallbackShell, shellArgs(fallbackShell, "pipe"), {
-        cwd,
-        env: fallbackEnv,
-        stdio: "pipe",
-      });
+        terminalProcess.onExit((res) => {
+          const exitCode = (res && (res as any).exitCode) ?? 0;
+          sendTerminalExit(event.sender, id, exitCode);
+        });
+      } catch (error) {
+        const fallbackShell = await pickFallbackShell();
+        const fallbackEnv = buildTerminalEnv(fallbackShell, cwd);
+        const child = spawn(fallbackShell, shellArgs(fallbackShell, "pipe"), {
+          cwd,
+          env: fallbackEnv,
+          stdio: "pipe",
+        });
 
-      registerTerminalSession(event.sender, {
-        ...sessionMetadata,
+        registerTerminalSession(event.sender, {
+          ...sessionMetadata,
           kind: "pipe",
           process: child,
         });
-      mode = "pipe";
+        mode = "pipe";
 
-      child.stdout.on("data", (data: Buffer) => {
-        sendTerminalData(event.sender, id, data.toString("utf8"));
-      });
+        child.stdout.on("data", (data: Buffer) => {
+          sendTerminalData(event.sender, id, data.toString("utf8"));
+        });
 
-      child.stderr.on("data", (data: Buffer) => {
-        sendTerminalData(event.sender, id, data.toString("utf8"));
-      });
+        child.stderr.on("data", (data: Buffer) => {
+          sendTerminalData(event.sender, id, data.toString("utf8"));
+        });
 
-      child.on("exit", (exitCode) => {
-        sendTerminalExit(event.sender, id, exitCode ?? 0);
-      });
+        child.on("exit", (exitCode) => {
+          sendTerminalExit(event.sender, id, exitCode ?? 0);
+        });
 
-      child.on("error", (childError) => {
-        sendTerminalData(
-          event.sender,
-          id,
-          `[terminal failed to start] ${childError.message}\r\n`,
-        );
-        sendTerminalExit(event.sender, id, 1);
-      });
-    }
+        child.on("error", (childError) => {
+          sendTerminalData(
+            event.sender,
+            id,
+            `[terminal failed to start] ${childError.message}\r\n`,
+          );
+          sendTerminalExit(event.sender, id, 1);
+        });
+      }
 
-    return { id, mode };
-  });
+      return { id, mode };
+    },
+  );
 
-  ipcMain.on("terminal:write", (event, payload: unknown) => {
-    const session = getOwnedTerminal(event, payload);
-    if (!session) return;
-    if (!isRecord(payload) || typeof payload.data !== "string") return;
-    if (payload.data.length > maxTerminalWriteLength) return;
-    if (!payload.data) return;
+  ipcMain.on(
+    "terminal:write",
+    (event, payload: unknown, ...extraArgs: unknown[]) => {
+      if (extraArgs.length) return;
+      const session = getOwnedTerminal(event, payload);
+      if (!session) return;
+      if (!isRecord(payload) || typeof payload.data !== "string") return;
+      if (payload.data.length > maxTerminalWriteLength) return;
+      if (!payload.data) return;
 
-    if (session.kind === "pty") {
-      session.process.write(payload.data);
-      return;
-    }
+      if (session.kind === "pty") {
+        session.process.write(payload.data);
+        return;
+      }
 
-    session.process.stdin.write(payload.data);
-  });
+      session.process.stdin.write(payload.data);
+    },
+  );
 
-  ipcMain.on("terminal:resize", (event, payload: unknown) => {
-    const session = getOwnedTerminal(event, payload);
-    if (!session || session.kind !== "pty") return;
-    if (!isRecord(payload)) return;
-    const size = parseTerminalSize(payload.cols, payload.rows);
-    if (!size) return;
+  ipcMain.on(
+    "terminal:resize",
+    (event, payload: unknown, ...extraArgs: unknown[]) => {
+      if (extraArgs.length) return;
+      const session = getOwnedTerminal(event, payload);
+      if (!session || session.kind !== "pty") return;
+      if (!isRecord(payload)) return;
+      const size = parseTerminalSize(payload.cols, payload.rows);
+      if (!size) return;
 
-    session.process.resize(size.cols, size.rows);
-  });
+      session.process.resize(size.cols, size.rows);
+    },
+  );
 
-  ipcMain.on("terminal:dispose", (event, payload: unknown) => {
-    const session = getOwnedTerminal(event, payload);
-    if (!session) return;
+  ipcMain.on(
+    "terminal:dispose",
+    (event, payload: unknown, ...extraArgs: unknown[]) => {
+      if (extraArgs.length) return;
+      const session = getOwnedTerminal(event, payload);
+      if (!session) return;
 
-    disposeTerminalSession(session);
-  });
+      disposeTerminalSession(session);
+    },
+  );
 }
