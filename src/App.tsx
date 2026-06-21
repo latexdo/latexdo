@@ -85,6 +85,7 @@ import type {
   EditorMode,
   Engine,
   GitCommitDetails,
+  GitDiscardResult,
   GitDiffEditorInput,
   GitDiffPreview,
   GitHistorySummary,
@@ -830,6 +831,18 @@ function uniqueWords(values: string[]): string[] {
 function supportsProofreading(name: string): boolean {
   const extension = name.split(".").pop()?.toLowerCase();
   return extension === "tex" || extension === "md" || extension === "txt";
+}
+
+function gitDiscardStatusMessage(
+  result: GitDiscardResult,
+  successMessage: string,
+): string {
+  if (!result.discarded) {
+    return "Discard canceled.";
+  }
+  return result.recoveryPatch
+    ? `${successMessage}. Recovery patch saved at ${result.recoveryPatch}`
+    : successMessage;
 }
 
 function wordColumn(
@@ -3544,7 +3557,14 @@ ${macroEnd}
 
       setGitActionBusy(`discard:${relativePath}`);
       try {
-        await window.latexdo.discardGitFile(currentProject, relativePath);
+        const result = await window.latexdo.discardGitFile(
+          currentProject,
+          relativePath,
+        );
+        if (!result.discarded) {
+          setStatusMessage("Discard canceled.");
+          return;
+        }
         if (activePathRef.current.endsWith(relativePath)) {
           await refreshProject(currentProject);
         }
@@ -3552,7 +3572,12 @@ ${macroEnd}
         if (gitDiffPreview?.path === relativePath) {
           setGitDiffPreview(null);
         }
-        setStatusMessage(`Discarded changes in ${relativePath}`);
+        setStatusMessage(
+          gitDiscardStatusMessage(
+            result,
+            `Discarded changes in ${relativePath}`,
+          ),
+        );
       } finally {
         setGitActionBusy(null);
       }
@@ -3594,10 +3619,16 @@ ${macroEnd}
 
     setGitActionBusy("discard-all");
     try {
-      await window.latexdo.discardAllGit(currentProject);
+      const result = await window.latexdo.discardAllGit(currentProject);
+      if (!result.discarded) {
+        setStatusMessage("Discard canceled.");
+        return;
+      }
       setGitDiffPreview(null);
       await refreshGitStatus();
-      setStatusMessage("Discarded all unstaged changes");
+      setStatusMessage(
+        gitDiscardStatusMessage(result, "Discarded all unstaged changes"),
+      );
     } finally {
       setGitActionBusy(null);
     }

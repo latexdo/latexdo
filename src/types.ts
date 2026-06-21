@@ -118,6 +118,11 @@ export interface GitDiffEditorInput {
   modified: string;
 }
 
+export interface GitDiscardResult {
+  discarded: boolean;
+  recoveryPatch?: string;
+}
+
 export interface GitCommitEntry {
   hash: string;
   shortHash: string;
