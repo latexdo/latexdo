@@ -132,7 +132,50 @@ function AppIcon({ className }: { className?: string }) {
   );
 }
 
+type ColorTheme = "graphite" | "midnight" | "forest" | "sepia";
+
+const colorThemeOptions: {
+  id: ColorTheme;
+  name: string;
+  description: string;
+  swatches: [string, string, string];
+}[] = [
+  {
+    id: "graphite",
+    name: "Graphite Pro",
+    description: "Neutral dark theme with crisp blue accents.",
+    swatches: ["#111318", "#729bf0", "#e0e4eb"],
+  },
+  {
+    id: "midnight",
+    name: "Midnight Blue",
+    description: "Deep navy workspace tuned for long writing sessions.",
+    swatches: ["#08111f", "#5fa8ff", "#dce8f8"],
+  },
+  {
+    id: "forest",
+    name: "Scholarly Forest",
+    description: "Calm green palette with strong text contrast.",
+    swatches: ["#0d1512", "#65c28f", "#e1ebe5"],
+  },
+  {
+    id: "sepia",
+    name: "Warm Sepia Dark",
+    description: "Warm low-glare theme for reading dense drafts.",
+    swatches: ["#17120d", "#d69a5b", "#eee4d4"],
+  },
+];
+
+function isColorTheme(value: unknown): value is ColorTheme {
+  return colorThemeOptions.some((theme) => theme.id === value);
+}
+
+function monacoThemeFor(theme: ColorTheme): string {
+  return `latexdo-${theme}`;
+}
+
 interface AppSettings {
+  colorTheme: ColorTheme;
   defaultEngine: Engine;
   editorFontSize: number;
   wordWrap: boolean;
@@ -238,6 +281,7 @@ interface AppSettings {
 
 const settingsStorageKey = "latexdo.settings";
 const defaultSettings: AppSettings = {
+  colorTheme: "graphite",
   defaultEngine: "pdflatex",
   editorFontSize: 13.5,
   wordWrap: true,
@@ -361,6 +405,9 @@ function loadSettings(): AppSettings {
         : "pdflatex";
 
     return {
+      colorTheme: isColorTheme(saved.colorTheme)
+        ? saved.colorTheme
+        : defaultSettings.colorTheme,
       defaultEngine,
       editorFontSize:
         typeof saved.editorFontSize === "number" &&
@@ -2871,30 +2918,110 @@ ${macroEnd}
         return { suggestions: [] };
       },
     });
-    instance.editor.defineTheme("latexdo-dark", {
-      base: "vs-dark",
-      inherit: true,
-      rules: [
-        { token: "comment", foreground: "6B7280", fontStyle: "italic" },
-        { token: "keyword", foreground: "7CA6FF" },
-        { token: "keyword.control", foreground: "C099FF" },
-        { token: "string", foreground: "8FCB9B" },
-        { token: "number", foreground: "E5A66E" },
-        { token: "delimiter", foreground: "D5DAE3" },
-      ],
-      colors: {
-        "editor.background": "#15181e",
-        "editor.foreground": "#d7dce5",
-        "editorLineNumber.foreground": "#4f5663",
-        "editorLineNumber.activeForeground": "#aeb5c1",
-        "editor.lineHighlightBackground": "#1b1f27",
-        "editorCursor.foreground": "#7ca6ff",
-        "editor.selectionBackground": "#31538c88",
-        "editor.inactiveSelectionBackground": "#283d5f88",
-        "editorIndentGuide.background1": "#252a34",
-        "editorIndentGuide.activeBackground1": "#3b4352",
+    const sharedRules = [
+      { token: "comment", foreground: "6B7280", fontStyle: "italic" },
+      { token: "keyword", foreground: "7CA6FF" },
+      { token: "keyword.control", foreground: "C099FF" },
+      { token: "string", foreground: "8FCB9B" },
+      { token: "number", foreground: "E5A66E" },
+      { token: "delimiter", foreground: "D5DAE3" },
+    ];
+    const themes = [
+      {
+        id: "latexdo-graphite",
+        rules: sharedRules,
+        colors: {
+          "editor.background": "#15181e",
+          "editor.foreground": "#d7dce5",
+          "editorLineNumber.foreground": "#4f5663",
+          "editorLineNumber.activeForeground": "#aeb5c1",
+          "editor.lineHighlightBackground": "#1b1f27",
+          "editorCursor.foreground": "#7ca6ff",
+          "editor.selectionBackground": "#31538c88",
+          "editor.inactiveSelectionBackground": "#283d5f88",
+          "editorIndentGuide.background1": "#252a34",
+          "editorIndentGuide.activeBackground1": "#3b4352",
+        },
       },
-    });
+      {
+        id: "latexdo-midnight",
+        rules: [
+          { token: "comment", foreground: "64748B", fontStyle: "italic" },
+          { token: "keyword", foreground: "74B8FF" },
+          { token: "keyword.control", foreground: "BFA7FF" },
+          { token: "string", foreground: "8DE0C0" },
+          { token: "number", foreground: "F3B77A" },
+          { token: "delimiter", foreground: "D8E4F4" },
+        ],
+        colors: {
+          "editor.background": "#0b1424",
+          "editor.foreground": "#dce8f8",
+          "editorLineNumber.foreground": "#536176",
+          "editorLineNumber.activeForeground": "#b4c6de",
+          "editor.lineHighlightBackground": "#101d31",
+          "editorCursor.foreground": "#5fa8ff",
+          "editor.selectionBackground": "#235a9288",
+          "editor.inactiveSelectionBackground": "#1c3c6388",
+          "editorIndentGuide.background1": "#1c2b40",
+          "editorIndentGuide.activeBackground1": "#36516f",
+        },
+      },
+      {
+        id: "latexdo-forest",
+        rules: [
+          { token: "comment", foreground: "6D7D73", fontStyle: "italic" },
+          { token: "keyword", foreground: "76D99B" },
+          { token: "keyword.control", foreground: "D1B3FF" },
+          { token: "string", foreground: "A9D992" },
+          { token: "number", foreground: "E7B978" },
+          { token: "delimiter", foreground: "DCE7DF" },
+        ],
+        colors: {
+          "editor.background": "#111a16",
+          "editor.foreground": "#e1ebe5",
+          "editorLineNumber.foreground": "#536159",
+          "editorLineNumber.activeForeground": "#b8c8bf",
+          "editor.lineHighlightBackground": "#17231d",
+          "editorCursor.foreground": "#65c28f",
+          "editor.selectionBackground": "#2f6f4c88",
+          "editor.inactiveSelectionBackground": "#24483688",
+          "editorIndentGuide.background1": "#213029",
+          "editorIndentGuide.activeBackground1": "#3a5848",
+        },
+      },
+      {
+        id: "latexdo-sepia",
+        rules: [
+          { token: "comment", foreground: "8D7C69", fontStyle: "italic" },
+          { token: "keyword", foreground: "E2A86D" },
+          { token: "keyword.control", foreground: "D9A6E8" },
+          { token: "string", foreground: "B7C982" },
+          { token: "number", foreground: "F0BD72" },
+          { token: "delimiter", foreground: "E8D9C4" },
+        ],
+        colors: {
+          "editor.background": "#1b1510",
+          "editor.foreground": "#eee4d4",
+          "editorLineNumber.foreground": "#6d5f50",
+          "editorLineNumber.activeForeground": "#cdbda8",
+          "editor.lineHighlightBackground": "#241b14",
+          "editorCursor.foreground": "#d69a5b",
+          "editor.selectionBackground": "#80542e88",
+          "editor.inactiveSelectionBackground": "#5d3e2688",
+          "editorIndentGuide.background1": "#31261d",
+          "editorIndentGuide.activeBackground1": "#5d4633",
+        },
+      },
+    ];
+
+    for (const theme of themes) {
+      instance.editor.defineTheme(theme.id, {
+        base: "vs-dark",
+        inherit: true,
+        rules: theme.rules,
+        colors: theme.colors,
+      });
+    }
   };
 
   const handleEditorMount: OnMount = (editor) => {
@@ -2910,6 +3037,8 @@ ${macroEnd}
     });
     editor.focus();
   };
+
+  const editorTheme = monacoThemeFor(settings.colorTheme);
 
   useEffect(
     () => () => {
@@ -4088,7 +4217,7 @@ ${macroEnd}
   };
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-theme={settings.colorTheme}>
       <header className="titlebar">
         <div className="titlebar-drag">
           <AppIcon className="app-mark" />
@@ -4819,7 +4948,7 @@ ${macroEnd}
                   path={activeDocument.path}
                   value={activeDocument.content}
                   language={languageFor(activeDocument.name)}
-                  theme="latexdo-dark"
+                  theme={editorTheme}
                   beforeMount={configureMonaco}
                   onMount={handleEditorMount}
                   onChange={(value) =>
@@ -4857,7 +4986,7 @@ ${macroEnd}
                   original={gitDiffSession.original}
                   modified={gitDiffSession.modified}
                   language={languageFor(gitDiffSession.path)}
-                  theme="latexdo-dark"
+                  theme={editorTheme}
                   beforeMount={configureMonaco}
                   options={{
                     readOnly: true,
@@ -5786,6 +5915,42 @@ ${macroEnd}
                   <div className="settings-section-heading">
                     <strong>Editor and compiler</strong>
                     <span>Configure how LaTeX source is edited and built.</span>
+                  </div>
+
+                  <div className="settings-row settings-row-stack">
+                    <span>
+                      <strong>Theme</strong>
+                      <small>Readable high-contrast palettes for the whole app and editor.</small>
+                    </span>
+                    <div className="theme-grid" role="radiogroup" aria-label="Application theme">
+                      {colorThemeOptions.map((theme) => (
+                        <button
+                          key={theme.id}
+                          type="button"
+                          className={`theme-choice ${settings.colorTheme === theme.id ? "active" : ""}`}
+                          onClick={() =>
+                            setSettings((current) => ({
+                              ...current,
+                              colorTheme: theme.id,
+                            }))
+                          }
+                          role="radio"
+                          aria-checked={settings.colorTheme === theme.id}
+                        >
+                          <span className="theme-choice-top">
+                            <span>
+                              <strong>{theme.name}</strong>
+                              <small>{theme.description}</small>
+                            </span>
+                            <span className="theme-swatches" aria-hidden="true">
+                              {theme.swatches.map((color) => (
+                                <span key={color} style={{ background: color }} />
+                              ))}
+                            </span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <label className="settings-row">
