@@ -9,6 +9,7 @@ import {
   type MenuItemConstructorOptions,
 } from "electron";
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   access,
   mkdir,
@@ -34,6 +35,7 @@ import type {
   GitHistorySummary,
   GitStatusEntry,
   GitStatusSummary,
+  OpenProject,
   ProofreadingResult,
   ProofreadingSettings,
   ProjectEntry,
@@ -78,6 +80,38 @@ Start writing here.
 \end{document}
 `;
 
+const openProjects = new Map<string, OpenProject>();
+
+function registerProject(rootPath: string): OpenProject {
+  const resolvedRoot = path.resolve(rootPath);
+  const existingProject = [...openProjects.values()].find(
+    (project) => project.rootPath === resolvedRoot,
+  );
+  if (existingProject) {
+    return existingProject;
+  }
+
+  const project: OpenProject = {
+    id: randomUUID(),
+    rootPath: resolvedRoot,
+    name: path.basename(resolvedRoot) || resolvedRoot,
+  };
+  openProjects.set(project.id, project);
+  return project;
+}
+
+function getProjectRoot(projectId: string): string {
+  if (!projectId) {
+    throw new Error("Open a project before using this action.");
+  }
+
+  const project = openProjects.get(projectId);
+  if (!project) {
+    throw new Error("The requested project is not open.");
+  }
+  return project.rootPath;
+}
+
 function isInside(parent: string, child: string): boolean {
   const relative = path.relative(path.resolve(parent), path.resolve(child));
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
@@ -98,6 +132,12 @@ function resolveProjectPath(projectPath: string, relativePath: string): string {
   const targetPath = path.resolve(projectPath, cleanPath);
   assertInside(projectPath, targetPath);
   return targetPath;
+}
+
+function relativeProjectPath(projectPath: string, targetPath: string): string {
+  assertInside(projectPath, targetPath);
+  const relativePath = path.relative(projectPath, targetPath);
+  return relativePath || ".";
 }
 
 function starterContent(relativePath: string): string {
@@ -1384,7 +1424,7 @@ app.whenReady().then(() => {
   if (process.platform === "darwin") {
     app.dock.setIcon(appIconPath);
   }
-  registerTerminalIpc();
+  registerTerminalIpc({ getProjectRoot });
   console.log("[latexdo] app:terminal-registered");
   buildApplicationMenu();
   console.log("[latexdo] app:menu-built");
@@ -1393,21 +1433,22 @@ app.whenReady().then(() => {
       properties: ["openDirectory", "createDirectory"],
       title: "Open LaTeX project",
     });
-    return result.canceled ? null : result.filePaths[0];
+    return result.canceled ? null : registerProject(result.filePaths[0]);
   });
   ipcMain.handle("project:create", async () => {
     const tmpDir = await mkdtemp(path.join(app.getPath("temp"), "latexdo-project-"));
     const projectPath = path.join(tmpDir, "My LaTeX Project");
     await mkdir(projectPath, { recursive: true });
     await writeFile(path.join(projectPath, "main.tex"), starterDocument, "utf8");
-    return projectPath;
+    return registerProject(projectPath);
   });
-  ipcMain.handle("project:list", async (_event, projectPath: string) => {
+  ipcMain.handle("project:list", async (_event, projectId: string) => {
+    const projectPath = getProjectRoot(projectId);
     return listProject(projectPath);
   });
-  ipcMain.handle("file:exists", async (_event, projectPath: string, filePath: string) => {
-    const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(projectPath, filePath);
-    assertInside(projectPath, resolvedPath);
+  ipcMain.handle("file:exists", async (_event, projectId: string, filePath: string) => {
+    const projectPath = getProjectRoot(projectId);
+    const resolvedPath = resolveProjectPath(projectPath, filePath);
     try {
       await access(resolvedPath);
       return true;
@@ -1417,9 +1458,9 @@ app.whenReady().then(() => {
   });
   ipcMain.handle(
     "file:read",
-    async (_event, projectPath: string, filePath: string) => {
-      const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(projectPath, filePath);
-      assertInside(projectPath, resolvedPath);
+    async (_event, projectId: string, filePath: string) => {
+      const projectPath = getProjectRoot(projectId);
+      const resolvedPath = resolveProjectPath(projectPath, filePath);
       return readFile(resolvedPath, "utf8");
     },
   );
@@ -1427,19 +1468,20 @@ app.whenReady().then(() => {
     "file:write",
     async (
       _event,
-      projectPath: string,
+      projectId: string,
       filePath: string,
       content: string,
     ) => {
-      const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(projectPath, filePath);
-      assertInside(projectPath, resolvedPath);
+      const projectPath = getProjectRoot(projectId);
+      const resolvedPath = resolveProjectPath(projectPath, filePath);
       await mkdir(path.dirname(resolvedPath), { recursive: true });
       await writeFile(resolvedPath, content, "utf8");
     },
   );
   ipcMain.handle(
     "file:create",
-    async (_event, projectPath: string, relativePath: string) => {
+    async (_event, projectId: string, relativePath: string) => {
+      const projectPath = getProjectRoot(projectId);
       const filePath = resolveProjectPath(projectPath, relativePath);
       await mkdir(path.dirname(filePath), { recursive: true });
       try {
@@ -1449,44 +1491,46 @@ app.whenReady().then(() => {
         });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-          return filePath;
+          return relativeProjectPath(projectPath, filePath);
         }
         throw error;
       }
-      return filePath;
+      return relativeProjectPath(projectPath, filePath);
     },
   );
   ipcMain.handle(
     "folder:create",
-    async (_event, projectPath: string, relativePath: string) => {
+    async (_event, projectId: string, relativePath: string) => {
+      const projectPath = getProjectRoot(projectId);
       const folderPath = resolveProjectPath(projectPath, relativePath);
       try {
         await mkdir(folderPath, { recursive: false });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-          return folderPath;
+          return relativeProjectPath(projectPath, folderPath);
         }
         if ((error as NodeJS.ErrnoException).code === "ENOENT") {
           throw new Error("Create the parent folder first.");
         }
         throw error;
       }
-      return folderPath;
+      return relativeProjectPath(projectPath, folderPath);
     },
   );
   ipcMain.handle(
     "entry:move",
     async (
       _event,
-      projectPath: string,
+      projectId: string,
       fromRelativePath: string,
       toRelativePath: string,
     ) => {
+      const projectPath = getProjectRoot(projectId);
       const sourcePath = resolveProjectPath(projectPath, fromRelativePath);
       const targetPath = resolveProjectPath(projectPath, toRelativePath);
 
       if (sourcePath === targetPath) {
-        return targetPath;
+        return relativeProjectPath(projectPath, targetPath);
       }
 
       const sourceStats = await stat(sourcePath).catch(() => null);
@@ -1510,66 +1554,78 @@ app.whenReady().then(() => {
       }
 
       await rename(sourcePath, targetPath);
-      return targetPath;
+      return relativeProjectPath(projectPath, targetPath);
     },
   );
-  ipcMain.handle("git:status", async (_event, projectPath: string) => {
+  ipcMain.handle("git:status", async (_event, projectId: string) => {
+    const projectPath = getProjectRoot(projectId);
     return readGitStatus(projectPath);
   });
   ipcMain.handle(
     "git:stage",
-    async (_event, projectPath: string, relativePath: string) => {
+    async (_event, projectId: string, relativePath: string) => {
+      const projectPath = getProjectRoot(projectId);
       await gitAdd(projectPath, relativePath);
     },
   );
   ipcMain.handle(
     "git:unstage",
-    async (_event, projectPath: string, relativePath: string) => {
+    async (_event, projectId: string, relativePath: string) => {
+      const projectPath = getProjectRoot(projectId);
       await gitUnstage(projectPath, relativePath);
     },
   );
   ipcMain.handle(
     "git:commit",
-    async (_event, projectPath: string, message: string) => {
+    async (_event, projectId: string, message: string) => {
+      const projectPath = getProjectRoot(projectId);
       await gitCommit(projectPath, message);
     },
   );
   ipcMain.handle(
     "git:diff",
-    async (_event, projectPath: string, relativePath: string) => {
+    async (_event, projectId: string, relativePath: string) => {
+      const projectPath = getProjectRoot(projectId);
       return gitDiff(projectPath, relativePath);
     },
   );
   ipcMain.handle(
     "git:discard",
-    async (_event, projectPath: string, relativePath: string) => {
+    async (_event, projectId: string, relativePath: string) => {
+      const projectPath = getProjectRoot(projectId);
       await gitDiscard(projectPath, relativePath);
     },
   );
-  ipcMain.handle("git:stage-all", async (_event, projectPath: string) => {
+  ipcMain.handle("git:stage-all", async (_event, projectId: string) => {
+    const projectPath = getProjectRoot(projectId);
     await gitStageAll(projectPath);
   });
-  ipcMain.handle("git:unstage-all", async (_event, projectPath: string) => {
+  ipcMain.handle("git:unstage-all", async (_event, projectId: string) => {
+    const projectPath = getProjectRoot(projectId);
     await gitUnstageAll(projectPath);
   });
-  ipcMain.handle("git:discard-all", async (_event, projectPath: string) => {
+  ipcMain.handle("git:discard-all", async (_event, projectId: string) => {
+    const projectPath = getProjectRoot(projectId);
     await gitDiscardAll(projectPath);
   });
   ipcMain.handle(
     "git:editor-diff",
-    async (_event, projectPath: string, relativePath: string) => {
+    async (_event, projectId: string, relativePath: string) => {
+      const projectPath = getProjectRoot(projectId);
       return gitDiffEditorInput(projectPath, relativePath);
     },
   );
   ipcMain.handle(
     "git:history",
-    async (_event, projectPath: string, relativePath?: string) => {
+    async (_event, projectId: string, relativePath?: string) => {
+      const projectPath = getProjectRoot(projectId);
       return gitHistory(projectPath, relativePath);
     },
   );
   ipcMain.handle(
     "git:commit-details",
-    async (_event, projectPath: string, hash: string) => {
+    async (_event, projectId: string, hash: string) => {
+      const projectPath = getProjectRoot(projectId);
       return gitCommitDetails(projectPath, hash);
     },
   );
@@ -1577,10 +1633,11 @@ app.whenReady().then(() => {
     "git:commit-file-diff",
     async (
       _event,
-      projectPath: string,
+      projectId: string,
       relativePath: string,
       hash: string,
     ) => {
+      const projectPath = getProjectRoot(projectId);
       return gitDiffAtCommit(projectPath, relativePath, hash);
     },
   );
@@ -1615,15 +1672,25 @@ app.whenReady().then(() => {
     },
   );
   ipcMain.handle("latex:compile", async (_event, request: CompileRequest) => {
-    const rootPath = path.join(request.projectPath, request.rootFile);
-    assertInside(request.projectPath, rootPath);
-    return compileLatex(request);
+    const projectPath = getProjectRoot(request.projectId);
+    resolveProjectPath(projectPath, request.rootFile);
+    const result = await compileLatex({
+      projectPath,
+      rootFile: request.rootFile,
+      engine: request.engine,
+    });
+    return {
+      ...result,
+      pdfPath: result.pdfPath
+        ? relativeProjectPath(projectPath, result.pdfPath)
+        : undefined,
+    };
   });
   ipcMain.handle(
     "pdf:read",
-    async (_event, projectPath: string, pdfPath: string) => {
-      const resolvedPath = path.isAbsolute(pdfPath) ? pdfPath : path.resolve(projectPath, pdfPath);
-      assertInside(projectPath, resolvedPath);
+    async (_event, projectId: string, pdfPath: string) => {
+      const projectPath = getProjectRoot(projectId);
+      const resolvedPath = resolveProjectPath(projectPath, pdfPath);
       return readFile(resolvedPath);
     },
   );
@@ -1631,14 +1698,15 @@ app.whenReady().then(() => {
     "synctex:forward",
     async (
       _event,
-      projectPath: string,
-      pdfPath: string,
-      inputPath: string,
+      projectId: string,
+      pdfRelativePath: string,
+      inputRelativePath: string,
       line: number,
       column: number,
     ) => {
-      assertInside(projectPath, pdfPath);
-      assertInside(projectPath, inputPath);
+      const projectPath = getProjectRoot(projectId);
+      const pdfPath = resolveProjectPath(projectPath, pdfRelativePath);
+      const inputPath = resolveProjectPath(projectPath, inputRelativePath);
       return forwardSyncTex(
         projectPath,
         pdfPath,
@@ -1652,13 +1720,14 @@ app.whenReady().then(() => {
     "synctex:backward",
     async (
       _event,
-      projectPath: string,
-      pdfPath: string,
+      projectId: string,
+      pdfRelativePath: string,
       page: number,
       x: number,
       y: number,
     ) => {
-      assertInside(projectPath, pdfPath);
+      const projectPath = getProjectRoot(projectId);
+      const pdfPath = resolveProjectPath(projectPath, pdfRelativePath);
       return backwardSyncTex(projectPath, pdfPath, page, x, y);
     },
   );

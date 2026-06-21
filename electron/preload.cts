@@ -7,6 +7,7 @@ import type {
   GitDiffPreview,
   GitHistorySummary,
   GitStatusSummary,
+  OpenProject,
   ProofreadingResult,
   ProofreadingSettings,
   ProjectEntry,
@@ -17,78 +18,78 @@ import type {
 } from "./types.js" with { "resolution-mode": "import" };
 
 const api = {
-  openProject: (): Promise<string | null> => ipcRenderer.invoke("project:open"),
-  createProject: (): Promise<string | null> =>
+  openProject: (): Promise<OpenProject | null> => ipcRenderer.invoke("project:open"),
+  createProject: (): Promise<OpenProject | null> =>
     ipcRenderer.invoke("project:create"),
-  listProject: (projectPath: string): Promise<ProjectEntry[]> =>
-    ipcRenderer.invoke("project:list", projectPath),
-  readFile: (projectPath: string, filePath: string): Promise<string> =>
-    ipcRenderer.invoke("file:read", projectPath, filePath),
+  listProject: (projectId: string): Promise<ProjectEntry[]> =>
+    ipcRenderer.invoke("project:list", projectId),
+  readFile: (projectId: string, relativePath: string): Promise<string> =>
+    ipcRenderer.invoke("file:read", projectId, relativePath),
   writeFile: (
-    projectPath: string,
-    filePath: string,
+    projectId: string,
+    relativePath: string,
     content: string,
   ): Promise<void> =>
-    ipcRenderer.invoke("file:write", projectPath, filePath, content),
-  fileExists: (projectPath: string, filePath: string): Promise<boolean> =>
-    ipcRenderer.invoke("file:exists", projectPath, filePath),
-  createFile: (projectPath: string, relativePath: string): Promise<string> =>
-    ipcRenderer.invoke("file:create", projectPath, relativePath),
-  createFolder: (projectPath: string, relativePath: string): Promise<string> =>
-    ipcRenderer.invoke("folder:create", projectPath, relativePath),
+    ipcRenderer.invoke("file:write", projectId, relativePath, content),
+  fileExists: (projectId: string, relativePath: string): Promise<boolean> =>
+    ipcRenderer.invoke("file:exists", projectId, relativePath),
+  createFile: (projectId: string, relativePath: string): Promise<string> =>
+    ipcRenderer.invoke("file:create", projectId, relativePath),
+  createFolder: (projectId: string, relativePath: string): Promise<string> =>
+    ipcRenderer.invoke("folder:create", projectId, relativePath),
   moveEntry: (
-    projectPath: string,
+    projectId: string,
     fromRelativePath: string,
     toRelativePath: string,
   ): Promise<string> =>
     ipcRenderer.invoke(
       "entry:move",
-      projectPath,
+      projectId,
       fromRelativePath,
       toRelativePath,
     ),
-  getGitStatus: (projectPath: string): Promise<GitStatusSummary> =>
-    ipcRenderer.invoke("git:status", projectPath),
-  stageGitFile: (projectPath: string, relativePath: string): Promise<void> =>
-    ipcRenderer.invoke("git:stage", projectPath, relativePath),
-  unstageGitFile: (projectPath: string, relativePath: string): Promise<void> =>
-    ipcRenderer.invoke("git:unstage", projectPath, relativePath),
-  commitGit: (projectPath: string, message: string): Promise<void> =>
-    ipcRenderer.invoke("git:commit", projectPath, message),
+  getGitStatus: (projectId: string): Promise<GitStatusSummary> =>
+    ipcRenderer.invoke("git:status", projectId),
+  stageGitFile: (projectId: string, relativePath: string): Promise<void> =>
+    ipcRenderer.invoke("git:stage", projectId, relativePath),
+  unstageGitFile: (projectId: string, relativePath: string): Promise<void> =>
+    ipcRenderer.invoke("git:unstage", projectId, relativePath),
+  commitGit: (projectId: string, message: string): Promise<void> =>
+    ipcRenderer.invoke("git:commit", projectId, message),
   getGitDiff: (
-    projectPath: string,
+    projectId: string,
     relativePath: string,
   ): Promise<GitDiffPreview> =>
-    ipcRenderer.invoke("git:diff", projectPath, relativePath),
-  discardGitFile: (projectPath: string, relativePath: string): Promise<void> =>
-    ipcRenderer.invoke("git:discard", projectPath, relativePath),
-  stageAllGit: (projectPath: string): Promise<void> =>
-    ipcRenderer.invoke("git:stage-all", projectPath),
-  unstageAllGit: (projectPath: string): Promise<void> =>
-    ipcRenderer.invoke("git:unstage-all", projectPath),
-  discardAllGit: (projectPath: string): Promise<void> =>
-    ipcRenderer.invoke("git:discard-all", projectPath),
+    ipcRenderer.invoke("git:diff", projectId, relativePath),
+  discardGitFile: (projectId: string, relativePath: string): Promise<void> =>
+    ipcRenderer.invoke("git:discard", projectId, relativePath),
+  stageAllGit: (projectId: string): Promise<void> =>
+    ipcRenderer.invoke("git:stage-all", projectId),
+  unstageAllGit: (projectId: string): Promise<void> =>
+    ipcRenderer.invoke("git:unstage-all", projectId),
+  discardAllGit: (projectId: string): Promise<void> =>
+    ipcRenderer.invoke("git:discard-all", projectId),
   getGitEditorDiff: (
-    projectPath: string,
+    projectId: string,
     relativePath: string,
   ): Promise<GitDiffEditorInput> =>
-    ipcRenderer.invoke("git:editor-diff", projectPath, relativePath),
+    ipcRenderer.invoke("git:editor-diff", projectId, relativePath),
   getGitHistory: (
-    projectPath: string,
+    projectId: string,
     relativePath?: string,
   ): Promise<GitHistorySummary> =>
-    ipcRenderer.invoke("git:history", projectPath, relativePath),
+    ipcRenderer.invoke("git:history", projectId, relativePath),
   getGitCommitDetails: (
-    projectPath: string,
+    projectId: string,
     hash: string,
   ): Promise<GitCommitDetails> =>
-    ipcRenderer.invoke("git:commit-details", projectPath, hash),
+    ipcRenderer.invoke("git:commit-details", projectId, hash),
   getGitCommitFileDiff: (
-    projectPath: string,
+    projectId: string,
     relativePath: string,
     hash: string,
   ): Promise<GitDiffEditorInput> =>
-    ipcRenderer.invoke("git:commit-file-diff", projectPath, relativePath, hash),
+    ipcRenderer.invoke("git:commit-file-diff", projectId, relativePath, hash),
   checkForUpdates: (): Promise<UpdateCheckResult> =>
     ipcRenderer.invoke("app:check-updates"),
   openReleasesPage: (): Promise<void> =>
@@ -112,34 +113,34 @@ const api = {
     ipcRenderer.invoke("proofread:check", relativePath, content),
   compile: (request: CompileRequest): Promise<CompileResult> =>
     ipcRenderer.invoke("latex:compile", request),
-  readPdf: (projectPath: string, pdfPath: string): Promise<Uint8Array> =>
-    ipcRenderer.invoke("pdf:read", projectPath, pdfPath),
+  readPdf: (projectId: string, pdfRelativePath: string): Promise<Uint8Array> =>
+    ipcRenderer.invoke("pdf:read", projectId, pdfRelativePath),
   forwardSyncTex: (
-    projectPath: string,
-    pdfPath: string,
-    inputPath: string,
+    projectId: string,
+    pdfRelativePath: string,
+    inputRelativePath: string,
     line: number,
     column: number,
   ): Promise<SyncTexPdfLocation | null> =>
     ipcRenderer.invoke(
       "synctex:forward",
-      projectPath,
-      pdfPath,
-      inputPath,
+      projectId,
+      pdfRelativePath,
+      inputRelativePath,
       line,
       column,
     ),
   backwardSyncTex: (
-    projectPath: string,
-    pdfPath: string,
+    projectId: string,
+    pdfRelativePath: string,
     page: number,
     x: number,
     y: number,
   ): Promise<SyncTexSourceLocation | null> =>
     ipcRenderer.invoke(
       "synctex:backward",
-      projectPath,
-      pdfPath,
+      projectId,
+      pdfRelativePath,
       page,
       x,
       y,
@@ -193,7 +194,7 @@ const api = {
 contextBridge.exposeInMainWorld("latexdo", api);
 
 const terminalApi = {
-  create: (options?: { cwd?: string }) =>
+  create: (options?: { projectId?: string }) =>
     ipcRenderer.invoke("terminal:create", options) as Promise<{
       id: number;
       mode: "pty" | "pipe";

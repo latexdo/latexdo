@@ -90,6 +90,7 @@ import type {
   GitHistorySummary,
   GitStatusEntry,
   GitStatusSummary,
+  OpenProject,
   OpenDocument,
   ProofreadingResult,
   ProofreadingSettings,
@@ -377,12 +378,12 @@ const defaultSettings: AppSettings = {
 
 function buildAutoCompileSignature(
   documents: OpenDocument[],
-  projectPath: string,
+  projectId: string,
   rootFile: string,
   engine: Engine,
 ): string {
   return JSON.stringify({
-    projectPath,
+    projectId,
     rootFile,
     engine,
     dirtyDocuments: documents
@@ -1078,6 +1079,7 @@ function pruneHistorySnapshots(
 }
 
 export default function App() {
+  const [projectId, setProjectId] = useState("");
   const [projectPath, setProjectPath] = useState("");
   const [projectEntries, setProjectEntries] = useState<ProjectEntry[]>([]);
   const [hideProjectEntries, setHideProjectEntries] = useState(true);
@@ -1151,6 +1153,7 @@ export default function App() {
   const documentsRef = useRef<OpenDocument[]>([]);
   const documentHistoryRef = useRef<DocumentHistorySnapshot[]>([]);
   const projectEntriesRef = useRef<ProjectEntry[]>([]);
+  const projectIdRef = useRef("");
   const projectPathRef = useRef("");
   const hideProjectEntriesRef = useRef(true);
   const activePathRef = useRef("");
@@ -1176,7 +1179,7 @@ export default function App() {
   const activeDocument = documents.find(
     (document) => document.path === activePath,
   );
-  const hasVisibleProject = Boolean(projectPath) && !hideProjectEntries;
+  const hasVisibleProject = Boolean(projectId) && !hideProjectEntries;
   const showWelcome = welcomeOpen && !activePath;
   const showBlankWorkspace = hideProjectEntries && !welcomeOpen && !activePath;
   const previewShown = previewVisible && !showWelcome && !showBlankWorkspace;
@@ -1253,8 +1256,8 @@ export default function App() {
   );
   const autoCompileSignature = useMemo(
     () =>
-      buildAutoCompileSignature(documents, projectPath, rootFile, engine),
-    [documents, engine, projectPath, rootFile],
+      buildAutoCompileSignature(documents, projectId, rootFile, engine),
+    [documents, engine, projectId, rootFile],
   );
 
   useEffect(() => {
@@ -1268,6 +1271,10 @@ export default function App() {
   useEffect(() => {
     projectEntriesRef.current = projectEntries;
   }, [projectEntries]);
+
+  useEffect(() => {
+    projectIdRef.current = projectId;
+  }, [projectId]);
 
   useEffect(() => {
     projectPathRef.current = projectPath;
@@ -1293,17 +1300,17 @@ export default function App() {
     window.localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
   }, [settings]);
 
-  const refreshProject = useCallback(async (path = projectPathRef.current) => {
-    if (!path) {
+  const refreshProject = useCallback(async (id = projectIdRef.current) => {
+    if (!id) {
       return [];
     }
-    const entries = await window.latexdo.listProject(path);
+    const entries = await window.latexdo.listProject(id);
     setProjectEntries(entries);
     return entries;
   }, []);
 
   const openDocument = useCallback(
-    async (entry: ProjectEntry, targetProject = projectPathRef.current) => {
+    async (entry: ProjectEntry, targetProject = projectIdRef.current) => {
       if (entry.type !== "file") {
         return;
       }
@@ -1323,7 +1330,10 @@ export default function App() {
         return;
       }
 
-      const content = await window.latexdo.readFile(targetProject, entry.path);
+      const content = await window.latexdo.readFile(
+        targetProject,
+        entry.relativePath,
+      );
       const document: OpenDocument = {
         path: entry.path,
         relativePath: entry.relativePath,
@@ -1339,11 +1349,8 @@ export default function App() {
     [],
   );
 
-  const resolveProjectDataPath = useCallback((projectPath: string, relativePath: string) => {
-    const separator = projectPath.includes("\\") ? "\\" : "/";
-    const cleanProjectPath = projectPath.replace(/[\\/]+$/, "");
-    const cleanRelativePath = relativePath.replaceAll("/", separator);
-    return `${cleanProjectPath}${separator}${cleanRelativePath}`;
+  const resolveProjectDataPath = useCallback((relativePath: string) => {
+    return normalizeRelativePath(relativePath).replace(/^\/+/, "");
   }, []);
 
   const ensurePreambleMacros = (content: string): string => {
@@ -1453,7 +1460,10 @@ ${macroEnd}
     );
 
     for (const entry of texEntries) {
-      const content = await window.latexdo.readFile(currentProject, entry.path);
+      const content = await window.latexdo.readFile(
+        currentProject,
+        entry.relativePath,
+      );
       if (usesLatexDoReviewMacros(content)) {
         return true;
       }
@@ -1473,11 +1483,16 @@ ${macroEnd}
     for (const entry of texEntries) {
       const openDocument = findOpenDocument(entry.relativePath);
       const content =
-        openDocument?.content ?? (await window.latexdo.readFile(currentProject, entry.path));
+        openDocument?.content ??
+        (await window.latexdo.readFile(currentProject, entry.relativePath));
       const normalizedContent = normalizeLatexDoReviewMarkup(content);
 
       if (normalizedContent !== content) {
-        await window.latexdo.writeFile(currentProject, entry.path, normalizedContent);
+        await window.latexdo.writeFile(
+          currentProject,
+          entry.relativePath,
+          normalizedContent,
+        );
         normalizedContents.set(normalizeRelativePath(entry.relativePath), normalizedContent);
       }
     }
@@ -1499,13 +1514,17 @@ ${macroEnd}
       const rootContent =
         savedContents.get(normalizeRelativePath(rootEntry.relativePath)) ??
         rootDocument?.content ??
-        (await window.latexdo.readFile(currentProject, rootEntry.path));
+        (await window.latexdo.readFile(currentProject, rootEntry.relativePath));
       const rootContentWithMacros = ensurePreambleMacros(rootContent);
       if (
         rootContentWithMacros !== rootContent ||
         rootDocument?.content !== rootDocument?.savedContent
       ) {
-        await window.latexdo.writeFile(currentProject, rootEntry.path, rootContentWithMacros);
+        await window.latexdo.writeFile(
+          currentProject,
+          rootEntry.relativePath,
+          rootContentWithMacros,
+        );
         savedContents.set(normalizeRelativePath(rootEntry.relativePath), rootContentWithMacros);
       }
     }
@@ -1520,7 +1539,11 @@ ${macroEnd}
         .map(async (document) => {
           const normalizedPath = normalizeRelativePath(document.relativePath);
           const content = savedContents.get(normalizedPath) ?? document.content;
-          await window.latexdo.writeFile(currentProject, document.path, content);
+          await window.latexdo.writeFile(
+            currentProject,
+            document.relativePath,
+            content,
+          );
           savedContents.set(normalizedPath, content);
         }),
     );
@@ -1528,7 +1551,11 @@ ${macroEnd}
     if (!reviewMacrosNeeded && rootDocument && rootDocument.content !== rootDocument.savedContent) {
       const normalizedPath = normalizeRelativePath(rootDocument.relativePath);
       const content = savedContents.get(normalizedPath) ?? rootDocument.content;
-      await window.latexdo.writeFile(currentProject, rootDocument.path, content);
+      await window.latexdo.writeFile(
+        currentProject,
+        rootDocument.relativePath,
+        content,
+      );
       savedContents.set(normalizedPath, content);
     }
 
@@ -1547,28 +1574,28 @@ ${macroEnd}
   };
 
   const saveReviewData = useCallback(async (chats: ReviewChat[], items: RebuttalItem[]) => {
-    const currentProject = projectPathRef.current;
+    const currentProject = projectIdRef.current;
     if (!currentProject) return;
 
     try {
       const data = JSON.stringify({ chats, items }, null, 2);
-      const filePath = resolveProjectDataPath(currentProject, ".latexdo/review_data.json");
+      const filePath = resolveProjectDataPath(".latexdo/review_data.json");
       await window.latexdo.writeFile(currentProject, filePath, data);
     } catch (e) {
       console.error("Failed to save review data", e);
     }
   }, [resolveProjectDataPath]);
 
-  const loadReviewData = useCallback(async (path: string) => {
+  const loadReviewData = useCallback(async (id: string) => {
     try {
-      const filePath = resolveProjectDataPath(path, ".latexdo/review_data.json");
-      const exists = await window.latexdo.fileExists(path, filePath);
+      const filePath = resolveProjectDataPath(".latexdo/review_data.json");
+      const exists = await window.latexdo.fileExists(id, filePath);
       if (!exists) {
         setReviewChats([]);
         setRebuttalItems([]);
         return;
       }
-      const content = await window.latexdo.readFile(path, filePath);
+      const content = await window.latexdo.readFile(id, filePath);
       const { chats, items } = JSON.parse(content) as { chats: ReviewChat[], items: RebuttalItem[] };
       const nextItems = items || [];
       const normalizedChats = removeLegacyReviewPlaceholders(chats || []);
@@ -1584,12 +1611,12 @@ ${macroEnd}
   }, [resolveProjectDataPath, saveReviewData]);
 
   const saveHistoryData = useCallback(async (snapshots: DocumentHistorySnapshot[]) => {
-    const currentProject = projectPathRef.current;
+    const currentProject = projectIdRef.current;
     if (!currentProject) return;
 
     try {
       const data = JSON.stringify({ snapshots }, null, 2);
-      const filePath = resolveProjectDataPath(currentProject, historyStorageRelativePath);
+      const filePath = resolveProjectDataPath(historyStorageRelativePath);
       await window.latexdo.writeFile(currentProject, filePath, data);
     } catch (e) {
       console.error("Failed to save document history", e);
@@ -1666,16 +1693,16 @@ ${macroEnd}
     [addHistorySnapshot],
   );
 
-  const loadHistoryData = useCallback(async (path: string) => {
+  const loadHistoryData = useCallback(async (id: string) => {
     try {
-      const filePath = resolveProjectDataPath(path, historyStorageRelativePath);
-      const exists = await window.latexdo.fileExists(path, filePath);
+      const filePath = resolveProjectDataPath(historyStorageRelativePath);
+      const exists = await window.latexdo.fileExists(id, filePath);
       if (!exists) {
         setDocumentHistory([]);
         documentHistoryRef.current = [];
         return;
       }
-      const content = await window.latexdo.readFile(path, filePath);
+      const content = await window.latexdo.readFile(id, filePath);
       const parsed = JSON.parse(content) as {
         snapshots?: unknown[];
       } | unknown[];
@@ -1698,7 +1725,7 @@ ${macroEnd}
   }, [resolveProjectDataPath]);
 
   const generateRebuttalFile = useCallback(async () => {
-    const currentProject = projectPathRef.current;
+    const currentProject = projectIdRef.current;
     if (!currentProject || !rootFile) return;
 
     try {
@@ -1708,7 +1735,10 @@ ${macroEnd}
 
       let content = documentsRef.current.find(d => d.path === entry.path)?.content;
       if (content === undefined) {
-        content = await window.latexdo.readFile(currentProject, entry.path);
+        content = await window.latexdo.readFile(
+          currentProject,
+          entry.relativePath,
+        );
       }
       
       content = ensurePreambleMacros(content);
@@ -1722,13 +1752,15 @@ ${macroEnd}
 
   const loadProject = useCallback(
     async (
-      path: string,
+      project: OpenProject,
       openFirstDocument = false,
       hideEntries = false,
     ) => {
       setStatusMessage("Loading project…");
-      setProjectPath(path);
-      projectPathRef.current = path;
+      setProjectId(project.id);
+      projectIdRef.current = project.id;
+      setProjectPath(project.rootPath);
+      projectPathRef.current = project.rootPath;
       setHideProjectEntries(hideEntries);
       setDocuments([]);
       documentsRef.current = [];
@@ -1743,10 +1775,10 @@ ${macroEnd}
       pdfPathRef.current = "";
       lastAutoCompileSignatureRef.current = "";
 
-      const entries = await window.latexdo.listProject(path);
+      const entries = await window.latexdo.listProject(project.id);
       setProjectEntries(entries);
-      await loadReviewData(path);
-      await loadHistoryData(path);
+      await loadReviewData(project.id);
+      await loadHistoryData(project.id);
       const allFiles = flattenEntries(entries);
       const main =
         allFiles.find(
@@ -1760,7 +1792,7 @@ ${macroEnd}
         setRootFile(main.relativePath);
         rootFileRef.current = main.relativePath;
         if (openFirstDocument) {
-          await openDocument(main, path);
+          await openDocument(main, project.id);
         }
       }
       setStatusMessage("Ready");
@@ -1770,13 +1802,13 @@ ${macroEnd}
 
   const saveDocument = useCallback(
     async (document: OpenDocument) => {
-      const currentProject = projectPathRef.current;
+      const currentProject = projectIdRef.current;
       if (!currentProject) {
         return;
       }
       await window.latexdo.writeFile(
         currentProject,
-        document.path,
+        document.relativePath,
         document.content,
       );
       setDocuments((current) => {
@@ -1794,7 +1826,7 @@ ${macroEnd}
   );
 
   const compile = useCallback(async (): Promise<CompileResult | null> => {
-    const currentProject = projectPathRef.current;
+    const currentProject = projectIdRef.current;
     if (!currentProject || hideProjectEntriesRef.current) {
       setStatusMessage("Create or open a project before compiling.");
       return null;
@@ -1817,7 +1849,7 @@ ${macroEnd}
       await saveDocumentsForCompile(currentProject, dirtyDocuments);
 
       const result = await window.latexdo.compile({
-        projectPath: currentProject,
+        projectId: currentProject,
         rootFile: rootFileRef.current,
         engine: engineRef.current,
       });
@@ -1876,7 +1908,7 @@ ${macroEnd}
   }, [compile, saveDocument]);
 
   const downloadPdf = useCallback(async () => {
-    const currentProject = projectPathRef.current;
+    const currentProject = projectIdRef.current;
     if (!currentProject || !rootFileExists) {
       return;
     }
@@ -2059,7 +2091,7 @@ ${macroEnd}
 
   const moveEntry = useCallback(
     async (sourcePath: string, destination: ProjectEntry | null) => {
-      const currentProject = projectPathRef.current;
+      const currentProject = projectIdRef.current;
       if (
         !currentProject ||
         (destination !== null && destination.type !== "directory")
@@ -2124,20 +2156,22 @@ ${macroEnd}
           await saveDocument(document);
         }
 
-        const nextPath = await window.latexdo.moveEntry(
+        const movedRelativePath = await window.latexdo.moveEntry(
           currentProject,
           sourceEntry.relativePath,
           destinationRelativePath,
         );
-        const nextRelativePath = normalizeRelativePath(destinationRelativePath);
+        const nextRelativePath = normalizeRelativePath(movedRelativePath);
         const nextPrefix = `${nextRelativePath}/`;
         const sourceAbsolutePath = normalizeRelativePath(sourceEntry.path);
-        const absoluteSeparator = nextPath.includes("\\") ? "\\" : "/";
+        const projectRoot = projectPathRef.current;
+        const absoluteSeparator = projectRoot.includes("\\") ? "\\" : "/";
         const joinAbsolutePath = (base: string, suffix: string): string =>
           `${base.replace(/[\\/]+$/, "")}${absoluteSeparator}${suffix.replaceAll(
             "/",
             absoluteSeparator,
           )}`;
+        const nextPath = joinAbsolutePath(projectRoot, nextRelativePath);
 
         const moveDocument = (document: OpenDocument): OpenDocument => {
           const relativePath = normalizeRelativePath(document.relativePath);
@@ -2306,9 +2340,9 @@ ${macroEnd}
 
       try {
         const location = await window.latexdo.forwardSyncTex(
-          projectPathRef.current,
+          projectIdRef.current,
           pdfPath,
-          document.path,
+          document.relativePath,
           position.lineNumber,
           position.column,
         );
@@ -2340,7 +2374,7 @@ ${macroEnd}
       try {
         const location: SyncTexSourceLocation | null =
           await window.latexdo.backwardSyncTex(
-            projectPathRef.current,
+            projectIdRef.current,
             pdfPath,
             pdfLocation.page,
             pdfLocation.x,
@@ -2435,7 +2469,7 @@ ${macroEnd}
 
   const applyLatexDiagnosticFix = useCallback(
     async (diagnostic: Diagnostic, fix: DiagnosticFix) => {
-      const currentProject = projectPathRef.current;
+      const currentProject = projectIdRef.current;
       if (!currentProject || !diagnostic.file) {
         return;
       }
@@ -2457,7 +2491,7 @@ ${macroEnd}
       );
       const content =
         openDocumentState?.content ??
-        (await window.latexdo.readFile(currentProject, entry.path));
+        (await window.latexdo.readFile(currentProject, entry.relativePath));
       const updatedContent = applyTextFix(content, fix);
       if (updatedContent === null) {
         setStatusMessage(
@@ -2468,7 +2502,7 @@ ${macroEnd}
 
       await window.latexdo.writeFile(
         currentProject,
-        entry.path,
+        entry.relativePath,
         updatedContent,
       );
 
@@ -2829,7 +2863,10 @@ ${macroEnd}
           const bibFiles = allEntries.filter(e => e.name.endsWith('.bib'));
           for (const bib of bibFiles) {
              try {
-               const content = await window.latexdo.readFile(projectPathRef.current, bib.path);
+               const content = await window.latexdo.readFile(
+                 projectIdRef.current,
+                 bib.relativePath,
+               );
                const regex = /@\w+\s*{\s*([^,]+),/g;
                let match;
                while ((match = regex.exec(content)) !== null) {
@@ -2876,7 +2913,10 @@ ${macroEnd}
              try {
                let content = openDocs.get(tex.path);
                if (content === undefined) {
-                 content = await window.latexdo.readFile(projectPathRef.current, tex.path);
+                 content = await window.latexdo.readFile(
+                   projectIdRef.current,
+                   tex.relativePath,
+                 );
                }
                const regex = /\\label\s*{([^}]+)}/g;
                let match;
@@ -3054,17 +3094,17 @@ ${macroEnd}
   );
 
   const openProject = async () => {
-    const path = await window.latexdo.openProject();
-    if (path) {
-      await loadProject(path, true, false);
+    const project = await window.latexdo.openProject();
+    if (project) {
+      await loadProject(project, true, false);
     }
   };
 
   const createProject = async () => {
     try {
-      const path = await window.latexdo.createProject();
-      if (path) {
-        await loadProject(path, true, false);
+      const project = await window.latexdo.createProject();
+      if (project) {
+        await loadProject(project, true, false);
         setStatusMessage("Project created");
       }
     } catch (error) {
@@ -3075,7 +3115,7 @@ ${macroEnd}
   };
 
   const openCreateDialog = (type: "file" | "folder") => {
-    if (!projectPath || hideProjectEntries) {
+    if (!projectId || hideProjectEntries) {
       setStatusMessage("Create or open a project before adding files.");
       return;
     }
@@ -3104,7 +3144,7 @@ ${macroEnd}
   const submitCreate = async (event: React.FormEvent) => {
     event.preventDefault();
     const relativePath = createPath.trim();
-    if (!projectPath || !createDialog || !relativePath) {
+    if (!projectId || !createDialog || !relativePath) {
       setCreateError("Enter a name or path.");
       return;
     }
@@ -3113,17 +3153,21 @@ ${macroEnd}
     setCreateError("");
     try {
       if (createDialog === "file") {
-        const path = await window.latexdo.createFile(projectPath, relativePath);
-        const entries = await refreshProject(projectPath);
-        const entry = flattenEntries(entries).find((item) => item.path === path);
+        const createdPath = await window.latexdo.createFile(projectId, relativePath);
+        const entries = await refreshProject(projectId);
+        const entry = flattenEntries(entries).find(
+          (item) =>
+            normalizeRelativePath(item.relativePath) ===
+            normalizeRelativePath(createdPath),
+        );
         if (!entry) {
           throw new Error("The file was created but could not be opened.");
         }
         await openDocument(entry);
         setStatusMessage(`Created ${relativePath}`);
       } else {
-        await window.latexdo.createFolder(projectPath, relativePath);
-        await refreshProject(projectPath);
+        await window.latexdo.createFolder(projectId, relativePath);
+        await refreshProject(projectId);
         setStatusMessage(`Created folder ${relativePath}`);
       }
       setCreateDialog(null);
@@ -3402,7 +3446,7 @@ ${macroEnd}
   }, []);
 
   const refreshGitStatus = useCallback(async () => {
-    const currentProject = projectPathRef.current;
+    const currentProject = projectIdRef.current;
     if (!currentProject) {
       setGitStatus(null);
       return;
@@ -3429,7 +3473,7 @@ ${macroEnd}
 
   const stageGitEntry = useCallback(
     async (relativePath: string) => {
-      const currentProject = projectPathRef.current;
+      const currentProject = projectIdRef.current;
       if (!currentProject) return;
 
       setGitActionBusy(`stage:${relativePath}`);
@@ -3446,7 +3490,7 @@ ${macroEnd}
 
   const unstageGitEntry = useCallback(
     async (relativePath: string) => {
-      const currentProject = projectPathRef.current;
+      const currentProject = projectIdRef.current;
       if (!currentProject) return;
 
       setGitActionBusy(`unstage:${relativePath}`);
@@ -3462,7 +3506,7 @@ ${macroEnd}
   );
 
   const commitGitChanges = useCallback(async () => {
-    const currentProject = projectPathRef.current;
+    const currentProject = projectIdRef.current;
     if (!currentProject) return;
 
     setGitActionBusy("commit");
@@ -3481,7 +3525,7 @@ ${macroEnd}
   }, [gitCommitMessage, refreshGitStatus]);
 
   const previewGitDiff = useCallback(async (relativePath: string) => {
-    const currentProject = projectPathRef.current;
+    const currentProject = projectIdRef.current;
     if (!currentProject) return;
 
     setGitActionBusy(`diff:${relativePath}`);
@@ -3495,7 +3539,7 @@ ${macroEnd}
 
   const discardGitEntry = useCallback(
     async (relativePath: string) => {
-      const currentProject = projectPathRef.current;
+      const currentProject = projectIdRef.current;
       if (!currentProject) return;
 
       setGitActionBusy(`discard:${relativePath}`);
@@ -3517,7 +3561,7 @@ ${macroEnd}
   );
 
   const stageAllGitEntries = useCallback(async () => {
-    const currentProject = projectPathRef.current;
+    const currentProject = projectIdRef.current;
     if (!currentProject) return;
 
     setGitActionBusy("stage-all");
@@ -3531,7 +3575,7 @@ ${macroEnd}
   }, [refreshGitStatus]);
 
   const unstageAllGitEntries = useCallback(async () => {
-    const currentProject = projectPathRef.current;
+    const currentProject = projectIdRef.current;
     if (!currentProject) return;
 
     setGitActionBusy("unstage-all");
@@ -3545,7 +3589,7 @@ ${macroEnd}
   }, [refreshGitStatus]);
 
   const discardAllGitEntries = useCallback(async () => {
-    const currentProject = projectPathRef.current;
+    const currentProject = projectIdRef.current;
     if (!currentProject) return;
 
     setGitActionBusy("discard-all");
@@ -3560,7 +3604,7 @@ ${macroEnd}
   }, [refreshGitStatus]);
 
   const openGitCommitDetails = useCallback(async (hash: string, targetPath?: string) => {
-    const currentProject = projectPathRef.current;
+    const currentProject = projectIdRef.current;
     if (!currentProject) return;
 
     setGitActionBusy(`commit:${hash}`);
@@ -3575,7 +3619,7 @@ ${macroEnd}
 
   const openGitCommitRevisionDiff = useCallback(
     async (hash: string, relativePath: string) => {
-      const currentProject = projectPathRef.current;
+      const currentProject = projectIdRef.current;
       if (!currentProject) return;
 
       setGitActionBusy(`commit-diff:${hash}:${relativePath}`);
@@ -3605,14 +3649,14 @@ ${macroEnd}
       return;
     }
     void refreshGitStatus();
-  }, [activeSidebar, projectPath, refreshGitStatus]);
+  }, [activeSidebar, projectId, refreshGitStatus]);
 
   useEffect(() => {
     void checkForUpdates();
   }, [checkForUpdates]);
 
   useEffect(() => {
-    if (activeSidebar !== "sourceControl" || !projectPath) {
+    if (activeSidebar !== "sourceControl" || !projectId) {
       return;
     }
 
@@ -3620,9 +3664,9 @@ ${macroEnd}
     const loadHistory = async () => {
       try {
         const [repoHistory, fileHistory] = await Promise.all([
-          window.latexdo.getGitHistory(projectPath),
+          window.latexdo.getGitHistory(projectId),
           activeDocument
-            ? window.latexdo.getGitHistory(projectPath, activeDocument.relativePath)
+            ? window.latexdo.getGitHistory(projectId, activeDocument.relativePath)
             : Promise.resolve(null),
         ]);
 
@@ -3642,7 +3686,7 @@ ${macroEnd}
     return () => {
       cancelled = true;
     };
-  }, [activeSidebar, projectPath, activeDocument]);
+  }, [activeSidebar, projectId, activeDocument]);
 
   const togglePreview = async () => {
     if (previewShown) {
@@ -3740,7 +3784,7 @@ ${macroEnd}
 
   const openGitDiffEditor = useCallback(
     async (relativePath: string) => {
-      const currentProject = projectPathRef.current;
+      const currentProject = projectIdRef.current;
       if (!currentProject) return;
 
       setGitActionBusy(`editor-diff:${relativePath}`);
@@ -3848,7 +3892,7 @@ ${macroEnd}
   }, [reviewChats, saveReviewData]);
 
   const handleGenerateRebuttalLetter = useCallback(async () => {
-    const currentProject = projectPathRef.current;
+    const currentProject = projectIdRef.current;
     if (!currentProject) { setStatusMessage("No project open."); return; }
 
     try {
@@ -3975,7 +4019,7 @@ ${macroEnd}
         return;
       }
 
-      const currentProject = projectPathRef.current;
+      const currentProject = projectIdRef.current;
       const currentDocument = documentsRef.current.find(
         (document) =>
           normalizeRelativePath(document.relativePath) ===
@@ -3986,7 +4030,7 @@ ${macroEnd}
       }
 
       const savedContent = currentProject
-        ? await window.latexdo.readFile(currentProject, entry.path).catch(() => snapshot.content)
+        ? await window.latexdo.readFile(currentProject, entry.relativePath).catch(() => snapshot.content)
         : snapshot.content;
 
       setGitDiffSession(null);
@@ -4070,7 +4114,7 @@ ${macroEnd}
       window.clearTimeout(historyAutoCaptureTimerRef.current);
       historyAutoCaptureTimerRef.current = null;
     }
-    if (!projectPath || !activeDocument || showWelcome || showBlankWorkspace) {
+    if (!projectId || !activeDocument || showWelcome || showBlankWorkspace) {
       return;
     }
 
@@ -4095,7 +4139,7 @@ ${macroEnd}
     activeDocument?.content,
     activeDocument?.path,
     addHistorySnapshot,
-    projectPath,
+    projectId,
     showBlankWorkspace,
     showWelcome,
   ]);
@@ -5573,7 +5617,8 @@ ${macroEnd}
                     }`}
                   >
                     <TerminalPanel
-                      cwd={projectPath}
+                      projectId={projectId}
+                      workspacePath={projectPath}
                       active={activePanel === "terminal"}
                     />
                   </section>
