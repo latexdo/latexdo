@@ -140,6 +140,342 @@ function relativeProjectPath(projectPath: string, targetPath: string): string {
   return relativePath || ".";
 }
 
+const maxProjectIdLength = 128;
+const maxRelativePathLength = 4096;
+const maxTextContentLength = 20 * 1024 * 1024;
+const maxProofreadingContentLength = 5 * 1024 * 1024;
+const maxGitCommitMessageLength = 20_000;
+const maxSettingsStringLength = 2048;
+const maxSyncTexNumber = 1_000_000;
+const reservedProjectPathSegments = new Set([
+  ".git",
+  ".latexdo",
+  "node_modules",
+]);
+const compileEngines = new Set(["pdflatex", "xelatex", "lualatex"]);
+const languageCodePattern = /^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$/;
+const gitHashPattern = /^[0-9a-fA-F]{7,64}$/;
+
+function invalidIpcInput(channel: string): never {
+  throw new Error(`Invalid IPC input for ${channel}.`);
+}
+
+function expectIpcArgs(
+  channel: string,
+  args: unknown[],
+  expectedCount: number,
+): unknown[] {
+  if (args.length !== expectedCount) {
+    invalidIpcInput(channel);
+  }
+  return args;
+}
+
+function expectIpcArgRange(
+  channel: string,
+  args: unknown[],
+  minCount: number,
+  maxCount: number,
+): unknown[] {
+  if (args.length < minCount || args.length > maxCount) {
+    invalidIpcInput(channel);
+  }
+  return args;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasControlChars(value: string): boolean {
+  return /[\u0000-\u001f\u007f]/.test(value);
+}
+
+function parseString(
+  channel: string,
+  value: unknown,
+  options: {
+    allowEmpty?: boolean;
+    maxLength?: number;
+    trim?: boolean;
+    rejectControlChars?: boolean;
+    rejectNullByte?: boolean;
+    pattern?: RegExp;
+  } = {},
+): string {
+  if (typeof value !== "string") {
+    invalidIpcInput(channel);
+  }
+
+  const parsed = options.trim === false ? value : value.trim();
+  const maxLength = options.maxLength ?? maxSettingsStringLength;
+  if ((!options.allowEmpty && !parsed) || parsed.length > maxLength) {
+    invalidIpcInput(channel);
+  }
+  if (options.rejectNullByte !== false && parsed.includes("\0")) {
+    invalidIpcInput(channel);
+  }
+  if (options.rejectControlChars && hasControlChars(parsed)) {
+    invalidIpcInput(channel);
+  }
+  if (options.pattern && !options.pattern.test(parsed)) {
+    invalidIpcInput(channel);
+  }
+
+  return parsed;
+}
+
+function parseBoolean(channel: string, value: unknown): boolean {
+  if (typeof value !== "boolean") {
+    invalidIpcInput(channel);
+  }
+  return value;
+}
+
+function parseInteger(
+  channel: string,
+  value: unknown,
+  min: number,
+  max: number,
+): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < min ||
+    value > max
+  ) {
+    invalidIpcInput(channel);
+  }
+  return value;
+}
+
+function parseFiniteNumber(
+  channel: string,
+  value: unknown,
+  min: number,
+  max: number,
+): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value < min ||
+    value > max
+  ) {
+    invalidIpcInput(channel);
+  }
+  return value;
+}
+
+function parseProjectId(channel: string, value: unknown): string {
+  return parseString(channel, value, {
+    maxLength: maxProjectIdLength,
+    rejectControlChars: true,
+  });
+}
+
+function parseRelativePath(
+  channel: string,
+  value: unknown,
+  options: { extensions?: string[] } = {},
+): string {
+  const parsed = parseString(channel, value, {
+    maxLength: maxRelativePathLength,
+    rejectControlChars: true,
+  }).replace(/\\/g, "/");
+
+  if (
+    path.isAbsolute(parsed) ||
+    path.posix.isAbsolute(parsed) ||
+    path.win32.isAbsolute(parsed) ||
+    /^[A-Za-z]:/.test(parsed)
+  ) {
+    invalidIpcInput(channel);
+  }
+
+  const segments = parsed.split("/");
+  if (
+    segments.some(
+      (segment) =>
+        !segment ||
+        segment === "." ||
+        segment === ".." ||
+        reservedProjectPathSegments.has(segment),
+    )
+  ) {
+    invalidIpcInput(channel);
+  }
+
+  if (
+    options.extensions &&
+    !options.extensions.includes(path.posix.extname(parsed).toLowerCase())
+  ) {
+    invalidIpcInput(channel);
+  }
+
+  return parsed;
+}
+
+function parseOptionalRelativePath(
+  channel: string,
+  value: unknown,
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  return parseRelativePath(channel, value);
+}
+
+function parseTextContent(
+  channel: string,
+  value: unknown,
+  maxLength = maxTextContentLength,
+): string {
+  return parseString(channel, value, {
+    allowEmpty: true,
+    maxLength,
+    trim: false,
+    rejectNullByte: true,
+  });
+}
+
+function parseStringArray(
+  channel: string,
+  value: unknown,
+  options: { maxItems: number; maxItemLength: number; pattern?: RegExp },
+): string[] {
+  if (!Array.isArray(value) || value.length > options.maxItems) {
+    invalidIpcInput(channel);
+  }
+
+  return value.map((item) =>
+    parseString(channel, item, {
+      maxLength: options.maxItemLength,
+      rejectControlChars: true,
+      pattern: options.pattern,
+    }),
+  );
+}
+
+function normalizeHttpUrl(value: string): string | null {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(value);
+    if (
+      (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+      parsed.username ||
+      parsed.password
+    ) {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function parseHttpUrl(channel: string, value: unknown): string {
+  const raw = parseString(channel, value, {
+    allowEmpty: true,
+    maxLength: maxSettingsStringLength,
+    rejectControlChars: true,
+  });
+  const normalized = normalizeHttpUrl(raw);
+  if (normalized === null) {
+    invalidIpcInput(channel);
+  }
+  return normalized;
+}
+
+function parseSpellCheckerSettingsInput(
+  channel: string,
+  value: unknown,
+): SpellCheckerSettings {
+  if (!isRecord(value)) {
+    invalidIpcInput(channel);
+  }
+
+  return {
+    enabled: parseBoolean(channel, value.enabled),
+    languages: parseStringArray(channel, value.languages, {
+      maxItems: 64,
+      maxItemLength: 32,
+      pattern: languageCodePattern,
+    }),
+    customWords: parseStringArray(channel, value.customWords, {
+      maxItems: 2000,
+      maxItemLength: 128,
+    }),
+    availableLanguages: [],
+    usesSystemLanguage: false,
+  };
+}
+
+function parseProofreadingSettingsInput(
+  channel: string,
+  value: unknown,
+): ProofreadingSettings {
+  if (!isRecord(value)) {
+    invalidIpcInput(channel);
+  }
+
+  const language = parseString(channel, value.language, {
+    maxLength: 32,
+    pattern: /^(?:auto|[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*)$/,
+  });
+  const motherTongue = parseString(channel, value.motherTongue, {
+    allowEmpty: true,
+    maxLength: 32,
+    rejectControlChars: true,
+  });
+  if (motherTongue && !languageCodePattern.test(motherTongue)) {
+    invalidIpcInput(channel);
+  }
+
+  return {
+    enabled: parseBoolean(channel, value.enabled),
+    serverUrl: parseHttpUrl(channel, value.serverUrl),
+    language,
+    picky: parseBoolean(channel, value.picky),
+    motherTongue,
+  };
+}
+
+function parseCompileRequestInput(
+  channel: string,
+  value: unknown,
+): CompileRequest {
+  if (!isRecord(value)) {
+    invalidIpcInput(channel);
+  }
+
+  const engine = parseString(channel, value.engine, {
+    maxLength: 16,
+    rejectControlChars: true,
+  }) as CompileRequest["engine"];
+  if (!compileEngines.has(engine)) {
+    invalidIpcInput(channel);
+  }
+
+  return {
+    projectId: parseProjectId(channel, value.projectId),
+    rootFile: parseRelativePath(channel, value.rootFile, {
+      extensions: [".tex"],
+    }),
+    engine,
+  };
+}
+
+function parseGitHash(channel: string, value: unknown): string {
+  return parseString(channel, value, {
+    maxLength: 64,
+    rejectControlChars: true,
+    pattern: gitHashPattern,
+  });
+}
+
 function starterContent(relativePath: string): string {
   const extension = path.extname(relativePath).toLowerCase();
   if (extension === ".tex" && path.basename(relativePath) === "main.tex") {
@@ -169,7 +505,8 @@ function compareVersions(left: string, right: string): number {
     const rightPart = rightParts[index] ?? "0";
     const leftNumber = Number(leftPart);
     const rightNumber = Number(rightPart);
-    const bothNumeric = Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
+    const bothNumeric =
+      Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
 
     if (bothNumeric) {
       if (leftNumber !== rightNumber) {
@@ -299,8 +636,8 @@ function sanitizeSpellCheckerSettings(
     left.localeCompare(right),
   );
   const availableSet = new Set(available);
-  const requestedLanguages = uniqueStrings(stored.languages ?? []).filter((code) =>
-    availableSet.has(code),
+  const requestedLanguages = uniqueStrings(stored.languages ?? []).filter(
+    (code) => availableSet.has(code),
   );
 
   return {
@@ -429,17 +766,23 @@ function sanitizeProofreadingSettings(
   stored: StoredProofreadingSettings,
 ): ProofreadingSettings {
   const defaults = defaultProofreadingSettings();
-  const serverUrl = typeof stored.serverUrl === "string" ? stored.serverUrl.trim() : "";
-  const language = typeof stored.language === "string" ? stored.language.trim() : "";
+  const serverUrl =
+    typeof stored.serverUrl === "string" ? stored.serverUrl.trim() : "";
+  const language =
+    typeof stored.language === "string" ? stored.language.trim() : "";
   const motherTongue =
     typeof stored.motherTongue === "string" ? stored.motherTongue.trim() : "";
+  const normalizedServerUrl = normalizeHttpUrl(serverUrl);
 
   return {
     enabled: stored.enabled !== false,
-    serverUrl: serverUrl || defaults.serverUrl,
-    language: language || defaults.language,
+    serverUrl: normalizedServerUrl || defaults.serverUrl,
+    language:
+      language === "auto" || languageCodePattern.test(language)
+        ? language
+        : defaults.language,
     picky: typeof stored.picky === "boolean" ? stored.picky : defaults.picky,
-    motherTongue,
+    motherTongue: languageCodePattern.test(motherTongue) ? motherTongue : "",
   };
 }
 
@@ -515,10 +858,7 @@ function sanitizeLatexForProofreading(source: string): string {
       let end = index + closeToken.length;
 
       while (end < source.length) {
-        if (
-          source.startsWith(closeToken, end) &&
-          source[end - 1] !== "\\"
-        ) {
+        if (source.startsWith(closeToken, end) && source[end - 1] !== "\\") {
           end += closeToken.length;
           break;
         }
@@ -552,7 +892,10 @@ function sanitizeLatexForProofreading(source: string): string {
 
     if (char === "\\") {
       let commandEnd = index + 1;
-      while (commandEnd < source.length && /[A-Za-z*@]/.test(source[commandEnd]!)) {
+      while (
+        commandEnd < source.length &&
+        /[A-Za-z*@]/.test(source[commandEnd]!)
+      ) {
         commandEnd += 1;
       }
       const command = source.slice(index + 1, commandEnd);
@@ -572,7 +915,11 @@ function sanitizeLatexForProofreading(source: string): string {
           pointer += 1;
         }
 
-        for (let groups = 0; groups < 2 && pointer < source.length; groups += 1) {
+        for (
+          let groups = 0;
+          groups < 2 && pointer < source.length;
+          groups += 1
+        ) {
           if (source[pointer] === "[") {
             let depth = 1;
             let end = pointer + 1;
@@ -621,7 +968,10 @@ function sanitizeLatexForProofreading(source: string): string {
   return sanitized;
 }
 
-function offsetToLocation(source: string, offset: number): {
+function offsetToLocation(
+  source: string,
+  offset: number,
+): {
   line: number;
   column: number;
 } {
@@ -646,13 +996,17 @@ function mapProofreadingMatch(
   match: ProofreadingMatch,
 ): Diagnostic | null {
   const offset = typeof match.offset === "number" ? match.offset : -1;
-  const length = typeof match.length === "number" ? Math.max(1, match.length) : 1;
+  const length =
+    typeof match.length === "number" ? Math.max(1, match.length) : 1;
   if (offset < 0 || offset >= source.length) {
     return null;
   }
 
   const start = offsetToLocation(source, offset);
-  const end = offsetToLocation(source, Math.min(source.length, offset + length));
+  const end = offsetToLocation(
+    source,
+    Math.min(source.length, offset + length),
+  );
   const replacements = uniqueStrings(
     (match.replacements ?? [])
       .map((replacement) => replacement.value ?? "")
@@ -750,7 +1104,9 @@ async function proofreadDocument(
 
 function showSpellCheckerMenu(): void {
   const targetWindow =
-    BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null;
+    BrowserWindow.getFocusedWindow() ??
+    BrowserWindow.getAllWindows()[0] ??
+    null;
   targetWindow?.webContents.send(openSpellCheckerChannel);
 }
 
@@ -837,26 +1193,34 @@ function buildApplicationMenu(): void {
           label: "Open Folder...",
           accelerator: "CmdOrCtrl+O",
           click: () => {
-            BrowserWindow.getFocusedWindow()?.webContents.send(openProjectChannel);
+            BrowserWindow.getFocusedWindow()?.webContents.send(
+              openProjectChannel,
+            );
           },
         },
         {
           label: "New File...",
           accelerator: "CmdOrCtrl+N",
           click: () => {
-            BrowserWindow.getFocusedWindow()?.webContents.send(createFileChannel);
+            BrowserWindow.getFocusedWindow()?.webContents.send(
+              createFileChannel,
+            );
           },
         },
         {
           label: "New Folder...",
           accelerator: "CmdOrCtrl+Shift+N",
           click: () => {
-            BrowserWindow.getFocusedWindow()?.webContents.send(createFolderChannel);
+            BrowserWindow.getFocusedWindow()?.webContents.send(
+              createFolderChannel,
+            );
           },
         },
         { type: "separator" },
         { role: "close" },
-        ...(process.platform === "darwin" ? [] : ([{ type: "separator" }, { role: "quit" }] as const)),
+        ...(process.platform === "darwin"
+          ? []
+          : ([{ type: "separator" }, { role: "quit" }] as const)),
       ],
     },
     {
@@ -919,20 +1283,26 @@ function buildApplicationMenu(): void {
         {
           label: "Report an Issue",
           click: () => {
-            void shell.openExternal("https://github.com/latexdo/latexdo/issues/new");
+            void shell.openExternal(
+              "https://github.com/latexdo/latexdo/issues/new",
+            );
           },
         },
         { type: "separator" },
         {
           label: "Check for Updates",
           click: () => {
-            void shell.openExternal("https://github.com/latexdo/latexdo/releases");
+            void shell.openExternal(
+              "https://github.com/latexdo/latexdo/releases",
+            );
           },
         },
         {
           label: "LatexDo Releases",
           click: () => {
-            void shell.openExternal("https://github.com/latexdo/latexdo/releases");
+            void shell.openExternal(
+              "https://github.com/latexdo/latexdo/releases",
+            );
           },
         },
       ],
@@ -950,7 +1320,9 @@ async function checkForUpdates(): Promise<UpdateCheckResult> {
   };
 
   try {
-    const response = await fetch(githubLatestReleaseUrl, { headers: requestHeaders });
+    const response = await fetch(githubLatestReleaseUrl, {
+      headers: requestHeaders,
+    });
     let payload: {
       tag_name?: string;
       html_url?: string;
@@ -998,7 +1370,8 @@ async function checkForUpdates(): Promise<UpdateCheckResult> {
       latestVersion,
       releaseUrl: payload.html_url ?? githubReleasesPageUrl,
       updateAvailable:
-        latestVersion !== null && compareVersions(latestVersion, currentVersion) > 0,
+        latestVersion !== null &&
+        compareVersions(latestVersion, currentVersion) > 0,
     };
   } catch (error) {
     return {
@@ -1024,8 +1397,8 @@ async function readGitStatus(projectPath: string): Promise<GitStatusSummary> {
     const header = lines[0]?.startsWith("## ") ? lines[0].slice(3) : "";
     const branch = header ? header.split("...")[0] || header : null;
     const entries: GitStatusEntry[] = lines.slice(1).map((line) => ({
-      indexStatus: line[0] === " " ? "" : line[0] ?? "",
-      workingTreeStatus: line[1] === " " ? "" : line[1] ?? "",
+      indexStatus: line[0] === " " ? "" : (line[0] ?? ""),
+      workingTreeStatus: line[1] === " " ? "" : (line[1] ?? ""),
       path: line.slice(3).trim(),
     }));
 
@@ -1090,12 +1463,18 @@ async function isGitRepository(projectPath: string): Promise<boolean> {
   }
 }
 
-async function gitAdd(projectPath: string, relativePath: string): Promise<void> {
+async function gitAdd(
+  projectPath: string,
+  relativePath: string,
+): Promise<void> {
   const targetPath = resolveProjectPath(projectPath, relativePath);
   await execFileAsync("git", ["-C", projectPath, "add", "--", targetPath]);
 }
 
-async function gitUnstage(projectPath: string, relativePath: string): Promise<void> {
+async function gitUnstage(
+  projectPath: string,
+  relativePath: string,
+): Promise<void> {
   const targetPath = resolveProjectPath(projectPath, relativePath);
   try {
     await execFileAsync("git", [
@@ -1146,7 +1525,10 @@ async function gitDiff(
   };
 }
 
-async function gitDiscard(projectPath: string, relativePath: string): Promise<void> {
+async function gitDiscard(
+  projectPath: string,
+  relativePath: string,
+): Promise<void> {
   const targetPath = resolveProjectPath(projectPath, relativePath);
   try {
     await execFileAsync("git", [
@@ -1415,7 +1797,9 @@ function createWindow(): void {
   if (isDevelopment) {
     void window.loadURL(process.env.VITE_DEV_SERVER_URL!);
   } else {
-    void window.loadFile(path.join(currentDirectory, "..", "dist", "index.html"));
+    void window.loadFile(
+      path.join(currentDirectory, "..", "dist", "index.html"),
+    );
   }
 }
 
@@ -1428,25 +1812,42 @@ app.whenReady().then(() => {
   console.log("[latexdo] app:terminal-registered");
   buildApplicationMenu();
   console.log("[latexdo] app:menu-built");
-  ipcMain.handle("project:open", async () => {
+  ipcMain.handle("project:open", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "project:open";
+    expectIpcArgs(channel, rawArgs, 0);
     const result = await dialog.showOpenDialog({
       properties: ["openDirectory", "createDirectory"],
       title: "Open LaTeX project",
     });
     return result.canceled ? null : registerProject(result.filePaths[0]);
   });
-  ipcMain.handle("project:create", async () => {
-    const tmpDir = await mkdtemp(path.join(app.getPath("temp"), "latexdo-project-"));
+  ipcMain.handle("project:create", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "project:create";
+    expectIpcArgs(channel, rawArgs, 0);
+    const tmpDir = await mkdtemp(
+      path.join(app.getPath("temp"), "latexdo-project-"),
+    );
     const projectPath = path.join(tmpDir, "My LaTeX Project");
     await mkdir(projectPath, { recursive: true });
-    await writeFile(path.join(projectPath, "main.tex"), starterDocument, "utf8");
+    await writeFile(
+      path.join(projectPath, "main.tex"),
+      starterDocument,
+      "utf8",
+    );
     return registerProject(projectPath);
   });
-  ipcMain.handle("project:list", async (_event, projectId: string) => {
+  ipcMain.handle("project:list", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "project:list";
+    const [rawProjectId] = expectIpcArgs(channel, rawArgs, 1);
+    const projectId = parseProjectId(channel, rawProjectId);
     const projectPath = getProjectRoot(projectId);
     return listProject(projectPath);
   });
-  ipcMain.handle("file:exists", async (_event, projectId: string, filePath: string) => {
+  ipcMain.handle("file:exists", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "file:exists";
+    const [rawProjectId, rawFilePath] = expectIpcArgs(channel, rawArgs, 2);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const filePath = parseRelativePath(channel, rawFilePath);
     const projectPath = getProjectRoot(projectId);
     const resolvedPath = resolveProjectPath(projectPath, filePath);
     try {
@@ -1456,222 +1857,291 @@ app.whenReady().then(() => {
       return false;
     }
   });
-  ipcMain.handle(
-    "file:read",
-    async (_event, projectId: string, filePath: string) => {
-      const projectPath = getProjectRoot(projectId);
-      const resolvedPath = resolveProjectPath(projectPath, filePath);
-      return readFile(resolvedPath, "utf8");
-    },
-  );
-  ipcMain.handle(
-    "file:write",
-    async (
-      _event,
-      projectId: string,
-      filePath: string,
-      content: string,
-    ) => {
-      const projectPath = getProjectRoot(projectId);
-      const resolvedPath = resolveProjectPath(projectPath, filePath);
-      await mkdir(path.dirname(resolvedPath), { recursive: true });
-      await writeFile(resolvedPath, content, "utf8");
-    },
-  );
-  ipcMain.handle(
-    "file:create",
-    async (_event, projectId: string, relativePath: string) => {
-      const projectPath = getProjectRoot(projectId);
-      const filePath = resolveProjectPath(projectPath, relativePath);
-      await mkdir(path.dirname(filePath), { recursive: true });
-      try {
-        await writeFile(filePath, starterContent(relativePath), {
-          encoding: "utf8",
-          flag: "wx",
-        });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-          return relativeProjectPath(projectPath, filePath);
-        }
-        throw error;
+  ipcMain.handle("file:read", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "file:read";
+    const [rawProjectId, rawFilePath] = expectIpcArgs(channel, rawArgs, 2);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const filePath = parseRelativePath(channel, rawFilePath);
+    const projectPath = getProjectRoot(projectId);
+    const resolvedPath = resolveProjectPath(projectPath, filePath);
+    return readFile(resolvedPath, "utf8");
+  });
+  ipcMain.handle("file:write", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "file:write";
+    const [rawProjectId, rawFilePath, rawContent] = expectIpcArgs(
+      channel,
+      rawArgs,
+      3,
+    );
+    const projectId = parseProjectId(channel, rawProjectId);
+    const filePath = parseRelativePath(channel, rawFilePath);
+    const content = parseTextContent(channel, rawContent);
+    const projectPath = getProjectRoot(projectId);
+    const resolvedPath = resolveProjectPath(projectPath, filePath);
+    await mkdir(path.dirname(resolvedPath), { recursive: true });
+    await writeFile(resolvedPath, content, "utf8");
+  });
+  ipcMain.handle("file:create", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "file:create";
+    const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const relativePath = parseRelativePath(channel, rawRelativePath);
+    const projectPath = getProjectRoot(projectId);
+    const filePath = resolveProjectPath(projectPath, relativePath);
+    await mkdir(path.dirname(filePath), { recursive: true });
+    try {
+      await writeFile(filePath, starterContent(relativePath), {
+        encoding: "utf8",
+        flag: "wx",
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        return relativeProjectPath(projectPath, filePath);
       }
-      return relativeProjectPath(projectPath, filePath);
-    },
-  );
-  ipcMain.handle(
-    "folder:create",
-    async (_event, projectId: string, relativePath: string) => {
-      const projectPath = getProjectRoot(projectId);
-      const folderPath = resolveProjectPath(projectPath, relativePath);
-      try {
-        await mkdir(folderPath, { recursive: false });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-          return relativeProjectPath(projectPath, folderPath);
-        }
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-          throw new Error("Create the parent folder first.");
-        }
-        throw error;
+      throw error;
+    }
+    return relativeProjectPath(projectPath, filePath);
+  });
+  ipcMain.handle("folder:create", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "folder:create";
+    const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const relativePath = parseRelativePath(channel, rawRelativePath);
+    const projectPath = getProjectRoot(projectId);
+    const folderPath = resolveProjectPath(projectPath, relativePath);
+    try {
+      await mkdir(folderPath, { recursive: false });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        return relativeProjectPath(projectPath, folderPath);
       }
-      return relativeProjectPath(projectPath, folderPath);
-    },
-  );
-  ipcMain.handle(
-    "entry:move",
-    async (
-      _event,
-      projectId: string,
-      fromRelativePath: string,
-      toRelativePath: string,
-    ) => {
-      const projectPath = getProjectRoot(projectId);
-      const sourcePath = resolveProjectPath(projectPath, fromRelativePath);
-      const targetPath = resolveProjectPath(projectPath, toRelativePath);
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new Error("Create the parent folder first.");
+      }
+      throw error;
+    }
+    return relativeProjectPath(projectPath, folderPath);
+  });
+  ipcMain.handle("entry:move", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "entry:move";
+    const [rawProjectId, rawFromRelativePath, rawToRelativePath] =
+      expectIpcArgs(channel, rawArgs, 3);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const fromRelativePath = parseRelativePath(channel, rawFromRelativePath);
+    const toRelativePath = parseRelativePath(channel, rawToRelativePath);
+    const projectPath = getProjectRoot(projectId);
+    const sourcePath = resolveProjectPath(projectPath, fromRelativePath);
+    const targetPath = resolveProjectPath(projectPath, toRelativePath);
 
-      if (sourcePath === targetPath) {
-        return relativeProjectPath(projectPath, targetPath);
-      }
-
-      const sourceStats = await stat(sourcePath).catch(() => null);
-      if (!sourceStats) {
-        throw new Error(`"${fromRelativePath}" no longer exists.`);
-      }
-
-      if (isInside(sourcePath, targetPath)) {
-        throw new Error("Cannot move a folder into itself.");
-      }
-
-      const targetExists = await stat(targetPath).catch(() => null);
-      if (targetExists) {
-        throw new Error(`"${toRelativePath}" already exists.`);
-      }
-
-      const targetParent = path.dirname(targetPath);
-      const targetParentStats = await stat(targetParent).catch(() => null);
-      if (!targetParentStats?.isDirectory()) {
-        throw new Error("Choose an existing folder as the destination.");
-      }
-
-      await rename(sourcePath, targetPath);
+    if (sourcePath === targetPath) {
       return relativeProjectPath(projectPath, targetPath);
-    },
-  );
-  ipcMain.handle("git:status", async (_event, projectId: string) => {
+    }
+
+    const sourceStats = await stat(sourcePath).catch(() => null);
+    if (!sourceStats) {
+      throw new Error(`"${fromRelativePath}" no longer exists.`);
+    }
+
+    if (isInside(sourcePath, targetPath)) {
+      throw new Error("Cannot move a folder into itself.");
+    }
+
+    const targetExists = await stat(targetPath).catch(() => null);
+    if (targetExists) {
+      throw new Error(`"${toRelativePath}" already exists.`);
+    }
+
+    const targetParent = path.dirname(targetPath);
+    const targetParentStats = await stat(targetParent).catch(() => null);
+    if (!targetParentStats?.isDirectory()) {
+      throw new Error("Choose an existing folder as the destination.");
+    }
+
+    await rename(sourcePath, targetPath);
+    return relativeProjectPath(projectPath, targetPath);
+  });
+  ipcMain.handle("git:status", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "git:status";
+    const [rawProjectId] = expectIpcArgs(channel, rawArgs, 1);
+    const projectId = parseProjectId(channel, rawProjectId);
     const projectPath = getProjectRoot(projectId);
     return readGitStatus(projectPath);
   });
-  ipcMain.handle(
-    "git:stage",
-    async (_event, projectId: string, relativePath: string) => {
-      const projectPath = getProjectRoot(projectId);
-      await gitAdd(projectPath, relativePath);
-    },
-  );
-  ipcMain.handle(
-    "git:unstage",
-    async (_event, projectId: string, relativePath: string) => {
-      const projectPath = getProjectRoot(projectId);
-      await gitUnstage(projectPath, relativePath);
-    },
-  );
-  ipcMain.handle(
-    "git:commit",
-    async (_event, projectId: string, message: string) => {
-      const projectPath = getProjectRoot(projectId);
-      await gitCommit(projectPath, message);
-    },
-  );
-  ipcMain.handle(
-    "git:diff",
-    async (_event, projectId: string, relativePath: string) => {
-      const projectPath = getProjectRoot(projectId);
-      return gitDiff(projectPath, relativePath);
-    },
-  );
-  ipcMain.handle(
-    "git:discard",
-    async (_event, projectId: string, relativePath: string) => {
-      const projectPath = getProjectRoot(projectId);
-      await gitDiscard(projectPath, relativePath);
-    },
-  );
-  ipcMain.handle("git:stage-all", async (_event, projectId: string) => {
+  ipcMain.handle("git:stage", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "git:stage";
+    const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const relativePath = parseRelativePath(channel, rawRelativePath);
+    const projectPath = getProjectRoot(projectId);
+    await gitAdd(projectPath, relativePath);
+  });
+  ipcMain.handle("git:unstage", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "git:unstage";
+    const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const relativePath = parseRelativePath(channel, rawRelativePath);
+    const projectPath = getProjectRoot(projectId);
+    await gitUnstage(projectPath, relativePath);
+  });
+  ipcMain.handle("git:commit", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "git:commit";
+    const [rawProjectId, rawMessage] = expectIpcArgs(channel, rawArgs, 2);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const message = parseString(channel, rawMessage, {
+      maxLength: maxGitCommitMessageLength,
+      rejectControlChars: true,
+    });
+    const projectPath = getProjectRoot(projectId);
+    await gitCommit(projectPath, message);
+  });
+  ipcMain.handle("git:diff", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "git:diff";
+    const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const relativePath = parseRelativePath(channel, rawRelativePath);
+    const projectPath = getProjectRoot(projectId);
+    return gitDiff(projectPath, relativePath);
+  });
+  ipcMain.handle("git:discard", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "git:discard";
+    const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const relativePath = parseRelativePath(channel, rawRelativePath);
+    const projectPath = getProjectRoot(projectId);
+    await gitDiscard(projectPath, relativePath);
+  });
+  ipcMain.handle("git:stage-all", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "git:stage-all";
+    const [rawProjectId] = expectIpcArgs(channel, rawArgs, 1);
+    const projectId = parseProjectId(channel, rawProjectId);
     const projectPath = getProjectRoot(projectId);
     await gitStageAll(projectPath);
   });
-  ipcMain.handle("git:unstage-all", async (_event, projectId: string) => {
+  ipcMain.handle("git:unstage-all", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "git:unstage-all";
+    const [rawProjectId] = expectIpcArgs(channel, rawArgs, 1);
+    const projectId = parseProjectId(channel, rawProjectId);
     const projectPath = getProjectRoot(projectId);
     await gitUnstageAll(projectPath);
   });
-  ipcMain.handle("git:discard-all", async (_event, projectId: string) => {
+  ipcMain.handle("git:discard-all", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "git:discard-all";
+    const [rawProjectId] = expectIpcArgs(channel, rawArgs, 1);
+    const projectId = parseProjectId(channel, rawProjectId);
     const projectPath = getProjectRoot(projectId);
     await gitDiscardAll(projectPath);
   });
-  ipcMain.handle(
-    "git:editor-diff",
-    async (_event, projectId: string, relativePath: string) => {
-      const projectPath = getProjectRoot(projectId);
-      return gitDiffEditorInput(projectPath, relativePath);
-    },
-  );
-  ipcMain.handle(
-    "git:history",
-    async (_event, projectId: string, relativePath?: string) => {
-      const projectPath = getProjectRoot(projectId);
-      return gitHistory(projectPath, relativePath);
-    },
-  );
+  ipcMain.handle("git:editor-diff", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "git:editor-diff";
+    const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const relativePath = parseRelativePath(channel, rawRelativePath);
+    const projectPath = getProjectRoot(projectId);
+    return gitDiffEditorInput(projectPath, relativePath);
+  });
+  ipcMain.handle("git:history", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "git:history";
+    const [rawProjectId, rawRelativePath] = expectIpcArgRange(
+      channel,
+      rawArgs,
+      1,
+      2,
+    );
+    const projectId = parseProjectId(channel, rawProjectId);
+    const relativePath = parseOptionalRelativePath(channel, rawRelativePath);
+    const projectPath = getProjectRoot(projectId);
+    return gitHistory(projectPath, relativePath);
+  });
   ipcMain.handle(
     "git:commit-details",
-    async (_event, projectId: string, hash: string) => {
+    async (_event, ...rawArgs: unknown[]) => {
+      const channel = "git:commit-details";
+      const [rawProjectId, rawHash] = expectIpcArgs(channel, rawArgs, 2);
+      const projectId = parseProjectId(channel, rawProjectId);
+      const hash = parseGitHash(channel, rawHash);
       const projectPath = getProjectRoot(projectId);
       return gitCommitDetails(projectPath, hash);
     },
   );
   ipcMain.handle(
     "git:commit-file-diff",
-    async (
-      _event,
-      projectId: string,
-      relativePath: string,
-      hash: string,
-    ) => {
+    async (_event, ...rawArgs: unknown[]) => {
+      const channel = "git:commit-file-diff";
+      const [rawProjectId, rawRelativePath, rawHash] = expectIpcArgs(
+        channel,
+        rawArgs,
+        3,
+      );
+      const projectId = parseProjectId(channel, rawProjectId);
+      const relativePath = parseRelativePath(channel, rawRelativePath);
+      const hash = parseGitHash(channel, rawHash);
       const projectPath = getProjectRoot(projectId);
       return gitDiffAtCommit(projectPath, relativePath, hash);
     },
   );
-  ipcMain.handle("app:check-updates", async () => {
+  ipcMain.handle("app:check-updates", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "app:check-updates";
+    expectIpcArgs(channel, rawArgs, 0);
     return checkForUpdates();
   });
-  ipcMain.handle("app:open-releases", async () => {
+  ipcMain.handle("app:open-releases", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "app:open-releases";
+    expectIpcArgs(channel, rawArgs, 0);
     await shell.openExternal(githubReleasesPageUrl);
   });
-  ipcMain.handle("spellchecker:get-settings", async (event) => {
-    return getSpellCheckerSettings(BrowserWindow.fromWebContents(event.sender));
-  });
+  ipcMain.handle(
+    "spellchecker:get-settings",
+    async (event, ...rawArgs: unknown[]) => {
+      const channel = "spellchecker:get-settings";
+      expectIpcArgs(channel, rawArgs, 0);
+      return getSpellCheckerSettings(
+        BrowserWindow.fromWebContents(event.sender),
+      );
+    },
+  );
   ipcMain.handle(
     "spellchecker:update-settings",
-    async (_event, settings: SpellCheckerSettings) => {
+    async (_event, ...rawArgs: unknown[]) => {
+      const channel = "spellchecker:update-settings";
+      const [rawSettings] = expectIpcArgs(channel, rawArgs, 1);
+      const settings = parseSpellCheckerSettingsInput(channel, rawSettings);
       return updateSpellCheckerSettings(settings);
     },
   );
-  ipcMain.handle("proofread:get-settings", async () => {
-    return getProofreadingSettings();
-  });
+  ipcMain.handle(
+    "proofread:get-settings",
+    async (_event, ...rawArgs: unknown[]) => {
+      const channel = "proofread:get-settings";
+      expectIpcArgs(channel, rawArgs, 0);
+      return getProofreadingSettings();
+    },
+  );
   ipcMain.handle(
     "proofread:update-settings",
-    async (_event, settings: ProofreadingSettings) => {
+    async (_event, ...rawArgs: unknown[]) => {
+      const channel = "proofread:update-settings";
+      const [rawSettings] = expectIpcArgs(channel, rawArgs, 1);
+      const settings = parseProofreadingSettingsInput(channel, rawSettings);
       return updateProofreadingSettings(settings);
     },
   );
-  ipcMain.handle(
-    "proofread:check",
-    async (_event, relativePath: string, content: string) => {
-      return proofreadDocument(relativePath, content);
-    },
-  );
-  ipcMain.handle("latex:compile", async (_event, request: CompileRequest) => {
+  ipcMain.handle("proofread:check", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "proofread:check";
+    const [rawRelativePath, rawContent] = expectIpcArgs(channel, rawArgs, 2);
+    const relativePath = parseRelativePath(channel, rawRelativePath, {
+      extensions: [".tex", ".md", ".txt"],
+    });
+    const content = parseTextContent(
+      channel,
+      rawContent,
+      maxProofreadingContentLength,
+    );
+    return proofreadDocument(relativePath, content);
+  });
+  ipcMain.handle("latex:compile", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "latex:compile";
+    const [rawRequest] = expectIpcArgs(channel, rawArgs, 1);
+    const request = parseCompileRequestInput(channel, rawRequest);
     const projectPath = getProjectRoot(request.projectId);
     resolveProjectPath(projectPath, request.rootFile);
     const result = await compileLatex({
@@ -1686,51 +2156,55 @@ app.whenReady().then(() => {
         : undefined,
     };
   });
-  ipcMain.handle(
-    "pdf:read",
-    async (_event, projectId: string, pdfPath: string) => {
-      const projectPath = getProjectRoot(projectId);
-      const resolvedPath = resolveProjectPath(projectPath, pdfPath);
-      return readFile(resolvedPath);
-    },
-  );
-  ipcMain.handle(
-    "synctex:forward",
-    async (
-      _event,
-      projectId: string,
-      pdfRelativePath: string,
-      inputRelativePath: string,
-      line: number,
-      column: number,
-    ) => {
-      const projectPath = getProjectRoot(projectId);
-      const pdfPath = resolveProjectPath(projectPath, pdfRelativePath);
-      const inputPath = resolveProjectPath(projectPath, inputRelativePath);
-      return forwardSyncTex(
-        projectPath,
-        pdfPath,
-        inputPath,
-        line,
-        column,
-      );
-    },
-  );
-  ipcMain.handle(
-    "synctex:backward",
-    async (
-      _event,
-      projectId: string,
-      pdfRelativePath: string,
-      page: number,
-      x: number,
-      y: number,
-    ) => {
-      const projectPath = getProjectRoot(projectId);
-      const pdfPath = resolveProjectPath(projectPath, pdfRelativePath);
-      return backwardSyncTex(projectPath, pdfPath, page, x, y);
-    },
-  );
+  ipcMain.handle("pdf:read", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "pdf:read";
+    const [rawProjectId, rawPdfPath] = expectIpcArgs(channel, rawArgs, 2);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const pdfPath = parseRelativePath(channel, rawPdfPath, {
+      extensions: [".pdf"],
+    });
+    const projectPath = getProjectRoot(projectId);
+    const resolvedPath = resolveProjectPath(projectPath, pdfPath);
+    return readFile(resolvedPath);
+  });
+  ipcMain.handle("synctex:forward", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "synctex:forward";
+    const [
+      rawProjectId,
+      rawPdfRelativePath,
+      rawInputRelativePath,
+      rawLine,
+      rawColumn,
+    ] = expectIpcArgs(channel, rawArgs, 5);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const pdfRelativePath = parseRelativePath(channel, rawPdfRelativePath, {
+      extensions: [".pdf"],
+    });
+    const inputRelativePath = parseRelativePath(channel, rawInputRelativePath, {
+      extensions: [".tex"],
+    });
+    const line = parseInteger(channel, rawLine, 1, maxSyncTexNumber);
+    const column = parseInteger(channel, rawColumn, 1, maxSyncTexNumber);
+    const projectPath = getProjectRoot(projectId);
+    const pdfPath = resolveProjectPath(projectPath, pdfRelativePath);
+    const inputPath = resolveProjectPath(projectPath, inputRelativePath);
+    return forwardSyncTex(projectPath, pdfPath, inputPath, line, column);
+  });
+  ipcMain.handle("synctex:backward", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "synctex:backward";
+    const [rawProjectId, rawPdfRelativePath, rawPage, rawX, rawY] =
+      expectIpcArgs(channel, rawArgs, 5);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const pdfRelativePath = parseRelativePath(channel, rawPdfRelativePath, {
+      extensions: [".pdf"],
+    });
+    const page = parseInteger(channel, rawPage, 1, 100_000);
+    const x = parseFiniteNumber(channel, rawX, 0, maxSyncTexNumber);
+    const y = parseFiniteNumber(channel, rawY, 0, maxSyncTexNumber);
+    const projectPath = getProjectRoot(projectId);
+    const pdfPath = resolveProjectPath(projectPath, pdfRelativePath);
+    return backwardSyncTex(projectPath, pdfPath, page, x, y);
+  });
 
   createWindow();
   console.log("[latexdo] app:window-opened");
