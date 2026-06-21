@@ -15,7 +15,6 @@ import {
   copyFile,
   link,
   mkdir,
-  mkdtemp,
   open,
   readFile,
   readdir,
@@ -1900,16 +1899,30 @@ app.whenReady().then(() => {
   ipcMain.handle("project:create", async (_event, ...rawArgs: unknown[]) => {
     const channel = "project:create";
     expectIpcArgs(channel, rawArgs, 0);
-    const tmpDir = await mkdtemp(
-      path.join(app.getPath("temp"), "latexdo-project-"),
-    );
-    const projectPath = path.join(tmpDir, "My LaTeX Project");
+    const result = await dialog.showOpenDialog({
+      properties: ["openDirectory", "createDirectory"],
+      title: "Choose a folder for the new LaTeX project",
+      buttonLabel: "Create Project",
+      defaultPath: app.getPath("documents"),
+    });
+    if (result.canceled) {
+      return null;
+    }
+
+    const projectPath = result.filePaths[0];
     await mkdir(projectPath, { recursive: true });
-    await atomicWriteUtf8(
-      path.join(projectPath, "main.tex"),
-      starterDocument,
-      { exclusive: true },
-    );
+    try {
+      await atomicWriteUtf8(path.join(projectPath, "main.tex"), starterDocument, {
+        exclusive: true,
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        throw new Error(
+          "Choose a folder without an existing main.tex, or open that folder instead.",
+        );
+      }
+      throw error;
+    }
     return registerProject(projectPath);
   });
   ipcMain.handle("project:list", async (_event, ...rawArgs: unknown[]) => {
