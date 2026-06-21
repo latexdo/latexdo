@@ -80,10 +80,7 @@ const mismatchedEnvironment = analyzeLatexDiagnostic(
   "\\documentclass{article}\n\\begin{document}\n\\begin{itemize}\n\\item One\n\\end{enumerate}\n\\end{document}\n",
   "",
 );
-assert.equal(
-  mismatchedEnvironment.title,
-  "Environment is not closed correctly",
-);
+assert.equal(mismatchedEnvironment.title, "Environment is not closed correctly");
 assert.equal(mismatchedEnvironment.line, 5);
 assert.equal(mismatchedEnvironment.column, 1);
 assert.equal(mismatchedEnvironment.highlightText, "\\end{enumerate}");

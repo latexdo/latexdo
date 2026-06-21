@@ -2,7 +2,16 @@ import { describe, it, expect } from "vitest";
 import { runReproducibilityChecks } from "../reproducibility";
 import type { ReproducibilitySettings } from "../../types";
 
-const full: ReproducibilitySettings = { enabled: true, checkCodeLink: true, checkDatasetLink: true, checkLicenseMentioned: true, checkHyperparameters: true, checkHardwareDetails: true, checkRandomSeeds: true, checkEvaluationMetrics: true };
+const full: ReproducibilitySettings = {
+  enabled: true,
+  checkCodeLink: true,
+  checkDatasetLink: true,
+  checkLicenseMentioned: true,
+  checkHyperparameters: true,
+  checkHardwareDetails: true,
+  checkRandomSeeds: true,
+  checkEvaluationMetrics: true,
+};
 
 // ── Individual check toggling ────────────────────────────────────────────
 type CheckField = keyof Omit<ReproducibilitySettings, "enabled">;
@@ -35,7 +44,8 @@ const codeLinks = [
 ];
 describe("Code link detection — parameterized", () => {
   it.each(codeLinks)("detects $desc", ({ doc }) => {
-    const content = "\\documentclass{article}\\begin{document}" + doc + "\\end{document}";
+    const content =
+      "\\documentclass{article}\\begin{document}" + doc + "\\end{document}";
     const result = runReproducibilityChecks(content, full);
     expect(result.some((d) => d.message.includes("Code availability"))).toBe(false);
   });
@@ -52,7 +62,8 @@ const datasetLinks = [
 describe("Dataset link detection — parameterized", () => {
   it.each(datasetLinks)("detects $desc", ({ url, phrase }) => {
     const text = url || phrase || "";
-    const content = "\\documentclass{article}\\begin{document}" + text + "\\end{document}";
+    const content =
+      "\\documentclass{article}\\begin{document}" + text + "\\end{document}";
     const result = runReproducibilityChecks(content, full);
     expect(result.some((d) => d.message.includes("Dataset"))).toBe(false);
   });
@@ -71,7 +82,8 @@ const licenses = [
 ];
 describe("License detection — parameterized", () => {
   it.each(licenses)("detects $desc", ({ text }) => {
-    const content = "\\documentclass{article}\\begin{document}" + text + "\\end{document}";
+    const content =
+      "\\documentclass{article}\\begin{document}" + text + "\\end{document}";
     const result = runReproducibilityChecks(content, full);
     expect(result.some((d) => d.message.includes("License"))).toBe(false);
   });
@@ -92,7 +104,8 @@ const hyperparams = [
 ];
 describe("Hyperparameter detection — parameterized", () => {
   it.each(hyperparams)("detects $desc", ({ text }) => {
-    const content = "\\documentclass{article}\\begin{document}" + text + "\\end{document}";
+    const content =
+      "\\documentclass{article}\\begin{document}" + text + "\\end{document}";
     const result = runReproducibilityChecks(content, full);
     expect(result.some((d) => d.message.includes("Hyperparameters"))).toBe(false);
   });
@@ -110,7 +123,8 @@ const hardware = [
 ];
 describe("Hardware detection — parameterized", () => {
   it.each(hardware)("detects $desc", ({ text }) => {
-    const content = "\\documentclass{article}\\begin{document}" + text + "\\end{document}";
+    const content =
+      "\\documentclass{article}\\begin{document}" + text + "\\end{document}";
     const result = runReproducibilityChecks(content, full);
     expect(result.some((d) => d.message.includes("Hardware"))).toBe(false);
   });
@@ -129,7 +143,8 @@ const seeds = [
 ];
 describe("Seed detection — parameterized", () => {
   it.each(seeds)("detects $desc", ({ text }) => {
-    const content = "\\documentclass{article}\\begin{document}" + text + "\\end{document}";
+    const content =
+      "\\documentclass{article}\\begin{document}" + text + "\\end{document}";
     const result = runReproducibilityChecks(content, full);
     expect(result.some((d) => d.message.includes("seeds"))).toBe(false);
   });
@@ -153,7 +168,8 @@ const metrics = [
 ];
 describe("Metric detection — parameterized", () => {
   it.each(metrics)("detects $desc", ({ text }) => {
-    const content = "\\documentclass{article}\\begin{document}" + text + "\\end{document}";
+    const content =
+      "\\documentclass{article}\\begin{document}" + text + "\\end{document}";
     const result = runReproducibilityChecks(content, full);
     expect(result.some((d) => d.message.includes("metrics"))).toBe(false);
   });
@@ -162,7 +178,8 @@ describe("Metric detection — parameterized", () => {
 // ── All-passes document ─────────────────────────────────────────────────
 describe("All checks pass", () => {
   it("passes for a complete reproducibility document", () => {
-    const doc = "\\documentclass{article}\\begin{document}Code at \\url{https://github.com/user/repo}. Data on \\url{https://zenodo.org/12345}. MIT License. Learning rate 0.001, batch 64, 100 epochs, Adam. NVIDIA A100 GPU. Random seed 42. Accuracy 95%, F1 0.9.\\end{document}";
+    const doc =
+      "\\documentclass{article}\\begin{document}Code at \\url{https://github.com/user/repo}. Data on \\url{https://zenodo.org/12345}. MIT License. Learning rate 0.001, batch 64, 100 epochs, Adam. NVIDIA A100 GPU. Random seed 42. Accuracy 95%, F1 0.9.\\end{document}";
     const result = runReproducibilityChecks(doc, full);
     expect(result).toHaveLength(0);
   });
@@ -170,8 +187,17 @@ describe("All checks pass", () => {
 
 // ── Edge cases ──────────────────────────────────────────────────────────
 const edgeCases = [
-  { desc: "empty document", doc: "\\documentclass{article}\\begin{document}\\end{document}" },
-  { desc: "very large document", doc: "\\documentclass{article}\\begin{document}" + Array(10000).fill("word").join(" ") + "\\end{document}" },
+  {
+    desc: "empty document",
+    doc: "\\documentclass{article}\\begin{document}\\end{document}",
+  },
+  {
+    desc: "very large document",
+    doc:
+      "\\documentclass{article}\\begin{document}" +
+      Array(10000).fill("word").join(" ") +
+      "\\end{document}",
+  },
 ];
 describe("Reproducibility edge cases — parameterized", () => {
   it.each(edgeCases)("handles $desc", ({ doc }) => {

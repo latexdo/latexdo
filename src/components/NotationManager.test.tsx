@@ -66,9 +66,7 @@ describe("NotationManager", () => {
     expect(screen.getByText("regularization weight")).toBeVisible();
 
     fireEvent.click(within(customRow as HTMLElement).getByRole("button"));
-    expect(writeText).toHaveBeenCalledWith(
-      "\\newcommand{\\lambda}{\\lambda}",
-    );
+    expect(writeText).toHaveBeenCalledWith("\\newcommand{\\lambda}{\\lambda}");
   });
 
   it("offers definitions for detected undefined notation", () => {

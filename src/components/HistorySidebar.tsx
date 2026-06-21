@@ -131,9 +131,7 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = ({
             </button>
           ))
         ) : (
-          <div className="sidebar-empty-state compact">
-            No local history yet.
-          </div>
+          <div className="sidebar-empty-state compact">No local history yet.</div>
         )}
       </div>
     </div>

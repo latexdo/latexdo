@@ -62,17 +62,13 @@ describe("FigureToTikzConverter", () => {
   it("shows the upload state before an image is provided", () => {
     render(<FigureToTikzConverter />);
 
-    expect(
-      screen.getByText(/Drop an image here, click to upload/i),
-    ).toBeVisible();
+    expect(screen.getByText(/Drop an image here, click to upload/i)).toBeVisible();
     expect(screen.queryByRole("button", { name: /copy/i })).not.toBeInTheDocument();
   });
 
   it("generates TikZ code from an uploaded image and inserts it", () => {
     const onInsertCode = vi.fn();
-    const { container } = render(
-      <FigureToTikzConverter onInsertCode={onInsertCode} />,
-    );
+    const { container } = render(<FigureToTikzConverter onInsertCode={onInsertCode} />);
 
     const input = container.querySelector("input[type='file']");
     expect(input).not.toBeNull();

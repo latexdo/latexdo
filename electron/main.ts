@@ -519,10 +519,7 @@ function parseProofreadingSettingsInput(
   };
 }
 
-function parseCompileRequestInput(
-  channel: string,
-  value: unknown,
-): CompileRequest {
+function parseCompileRequestInput(channel: string, value: unknown): CompileRequest {
   if (!isRecord(value)) {
     invalidIpcInput(channel);
   }
@@ -564,11 +561,7 @@ function starterContent(relativePath: string): string {
 }
 
 function normalizeVersion(version: string): string[] {
-  return version
-    .trim()
-    .replace(/^v/i, "")
-    .split(/[.-]/)
-    .filter(Boolean);
+  return version.trim().replace(/^v/i, "").split(/[.-]/).filter(Boolean);
 }
 
 function compareVersions(left: string, right: string): number {
@@ -581,8 +574,7 @@ function compareVersions(left: string, right: string): number {
     const rightPart = rightParts[index] ?? "0";
     const leftNumber = Number(leftPart);
     const rightNumber = Number(rightPart);
-    const bothNumeric =
-      Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
+    const bothNumeric = Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
 
     if (bothNumeric) {
       if (leftNumber !== rightNumber) {
@@ -646,11 +638,7 @@ function normalizeLanguageCode(value: string): string[] {
 
 function defaultSpellCheckerLanguages(availableLanguages: string[]): string[] {
   const availableSet = new Set(availableLanguages);
-  const localeCandidates = [
-    ...normalizeLanguageCode(app.getLocale()),
-    "en-US",
-    "en",
-  ];
+  const localeCandidates = [...normalizeLanguageCode(app.getLocale()), "en-US", "en"];
   const matched = localeCandidates.filter((code) => availableSet.has(code));
   if (matched.length) {
     return matched;
@@ -671,7 +659,9 @@ async function readStoredSpellCheckerSettings(): Promise<StoredSpellCheckerSetti
         ? parsed.languages.filter((value): value is string => typeof value === "string")
         : [],
       customWords: Array.isArray(parsed.customWords)
-        ? parsed.customWords.filter((value): value is string => typeof value === "string")
+        ? parsed.customWords.filter(
+            (value): value is string => typeof value === "string",
+          )
         : [],
     };
   } catch {
@@ -711,8 +701,8 @@ function sanitizeSpellCheckerSettings(
     left.localeCompare(right),
   );
   const availableSet = new Set(available);
-  const requestedLanguages = uniqueStrings(stored.languages ?? []).filter(
-    (code) => availableSet.has(code),
+  const requestedLanguages = uniqueStrings(stored.languages ?? []).filter((code) =>
+    availableSet.has(code),
   );
 
   return {
@@ -771,7 +761,8 @@ async function syncSpellCheckerSettings(
 async function updateSpellCheckerSettings(
   nextSettings: SpellCheckerSettings,
 ): Promise<SpellCheckerSettings> {
-  const referenceWindow = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  const referenceWindow =
+    BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
   const availableLanguages =
     referenceWindow && process.platform !== "darwin"
       ? referenceWindow.webContents.session.availableSpellCheckerLanguages
@@ -798,9 +789,7 @@ async function updateSpellCheckerSettings(
   return sanitized;
 }
 
-async function addSpellCheckerWord(
-  word: string,
-): Promise<SpellCheckerSettings> {
+async function addSpellCheckerWord(word: string): Promise<SpellCheckerSettings> {
   const current = await getSpellCheckerSettings();
   return updateSpellCheckerSettings({
     ...current,
@@ -842,10 +831,8 @@ function sanitizeProofreadingSettings(
   stored: StoredProofreadingSettings,
 ): ProofreadingSettings {
   const defaults = defaultProofreadingSettings();
-  const serverUrl =
-    typeof stored.serverUrl === "string" ? stored.serverUrl.trim() : "";
-  const language =
-    typeof stored.language === "string" ? stored.language.trim() : "";
+  const serverUrl = typeof stored.serverUrl === "string" ? stored.serverUrl.trim() : "";
+  const language = typeof stored.language === "string" ? stored.language.trim() : "";
   const motherTongue =
     typeof stored.motherTongue === "string" ? stored.motherTongue.trim() : "";
   const normalizedServerUrl = normalizeHttpUrl(serverUrl);
@@ -875,9 +862,7 @@ async function updateProofreadingSettings(
 }
 
 function replaceRangeWithSpaces(source: string, start: number, end: number): string {
-  return source
-    .slice(start, end)
-    .replace(/[^\n]/g, " ");
+  return source.slice(start, end).replace(/[^\n]/g, " ");
 }
 
 function sanitizeLatexForProofreading(source: string): string {
@@ -968,10 +953,7 @@ function sanitizeLatexForProofreading(source: string): string {
 
     if (char === "\\") {
       let commandEnd = index + 1;
-      while (
-        commandEnd < source.length &&
-        /[A-Za-z*@]/.test(source[commandEnd]!)
-      ) {
+      while (commandEnd < source.length && /[A-Za-z*@]/.test(source[commandEnd]!)) {
         commandEnd += 1;
       }
       const command = source.slice(index + 1, commandEnd);
@@ -991,11 +973,7 @@ function sanitizeLatexForProofreading(source: string): string {
           pointer += 1;
         }
 
-        for (
-          let groups = 0;
-          groups < 2 && pointer < source.length;
-          groups += 1
-        ) {
+        for (let groups = 0; groups < 2 && pointer < source.length; groups += 1) {
           if (source[pointer] === "[") {
             let depth = 1;
             let end = pointer + 1;
@@ -1072,17 +1050,13 @@ function mapProofreadingMatch(
   match: ProofreadingMatch,
 ): Diagnostic | null {
   const offset = typeof match.offset === "number" ? match.offset : -1;
-  const length =
-    typeof match.length === "number" ? Math.max(1, match.length) : 1;
+  const length = typeof match.length === "number" ? Math.max(1, match.length) : 1;
   if (offset < 0 || offset >= source.length) {
     return null;
   }
 
   const start = offsetToLocation(source, offset);
-  const end = offsetToLocation(
-    source,
-    Math.min(source.length, offset + length),
-  );
+  const end = offsetToLocation(source, Math.min(source.length, offset + length));
   const replacements = uniqueStrings(
     (match.replacements ?? [])
       .map((replacement) => replacement.value ?? "")
@@ -1180,9 +1154,7 @@ async function proofreadDocument(
 
 function showSpellCheckerMenu(): void {
   const targetWindow =
-    BrowserWindow.getFocusedWindow() ??
-    BrowserWindow.getAllWindows()[0] ??
-    null;
+    BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null;
   targetWindow?.webContents.send(openSpellCheckerChannel);
 }
 
@@ -1269,27 +1241,21 @@ function buildApplicationMenu(): void {
           label: "Open Folder...",
           accelerator: "CmdOrCtrl+O",
           click: () => {
-            BrowserWindow.getFocusedWindow()?.webContents.send(
-              openProjectChannel,
-            );
+            BrowserWindow.getFocusedWindow()?.webContents.send(openProjectChannel);
           },
         },
         {
           label: "New File...",
           accelerator: "CmdOrCtrl+N",
           click: () => {
-            BrowserWindow.getFocusedWindow()?.webContents.send(
-              createFileChannel,
-            );
+            BrowserWindow.getFocusedWindow()?.webContents.send(createFileChannel);
           },
         },
         {
           label: "New Folder...",
           accelerator: "CmdOrCtrl+Shift+N",
           click: () => {
-            BrowserWindow.getFocusedWindow()?.webContents.send(
-              createFolderChannel,
-            );
+            BrowserWindow.getFocusedWindow()?.webContents.send(createFolderChannel);
           },
         },
         { type: "separator" },
@@ -1359,26 +1325,20 @@ function buildApplicationMenu(): void {
         {
           label: "Report an Issue",
           click: () => {
-            void shell.openExternal(
-              "https://github.com/latexdo/latexdo/issues/new",
-            );
+            void shell.openExternal("https://github.com/latexdo/latexdo/issues/new");
           },
         },
         { type: "separator" },
         {
           label: "Check for Updates",
           click: () => {
-            void shell.openExternal(
-              "https://github.com/latexdo/latexdo/releases",
-            );
+            void shell.openExternal("https://github.com/latexdo/latexdo/releases");
           },
         },
         {
           label: "LatexDo Releases",
           click: () => {
-            void shell.openExternal(
-              "https://github.com/latexdo/latexdo/releases",
-            );
+            void shell.openExternal("https://github.com/latexdo/latexdo/releases");
           },
         },
       ],
@@ -1446,8 +1406,7 @@ async function checkForUpdates(): Promise<UpdateCheckResult> {
       latestVersion,
       releaseUrl: payload.html_url ?? githubReleasesPageUrl,
       updateAvailable:
-        latestVersion !== null &&
-        compareVersions(latestVersion, currentVersion) > 0,
+        latestVersion !== null && compareVersions(latestVersion, currentVersion) > 0,
     };
   } catch (error) {
     return {
@@ -1602,18 +1561,12 @@ async function createGitDiscardRecoveryPatch(
   return relativeProjectPath(projectPath, patchPath);
 }
 
-async function gitAdd(
-  projectPath: string,
-  relativePath: string,
-): Promise<void> {
+async function gitAdd(projectPath: string, relativePath: string): Promise<void> {
   const targetPath = resolveProjectPath(projectPath, relativePath);
   await execFileAsync("git", ["-C", projectPath, "add", "--", targetPath]);
 }
 
-async function gitUnstage(
-  projectPath: string,
-  relativePath: string,
-): Promise<void> {
+async function gitUnstage(projectPath: string, relativePath: string): Promise<void> {
   const targetPath = resolveProjectPath(projectPath, relativePath);
   try {
     await execFileAsync("git", [
@@ -1625,14 +1578,7 @@ async function gitUnstage(
       targetPath,
     ]);
   } catch {
-    await execFileAsync("git", [
-      "-C",
-      projectPath,
-      "reset",
-      "HEAD",
-      "--",
-      targetPath,
-    ]);
+    await execFileAsync("git", ["-C", projectPath, "reset", "HEAD", "--", targetPath]);
   }
 }
 
@@ -1669,10 +1615,7 @@ async function gitDiscard(
   relativePath: string,
 ): Promise<GitDiscardResult> {
   const targetPath = resolveProjectPath(projectPath, relativePath);
-  const recoveryPatch = await createGitDiscardRecoveryPatch(
-    projectPath,
-    relativePath,
-  );
+  const recoveryPatch = await createGitDiscardRecoveryPatch(projectPath, relativePath);
   try {
     await execFileAsync("git", [
       "-C",
@@ -1683,13 +1626,7 @@ async function gitDiscard(
       targetPath,
     ]);
   } catch {
-    await execFileAsync("git", [
-      "-C",
-      projectPath,
-      "checkout",
-      "--",
-      targetPath,
-    ]);
+    await execFileAsync("git", ["-C", projectPath, "checkout", "--", targetPath]);
   }
   return {
     discarded: true,
@@ -1957,9 +1894,7 @@ function createWindow(): void {
   if (isDevelopment) {
     void window.loadURL(process.env.VITE_DEV_SERVER_URL!);
   } else {
-    void window.loadFile(
-      path.join(currentDirectory, "..", "dist", "index.html"),
-    );
+    void window.loadFile(path.join(currentDirectory, "..", "dist", "index.html"));
   }
 }
 
@@ -2042,11 +1977,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("file:write", async (_event, ...rawArgs: unknown[]) => {
     const channel = "file:write";
-    const [rawProjectId, rawFilePath, rawContent] = expectIpcArgs(
-      channel,
-      rawArgs,
-      3,
-    );
+    const [rawProjectId, rawFilePath, rawContent] = expectIpcArgs(channel, rawArgs, 3);
     const projectId = parseProjectId(channel, rawProjectId);
     const filePath = parseRelativePath(channel, rawFilePath);
     const content = parseTextContent(channel, rawContent);
@@ -2095,8 +2026,11 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("entry:move", async (_event, ...rawArgs: unknown[]) => {
     const channel = "entry:move";
-    const [rawProjectId, rawFromRelativePath, rawToRelativePath] =
-      expectIpcArgs(channel, rawArgs, 3);
+    const [rawProjectId, rawFromRelativePath, rawToRelativePath] = expectIpcArgs(
+      channel,
+      rawArgs,
+      3,
+    );
     const projectId = parseProjectId(channel, rawProjectId);
     const fromRelativePath = parseRelativePath(channel, rawFromRelativePath);
     const toRelativePath = parseRelativePath(channel, rawToRelativePath);
@@ -2226,44 +2160,29 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("git:history", async (_event, ...rawArgs: unknown[]) => {
     const channel = "git:history";
-    const [rawProjectId, rawRelativePath] = expectIpcArgRange(
-      channel,
-      rawArgs,
-      1,
-      2,
-    );
+    const [rawProjectId, rawRelativePath] = expectIpcArgRange(channel, rawArgs, 1, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseOptionalRelativePath(channel, rawRelativePath);
     const projectPath = getProjectRoot(projectId);
     return gitHistory(projectPath, relativePath);
   });
-  ipcMain.handle(
-    "git:commit-details",
-    async (_event, ...rawArgs: unknown[]) => {
-      const channel = "git:commit-details";
-      const [rawProjectId, rawHash] = expectIpcArgs(channel, rawArgs, 2);
-      const projectId = parseProjectId(channel, rawProjectId);
-      const hash = parseGitHash(channel, rawHash);
-      const projectPath = getProjectRoot(projectId);
-      return gitCommitDetails(projectPath, hash);
-    },
-  );
-  ipcMain.handle(
-    "git:commit-file-diff",
-    async (_event, ...rawArgs: unknown[]) => {
-      const channel = "git:commit-file-diff";
-      const [rawProjectId, rawRelativePath, rawHash] = expectIpcArgs(
-        channel,
-        rawArgs,
-        3,
-      );
-      const projectId = parseProjectId(channel, rawProjectId);
-      const relativePath = parseRelativePath(channel, rawRelativePath);
-      const hash = parseGitHash(channel, rawHash);
-      const projectPath = getProjectRoot(projectId);
-      return gitDiffAtCommit(projectPath, relativePath, hash);
-    },
-  );
+  ipcMain.handle("git:commit-details", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "git:commit-details";
+    const [rawProjectId, rawHash] = expectIpcArgs(channel, rawArgs, 2);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const hash = parseGitHash(channel, rawHash);
+    const projectPath = getProjectRoot(projectId);
+    return gitCommitDetails(projectPath, hash);
+  });
+  ipcMain.handle("git:commit-file-diff", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "git:commit-file-diff";
+    const [rawProjectId, rawRelativePath, rawHash] = expectIpcArgs(channel, rawArgs, 3);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const relativePath = parseRelativePath(channel, rawRelativePath);
+    const hash = parseGitHash(channel, rawHash);
+    const projectPath = getProjectRoot(projectId);
+    return gitDiffAtCommit(projectPath, relativePath, hash);
+  });
   ipcMain.handle("app:check-updates", async (_event, ...rawArgs: unknown[]) => {
     const channel = "app:check-updates";
     expectIpcArgs(channel, rawArgs, 0);
@@ -2274,16 +2193,11 @@ app.whenReady().then(() => {
     expectIpcArgs(channel, rawArgs, 0);
     await shell.openExternal(githubReleasesPageUrl);
   });
-  ipcMain.handle(
-    "spellchecker:get-settings",
-    async (event, ...rawArgs: unknown[]) => {
-      const channel = "spellchecker:get-settings";
-      expectIpcArgs(channel, rawArgs, 0);
-      return getSpellCheckerSettings(
-        BrowserWindow.fromWebContents(event.sender),
-      );
-    },
-  );
+  ipcMain.handle("spellchecker:get-settings", async (event, ...rawArgs: unknown[]) => {
+    const channel = "spellchecker:get-settings";
+    expectIpcArgs(channel, rawArgs, 0);
+    return getSpellCheckerSettings(BrowserWindow.fromWebContents(event.sender));
+  });
   ipcMain.handle(
     "spellchecker:update-settings",
     async (_event, ...rawArgs: unknown[]) => {
@@ -2293,34 +2207,24 @@ app.whenReady().then(() => {
       return updateSpellCheckerSettings(settings);
     },
   );
-  ipcMain.handle(
-    "proofread:get-settings",
-    async (_event, ...rawArgs: unknown[]) => {
-      const channel = "proofread:get-settings";
-      expectIpcArgs(channel, rawArgs, 0);
-      return getProofreadingSettings();
-    },
-  );
-  ipcMain.handle(
-    "proofread:update-settings",
-    async (_event, ...rawArgs: unknown[]) => {
-      const channel = "proofread:update-settings";
-      const [rawSettings] = expectIpcArgs(channel, rawArgs, 1);
-      const settings = parseProofreadingSettingsInput(channel, rawSettings);
-      return updateProofreadingSettings(settings);
-    },
-  );
+  ipcMain.handle("proofread:get-settings", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "proofread:get-settings";
+    expectIpcArgs(channel, rawArgs, 0);
+    return getProofreadingSettings();
+  });
+  ipcMain.handle("proofread:update-settings", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "proofread:update-settings";
+    const [rawSettings] = expectIpcArgs(channel, rawArgs, 1);
+    const settings = parseProofreadingSettingsInput(channel, rawSettings);
+    return updateProofreadingSettings(settings);
+  });
   ipcMain.handle("proofread:check", async (_event, ...rawArgs: unknown[]) => {
     const channel = "proofread:check";
     const [rawRelativePath, rawContent] = expectIpcArgs(channel, rawArgs, 2);
     const relativePath = parseRelativePath(channel, rawRelativePath, {
       extensions: [".tex", ".md", ".txt"],
     });
-    const content = parseTextContent(
-      channel,
-      rawContent,
-      maxProofreadingContentLength,
-    );
+    const content = parseTextContent(channel, rawContent, maxProofreadingContentLength);
     return proofreadDocument(relativePath, content);
   });
   ipcMain.handle("latex:compile", async (_event, ...rawArgs: unknown[]) => {
@@ -2354,13 +2258,8 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("synctex:forward", async (_event, ...rawArgs: unknown[]) => {
     const channel = "synctex:forward";
-    const [
-      rawProjectId,
-      rawPdfRelativePath,
-      rawInputRelativePath,
-      rawLine,
-      rawColumn,
-    ] = expectIpcArgs(channel, rawArgs, 5);
+    const [rawProjectId, rawPdfRelativePath, rawInputRelativePath, rawLine, rawColumn] =
+      expectIpcArgs(channel, rawArgs, 5);
     const projectId = parseProjectId(channel, rawProjectId);
     const pdfRelativePath = parseRelativePath(channel, rawPdfRelativePath, {
       extensions: [".pdf"],
@@ -2377,8 +2276,11 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("synctex:backward", async (_event, ...rawArgs: unknown[]) => {
     const channel = "synctex:backward";
-    const [rawProjectId, rawPdfRelativePath, rawPage, rawX, rawY] =
-      expectIpcArgs(channel, rawArgs, 5);
+    const [rawProjectId, rawPdfRelativePath, rawPage, rawX, rawY] = expectIpcArgs(
+      channel,
+      rawArgs,
+      5,
+    );
     const projectId = parseProjectId(channel, rawProjectId);
     const pdfRelativePath = parseRelativePath(channel, rawPdfRelativePath, {
       extensions: [".pdf"],

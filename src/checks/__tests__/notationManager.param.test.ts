@@ -2,10 +2,17 @@ import { describe, it, expect } from "vitest";
 import { runNotationChecks, analyzeNotation } from "../notationManager";
 import type { NotationManagerSettings } from "../../types";
 
-const full: NotationManagerSettings = { enabled: true, detectSymbols: true, detectConflicts: true, detectUndefinedNotation: true };
+const full: NotationManagerSettings = {
+  enabled: true,
+  detectSymbols: true,
+  detectConflicts: true,
+  detectUndefinedNotation: true,
+};
 
 function body(content: string): string {
-  return "\\documentclass{article}\n\\begin{document}\n" + content + "\n\\end{document}\n";
+  return (
+    "\\documentclass{article}\n\\begin{document}\n" + content + "\n\\end{document}\n"
+  );
 }
 
 // ── Symbol detection ─────────────────────────────────────────────────────
@@ -26,7 +33,9 @@ const symbolVariants = [
 describe("Symbol detection — parameterized", () => {
   it.each(symbolVariants)("detects $expected in $text", ({ text, expected }) => {
     const result = analyzeNotation(body(text));
-    expect(result.some((s) => s.symbol.includes(expected) || s.latex.includes(expected))).toBe(true);
+    expect(
+      result.some((s) => s.symbol.includes(expected) || s.latex.includes(expected)),
+    ).toBe(true);
   });
 });
 
@@ -46,15 +55,13 @@ describe("No-math documents — parameterized", () => {
 });
 
 // ── Empty results trigger warning ────────────────────────────────────────
-const emptyDocWarnings = [
-  body("Plain text."),
-  body(""),
-  body("   "),
-];
+const emptyDocWarnings = [body("Plain text."), body(""), body("   ")];
 describe("Empty document warnings — parameterized", () => {
   it.each(emptyDocWarnings)("warns about no math for: %s", (doc) => {
     const result = runNotationChecks(doc, full);
-    expect(result.diagnostics.some((d) => d.message.includes("No mathematical notation"))).toBe(true);
+    expect(
+      result.diagnostics.some((d) => d.message.includes("No mathematical notation")),
+    ).toBe(true);
   });
 });
 
@@ -64,22 +71,39 @@ describe("Settings toggling — parameterized", () => {
     const doc = body("Just plain text without any math.");
     const enabled = runNotationChecks(doc, { ...full, detectSymbols: true });
     const disabled = runNotationChecks(doc, { ...full, detectSymbols: false });
-    expect(enabled.diagnostics.some((d) => d.message.includes("No mathematical notation"))).toBe(true);
-    expect(disabled.diagnostics.some((d) => d.message.includes("No mathematical notation"))).toBe(false);
+    expect(
+      enabled.diagnostics.some((d) => d.message.includes("No mathematical notation")),
+    ).toBe(true);
+    expect(
+      disabled.diagnostics.some((d) => d.message.includes("No mathematical notation")),
+    ).toBe(false);
   });
   it("disabling conflict detection removes its diagnostics", () => {
     const doc = body("$x$ $X$");
     const enabled = runNotationChecks(doc, { ...full, detectConflicts: true });
     const disabled = runNotationChecks(doc, { ...full, detectConflicts: false });
     expect(enabled.diagnostics.some((d) => d.message.includes("conflict"))).toBe(true);
-    expect(disabled.diagnostics.some((d) => d.message.includes("conflict"))).toBe(false);
+    expect(disabled.diagnostics.some((d) => d.message.includes("conflict"))).toBe(
+      false,
+    );
   });
   it("disabling undefined notation removes its diagnostics", () => {
     const doc = body("$x$");
     const enabled = runNotationChecks(doc, { ...full, detectUndefinedNotation: true });
-    const disabled = runNotationChecks(doc, { ...full, detectUndefinedNotation: false });
-    expect(enabled.diagnostics.some((d) => d.message.includes("without explicit definition"))).toBe(true);
-    expect(disabled.diagnostics.some((d) => d.message.includes("without explicit definition"))).toBe(false);
+    const disabled = runNotationChecks(doc, {
+      ...full,
+      detectUndefinedNotation: false,
+    });
+    expect(
+      enabled.diagnostics.some((d) =>
+        d.message.includes("without explicit definition"),
+      ),
+    ).toBe(true);
+    expect(
+      disabled.diagnostics.some((d) =>
+        d.message.includes("without explicit definition"),
+      ),
+    ).toBe(false);
   });
 });
 
@@ -116,10 +140,18 @@ describe("Usage count — parameterized", () => {
 // ── Edge cases ──────────────────────────────────────────────────────────
 const edgeCases = [
   { desc: "empty document", doc: body("") },
-  { desc: "no math", doc: body("This paper presents a new method for processing data.") },
+  {
+    desc: "no math",
+    doc: body("This paper presents a new method for processing data."),
+  },
   { desc: "unicode", doc: body("$∀x∃y$") },
   { desc: "newcommand", doc: body("\\newcommand{\\loss}{\\mathcal{L}} $\\loss$") },
-  { desc: "long expression", doc: body("$\\frac{\\partial L}{\\partial w} = \\frac{1}{n}\\sum_{i=1}^n \\nabla_w \\ell(f(x_i; w), y_i)$") },
+  {
+    desc: "long expression",
+    doc: body(
+      "$\\frac{\\partial L}{\\partial w} = \\frac{1}{n}\\sum_{i=1}^n \\nabla_w \\ell(f(x_i; w), y_i)$",
+    ),
+  },
 ];
 describe("Edge cases — parameterized", () => {
   it.each(edgeCases)("handles $desc", ({ doc }) => {

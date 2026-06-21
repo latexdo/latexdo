@@ -45,12 +45,14 @@ function hexColor(r: number, g: number, b: number): string {
 }
 
 function rgbDistance(
-  r1: number, g1: number, b1: number,
-  r2: number, g2: number, b2: number,
+  r1: number,
+  g1: number,
+  b1: number,
+  r2: number,
+  g2: number,
+  b2: number,
 ): number {
-  return Math.sqrt(
-    (r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2,
-  );
+  return Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2);
 }
 
 function isGrayish(r: number, g: number, b: number): boolean {
@@ -78,7 +80,10 @@ function analyzeImage(
   const minBoxSize = 8 * scale;
   const maxBoxSize = width * 0.9;
 
-  function getPixel(x: number, y: number): { r: number; g: number; b: number; a: number } | null {
+  function getPixel(
+    x: number,
+    y: number,
+  ): { r: number; g: number; b: number; a: number } | null {
     if (x < 0 || x >= width || y < 0 || y >= height) return null;
     const idx = (y * width + x) * 4;
     return {
@@ -93,13 +98,22 @@ function analyzeImage(
     startX: number,
     startY: number,
     tolerance: number,
-  ): { pixels: [number, number][]; minX: number; minY: number; maxX: number; maxY: number } | null {
+  ): {
+    pixels: [number, number][];
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+  } | null {
     const start = getPixel(startX, startY);
     if (!start || start.a < 20) return null;
 
     const queue: [number, number][] = [[startX, startY]];
     const pixels: [number, number][] = [];
-    let minX = startX, minY = startY, maxX = startX, maxY = startY;
+    let minX = startX,
+      minY = startY,
+      maxX = startX,
+      maxY = startY;
 
     while (queue.length > 0 && pixels.length < 50000) {
       const [x, y] = queue.pop()!;
@@ -128,7 +142,13 @@ function analyzeImage(
     return pixels.length > 50 ? { pixels, minX, minY, maxX, maxY } : null;
   }
 
-  function isLineRegion(pixels: [number, number][], minX: number, minY: number, maxX: number, maxY: number): boolean {
+  function isLineRegion(
+    pixels: [number, number][],
+    minX: number,
+    minY: number,
+    maxX: number,
+    maxY: number,
+  ): boolean {
     const w = maxX - minX;
     const h = maxY - minY;
     const area = w * h;
@@ -136,11 +156,7 @@ function analyzeImage(
     if (area === 0) return false;
     const density = pixelCount / area;
     const aspectRatio = w / Math.max(h, 1);
-    return (
-      pixelCount < 2000 &&
-      density < 0.4 &&
-      (aspectRatio > 5 || aspectRatio < 0.2)
-    );
+    return pixelCount < 2000 && density < 0.4 && (aspectRatio > 5 || aspectRatio < 0.2);
   }
 
   for (let y = 0; y < height; y += Math.max(2, Math.floor(scale))) {
@@ -151,9 +167,7 @@ function analyzeImage(
       const p = getPixel(x, y);
       if (!p || p.a < 20) continue;
 
-      const isEdge =
-        isGrayish(p.r, p.g, p.b) &&
-        (p.r < 100 || p.g < 100 || p.b < 100);
+      const isEdge = isGrayish(p.r, p.g, p.b) && (p.r < 100 || p.g < 100 || p.b < 100);
 
       if (!isEdge && !(p.r < 100 && p.g < 100 && p.b < 100)) continue;
 
@@ -171,8 +185,15 @@ function analyzeImage(
       const bboxArea = boxWidth * boxHeight;
       const density = bboxArea > 0 ? pixelCount / bboxArea : 0;
 
-      if (density > 0.15 && density < 0.85 && boxWidth < width * 0.5 && boxHeight < height * 0.5) {
-        const avgR: number[] = [], avgG: number[] = [], avgB: number[] = [];
+      if (
+        density > 0.15 &&
+        density < 0.85 &&
+        boxWidth < width * 0.5 &&
+        boxHeight < height * 0.5
+      ) {
+        const avgR: number[] = [],
+          avgG: number[] = [],
+          avgB: number[] = [];
         for (const [px, py] of pixels) {
           const pp = getPixel(px, py);
           if (pp) {
@@ -236,8 +257,11 @@ function generateTikzFromDetection(
 
   function tikzColor(hex: string): string {
     const map: Record<string, string> = {
-      "#000000": "black", "#ffffff": "white",
-      "#ff0000": "red", "#00ff00": "green", "#0000ff": "blue",
+      "#000000": "black",
+      "#ffffff": "white",
+      "#ff0000": "red",
+      "#00ff00": "green",
+      "#0000ff": "blue",
     };
     const lower = hex.toLowerCase();
     if (map[lower]) return map[lower];
@@ -274,9 +298,7 @@ function generateTikzFromDetection(
     const p1 = pt(arrow.x1, arrow.y1);
     const p2 = pt(arrow.x2, arrow.y2);
     const color = tikzColor(arrow.color);
-    const opts = color !== "black"
-      ? `[->,>=stealth,draw=${color}]`
-      : "[->,>=stealth]";
+    const opts = color !== "black" ? `[->,>=stealth,draw=${color}]` : "[->,>=stealth]";
     lines.push(`  \\draw${opts} ${p1} -- ${p2};`);
   }
 
@@ -332,36 +354,45 @@ export function FigureToTikzConverter({ onInsertCode }: FigureToTikzConverterPro
     }, 100);
   }, []);
 
-  const handleFile = useCallback((file: File) => {
-    if (!file.type.startsWith("image/")) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        setImage(img);
-        detectShapes(img);
+  const handleFile = useCallback(
+    (file: File) => {
+      if (!file.type.startsWith("image/")) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          setImage(img);
+          detectShapes(img);
+        };
+        img.src = e.target?.result as string;
       };
-      img.src = e.target?.result as string;
-    };
-    reader.readAsDataURL(file);
-  }, [detectShapes]);
+      reader.readAsDataURL(file);
+    },
+    [detectShapes],
+  );
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
-  }, [handleFile]);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const file = e.dataTransfer.files[0];
+      if (file) handleFile(file);
+    },
+    [handleFile],
+  );
 
-  const handlePaste = useCallback((e: React.ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    for (const item of items) {
-      if (item.type.startsWith("image/")) {
-        const file = item.getAsFile();
-        if (file) handleFile(file);
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) handleFile(file);
+        }
       }
-    }
-  }, [handleFile]);
+    },
+    [handleFile],
+  );
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(tikzCode);
@@ -459,10 +490,18 @@ export function FigureToTikzConverter({ onInsertCode }: FigureToTikzConverterPro
             <div className="tikz-converter-code-header">
               <span>TikZ Code</span>
               <div className="tikz-converter-code-actions">
-                <button className="tikz-converter-btn" onClick={handleCopy} disabled={!tikzCode}>
+                <button
+                  className="tikz-converter-btn"
+                  onClick={handleCopy}
+                  disabled={!tikzCode}
+                >
                   <Copy size={13} /> {copied ? "Copied!" : "Copy"}
                 </button>
-                <button className="tikz-converter-btn" onClick={handleDownload} disabled={!tikzCode}>
+                <button
+                  className="tikz-converter-btn"
+                  onClick={handleDownload}
+                  disabled={!tikzCode}
+                >
                   <Download size={13} /> Download
                 </button>
                 {onInsertCode && tikzCode && (
@@ -476,7 +515,12 @@ export function FigureToTikzConverter({ onInsertCode }: FigureToTikzConverterPro
               </div>
             </div>
             <pre className="tikz-converter-code-pre">
-              <code>{tikzCode || (analyzing ? "// Analyzing image... please wait" : "// Upload an image to generate TikZ code")}</code>
+              <code>
+                {tikzCode ||
+                  (analyzing
+                    ? "// Analyzing image... please wait"
+                    : "// Upload an image to generate TikZ code")}
+              </code>
             </pre>
           </div>
         </div>

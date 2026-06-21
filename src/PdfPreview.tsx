@@ -66,10 +66,7 @@ function wordAtPoint(event: React.MouseEvent): string | undefined {
   const pointDocument = document as Document & {
     caretRangeFromPoint?: (x: number, y: number) => Range | null;
   };
-  const range = pointDocument.caretRangeFromPoint?.(
-    event.clientX,
-    event.clientY,
-  );
+  const range = pointDocument.caretRangeFromPoint?.(event.clientX, event.clientY);
   let offset = -1;
   if (range?.startContainer.nodeType === Node.TEXT_NODE) {
     offset = range.startOffset;
@@ -171,49 +168,53 @@ function PdfPage({
     setHighlight(null);
     textLayerElement.replaceChildren();
 
-    void pdfDocument.getPage(pageNumber).then(async (page) => {
-      if (cancelled) {
-        return;
-      }
+    void pdfDocument
+      .getPage(pageNumber)
+      .then(async (page) => {
+        if (cancelled) {
+          return;
+        }
 
-      const viewport = page.getViewport({ scale: cssScale });
-      const outputScale = window.devicePixelRatio || 1;
-      pageElement.style.width = `${viewport.width}px`;
-      pageElement.style.height = `${viewport.height}px`;
-      pageElement.style.setProperty("--scale-factor", String(cssScale));
-      pageElement.style.setProperty("--total-scale-factor", String(cssScale));
-      canvas.width = Math.floor(viewport.width * outputScale);
-      canvas.height = Math.floor(viewport.height * outputScale);
-      canvas.style.width = `${viewport.width}px`;
-      canvas.style.height = `${viewport.height}px`;
-      const canvasContext = canvas.getContext("2d");
-      if (!canvasContext) {
-        throw new Error("Could not create the PDF canvas context.");
-      }
+        const viewport = page.getViewport({ scale: cssScale });
+        const outputScale = window.devicePixelRatio || 1;
+        pageElement.style.width = `${viewport.width}px`;
+        pageElement.style.height = `${viewport.height}px`;
+        pageElement.style.setProperty("--scale-factor", String(cssScale));
+        pageElement.style.setProperty("--total-scale-factor", String(cssScale));
+        canvas.width = Math.floor(viewport.width * outputScale);
+        canvas.height = Math.floor(viewport.height * outputScale);
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+        const canvasContext = canvas.getContext("2d");
+        if (!canvasContext) {
+          throw new Error("Could not create the PDF canvas context.");
+        }
 
-      renderTask = page.render({
-        canvasContext,
-        viewport,
-        transform:
-          outputScale === 1
-            ? undefined
-            : [outputScale, 0, 0, outputScale, 0, 0],
+        renderTask = page.render({
+          canvasContext,
+          viewport,
+          transform:
+            outputScale === 1 ? undefined : [outputScale, 0, 0, outputScale, 0, 0],
+        });
+        textLayer = new TextLayer({
+          textContentSource: await page.getTextContent(),
+          container: textLayerElement,
+          viewport,
+        });
+
+        await Promise.all([renderTask.promise, textLayer.render()]);
+        if (!cancelled) {
+          setRendered(true);
+        }
+      })
+      .catch((error: unknown) => {
+        if (
+          !cancelled &&
+          (error as { name?: string }).name !== "RenderingCancelledException"
+        ) {
+          console.error(`Could not render PDF page ${pageNumber}`, error);
+        }
       });
-      textLayer = new TextLayer({
-        textContentSource: await page.getTextContent(),
-        container: textLayerElement,
-        viewport,
-      });
-
-      await Promise.all([renderTask.promise, textLayer.render()]);
-      if (!cancelled) {
-        setRendered(true);
-      }
-    }).catch((error: unknown) => {
-      if (!cancelled && (error as { name?: string }).name !== "RenderingCancelledException") {
-        console.error(`Could not render PDF page ${pageNumber}`, error);
-      }
-    });
 
     return () => {
       cancelled = true;

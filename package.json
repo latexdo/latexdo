@@ -11,6 +11,9 @@
     "build": "tsc -b && vite build && tsc -p tsconfig.electron.json",
     "start": "electron .",
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.electron.json --pretty false",
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -32,6 +35,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^22.10.2",
@@ -43,8 +47,13 @@
     "cross-env": "^7.0.3",
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
+    "eslint": "^10.5.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.6.0",
     "jsdom": "^29.1.1",
+    "prettier": "^3.8.4",
     "typescript": "~5.7.2",
+    "typescript-eslint": "^8.61.1",
     "vite": "^6.0.5",
     "vitest": "^4.1.9",
     "wait-on": "^8.0.1"

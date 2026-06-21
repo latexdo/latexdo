@@ -43,12 +43,7 @@ const api = {
     fromRelativePath: string,
     toRelativePath: string,
   ): Promise<string> =>
-    ipcRenderer.invoke(
-      "entry:move",
-      projectId,
-      fromRelativePath,
-      toRelativePath,
-    ),
+    ipcRenderer.invoke("entry:move", projectId, fromRelativePath, toRelativePath),
   getGitStatus: (projectId: string): Promise<GitStatusSummary> =>
     ipcRenderer.invoke("git:status", projectId),
   stageGitFile: (projectId: string, relativePath: string): Promise<void> =>
@@ -57,10 +52,7 @@ const api = {
     ipcRenderer.invoke("git:unstage", projectId, relativePath),
   commitGit: (projectId: string, message: string): Promise<void> =>
     ipcRenderer.invoke("git:commit", projectId, message),
-  getGitDiff: (
-    projectId: string,
-    relativePath: string,
-  ): Promise<GitDiffPreview> =>
+  getGitDiff: (projectId: string, relativePath: string): Promise<GitDiffPreview> =>
     ipcRenderer.invoke("git:diff", projectId, relativePath),
   discardGitFile: (
     projectId: string,
@@ -83,10 +75,7 @@ const api = {
     relativePath?: string,
   ): Promise<GitHistorySummary> =>
     ipcRenderer.invoke("git:history", projectId, relativePath),
-  getGitCommitDetails: (
-    projectId: string,
-    hash: string,
-  ): Promise<GitCommitDetails> =>
+  getGitCommitDetails: (projectId: string, hash: string): Promise<GitCommitDetails> =>
     ipcRenderer.invoke("git:commit-details", projectId, hash),
   getGitCommitFileDiff: (
     projectId: string,
@@ -96,8 +85,7 @@ const api = {
     ipcRenderer.invoke("git:commit-file-diff", projectId, relativePath, hash),
   checkForUpdates: (): Promise<UpdateCheckResult> =>
     ipcRenderer.invoke("app:check-updates"),
-  openReleasesPage: (): Promise<void> =>
-    ipcRenderer.invoke("app:open-releases"),
+  openReleasesPage: (): Promise<void> => ipcRenderer.invoke("app:open-releases"),
   getSpellCheckerSettings: (): Promise<SpellCheckerSettings> =>
     ipcRenderer.invoke("spellchecker:get-settings"),
   updateSpellCheckerSettings: (
@@ -141,14 +129,7 @@ const api = {
     x: number,
     y: number,
   ): Promise<SyncTexSourceLocation | null> =>
-    ipcRenderer.invoke(
-      "synctex:backward",
-      projectId,
-      pdfRelativePath,
-      page,
-      x,
-      y,
-    ),
+    ipcRenderer.invoke("synctex:backward", projectId, pdfRelativePath, page, x, y),
   onOpenSpellCheckerSettings: (callback: () => void) => {
     const listener = () => {
       callback();
@@ -204,14 +185,12 @@ const terminalApi = {
       mode: "pty" | "pipe";
     }>,
 
-  write: (id: number, data: string) =>
-    ipcRenderer.send("terminal:write", { id, data }),
+  write: (id: number, data: string) => ipcRenderer.send("terminal:write", { id, data }),
 
   resize: (id: number, cols: number, rows: number) =>
     ipcRenderer.send("terminal:resize", { id, cols, rows }),
 
-  dispose: (id: number) =>
-    ipcRenderer.send("terminal:dispose", { id }),
+  dispose: (id: number) => ipcRenderer.send("terminal:dispose", { id }),
 
   onData: (callback: (payload: { id: number; data: string }) => void) => {
     const listener = (_event: unknown, payload: { id: number; data: string }) => {
@@ -226,10 +205,7 @@ const terminalApi = {
   },
 
   onExit: (callback: (payload: { id: number; exitCode: number }) => void) => {
-    const listener = (
-      _event: unknown,
-      payload: { id: number; exitCode: number },
-    ) => {
+    const listener = (_event: unknown, payload: { id: number; exitCode: number }) => {
       callback(payload);
     };
 

@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  normalizeLatexDoReviewMarkup,
-  usesLatexDoReviewMacros,
-} from "../reviewMarkup";
+import { normalizeLatexDoReviewMarkup, usesLatexDoReviewMacros } from "../reviewMarkup";
 
 describe("review markup", () => {
   it("cleans old reviewercomment wrappers with citations and trailing punctuation", () => {

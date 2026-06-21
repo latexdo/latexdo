@@ -2,10 +2,20 @@ import { describe, it, expect } from "vitest";
 import { runStructureChecks } from "../structureAssistant";
 import type { StructureAssistantSettings } from "../../types";
 
-const full: StructureAssistantSettings = { enabled: true, checkAbstractStructure: true, checkIntroductionStructure: true, checkRelatedWorkLength: true, checkMethodReproducibility: true, checkResultsDiscussion: true, checkConclusionClaims: true };
+const full: StructureAssistantSettings = {
+  enabled: true,
+  checkAbstractStructure: true,
+  checkIntroductionStructure: true,
+  checkRelatedWorkLength: true,
+  checkMethodReproducibility: true,
+  checkResultsDiscussion: true,
+  checkConclusionClaims: true,
+};
 
 function body(content: string): string {
-  return "\\documentclass{article}\n\\begin{document}\n" + content + "\n\\end{document}\n";
+  return (
+    "\\documentclass{article}\n\\begin{document}\n" + content + "\n\\end{document}\n"
+  );
 }
 
 // ── Abstract presence variants ───────────────────────────────────────────
@@ -16,41 +26,62 @@ const abstractVariants = [
   { content: "\\begin{abstract}Short.\\end{abstract}", hasAbstract: true },
 ];
 describe("Abstract detection — parameterized", () => {
-  it.each(abstractVariants)("content=$content → has=$hasAbstract", ({ content, hasAbstract }) => {
-    const result = runStructureChecks(body(content), full);
-    expect(result.some((d) => d.message.includes("Abstract not found"))).toBe(!hasAbstract);
-  });
+  it.each(abstractVariants)(
+    "content=$content → has=$hasAbstract",
+    ({ content, hasAbstract }) => {
+      const result = runStructureChecks(body(content), full);
+      expect(result.some((d) => d.message.includes("Abstract not found"))).toBe(
+        !hasAbstract,
+      );
+    },
+  );
 });
 
 // ── Introduction detection ─────────────────────────────────────────────
 const introVariants = [
-  { content: "\\section{Introduction}Hello.\\section{Background}More.", hasIntro: true },
+  {
+    content: "\\section{Introduction}Hello.\\section{Background}More.",
+    hasIntro: true,
+  },
   { content: "", hasIntro: false },
 ];
 describe("Introduction detection — parameterized", () => {
-  it.each(introVariants)("content=$content → hasIntro=$hasIntro", ({ content, hasIntro }) => {
-    const result = runStructureChecks(body(content), full);
-    expect(result.some((d) => d.message.includes("Introduction section not found"))).toBe(!hasIntro);
-  });
+  it.each(introVariants)(
+    "content=$content → hasIntro=$hasIntro",
+    ({ content, hasIntro }) => {
+      const result = runStructureChecks(body(content), full);
+      expect(
+        result.some((d) => d.message.includes("Introduction section not found")),
+      ).toBe(!hasIntro);
+    },
+  );
 });
 
 // ── Conclusion detection ─────────────────────────────────────────────────
 const conclusionVariants = [
   { content: "\\section{Conclusion}Summary.", hasConclusion: true },
-  { content: "\\section{Conclusion}Summary.\\section*{Acknowledgments}", hasConclusion: true },
+  {
+    content: "\\section{Conclusion}Summary.\\section*{Acknowledgments}",
+    hasConclusion: true,
+  },
   { content: "\\section{Results}Data.", hasConclusion: false },
   { content: "\\section{Discussion}Implications.", hasConclusion: false },
 ];
 describe("Conclusion detection — parameterized", () => {
-  it.each(conclusionVariants)("$content → hasConclusion=$hasConclusion", ({ content, hasConclusion }) => {
-    const result = runStructureChecks(body(content), full);
-    const conclusionIssues = result.filter((d) => d.message.includes("Conclusion section not found"));
-    if (hasConclusion) {
-      expect(conclusionIssues).toHaveLength(0);
-    } else {
-      expect(conclusionIssues.length).toBeGreaterThanOrEqual(1);
-    }
-  });
+  it.each(conclusionVariants)(
+    "$content → hasConclusion=$hasConclusion",
+    ({ content, hasConclusion }) => {
+      const result = runStructureChecks(body(content), full);
+      const conclusionIssues = result.filter((d) =>
+        d.message.includes("Conclusion section not found"),
+      );
+      if (hasConclusion) {
+        expect(conclusionIssues).toHaveLength(0);
+      } else {
+        expect(conclusionIssues.length).toBeGreaterThanOrEqual(1);
+      }
+    },
+  );
 });
 
 // ── Check toggling ──────────────────────────────────────────────────────
@@ -77,8 +108,19 @@ const edgeCases = [
   { desc: "empty document", doc: body("") },
   { desc: "no sections", doc: body("Just plain text without any sections.") },
   { desc: "unicode content", doc: body("\\section{∀ntroduction}∃xample.") },
-  { desc: "many sections", doc: body(Array(20).fill(null).map((_, i) => `\\section{Section ${i}}Content.`).join("\n")) },
-  { desc: "nested sections", doc: body("\\section{Main}\\subsection{Sub}\\subsubsection{Subsub}Content.") },
+  {
+    desc: "many sections",
+    doc: body(
+      Array(20)
+        .fill(null)
+        .map((_, i) => `\\section{Section ${i}}Content.`)
+        .join("\n"),
+    ),
+  },
+  {
+    desc: "nested sections",
+    doc: body("\\section{Main}\\subsection{Sub}\\subsubsection{Subsub}Content."),
+  },
 ];
 describe("Edge cases — parameterized", () => {
   it.each(edgeCases)("handles $desc", ({ doc }) => {

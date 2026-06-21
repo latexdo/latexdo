@@ -13,7 +13,14 @@ export type CitationEntry = {
 };
 export type LabelEntry = {
   key: string;
-  kind: "figure" | "table" | "equation" | "section" | "subsection" | "theorem" | "unknown";
+  kind:
+    | "figure"
+    | "table"
+    | "equation"
+    | "section"
+    | "subsection"
+    | "theorem"
+    | "unknown";
   caption?: string;
   title?: string;
   line: number;

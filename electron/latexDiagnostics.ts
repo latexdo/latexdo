@@ -1,8 +1,4 @@
-import type {
-  Diagnostic,
-  DiagnosticContextLine,
-  DiagnosticFix,
-} from "./types.js";
+import type { Diagnostic, DiagnosticContextLine, DiagnosticFix } from "./types.js";
 
 interface DiagnosticAnalysis {
   title: string;
@@ -112,19 +108,14 @@ function editDistance(left: string, right: string): number {
   return previous[right.length];
 }
 
-function uniqueNearMatch(
-  value: string,
-  candidates: readonly string[],
-): string | null {
+function uniqueNearMatch(value: string, candidates: readonly string[]): string | null {
   const ranked = candidates
     .map((candidate) => ({ candidate, distance: editDistance(value, candidate) }))
     .sort((left, right) => left.distance - right.distance);
   if (!ranked.length || ranked[0].distance > 1) {
     return null;
   }
-  return ranked[1]?.distance === ranked[0].distance
-    ? null
-    : ranked[0].candidate;
+  return ranked[1]?.distance === ranked[0].distance ? null : ranked[0].candidate;
 }
 
 function locationText(diagnostic: Diagnostic): string {
@@ -240,7 +231,8 @@ function unmatchedClosingBrace(line: string): LocatedToken | null {
           end: index + 1,
           text: "}",
           accuracy: "inferred",
-          reason: "Source scanning proves this closing brace has no matching opening brace on the line.",
+          reason:
+            "Source scanning proves this closing brace has no matching opening brace on the line.",
           confidence: 97,
         };
       }
@@ -275,15 +267,13 @@ function lastUnmatchedOpeningBrace(line: string): LocatedToken | null {
         end: start + 1,
         text: "{",
         accuracy: "inferred",
-        reason: "This is the last opening brace on the line without a matching closing brace.",
+        reason:
+          "This is the last opening brace on the line without a matching closing brace.",
         confidence: 92,
       };
 }
 
-function findUnclosedBrace(
-  lines: string[],
-  throughLine: number,
-): LocatedToken | null {
+function findUnclosedBrace(lines: string[], throughLine: number): LocatedToken | null {
   const stack: Array<{ line: number; column: number }> = [];
   const end = Math.min(lines.length, Math.max(1, throughLine));
 
@@ -549,7 +539,9 @@ function locateToken(
 
   if (normalized.includes("undefined control sequence")) {
     const command = commandFromOutput(output, diagnostic.line);
-    return findLiteral(sourceLine, command) ?? findPattern(sourceLine, /\\[A-Za-z@]+|\\./);
+    return (
+      findLiteral(sourceLine, command) ?? findPattern(sourceLine, /\\[A-Za-z@]+|\\./)
+    );
   }
 
   if (normalized.includes("missing $ inserted")) {
@@ -578,8 +570,7 @@ function locateToken(
     normalized.includes("runaway argument")
   ) {
     return (
-      findUnclosedBrace(lines, diagnostic.line) ??
-      lastUnmatchedOpeningBrace(sourceLine)
+      findUnclosedBrace(lines, diagnostic.line) ?? lastUnmatchedOpeningBrace(sourceLine)
     );
   }
 
@@ -591,7 +582,10 @@ function locateToken(
     return findPattern(sourceLine, /\\\\/);
   }
 
-  if (normalized.includes("lonely \\item") || normalized.includes("perhaps a missing list environment")) {
+  if (
+    normalized.includes("lonely \\item") ||
+    normalized.includes("perhaps a missing list environment")
+  ) {
     return findPattern(sourceLine, /\\item\b/);
   }
 
@@ -614,11 +608,7 @@ function locateToken(
       findLiteral(sourceLine, `\\begin{${environment}}`) ??
       findLiteral(sourceLine, `\\end{${environment}}`) ??
       scanEnvironmentMismatch(lines, diagnostic.line) ??
-      findLiteralBeforeLine(
-        lines,
-        `\\begin{${environment}}`,
-        diagnostic.line,
-      )
+      findLiteralBeforeLine(lines, `\\begin{${environment}}`, diagnostic.line)
     );
   }
 
@@ -644,7 +634,7 @@ function buildQuickFixes(
   diagnostic: Diagnostic,
   token: LocatedToken | null,
 ): DiagnosticFix[] | undefined {
-  if (!token || token.line === undefined && diagnostic.line < 1) {
+  if (!token || (token.line === undefined && diagnostic.line < 1)) {
     return undefined;
   }
 
@@ -658,7 +648,10 @@ function buildQuickFixes(
   };
   const fixes: DiagnosticFix[] = [];
 
-  if (normalized.includes("undefined control sequence") && token.text.startsWith("\\")) {
+  if (
+    normalized.includes("undefined control sequence") &&
+    token.text.startsWith("\\")
+  ) {
     const command = token.text.slice(1);
     const replacement = uniqueNearMatch(command, commonCommands);
     if (replacement) {
@@ -717,10 +710,7 @@ function buildQuickFixes(
     });
   }
 
-  if (
-    normalized.includes("ended by") &&
-    token.text.startsWith("\\end{")
-  ) {
+  if (normalized.includes("ended by") && token.text.startsWith("\\end{")) {
     const mismatch = diagnostic.message.match(
       /\\begin\{([^}]+)\}.*ended by.*\\end\{([^}]+)\}/i,
     );
@@ -741,10 +731,7 @@ function buildQuickFixes(
       ? uniqueNearMatch(environment, commonEnvironments)
       : null;
     if (environment && replacement) {
-      const correctedToken = token.text.replace(
-        `{${environment}}`,
-        `{${replacement}}`,
-      );
+      const correctedToken = token.text.replace(`{${environment}}`, `{${replacement}}`);
       if (correctedToken !== token.text) {
         fixes.push({
           title: `Change environment ${environment} to ${replacement}`,
@@ -795,7 +782,12 @@ function explainDiagnostic(
   }
 
   if (normalized.includes("missing $ inserted")) {
-    if (tokenText === "$" || tokenText === "$$" || tokenText === "\\(" || tokenText === "\\[") {
+    if (
+      tokenText === "$" ||
+      tokenText === "$$" ||
+      tokenText === "\\(" ||
+      tokenText === "\\["
+    ) {
       return {
         title: "Math mode was opened but never closed",
         detail: `The math delimiter ${tokenText} opened at ${location} remains active when LaTeX reaches the reported failure.`,
@@ -817,8 +809,16 @@ function explainDiagnostic(
     };
   }
 
-  if (normalized.includes("extra }, or forgotten $") || normalized.includes("too many }")) {
-    if (tokenText === "$" || tokenText === "$$" || tokenText === "\\(" || tokenText === "\\[") {
+  if (
+    normalized.includes("extra }, or forgotten $") ||
+    normalized.includes("too many }")
+  ) {
+    if (
+      tokenText === "$" ||
+      tokenText === "$$" ||
+      tokenText === "\\(" ||
+      tokenText === "\\["
+    ) {
       return {
         title: "Math delimiter was never closed",
         detail: `The highlighted ${tokenText} at ${location} opens math mode without a matching closing delimiter.`,
@@ -909,12 +909,14 @@ function explainDiagnostic(
     };
   }
 
-  if (normalized.includes("lonely \\item") || normalized.includes("perhaps a missing list environment")) {
+  if (
+    normalized.includes("lonely \\item") ||
+    normalized.includes("perhaps a missing list environment")
+  ) {
     return {
       title: "List item is outside a list",
       detail: `The \\item command at ${location} is not inside itemize, enumerate, or description.`,
-      suggestion:
-        "Wrap the item in a list environment or remove the \\item command.",
+      suggestion: "Wrap the item in a list environment or remove the \\item command.",
     };
   }
 
@@ -952,7 +954,8 @@ function explainDiagnostic(
   }
 
   return {
-    title: diagnostic.severity === "warning" ? "LaTeX warning" : "LaTeX compilation error",
+    title:
+      diagnostic.severity === "warning" ? "LaTeX warning" : "LaTeX compilation error",
     detail: `LaTeX reported this problem at ${location}: ${diagnostic.message}`,
     suggestion:
       sourceLine !== undefined
@@ -968,20 +971,14 @@ export function analyzeLatexDiagnostic(
 ): DiagnosticAnalysis {
   const lines = content?.split(/\r?\n/) ?? [];
   const sourceLine = lines[diagnostic.line - 1];
-  const token = sourceLine
-    ? locateToken(diagnostic, sourceLine, lines, output)
-    : null;
+  const token = sourceLine ? locateToken(diagnostic, sourceLine, lines, output) : null;
   const analyzedLine = token?.line ?? diagnostic.line;
   const analyzedSourceLine = lines[analyzedLine - 1] ?? sourceLine;
   const analyzedDiagnostic = {
     ...diagnostic,
     line: analyzedLine,
   };
-  const explanation = explainDiagnostic(
-    analyzedDiagnostic,
-    analyzedSourceLine,
-    token,
-  );
+  const explanation = explainDiagnostic(analyzedDiagnostic, analyzedSourceLine, token);
   const fallbackColumn = Math.max(1, diagnostic.column || 1);
   const column = token ? token.start + 1 : fallbackColumn;
   const endColumn = token
@@ -1001,8 +998,7 @@ export function analyzeLatexDiagnostic(
     reportedLine: diagnostic.line,
     reportedColumn: Math.max(1, diagnostic.column),
     originReason: token?.reason,
-    locationConfidence:
-      token?.confidence ?? (diagnostic.column > 1 ? 95 : 45),
+    locationConfidence: token?.confidence ?? (diagnostic.column > 1 ? 95 : 45),
     fixes: buildQuickFixes(diagnostic, token),
   };
 }
@@ -1025,8 +1021,8 @@ function diagnosticPriority(diagnostic: Diagnostic): number {
   }
   if (
     normalized.includes("undefined control sequence") ||
-    normalized.includes("file") && normalized.includes("not found") ||
-    normalized.includes("environment") && normalized.includes("undefined")
+    (normalized.includes("file") && normalized.includes("not found")) ||
+    (normalized.includes("environment") && normalized.includes("undefined"))
   ) {
     return 90;
   }
@@ -1059,9 +1055,7 @@ function isCompilerFallout(diagnostic: Diagnostic): boolean {
   );
 }
 
-export function rankLatexDiagnostics(
-  diagnostics: Diagnostic[],
-): Diagnostic[] {
+export function rankLatexDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {
   const ranked: Diagnostic[] = diagnostics.map((diagnostic) => ({
     ...diagnostic,
     priority: diagnosticPriority(diagnostic),
@@ -1073,7 +1067,10 @@ export function rankLatexDiagnostics(
     if (diagnostic.severity !== "error") {
       return bestIndex;
     }
-    if (bestIndex < 0 || (diagnostic.priority ?? 0) > (ranked[bestIndex].priority ?? 0)) {
+    if (
+      bestIndex < 0 ||
+      (diagnostic.priority ?? 0) > (ranked[bestIndex].priority ?? 0)
+    ) {
       return index;
     }
     return bestIndex;

@@ -4,8 +4,16 @@ interface ErrorPattern {
   regex: RegExp;
   title: string;
   explanation: string;
-  getSuggestion: (match: RegExpExecArray, contextLines: string[], lineNumber: number) => string;
-  getFix: (match: RegExpExecArray, contextLines: string[], lineNumber: number) => { find: string; replace: string } | null;
+  getSuggestion: (
+    match: RegExpExecArray,
+    contextLines: string[],
+    lineNumber: number,
+  ) => string;
+  getFix: (
+    match: RegExpExecArray,
+    contextLines: string[],
+    lineNumber: number,
+  ) => { find: string; replace: string } | null;
 }
 
 function makeDiagnostic(
@@ -216,7 +224,8 @@ const errorPatterns: ErrorPattern[] = [
     getFix: (_m, _cl, _ln) => null,
   },
   {
-    regex: /!?\s*(?:Extra|Missing)\s+(?:aligned|\\right|\\left|\\big|\\bigl|\\bigr|\\bigm)/i,
+    regex:
+      /!?\s*(?:Extra|Missing)\s+(?:aligned|\\right|\\left|\\big|\\bigl|\\bigr|\\bigm)/i,
     title: "Mismatched brackets",
     explanation:
       "LaTeX found unmatched \\left...\\right pairs or delimiters. Every \\left must be paired with a \\right of the same type on the same line (or group).",
@@ -284,9 +293,7 @@ export function analyzeCompileOutput(
     const match = pattern.regex.exec(output);
     if (!match) continue;
 
-    const errorLineIndex = outputLines.findIndex((l) =>
-      pattern.regex.test(l),
-    );
+    const errorLineIndex = outputLines.findIndex((l) => pattern.regex.test(l));
 
     let lineNumber = 1;
     const lineMatch = output.match(/l\.(\d+)/);

@@ -48,11 +48,14 @@ describe("generateRebuttalLetter", () => {
       id: "1",
       reviewerComment: "Please update this.",
       authorComment: "Updated.",
-      modificationMade: "--- Original\n+++ Revised\n@@ Manuscript change @@\n- old\n+ new",
+      modificationMade:
+        "--- Original\n+++ Revised\n@@ Manuscript change @@\n- old\n+ new",
     };
 
     const tex = generateRebuttalLetter([item], settings);
 
-    expect(tex).toContain("--- Original\n+++ Revised\n@@ Manuscript change @@\n- old\n+ new");
+    expect(tex).toContain(
+      "--- Original\n+++ Revised\n@@ Manuscript change @@\n- old\n+ new",
+    );
   });
 });

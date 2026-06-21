@@ -32,9 +32,7 @@ interface AcronymDef {
 
 function findSection(content: string, pos: number): string {
   const before = content.substring(0, pos);
-  const sectionMatch = before.match(
-    /\\section\s*\*?\s*\{([^}]*)\}\s*$/m,
-  );
+  const sectionMatch = before.match(/\\section\s*\*?\s*\{([^}]*)\}\s*$/m);
   return sectionMatch ? sectionMatch[1] : "(preamble/global)";
 }
 
@@ -70,20 +68,34 @@ function checkUndefinedAcronymImpl(content: string): Diagnostic[] {
     const acr = match[1].toUpperCase();
     if (
       !/^[A-Z]{2,}$/.test(acr) ||
-      acr === "THE" || acr === "FOR" ||
-      acr === "AND" || acr === "ARE" ||
-      acr === "BUT" || acr === "NOT" ||
-      acr === "WAS" || acr === "CAN" ||
-      acr === "HOW" || acr === "WHY" ||
-      acr === "HAS" || acr === "ITS" ||
-      acr === "ALL" || acr === "ANY" ||
-      acr === "PER" || acr === "VIA" ||
-      acr === "THAT" || acr === "THIS" ||
-      acr === "FROM" || acr === "WITH" ||
-      acr === "THAN" || acr === "HAVE" ||
-      acr === "BEEN" || acr === "WERE" ||
-      acr === "SHALL" || acr === "WILL" ||
-      acr === "MORE" || acr === "SOME"
+      acr === "THE" ||
+      acr === "FOR" ||
+      acr === "AND" ||
+      acr === "ARE" ||
+      acr === "BUT" ||
+      acr === "NOT" ||
+      acr === "WAS" ||
+      acr === "CAN" ||
+      acr === "HOW" ||
+      acr === "WHY" ||
+      acr === "HAS" ||
+      acr === "ITS" ||
+      acr === "ALL" ||
+      acr === "ANY" ||
+      acr === "PER" ||
+      acr === "VIA" ||
+      acr === "THAT" ||
+      acr === "THIS" ||
+      acr === "FROM" ||
+      acr === "WITH" ||
+      acr === "THAN" ||
+      acr === "HAVE" ||
+      acr === "BEEN" ||
+      acr === "WERE" ||
+      acr === "SHALL" ||
+      acr === "WILL" ||
+      acr === "MORE" ||
+      acr === "SOME"
     ) {
       continue;
     }
@@ -93,13 +105,54 @@ function checkUndefinedAcronymImpl(content: string): Diagnostic[] {
   }
 
   const stopWords = new Set([
-    "THE", "FOR", "AND", "ARE", "BUT", "NOT", "WAS", "CAN",
-    "HOW", "WHY", "HAS", "ITS", "ALL", "ANY", "PER", "VIA",
-    "THAT", "THIS", "FROM", "WITH", "THAN", "HAVE", "BEEN",
-    "WERE", "SHALL", "WILL", "MORE", "SOME", "WHICH", "WHAT",
-    "WHERE", "WHEN", "THERE", "THEIR", "SUCH", "BOTH", "EACH",
-    "FEW", "MANY", "MUCH", "HERE", "THEN", "ALSO", "INTO",
-    "OVER", "UPON", "YOUR", "ABOUT",
+    "THE",
+    "FOR",
+    "AND",
+    "ARE",
+    "BUT",
+    "NOT",
+    "WAS",
+    "CAN",
+    "HOW",
+    "WHY",
+    "HAS",
+    "ITS",
+    "ALL",
+    "ANY",
+    "PER",
+    "VIA",
+    "THAT",
+    "THIS",
+    "FROM",
+    "WITH",
+    "THAN",
+    "HAVE",
+    "BEEN",
+    "WERE",
+    "SHALL",
+    "WILL",
+    "MORE",
+    "SOME",
+    "WHICH",
+    "WHAT",
+    "WHERE",
+    "WHEN",
+    "THERE",
+    "THEIR",
+    "SUCH",
+    "BOTH",
+    "EACH",
+    "FEW",
+    "MANY",
+    "MUCH",
+    "HERE",
+    "THEN",
+    "ALSO",
+    "INTO",
+    "OVER",
+    "UPON",
+    "YOUR",
+    "ABOUT",
   ]);
 
   const undefinedAcronyms = [...usedAcronymsInContent].filter(
@@ -112,9 +165,7 @@ function checkUndefinedAcronymImpl(content: string): Diagnostic[] {
       const lineText = contentLines[i];
       const lineIdx = i + 1;
       if (new RegExp(`\\b${acr}\\b`).test(lineText)) {
-        const prevMatch = defs.find(
-          (d) => d.acronym.toUpperCase() === acr,
-        );
+        const prevMatch = defs.find((d) => d.acronym.toUpperCase() === acr);
         if (prevMatch) {
           const nextLines = contentLines.slice(i, i + 5).join("\n");
           if (!nextLines.includes(`${acr}`)) continue;
@@ -200,8 +251,7 @@ function checkConflictingDefinitionsImpl(content: string): Diagnostic[] {
       const a = defs[i];
       const b = defs[j];
       const acrMatch = a.acronym.toUpperCase() === b.acronym.toUpperCase();
-      const sameForm =
-        a.fullForm.toLowerCase() === b.fullForm.toLowerCase();
+      const sameForm = a.fullForm.toLowerCase() === b.fullForm.toLowerCase();
 
       if (acrMatch && !sameForm) {
         diagnostics.push(
@@ -215,10 +265,8 @@ function checkConflictingDefinitionsImpl(content: string): Diagnostic[] {
         );
       }
 
-      const sameFullForm =
-        a.fullForm.toLowerCase() === b.fullForm.toLowerCase();
-      const differentAcr =
-        a.acronym.toUpperCase() !== b.acronym.toUpperCase();
+      const sameFullForm = a.fullForm.toLowerCase() === b.fullForm.toLowerCase();
+      const differentAcr = a.acronym.toUpperCase() !== b.acronym.toUpperCase();
       if (sameFullForm && differentAcr) {
         diagnostics.push(
           makeDiagnostic(

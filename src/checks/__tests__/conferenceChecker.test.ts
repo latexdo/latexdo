@@ -27,7 +27,9 @@ function makeDoc(body: string): string {
 
 describe("runConferenceChecks", () => {
   it("returns empty when disabled", () => {
-    expect(runConferenceChecks("content", { ...defaultSettings, enabled: false })).toHaveLength(0);
+    expect(
+      runConferenceChecks("content", { ...defaultSettings, enabled: false }),
+    ).toHaveLength(0);
   });
 
   it("returns empty for empty content", () => {
@@ -47,19 +49,25 @@ describe("runConferenceChecks", () => {
   });
 
   it("checks for NeurIPS template class", () => {
-    const result = runConferenceChecks(makeDoc("\\documentclass{article}"), { ...defaultSettings, checkMargins: true });
+    const result = runConferenceChecks(makeDoc("\\documentclass{article}"), {
+      ...defaultSettings,
+      checkMargins: true,
+    });
     expect(result.length).toBeGreaterThan(0);
   });
 
   it("uses correct document class for NeurIPS", () => {
-    const doc = "\\documentclass{neurips_2024}\n\\begin{document}\nContent.\n\\end{document}";
+    const doc =
+      "\\documentclass{neurips_2024}\n\\begin{document}\nContent.\n\\end{document}";
     const result = runConferenceChecks(doc, defaultSettings);
     expect(Array.isArray(result)).toBe(true);
   });
 
   it("checks author info presence", () => {
     const result = runConferenceChecks(makeDoc("\\author{John Doe}"), defaultSettings);
-    const authorIssues = result.filter((d) => d.message.toLowerCase().includes("author"));
+    const authorIssues = result.filter((d) =>
+      d.message.toLowerCase().includes("author"),
+    );
     expect(Array.isArray(result)).toBe(true);
   });
 
@@ -70,7 +78,15 @@ describe("runConferenceChecks", () => {
   });
 
   it("handles different templates", () => {
-    const templates: Array<ConferenceCheckerSettings["template"]> = ["ieee", "acm", "springer", "elsevier", "neurips", "cvpr", "custom"];
+    const templates: Array<ConferenceCheckerSettings["template"]> = [
+      "ieee",
+      "acm",
+      "springer",
+      "elsevier",
+      "neurips",
+      "cvpr",
+      "custom",
+    ];
     for (const template of templates) {
       const result = runConferenceChecks(makeDoc("Hello."), {
         ...defaultSettings,
@@ -83,21 +99,32 @@ describe("runConferenceChecks", () => {
 
   it("checks abstract length", () => {
     const words = Array(300).fill("word").join(" ");
-    const doc = "\\begin{document}\n\\begin{abstract}" + words + "\\end{abstract}\n\\end{document}";
+    const doc =
+      "\\begin{document}\n\\begin{abstract}" +
+      words +
+      "\\end{abstract}\n\\end{document}";
     const result = runConferenceChecks(doc, defaultSettings);
-    const abstractIssues = result.filter((d) => d.message.toLowerCase().includes("abstract"));
+    const abstractIssues = result.filter((d) =>
+      d.message.toLowerCase().includes("abstract"),
+    );
     expect(abstractIssues.length).toBeGreaterThan(0);
   });
 
   it("checks figure references", () => {
-    const doc = makeDoc("\\begin{figure}\\caption{A figure}\\label{fig:test}\\end{figure}");
+    const doc = makeDoc(
+      "\\begin{figure}\\caption{A figure}\\label{fig:test}\\end{figure}",
+    );
     const result = runConferenceChecks(doc, defaultSettings);
-    const figureIssues = result.filter((d) => d.message.toLowerCase().includes("figure"));
+    const figureIssues = result.filter((d) =>
+      d.message.toLowerCase().includes("figure"),
+    );
     expect(figureIssues.length).toBeGreaterThan(0);
   });
 
   it("checks table references", () => {
-    const doc = makeDoc("\\begin{table}\\caption{A table}\\label{tab:test}\\end{table}");
+    const doc = makeDoc(
+      "\\begin{table}\\caption{A table}\\label{tab:test}\\end{table}",
+    );
     const result = runConferenceChecks(doc, defaultSettings);
     const tableIssues = result.filter((d) => d.message.toLowerCase().includes("table"));
     expect(tableIssues.length).toBeGreaterThan(0);
@@ -135,7 +162,10 @@ describe("runConferenceChecks", () => {
   });
 
   it("handles empty document", () => {
-    const result = runConferenceChecks("\\documentclass{article}\\begin{document}\\end{document}", defaultSettings);
+    const result = runConferenceChecks(
+      "\\documentclass{article}\\begin{document}\\end{document}",
+      defaultSettings,
+    );
     expect(Array.isArray(result)).toBe(true);
   });
 
@@ -146,7 +176,9 @@ describe("runConferenceChecks", () => {
   });
 
   it("handles multiple figures with mixed reference status", () => {
-    const doc = makeDoc("\\begin{figure}\\label{fig:a}\\caption{A}\\end{figure} \\begin{figure}\\label{fig:b}\\caption{B}\\end{figure} See \\ref{fig:a}.");
+    const doc = makeDoc(
+      "\\begin{figure}\\label{fig:a}\\caption{A}\\end{figure} \\begin{figure}\\label{fig:b}\\caption{B}\\end{figure} See \\ref{fig:a}.",
+    );
     const result = runConferenceChecks(doc, defaultSettings);
     expect(Array.isArray(result)).toBe(true);
   });
@@ -174,7 +206,10 @@ This is the introduction with motivation. However there is a gap. We propose a c
   });
 
   it("checks font size settings", () => {
-    const result = runConferenceChecks(makeDoc("\\large This is large text."), defaultSettings);
+    const result = runConferenceChecks(
+      makeDoc("\\large This is large text."),
+      defaultSettings,
+    );
     expect(Array.isArray(result)).toBe(true);
   });
 

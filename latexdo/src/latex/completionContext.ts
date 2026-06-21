@@ -25,18 +25,11 @@ const citationCommands = [
   "autocite",
   "footcite",
 ];
-const referenceCommands = [
-  "ref",
-  "eqref",
-  "autoref",
-  "cref",
-  "Cref",
-  "pageref",
-];
+const referenceCommands = ["ref", "eqref", "autoref", "cref", "Cref", "pageref"];
 
 export function getLatexCompletionContext(
   lineText: string,
-  cursorColumn: number
+  cursorColumn: number,
 ): LatexCompletionContext {
   const beforeCursor = lineText.slice(0, cursorColumn - 1);
   const commandPattern = /\\([A-Za-z]+)\{([^{}]*)$/;

@@ -76,8 +76,7 @@ export function TerminalPanel({
 }: TerminalPanelProps) {
   const [sessionMode, setSessionMode] = useState<"pty" | "pipe">("pty");
   const [sessionStatus, setSessionStatus] = useState("Starting shell");
-  const [sessionState, setSessionState] =
-    useState<TerminalSessionState>("starting");
+  const [sessionState, setSessionState] = useState<TerminalSessionState>("starting");
   const [hasSelection, setHasSelection] = useState(false);
   const [sessionNonce, setSessionNonce] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -87,10 +86,7 @@ export function TerminalPanel({
   const sessionModeRef = useRef<"pty" | "pipe">("pty");
   const inputBufferRef = useRef("");
 
-  const pathLabel = useMemo(
-    () => compactTerminalPath(workspacePath),
-    [workspacePath],
-  );
+  const pathLabel = useMemo(() => compactTerminalPath(workspacePath), [workspacePath]);
   const workspaceLabel = useMemo(
     () => terminalWorkspaceLabel(workspacePath),
     [workspacePath],
@@ -261,9 +257,7 @@ export function TerminalPanel({
           sessionModeRef.current = mode;
           setSessionMode(mode);
           setSessionState("ready");
-          setSessionStatus(
-            mode === "pty" ? "PTY shell ready" : "Fallback shell ready",
-          );
+          setSessionStatus(mode === "pty" ? "PTY shell ready" : "Fallback shell ready");
 
           removeDataListener = window.terminalApi.onData((payload) => {
             if (payload.id === id) {
@@ -277,9 +271,7 @@ export function TerminalPanel({
               setSessionState("exited");
               setSessionStatus(`Exited with code ${payload.exitCode}`);
               terminal.writeln("");
-              terminal.writeln(
-                `[process exited with code ${payload.exitCode}]`,
-              );
+              terminal.writeln(`[process exited with code ${payload.exitCode}]`);
             }
           });
 

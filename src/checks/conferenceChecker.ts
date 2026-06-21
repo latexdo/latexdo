@@ -62,7 +62,7 @@ function checkMarginsImpl(content: string, template: string): Diagnostic[] {
           line,
           "IEEE document class missing [conference] option",
           "IEEEtran should include [conference] for conference submissions or [journal] for journal submissions",
-          'Use \\documentclass[conference]{IEEEtran} for conference papers',
+          "Use \\documentclass[conference]{IEEEtran} for conference papers",
         ),
       );
     }
@@ -76,7 +76,7 @@ function checkMarginsImpl(content: string, template: string): Diagnostic[] {
           line,
           "ACM document class missing [sigconf] option",
           "acmart should include [sigconf] for conference submissions",
-          'Use \\documentclass[sigconf]{acmart}',
+          "Use \\documentclass[sigconf]{acmart}",
         ),
       );
     }
@@ -92,7 +92,7 @@ function checkMarginsImpl(content: string, template: string): Diagnostic[] {
             line,
             "Springer document class may need [sn-mathphys-num] option",
             "sn-jnl typically uses [sn-mathphys-num] for mathematics and physics submissions",
-            'Use \\documentclass[sn-mathphys-num]{sn-jnl}',
+            "Use \\documentclass[sn-mathphys-num]{sn-jnl}",
           ),
         );
       }
@@ -279,7 +279,9 @@ function checkFontSizeImpl(content: string, template: string): Diagnostic[] {
 function checkAbstractLengthImpl(content: string, template: string): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
-  const envMatch = content.match(/\\begin\s*\{abstract\}\s*([\s\S]*?)\\end\s*\{abstract\}/);
+  const envMatch = content.match(
+    /\\begin\s*\{abstract\}\s*([\s\S]*?)\\end\s*\{abstract\}/,
+  );
   const cmdMatch = content.match(/\\abstract\s*\{([^}]+)\}/);
 
   let abstractText = "";
@@ -662,7 +664,11 @@ function checkAuthorInfoImpl(content: string): Diagnostic[] {
     const authorBlock = match[1];
     const line = findLine(content, match.index);
 
-    if (!authorBlock.includes("\\email") && !authorBlock.includes("\\texttt") && !authorBlock.includes("@")) {
+    if (
+      !authorBlock.includes("\\email") &&
+      !authorBlock.includes("\\texttt") &&
+      !authorBlock.includes("@")
+    ) {
       diagnostics.push(
         makeDiagnostic(
           line,
@@ -727,7 +733,11 @@ function checkAnonymousReviewImpl(content: string): Diagnostic[] {
     const thanksText = thanksMatch[1].toLowerCase();
     const line = findLine(content, thanksMatch.index);
 
-    if (thanksText.includes("@") || thanksText.includes("email") || thanksText.includes("e-mail")) {
+    if (
+      thanksText.includes("@") ||
+      thanksText.includes("email") ||
+      thanksText.includes("e-mail")
+    ) {
       diagnostics.push(
         makeDiagnostic(
           line,
@@ -739,8 +749,13 @@ function checkAnonymousReviewImpl(content: string): Diagnostic[] {
     }
 
     const nameIndicators = [
-      "ph.d", "prof", "dr.", "department of", "university of",
-      "institute of", "laboratory",
+      "ph.d",
+      "prof",
+      "dr.",
+      "department of",
+      "university of",
+      "institute of",
+      "laboratory",
     ];
     for (const indicator of nameIndicators) {
       if (thanksText.includes(indicator)) {
@@ -810,8 +825,12 @@ function checkAnonymousReviewImpl(content: string): Diagnostic[] {
     const url = urlMatch[1].toLowerCase();
     const line = findLine(content, urlMatch.index);
     const identifyingDomains = [
-      "github.com/", "linkedin.com/in/", "twitter.com/",
-      "personal", "homepage", "~",
+      "github.com/",
+      "linkedin.com/in/",
+      "twitter.com/",
+      "personal",
+      "homepage",
+      "~",
     ];
     for (const domain of identifyingDomains) {
       if (url.includes(domain)) {
@@ -830,10 +849,7 @@ function checkAnonymousReviewImpl(content: string): Diagnostic[] {
 
   const anonymizeRegex = /\\author\s*\{\s*(?:Anonymous|hidden|removed)/i;
   if (!anonymizeRegex.test(content)) {
-    if (
-      content.includes("\\documentclass") &&
-      !content.includes("\\author")
-    ) {
+    if (content.includes("\\documentclass") && !content.includes("\\author")) {
       diagnostics.push(
         makeDiagnostic(
           1,
@@ -1023,7 +1039,11 @@ function checkCompilerImpl(content: string, template: string): Diagnostic[] {
     }
   }
 
-  if (allPackages.has("fontspec") || allPackages.has("polyglossia") || allPackages.has("xeCJK")) {
+  if (
+    allPackages.has("fontspec") ||
+    allPackages.has("polyglossia") ||
+    allPackages.has("xeCJK")
+  ) {
     let missingXeLaTeX = false;
     let line = 1;
 
@@ -1044,13 +1064,17 @@ function checkCompilerImpl(content: string, template: string): Diagnostic[] {
           line,
           "Document requires XeLaTeX or LuaLaTeX compiler (fontspec/polyglossia detected)",
           "Packages like fontspec and polyglossia are not compatible with pdflatex and require XeLaTeX or LuaLaTeX",
-          'Switch compiler to XeLaTeX or change to \\usepackage[T1]{fontenc} and \\usepackage[latin]{babel} for pdflatex',
+          "Switch compiler to XeLaTeX or change to \\usepackage[T1]{fontenc} and \\usepackage[latin]{babel} for pdflatex",
         ),
       );
     }
   }
 
-  if (allPackages.has("tikz") || allPackages.has("pgfplots") || allPackages.has("pstricks")) {
+  if (
+    allPackages.has("tikz") ||
+    allPackages.has("pgfplots") ||
+    allPackages.has("pstricks")
+  ) {
     diagnostics.push(
       makeDiagnostic(
         1,

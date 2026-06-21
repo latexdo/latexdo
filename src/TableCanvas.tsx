@@ -40,13 +40,23 @@ export default function TableCanvas({ onInsertCode }: TableCanvasProps) {
 
   const addCol = () => {
     const newCells = data.cells.map((row) => [...row, ""]);
-    setData({ ...data, cols: data.cols + 1, cells: newCells, alignment: data.alignment + "|c" });
+    setData({
+      ...data,
+      cols: data.cols + 1,
+      cells: newCells,
+      alignment: data.alignment + "|c",
+    });
   };
 
   const removeCol = () => {
     if (data.cols <= 1) return;
     const newCells = data.cells.map((row) => row.slice(0, -1));
-    setData({ ...data, cols: data.cols - 1, cells: newCells, alignment: data.alignment.slice(0, -2) });
+    setData({
+      ...data,
+      cols: data.cols - 1,
+      cells: newCells,
+      alignment: data.alignment.slice(0, -2),
+    });
   };
 
   const handleCopy = async () => {
@@ -60,10 +70,18 @@ export default function TableCanvas({ onInsertCode }: TableCanvasProps) {
       <div className="tikz-draw-area" style={{ padding: "20px" }}>
         <h3>Table Editor</h3>
         <div className="table-controls" style={{ marginBottom: "10px" }}>
-          <button onClick={addRow}><Plus size={14}/> Add Row</button>
-          <button onClick={removeRow}><Trash2 size={14}/> Remove Row</button>
-          <button onClick={addCol}><Plus size={14}/> Add Col</button>
-          <button onClick={removeCol}><Trash2 size={14}/> Remove Col</button>
+          <button onClick={addRow}>
+            <Plus size={14} /> Add Row
+          </button>
+          <button onClick={removeRow}>
+            <Trash2 size={14} /> Remove Row
+          </button>
+          <button onClick={addCol}>
+            <Plus size={14} /> Add Col
+          </button>
+          <button onClick={removeCol}>
+            <Trash2 size={14} /> Remove Col
+          </button>
         </div>
         <table className="table-grid" style={{ borderCollapse: "collapse" }}>
           <tbody>
@@ -89,7 +107,9 @@ export default function TableCanvas({ onInsertCode }: TableCanvasProps) {
           <code>{tabularCode}</code>
         </pre>
         <button onClick={handleCopy}>{copied ? "Copied!" : "Copy"}</button>
-        {onInsertCode && <button onClick={() => onInsertCode(tabularCode)}>Insert</button>}
+        {onInsertCode && (
+          <button onClick={() => onInsertCode(tabularCode)}>Insert</button>
+        )}
       </div>
     </div>
   );

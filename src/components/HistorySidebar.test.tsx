@@ -29,9 +29,7 @@ describe("HistorySidebar", () => {
       />,
     );
 
-    expect(
-      screen.getByRole("button", { name: /capture state/i }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /capture state/i })).toBeDisabled();
     expect(screen.getByText("No file open")).toBeVisible();
     expect(screen.getByText(/No local history yet/i)).toBeVisible();
   });
