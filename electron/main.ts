@@ -44,6 +44,7 @@ import { registerTerminalIpc } from "./terminal.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
+const appIconPath = path.join(currentDirectory, "..", "build", "icon.png");
 const execFileAsync = promisify(execFile);
 const githubReleasesPageUrl = "https://github.com/latexdo/latexdo/releases";
 const githubLatestReleaseUrl =
@@ -1350,6 +1351,7 @@ function createWindow(): void {
     minWidth: 980,
     minHeight: 680,
     title: "LatexDo",
+    icon: appIconPath,
     titleBarStyle: "hiddenInset",
     backgroundColor: "#111318",
     webPreferences: {
@@ -1379,6 +1381,9 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   console.log("[latexdo] app:ready");
+  if (process.platform === "darwin") {
+    app.dock.setIcon(appIconPath);
+  }
   registerTerminalIpc();
   console.log("[latexdo] app:terminal-registered");
   buildApplicationMenu();

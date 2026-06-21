@@ -52,6 +52,7 @@ import {
   useRef,
   useState,
 } from "react";
+import appIconUrl from "../build/icon.svg";
 import FileTree from "./FileTree";
 import PdfPreview, { type PdfClickLocation } from "./PdfPreview";
 import TikzCanvas from "./TikzCanvas";
@@ -117,6 +118,18 @@ type SidebarView = "explorer" | "sourceControl" | "history";
 
 interface GitDiffSession extends GitDiffEditorInput {
   label: string;
+}
+
+function AppIcon({ className }: { className?: string }) {
+  return (
+    <img
+      src={appIconUrl}
+      className={["app-icon", className].filter(Boolean).join(" ")}
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+    />
+  );
 }
 
 interface AppSettings {
@@ -4078,9 +4091,7 @@ ${macroEnd}
     <div className="app-shell">
       <header className="titlebar">
         <div className="titlebar-drag">
-          <div className="app-mark">
-            <span>L</span>
-          </div>
+          <AppIcon className="app-mark" />
           <span className="title-project">{projectName}</span>
           <span className="title-separator">—</span>
           <span>LatexDo</span>
@@ -4600,7 +4611,7 @@ ${macroEnd}
                 }`}
                 onClick={showWelcomePage}
               >
-                <span className="welcome-tab-mark">L</span>
+                <AppIcon className="welcome-tab-mark" />
                 <span>Welcome</span>
                 <span className="tab-close" onClick={closeWelcomePage}>
                   <X size={13} />
@@ -4753,9 +4764,7 @@ ${macroEnd}
               {showWelcome ? (
                 <div className="welcome-page">
                   <div className="welcome-hero">
-                    <div className="welcome-brand">
-                      <span>L</span>
-                    </div>
+                    <AppIcon className="welcome-brand" />
                     <div>
                       <h1>LatexDo</h1>
                       <p>Write beautifully. Compile locally.</p>
@@ -4865,7 +4874,7 @@ ${macroEnd}
                 />
               ) : (
                 <div className="empty-editor">
-                  <div className="empty-logo">L</div>
+                  <AppIcon className="empty-logo" />
                   <h2>{showBlankWorkspace ? "No project is open" : "No editor is open"}</h2>
                   <button onClick={showBlankWorkspace ? openProject : showWelcomePage}>
                     {showBlankWorkspace ? "Open Folder" : "Show Welcome"}
@@ -5631,7 +5640,7 @@ ${macroEnd}
       <footer className="statusbar">
         <div>
           <span className="status-brand">
-            <Box size={13} />
+            <AppIcon className="status-brand-icon" />
             LatexDo
           </span>
           {updateInfo?.updateAvailable ? (
