@@ -6,7 +6,13 @@ import {
   analyzeLatexDiagnostic,
   rankLatexDiagnostics,
 } from "./latexDiagnostics.js";
-import type { CompileRequest, CompileResult, Diagnostic } from "./types.js";
+import type { CompileResult, Diagnostic } from "./types.js";
+
+type CompileLatexRequest = {
+  projectPath: string;
+  rootFile: string;
+  engine: "pdflatex" | "xelatex" | "lualatex";
+};
 
 const executableCandidates =
   process.platform === "darwin"
@@ -225,7 +231,7 @@ function parseDiagnostics(
 }
 
 export async function compileLatex(
-  request: CompileRequest,
+  request: CompileLatexRequest,
 ): Promise<CompileResult> {
   const startedAt = performance.now();
   const latexmk = await findLatexmk();

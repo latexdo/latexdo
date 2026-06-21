@@ -6,6 +6,14 @@ export interface ProjectEntry {
   children?: ProjectEntry[];
 }
 
+export type ProjectId = string;
+
+export interface OpenProject {
+  id: ProjectId;
+  rootPath: string;
+  name: string;
+}
+
 export interface DiagnosticContextLine {
   line: number;
   text: string;
@@ -53,7 +61,7 @@ export interface Diagnostic {
 }
 
 export interface CompileRequest {
-  projectPath: string;
+  projectId: ProjectId;
   rootFile: string;
   engine: "pdflatex" | "xelatex" | "lualatex";
 }

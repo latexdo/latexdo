@@ -6,6 +6,14 @@ export interface ProjectEntry {
   children?: ProjectEntry[];
 }
 
+export type ProjectId = string;
+
+export interface OpenProject {
+  id: ProjectId;
+  rootPath: string;
+  name: string;
+}
+
 export interface OpenDocument {
   path: string;
   relativePath: string;

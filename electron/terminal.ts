@@ -16,6 +16,10 @@ type PipeSession = {
 
 type TerminalSession = PtySession | PipeSession;
 
+type TerminalProjectRegistry = {
+  getProjectRoot: (projectId: string) => string;
+};
+
 const terminals = new Map<number, TerminalSession>();
 let nextTerminalId = 1;
 
@@ -167,66 +171,78 @@ function sendTerminalExit(
   terminals.delete(id);
 }
 
-export function registerTerminalIpc() {
-  ipcMain.handle("terminal:create", async (event, options?: { cwd?: string }) => {
-    const id = nextTerminalId++;
-    const shell = await pickShell();
-    const cwd = await pickWorkingDirectory(options?.cwd);
-    const env = buildTerminalEnv(shell, cwd);
+export function registerTerminalIpc(projects: TerminalProjectRegistry) {
+  ipcMain.handle(
+    "terminal:create",
+    async (event, options?: { projectId?: string }) => {
+      const id = nextTerminalId++;
+      const shell = await pickShell();
+      const projectRoot = options?.projectId
+        ? projects.getProjectRoot(options.projectId)
+        : undefined;
+      const cwd = await pickWorkingDirectory(projectRoot);
+      const env = buildTerminalEnv(shell, cwd);
 
-    try {
-      const terminalProcess = pty.spawn(shell, shellArgs(shell, "pty"), {
-        name: "xterm-256color",
-        cols: 80,
-        rows: 24,
-        cwd,
-        env,
-      });
-
-      terminals.set(id, { kind: "pty", process: terminalProcess });
-
-      terminalProcess.onData((data) => {
-        event.sender.send("terminal:data", { id, data });
-      });
-
-      terminalProcess.onExit((res) => {
-        const exitCode = (res && (res as any).exitCode) ?? 0;
-        sendTerminalExit(event.sender, id, exitCode);
-      });
-    } catch (error) {
-      const fallbackShell = await pickFallbackShell();
-      const fallbackEnv = buildTerminalEnv(fallbackShell, cwd);
-      const child = spawn(fallbackShell, shellArgs(fallbackShell, "pipe"), {
-        cwd,
-        env: fallbackEnv,
-        stdio: "pipe",
-      });
-
-      terminals.set(id, { kind: "pipe", process: child });
-
-      child.stdout.on("data", (data: Buffer) => {
-        event.sender.send("terminal:data", { id, data: data.toString("utf8") });
-      });
-
-      child.stderr.on("data", (data: Buffer) => {
-        event.sender.send("terminal:data", { id, data: data.toString("utf8") });
-      });
-
-      child.on("exit", (exitCode) => {
-        sendTerminalExit(event.sender, id, exitCode ?? 0);
-      });
-
-      child.on("error", (childError) => {
-        event.sender.send("terminal:data", {
-          id,
-          data: `[terminal failed to start] ${childError.message}\r\n`,
+      try {
+        const terminalProcess = pty.spawn(shell, shellArgs(shell, "pty"), {
+          name: "xterm-256color",
+          cols: 80,
+          rows: 24,
+          cwd,
+          env,
         });
-        sendTerminalExit(event.sender, id, 1);
-      });
-    }
 
-    return { id, mode: terminals.get(id)?.kind === "pty" ? "pty" : "pipe" };
-  });
+        terminals.set(id, { kind: "pty", process: terminalProcess });
+
+        terminalProcess.onData((data) => {
+          event.sender.send("terminal:data", { id, data });
+        });
+
+        terminalProcess.onExit((res) => {
+          const exitCode = (res && (res as any).exitCode) ?? 0;
+          sendTerminalExit(event.sender, id, exitCode);
+        });
+      } catch (error) {
+        const fallbackShell = await pickFallbackShell();
+        const fallbackEnv = buildTerminalEnv(fallbackShell, cwd);
+        const child = spawn(fallbackShell, shellArgs(fallbackShell, "pipe"), {
+          cwd,
+          env: fallbackEnv,
+          stdio: "pipe",
+        });
+
+        terminals.set(id, { kind: "pipe", process: child });
+
+        child.stdout.on("data", (data: Buffer) => {
+          event.sender.send("terminal:data", {
+            id,
+            data: data.toString("utf8"),
+          });
+        });
+
+        child.stderr.on("data", (data: Buffer) => {
+          event.sender.send("terminal:data", {
+            id,
+            data: data.toString("utf8"),
+          });
+        });
+
+        child.on("exit", (exitCode) => {
+          sendTerminalExit(event.sender, id, exitCode ?? 0);
+        });
+
+        child.on("error", (childError) => {
+          event.sender.send("terminal:data", {
+            id,
+            data: `[terminal failed to start] ${childError.message}\r\n`,
+          });
+          sendTerminalExit(event.sender, id, 1);
+        });
+      }
+
+      return { id, mode: terminals.get(id)?.kind === "pty" ? "pty" : "pipe" };
+    },
+  );
 
   ipcMain.on("terminal:write", (_event, payload: { id: number; data: string }) => {
     const session = terminals.get(payload.id);

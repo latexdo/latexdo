@@ -13,7 +13,8 @@ import {
 import "@xterm/xterm/css/xterm.css";
 
 type TerminalPanelProps = {
-  cwd?: string;
+  projectId?: string;
+  workspacePath?: string;
   active?: boolean;
 };
 
@@ -68,7 +69,11 @@ function terminalWorkspaceLabel(path?: string): string {
   return path.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) ?? path;
 }
 
-export function TerminalPanel({ cwd, active = false }: TerminalPanelProps) {
+export function TerminalPanel({
+  projectId,
+  workspacePath,
+  active = false,
+}: TerminalPanelProps) {
   const [sessionMode, setSessionMode] = useState<"pty" | "pipe">("pty");
   const [sessionStatus, setSessionStatus] = useState("Starting shell");
   const [sessionState, setSessionState] =
@@ -82,8 +87,14 @@ export function TerminalPanel({ cwd, active = false }: TerminalPanelProps) {
   const sessionModeRef = useRef<"pty" | "pipe">("pty");
   const inputBufferRef = useRef("");
 
-  const pathLabel = useMemo(() => compactTerminalPath(cwd), [cwd]);
-  const workspaceLabel = useMemo(() => terminalWorkspaceLabel(cwd), [cwd]);
+  const pathLabel = useMemo(
+    () => compactTerminalPath(workspacePath),
+    [workspacePath],
+  );
+  const workspaceLabel = useMemo(
+    () => terminalWorkspaceLabel(workspacePath),
+    [workspacePath],
+  );
 
   const fitAndResize = useCallback(() => {
     const terminal = terminalRef.current;
@@ -233,7 +244,7 @@ export function TerminalPanel({ cwd, active = false }: TerminalPanelProps) {
       return true;
     });
 
-    window.terminalApi.create({ cwd }).then(({ id, mode }) => {
+    window.terminalApi.create(projectId ? { projectId } : undefined).then(({ id, mode }) => {
       if (disposed) {
         window.terminalApi.dispose(id);
         return;
@@ -296,7 +307,7 @@ export function TerminalPanel({ cwd, active = false }: TerminalPanelProps) {
 
       terminal.dispose();
     };
-  }, [cwd, fitAndResize, sessionNonce]);
+  }, [fitAndResize, projectId, sessionNonce]);
 
   useEffect(() => {
     if (!active) return;
