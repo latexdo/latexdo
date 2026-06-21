@@ -32,6 +32,7 @@ import type {
   GitCommitDetails,
   GitCommitEntry,
   CompileRequest,
+  GitDiscardResult,
   GitDiffEditorInput,
   GitDiffPreview,
   GitHistorySummary,
@@ -1538,6 +1539,69 @@ async function isGitRepository(projectPath: string): Promise<boolean> {
   }
 }
 
+function gitRecoveryTimestamp(): string {
+  return new Date()
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z");
+}
+
+function gitRecoveryScopeLabel(relativePath?: string): string {
+  const label = (relativePath ?? "all")
+    .replace(/[\\/]+/g, "-")
+    .replace(/[^A-Za-z0-9._-]/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return label || "changes";
+}
+
+async function confirmGitDiscard(
+  targetWindow: BrowserWindow | null,
+  message: string,
+): Promise<boolean> {
+  const options = {
+    type: "warning" as const,
+    buttons: ["Cancel", "Discard changes"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    message,
+    detail:
+      "LatexDo will save a recovery patch in .latexdo/recovery before discarding changes.",
+  };
+  const result = targetWindow
+    ? await dialog.showMessageBox(targetWindow, options)
+    : await dialog.showMessageBox(options);
+  return result.response === 1;
+}
+
+async function createGitDiscardRecoveryPatch(
+  projectPath: string,
+  relativePath?: string,
+): Promise<string | undefined> {
+  const args = ["-C", projectPath, "diff", "--binary"];
+  if (relativePath) {
+    args.push("--", relativePath);
+  }
+
+  const { stdout } = await execFileAsync("git", args, {
+    maxBuffer: 100 * 1024 * 1024,
+  });
+  if (!stdout.trim()) {
+    return undefined;
+  }
+
+  const recoveryDirectory = resolveProjectPath(projectPath, ".latexdo/recovery");
+  const patchPath = path.join(
+    recoveryDirectory,
+    `discard-${gitRecoveryTimestamp()}-${gitRecoveryScopeLabel(
+      relativePath,
+    )}-${randomUUID().slice(0, 8)}.patch`,
+  );
+  await atomicWriteUtf8(patchPath, stdout, { exclusive: true });
+  return relativeProjectPath(projectPath, patchPath);
+}
+
 async function gitAdd(
   projectPath: string,
   relativePath: string,
@@ -1603,8 +1667,12 @@ async function gitDiff(
 async function gitDiscard(
   projectPath: string,
   relativePath: string,
-): Promise<void> {
+): Promise<GitDiscardResult> {
   const targetPath = resolveProjectPath(projectPath, relativePath);
+  const recoveryPatch = await createGitDiscardRecoveryPatch(
+    projectPath,
+    relativePath,
+  );
   try {
     await execFileAsync("git", [
       "-C",
@@ -1623,6 +1691,10 @@ async function gitDiscard(
       targetPath,
     ]);
   }
+  return {
+    discarded: true,
+    recoveryPatch,
+  };
 }
 
 async function gitStageAll(projectPath: string): Promise<void> {
@@ -1637,12 +1709,17 @@ async function gitUnstageAll(projectPath: string): Promise<void> {
   }
 }
 
-async function gitDiscardAll(projectPath: string): Promise<void> {
+async function gitDiscardAll(projectPath: string): Promise<GitDiscardResult> {
+  const recoveryPatch = await createGitDiscardRecoveryPatch(projectPath);
   try {
     await execFileAsync("git", ["-C", projectPath, "restore", "."]);
   } catch {
     await execFileAsync("git", ["-C", projectPath, "checkout", "--", "."]);
   }
+  return {
+    discarded: true,
+    recoveryPatch,
+  };
 }
 
 async function gitDiffEditorInput(
@@ -2088,13 +2165,20 @@ app.whenReady().then(() => {
     const projectPath = getProjectRoot(projectId);
     return gitDiff(projectPath, relativePath);
   });
-  ipcMain.handle("git:discard", async (_event, ...rawArgs: unknown[]) => {
+  ipcMain.handle("git:discard", async (event, ...rawArgs: unknown[]) => {
     const channel = "git:discard";
     const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
     const projectPath = getProjectRoot(projectId);
-    await gitDiscard(projectPath, relativePath);
+    const confirmed = await confirmGitDiscard(
+      BrowserWindow.fromWebContents(event.sender),
+      `Discard changes in ${relativePath}?`,
+    );
+    if (!confirmed) {
+      return { discarded: false };
+    }
+    return gitDiscard(projectPath, relativePath);
   });
   ipcMain.handle("git:stage-all", async (_event, ...rawArgs: unknown[]) => {
     const channel = "git:stage-all";
@@ -2110,12 +2194,19 @@ app.whenReady().then(() => {
     const projectPath = getProjectRoot(projectId);
     await gitUnstageAll(projectPath);
   });
-  ipcMain.handle("git:discard-all", async (_event, ...rawArgs: unknown[]) => {
+  ipcMain.handle("git:discard-all", async (event, ...rawArgs: unknown[]) => {
     const channel = "git:discard-all";
     const [rawProjectId] = expectIpcArgs(channel, rawArgs, 1);
     const projectId = parseProjectId(channel, rawProjectId);
     const projectPath = getProjectRoot(projectId);
-    await gitDiscardAll(projectPath);
+    const confirmed = await confirmGitDiscard(
+      BrowserWindow.fromWebContents(event.sender),
+      "Discard all unstaged changes?",
+    );
+    if (!confirmed) {
+      return { discarded: false };
+    }
+    return gitDiscardAll(projectPath);
   });
   ipcMain.handle("git:editor-diff", async (_event, ...rawArgs: unknown[]) => {
     const channel = "git:editor-diff";

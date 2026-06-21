@@ -3,6 +3,7 @@ import type {
   CompileRequest,
   CompileResult,
   GitCommitDetails,
+  GitDiscardResult,
   GitDiffEditorInput,
   GitDiffPreview,
   GitHistorySummary,
@@ -61,13 +62,16 @@ const api = {
     relativePath: string,
   ): Promise<GitDiffPreview> =>
     ipcRenderer.invoke("git:diff", projectId, relativePath),
-  discardGitFile: (projectId: string, relativePath: string): Promise<void> =>
+  discardGitFile: (
+    projectId: string,
+    relativePath: string,
+  ): Promise<GitDiscardResult> =>
     ipcRenderer.invoke("git:discard", projectId, relativePath),
   stageAllGit: (projectId: string): Promise<void> =>
     ipcRenderer.invoke("git:stage-all", projectId),
   unstageAllGit: (projectId: string): Promise<void> =>
     ipcRenderer.invoke("git:unstage-all", projectId),
-  discardAllGit: (projectId: string): Promise<void> =>
+  discardAllGit: (projectId: string): Promise<GitDiscardResult> =>
     ipcRenderer.invoke("git:discard-all", projectId),
   getGitEditorDiff: (
     projectId: string,
