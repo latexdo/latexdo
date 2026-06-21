@@ -194,7 +194,7 @@ const api = {
 contextBridge.exposeInMainWorld("latexdo", api);
 
 const terminalApi = {
-  create: (options?: { projectId?: string }) =>
+  create: (options: { projectId: string }) =>
     ipcRenderer.invoke("terminal:create", options) as Promise<{
       id: number;
       mode: "pty" | "pipe";
