@@ -6224,7 +6224,15 @@ ${macroEnd}
                         <button type="button" className="dialog-cancel" onClick={() => { if (!proofreadingSettings) return; void saveProofreadingSettings(proofreadingSettings, "Proofreading settings saved"); }} disabled={!proofreadingSettings}>Save grammar settings</button>
                         <button type="button" className="dialog-submit" onClick={() => void runProofreading()} disabled={!proofreadingSettings || !proofreadingSettings.enabled || proofreadingLoading || !activeDocument || !supportsProofreading(activeDocument.name)}>{proofreadingLoading ? "Checking..." : "Proofread now"}</button>
                       </div>
-                      <div className="spellchecker-note compact">{proofreadingResult?.error ? proofreadingResult.error : proofreadingResult?.output ? proofreadingResult.output : "Suggestions appear inline in the editor and in the Problems panel."}</div>
+                      <div className="spellchecker-note compact">
+                        {!proofreadingSettings?.enabled
+                          ? "Proofreading is disabled. Enable grammar and style checking to run suggestions."
+                          : proofreadingResult?.error
+                            ? proofreadingResult.error
+                            : proofreadingResult?.output
+                              ? proofreadingResult.output
+                              : "Suggestions appear inline in the editor and in the Problems panel."}
+                      </div>
                     </div>
                   </div>
 
