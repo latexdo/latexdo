@@ -1938,6 +1938,14 @@ function createWindow(): void {
   });
   console.log("[latexdo] createWindow:created");
 
+  window.webContents.on("will-navigate", (event) => {
+    event.preventDefault();
+  });
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-attach-webview", (event) => {
+    event.preventDefault();
+  });
+
   window.webContents.once("did-finish-load", () => {
     console.log("[latexdo] createWindow:did-finish-load");
     installSpellCheckerContextMenu(window);
