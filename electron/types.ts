@@ -14,6 +14,16 @@ export interface OpenProject {
   name: string;
 }
 
+export interface DocxImportResult {
+  sourcePath: string;
+  relativePath: string;
+  assetDirectory: string;
+  mediaFiles: string[];
+  converter: "pandoc" | "built-in";
+  warnings: string[];
+  project?: OpenProject;
+}
+
 export interface DiagnosticContextLine {
   line: number;
   text: string;

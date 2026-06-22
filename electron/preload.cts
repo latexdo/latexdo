@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   CompileRequest,
   CompileResult,
+  DocxImportResult,
   GitCommitDetails,
   GitDiscardResult,
   GitDiffEditorInput,
@@ -38,6 +39,8 @@ const api = {
     ipcRenderer.invoke("file:create", projectId, relativePath),
   createFolder: (projectId: string, relativePath: string): Promise<string> =>
     ipcRenderer.invoke("folder:create", projectId, relativePath),
+  importDocx: (projectId?: string): Promise<DocxImportResult | null> =>
+    ipcRenderer.invoke("docx:import", projectId ?? ""),
   moveEntry: (
     projectId: string,
     fromRelativePath: string,
@@ -172,6 +175,17 @@ const api = {
 
     return () => {
       ipcRenderer.removeListener("folder:create-dialog", listener);
+    };
+  },
+  onImportDocxMenu: (callback: () => void) => {
+    const listener = () => {
+      callback();
+    };
+
+    ipcRenderer.on("file:import-docx", listener);
+
+    return () => {
+      ipcRenderer.removeListener("file:import-docx", listener);
     };
   },
 };

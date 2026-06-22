@@ -17,6 +17,7 @@ import {
   Download,
   ExternalLink,
   FilePlus2,
+  FileUp,
   Files,
   FolderPlus,
   FolderOpen,
@@ -1213,6 +1214,7 @@ export default function App() {
   const [createPath, setCreatePath] = useState("");
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
+  const [docxImporting, setDocxImporting] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState("editor");
@@ -3607,6 +3609,76 @@ ${macroEnd}
     }
   };
 
+  const importDocx = useCallback(async () => {
+    if (typeof window.latexdo.importDocx !== "function") {
+      setStatusMessage(
+        "DOCX import is not loaded in this app window. Restart the dev app and try again.",
+      );
+      return;
+    }
+
+    const currentProject =
+      projectIdRef.current && !hideProjectEntriesRef.current
+        ? projectIdRef.current
+        : undefined;
+
+    setDocxImporting(true);
+    try {
+      const result = await window.latexdo.importDocx(currentProject);
+      if (!result) {
+        return;
+      }
+
+      const targetProject = result.project?.id ?? currentProject;
+      if (!targetProject) {
+        throw new Error("DOCX import did not return a project.");
+      }
+
+      if (result.project && result.project.id !== currentProject) {
+        await loadProject(result.project, false, false);
+      }
+
+      const entries = await refreshProject(targetProject);
+      const importedEntry = flattenEntries(entries).find(
+        (entry) =>
+          entry.type === "file" &&
+          normalizeRelativePath(entry.relativePath) ===
+            normalizeRelativePath(result.relativePath),
+      );
+
+      if (importedEntry) {
+        setWelcomeOpen(false);
+        await openDocument(importedEntry, targetProject);
+        setRootFile(importedEntry.relativePath);
+        rootFileRef.current = importedEntry.relativePath;
+      }
+
+      const converterName =
+        result.converter === "pandoc" ? "Pandoc" : "built-in importer";
+      const mediaSummary = result.mediaFiles.length
+        ? ` with ${result.mediaFiles.length} media file${
+            result.mediaFiles.length === 1 ? "" : "s"
+          }`
+        : "";
+      const warningSummary = result.warnings.length ? ` ${result.warnings[0]}` : "";
+      setStatusMessage(
+        `Imported ${fileName(result.sourcePath)} to ${result.relativePath} via ${converterName}${mediaSummary}.${warningSummary}`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not import DOCX.";
+      if (
+        message.includes("No handler registered") ||
+        message.includes("importDocx is not a function")
+      ) {
+        setStatusMessage("Restart the LatexDo app to finish loading DOCX import.");
+        return;
+      }
+      setStatusMessage(message.replace(/^Error invoking remote method '[^']+': /, ""));
+    } finally {
+      setDocxImporting(false);
+    }
+  }, [loadProject, openDocument, refreshProject]);
+
   const closeDocument = (path: string) => {
     const target = documents.find((document) => document.path === path);
     if (
@@ -3842,6 +3914,12 @@ ${macroEnd}
       setCreateDialog("folder");
     });
   }, []);
+
+  useEffect(() => {
+    return window.latexdo.onImportDocxMenu(() => {
+      void importDocx();
+    });
+  }, [importDocx]);
 
   const toggleSidebar = () => {
     setSidebarVisible((visible) => !visible);
@@ -5172,6 +5250,14 @@ ${macroEnd}
                     </button>
                     <button
                       className="small-icon"
+                      onClick={() => void importDocx()}
+                      title="Import DOCX"
+                      disabled={docxImporting}
+                    >
+                      <FileUp size={15} />
+                    </button>
+                    <button
+                      className="small-icon"
                       onClick={() => void refreshProject()}
                       title="Refresh"
                       disabled={!hasVisibleProject}
@@ -5872,6 +5958,19 @@ ${macroEnd}
                           </span>
                         </button>
                       ) : null}
+                      <button
+                        className="welcome-action"
+                        onClick={() => void importDocx()}
+                        disabled={docxImporting}
+                      >
+                        <FileUp size={18} />
+                        <span>
+                          <strong>Import DOCX</strong>
+                          <small>
+                            Convert a Word document into LaTeX and extracted media
+                          </small>
+                        </span>
+                      </button>
                       <button className="welcome-action" onClick={openProject}>
                         <FolderOpen size={18} />
                         <span>
