@@ -36,6 +36,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Search,
   Settings,
   TerminalSquare,
   User,
@@ -60,6 +61,7 @@ import {
   CitationManager,
   type CitationInsertCommand,
 } from "./components/CitationManager";
+import { ProjectSearchPanel } from "./components/ProjectSearchPanel";
 import { generateRebuttalLetter } from "./rebuttalGenerator";
 import { normalizeLatexDoReviewMarkup, usesLatexDoReviewMacros } from "./reviewMarkup";
 import type { RebuttalGeneratorSettings } from "./types";
@@ -113,6 +115,11 @@ import {
   analyzeCitationLibrary,
   type CitationProjectFile,
 } from "./latex/citationAnalysis";
+import {
+  isProjectSearchablePath,
+  type ProjectSearchFile,
+  type ProjectSearchMatch,
+} from "./search/projectSearch";
 
 type PanelKind =
   | "problems"
@@ -121,7 +128,7 @@ type PanelKind =
   | "checkAnalysis"
   | "structureReport"
   | "pdfReport";
-type SidebarView = "explorer" | "sourceControl" | "history";
+type SidebarView = "explorer" | "sourceControl" | "history" | "search";
 
 interface GitDiffSession extends GitDiffEditorInput {
   label: string;
@@ -1203,6 +1210,12 @@ export default function App() {
   >([]);
   const [citationLibraryLoading, setCitationLibraryLoading] = useState(false);
   const [citationLibraryError, setCitationLibraryError] = useState("");
+  const [projectSearchFiles, setProjectSearchFiles] = useState<ProjectSearchFile[]>(
+    [],
+  );
+  const [projectSearchLoading, setProjectSearchLoading] = useState(false);
+  const [projectSearchError, setProjectSearchError] = useState("");
+  const [projectSearchRefreshNonce, setProjectSearchRefreshNonce] = useState(0);
   const [pdfComplianceDiagnostics, setPdfComplianceDiagnostics] = useState<
     Diagnostic[]
   >([]);
@@ -1482,6 +1495,99 @@ export default function App() {
       window.clearTimeout(timer);
     };
   }, [allProjectEntries, documents, hideProjectEntries, projectId]);
+
+  useEffect(() => {
+    if (!projectId || hideProjectEntries) {
+      setProjectSearchFiles([]);
+      setProjectSearchError("");
+      setProjectSearchLoading(false);
+      return;
+    }
+
+    const sourceEntries = allProjectEntries.filter(
+      (entry) =>
+        entry.type === "file" && isProjectSearchablePath(entry.relativePath),
+    );
+
+    if (!sourceEntries.length) {
+      setProjectSearchFiles([]);
+      setProjectSearchError("");
+      setProjectSearchLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setProjectSearchLoading(true);
+
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const openDocuments = new Map(
+          documentsRef.current.map((document) => [
+            normalizeRelativePath(document.relativePath),
+            document.content,
+          ]),
+        );
+        const reads = await Promise.all(
+          sourceEntries.map(async (entry) => {
+            const normalizedPath = normalizeRelativePath(entry.relativePath);
+            try {
+              const content =
+                openDocuments.get(normalizedPath) ??
+                (await window.latexdo.readFile(projectId, entry.relativePath));
+              return {
+                file: { path: normalizedPath, content } satisfies ProjectSearchFile,
+                error: "",
+              };
+            } catch (error) {
+              return {
+                file: null,
+                error:
+                  error instanceof Error
+                    ? `${entry.relativePath}: ${error.message}`
+                    : entry.relativePath,
+              };
+            }
+          }),
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        const files = reads
+          .map((read) => read.file)
+          .filter((file): file is ProjectSearchFile => Boolean(file));
+        const failedReads = reads.filter((read) => read.error);
+        setProjectSearchFiles(files);
+        setProjectSearchError(
+          failedReads.length
+            ? `Skipped ${failedReads.length} unreadable file${
+                failedReads.length === 1 ? "" : "s"
+              }.`
+            : "",
+        );
+        setProjectSearchLoading(false);
+      })().catch((error) => {
+        if (!cancelled) {
+          setProjectSearchError(
+            error instanceof Error ? error.message : "Could not scan project files.",
+          );
+          setProjectSearchLoading(false);
+        }
+      });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    allProjectEntries,
+    documents,
+    hideProjectEntries,
+    projectId,
+    projectSearchRefreshNonce,
+  ]);
 
   const refreshProject = useCallback(async (id = projectIdRef.current) => {
     if (!id) {
@@ -2665,6 +2771,37 @@ ${macroEnd}
       }
     },
     [openDocument, projectEntries, revealPendingSource],
+  );
+
+  const handleOpenProjectSearchMatch = useCallback(
+    async (match: ProjectSearchMatch) => {
+      const entry = allProjectEntries.find(
+        (item) =>
+          item.type === "file" &&
+          normalizeRelativePath(item.relativePath) ===
+            normalizeRelativePath(match.path),
+      );
+      if (!entry) {
+        setStatusMessage(`${match.path} is no longer in this project.`);
+        return;
+      }
+
+      pendingSourceRef.current = {
+        path: entry.path,
+        line: match.line,
+        column: match.column,
+        endLine: match.line,
+        endColumn: match.endColumn,
+      };
+      setGitDiffSession(null);
+      setWelcomeOpen(false);
+      await openDocument(entry);
+      requestAnimationFrame(() => {
+        revealPendingSource();
+      });
+      setStatusMessage(`Opened ${match.path}:${match.line}:${match.column}`);
+    },
+    [allProjectEntries, openDocument, revealPendingSource],
   );
 
   const applyDiagnosticReplacement = useCallback((diagnostic: Diagnostic) => {
@@ -4745,6 +4882,15 @@ ${macroEnd}
             </button>
             <button
               className={`activity-button ${
+                sidebarVisible && activeSidebar === "search" ? "active" : ""
+              }`}
+              onClick={() => openSidebar("search")}
+              title="Project search"
+            >
+              <Search size={21} />
+            </button>
+            <button
+              className={`activity-button ${
                 sidebarVisible && activeSidebar === "sourceControl" ? "active" : ""
               }`}
               onClick={() => openSidebar("sourceControl")}
@@ -4823,7 +4969,9 @@ ${macroEnd}
                   ? "EXPLORER"
                   : activeSidebar === "sourceControl"
                     ? "SOURCE CONTROL"
-                    : "HISTORY"}
+                    : activeSidebar === "history"
+                      ? "HISTORY"
+                      : "SEARCH"}
               </span>
               <div>
                 {activeSidebar === "explorer" ? (
@@ -4860,6 +5008,17 @@ ${macroEnd}
                       <RefreshCw size={14} />
                     </button>
                   </>
+                ) : activeSidebar === "search" ? (
+                  <button
+                    className="small-icon"
+                    onClick={() => {
+                      setProjectSearchRefreshNonce((value) => value + 1);
+                    }}
+                    title="Rescan project search index"
+                    disabled={!hasVisibleProject || projectSearchLoading}
+                  >
+                    <RefreshCw size={14} />
+                  </button>
                 ) : activeSidebar === "sourceControl" ? (
                   <button
                     className="small-icon"
@@ -4932,6 +5091,27 @@ ${macroEnd}
                   )}
                 </div>
               </>
+            ) : activeSidebar === "search" ? (
+              <div className="sidebar-panel">
+                {!hasVisibleProject ? (
+                  <div className="sidebar-empty-state">
+                    No project open. Open a folder to search across project files.
+                  </div>
+                ) : (
+                  <ProjectSearchPanel
+                    files={projectSearchFiles}
+                    loading={projectSearchLoading}
+                    error={projectSearchError}
+                    activePath={activeDocument?.relativePath}
+                    onOpenMatch={(match) => {
+                      void handleOpenProjectSearchMatch(match);
+                    }}
+                    onRefresh={() => {
+                      setProjectSearchRefreshNonce((value) => value + 1);
+                    }}
+                  />
+                )}
+              </div>
             ) : activeSidebar === "sourceControl" ? (
               <div className="sidebar-panel source-control-panel">
                 <div className="scm-head">
