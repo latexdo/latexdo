@@ -15,9 +15,8 @@ function cleanBibValue(value: unknown): string | undefined {
 export function parseBibFile(content: string, sourceFile: string): CitationEntry[] {
   const parsed = bibtexParse.toJSON(content) as ParsedBibEntry[];
   return parsed
-    .filter(
-      (entry): entry is ParsedBibEntry & { citationKey: string } =>
-        Boolean(entry.citationKey),
+    .filter((entry): entry is ParsedBibEntry & { citationKey: string } =>
+      Boolean(entry.citationKey),
     )
     .map((entry) => {
       const tags = entry.entryTags ?? {};

@@ -1043,11 +1043,7 @@ button {
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  font-family:
-    "SFMono-Regular",
-    "Cascadia Code",
-    Menlo,
-    monospace;
+  font-family: "SFMono-Regular", "Cascadia Code", Menlo, monospace;
   font-size: 11px;
   line-height: 1.35;
   text-align: left;

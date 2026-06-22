@@ -1210,9 +1210,7 @@ export default function App() {
   >([]);
   const [citationLibraryLoading, setCitationLibraryLoading] = useState(false);
   const [citationLibraryError, setCitationLibraryError] = useState("");
-  const [projectSearchFiles, setProjectSearchFiles] = useState<ProjectSearchFile[]>(
-    [],
-  );
+  const [projectSearchFiles, setProjectSearchFiles] = useState<ProjectSearchFile[]>([]);
   const [projectSearchLoading, setProjectSearchLoading] = useState(false);
   const [projectSearchError, setProjectSearchError] = useState("");
   const [projectSearchRefreshNonce, setProjectSearchRefreshNonce] = useState(0);
@@ -1505,8 +1503,7 @@ export default function App() {
     }
 
     const sourceEntries = allProjectEntries.filter(
-      (entry) =>
-        entry.type === "file" && isProjectSearchablePath(entry.relativePath),
+      (entry) => entry.type === "file" && isProjectSearchablePath(entry.relativePath),
     );
 
     if (!sourceEntries.length) {
@@ -4606,11 +4603,7 @@ ${macroEnd}
           (await window.latexdo.readFile(currentProject, entry.relativePath));
         const nextContent = `${currentContent.replace(/\s*$/, "")}\n\n${bibtex}\n`;
 
-        await window.latexdo.writeFile(
-          currentProject,
-          entry.relativePath,
-          nextContent,
-        );
+        await window.latexdo.writeFile(currentProject, entry.relativePath, nextContent);
 
         if (openDocumentState) {
           setDocuments((current) => {

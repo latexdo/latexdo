@@ -60,9 +60,7 @@ describe("CitationManager", () => {
 
   it("searches the library and inserts a selected citation command", () => {
     const onInsertCitation = vi.fn();
-    render(
-      <CitationManager analysis={analysis} onInsertCitation={onInsertCitation} />,
-    );
+    render(<CitationManager analysis={analysis} onInsertCitation={onInsertCitation} />);
 
     fireEvent.change(screen.getByPlaceholderText(/search by key/i), {
       target: { value: "texbook" },
@@ -73,7 +71,9 @@ describe("CitationManager", () => {
 
     const card = screen.getByText("knuth84").closest("article");
     expect(card).not.toBeNull();
-    fireEvent.click(within(card as HTMLElement).getByRole("button", { name: "Insert" }));
+    fireEvent.click(
+      within(card as HTMLElement).getByRole("button", { name: "Insert" }),
+    );
 
     expect(onInsertCitation).toHaveBeenCalledWith("knuth84", "citet");
   });
@@ -96,9 +96,7 @@ describe("CitationManager", () => {
 
   it("adds a BibTeX stub for a missing cited key", () => {
     const onAppendBibEntry = vi.fn();
-    render(
-      <CitationManager analysis={analysis} onAppendBibEntry={onAppendBibEntry} />,
-    );
+    render(<CitationManager analysis={analysis} onAppendBibEntry={onAppendBibEntry} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Gaps" }));
 
