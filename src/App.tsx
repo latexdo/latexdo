@@ -56,6 +56,10 @@ import { TerminalPanel } from "./components/TerminalPanel";
 import { ReviewSidebar } from "./components/ReviewSidebar";
 import { RebuttalSidebar } from "./components/RebuttalSidebar";
 import { HistorySidebar } from "./components/HistorySidebar";
+import {
+  CitationManager,
+  type CitationInsertCommand,
+} from "./components/CitationManager";
 import { generateRebuttalLetter } from "./rebuttalGenerator";
 import { normalizeLatexDoReviewMarkup, usesLatexDoReviewMacros } from "./reviewMarkup";
 import type { RebuttalGeneratorSettings } from "./types";
@@ -105,6 +109,10 @@ import type { ErrorDoctorResult } from "./checks/errorDoctor";
 import { runNotationChecks } from "./checks/notationManager";
 import { runPdfComplianceChecks } from "./checks/pdfCompliance";
 import { NotationManager } from "./components/NotationManager";
+import {
+  analyzeCitationLibrary,
+  type CitationProjectFile,
+} from "./latex/citationAnalysis";
 
 type PanelKind =
   | "problems"
@@ -1189,6 +1197,12 @@ export default function App() {
   const [tableCanvasOpen, setTableCanvasOpen] = useState(false);
   const [tikzConverterOpen, setTikzConverterOpen] = useState(false);
   const [notationManagerOpen, setNotationManagerOpen] = useState(false);
+  const [citationManagerOpen, setCitationManagerOpen] = useState(false);
+  const [citationProjectFiles, setCitationProjectFiles] = useState<
+    CitationProjectFile[]
+  >([]);
+  const [citationLibraryLoading, setCitationLibraryLoading] = useState(false);
+  const [citationLibraryError, setCitationLibraryError] = useState("");
   const [pdfComplianceDiagnostics, setPdfComplianceDiagnostics] = useState<
     Diagnostic[]
   >([]);
@@ -1322,6 +1336,10 @@ export default function App() {
     () => flattenEntries(projectEntries),
     [projectEntries],
   );
+  const citationAnalysis = useMemo(
+    () => analyzeCitationLibrary(citationProjectFiles),
+    [citationProjectFiles],
+  );
   const modifiedFiles = gitStatus?.entries.length ?? 0;
   const stagedGitEntries = useMemo(
     () => (gitStatus?.entries ?? []).filter((entry) => Boolean(entry.indexStatus)),
@@ -1395,6 +1413,75 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
   }, [settings]);
+
+  useEffect(() => {
+    if (!projectId || hideProjectEntries) {
+      setCitationProjectFiles([]);
+      setCitationLibraryError("");
+      setCitationLibraryLoading(false);
+      return;
+    }
+
+    const sourceEntries = allProjectEntries.filter(
+      (entry) =>
+        entry.type === "file" &&
+        (entry.name.endsWith(".tex") || entry.name.endsWith(".bib")),
+    );
+
+    if (!sourceEntries.length) {
+      setCitationProjectFiles([]);
+      setCitationLibraryError("");
+      setCitationLibraryLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setCitationLibraryLoading(true);
+
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const openDocuments = new Map(
+            documentsRef.current.map((document) => [
+              normalizeRelativePath(document.relativePath),
+              document.content,
+            ]),
+          );
+          const files = await Promise.all(
+            sourceEntries.map(async (entry) => {
+              const normalizedPath = normalizeRelativePath(entry.relativePath);
+              const content =
+                openDocuments.get(normalizedPath) ??
+                (await window.latexdo.readFile(projectId, entry.relativePath));
+              return { path: normalizedPath, content };
+            }),
+          );
+
+          if (!cancelled) {
+            setCitationProjectFiles(files);
+            setCitationLibraryError("");
+          }
+        } catch (error) {
+          if (!cancelled) {
+            setCitationLibraryError(
+              error instanceof Error
+                ? error.message
+                : "Could not scan project citations",
+            );
+          }
+        } finally {
+          if (!cancelled) {
+            setCitationLibraryLoading(false);
+          }
+        }
+      })();
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [allProjectEntries, documents, hideProjectEntries, projectId]);
 
   const refreshProject = useCallback(async (id = projectIdRef.current) => {
     if (!id) {
@@ -4318,6 +4405,113 @@ ${macroEnd}
     setStatusMessage("Inserted notation snippet.");
   }, []);
 
+  const handleInsertCitationCode = useCallback(
+    (key: string, command: CitationInsertCommand) => {
+      const editor = editorRef.current;
+      const model = editor?.getModel();
+      const document = documentsRef.current.find(
+        (item) => item.path === activePathRef.current,
+      );
+      if (!editor || !model || !document || !document.name.endsWith(".tex")) {
+        setStatusMessage("Open a .tex document before inserting a citation.");
+        return;
+      }
+
+      const citation = `\\${command}{${key}}`;
+      const selection = editor.getSelection();
+      const selectedText =
+        selection && !selection.isEmpty() ? model.getValueInRange(selection) : "";
+      const position = editor.getPosition();
+      const lineNumber = position?.lineNumber ?? model.getLineCount();
+      const column = position?.column ?? model.getLineLength(lineNumber) + 1;
+      editor.executeEdits("citation-manager", [
+        {
+          range:
+            selection && !selection.isEmpty()
+              ? selection
+              : new monaco.Range(lineNumber, column, lineNumber, column),
+          text: selectedText ? `${selectedText} ${citation}` : citation,
+          forceMoveMarkers: true,
+        },
+      ]);
+      editor.focus();
+      setStatusMessage(`Inserted ${citation}`);
+    },
+    [],
+  );
+
+  const handleAppendBibEntry = useCallback(
+    async (targetFile: string, bibtex: string) => {
+      const currentProject = projectIdRef.current;
+      if (!currentProject) {
+        setStatusMessage("Open a project before editing BibTeX.");
+        return;
+      }
+
+      const normalizedTarget = normalizeRelativePath(targetFile);
+      const entry = flattenEntries(projectEntriesRef.current).find(
+        (item) =>
+          item.type === "file" &&
+          normalizeRelativePath(item.relativePath) === normalizedTarget,
+      );
+      if (!entry) {
+        setStatusMessage(`Could not find ${targetFile}`);
+        return;
+      }
+
+      try {
+        const openDocumentState = documentsRef.current.find(
+          (document) =>
+            normalizeRelativePath(document.relativePath) === normalizedTarget,
+        );
+        const currentContent =
+          openDocumentState?.content ??
+          (await window.latexdo.readFile(currentProject, entry.relativePath));
+        const nextContent = `${currentContent.replace(/\s*$/, "")}\n\n${bibtex}\n`;
+
+        await window.latexdo.writeFile(
+          currentProject,
+          entry.relativePath,
+          nextContent,
+        );
+
+        if (openDocumentState) {
+          setDocuments((current) => {
+            const nextDocuments = current.map((document) =>
+              document.path === openDocumentState.path
+                ? { ...document, content: nextContent, savedContent: nextContent }
+                : document,
+            );
+            documentsRef.current = nextDocuments;
+            return nextDocuments;
+          });
+        }
+
+        setCitationProjectFiles((current) => {
+          const found = current.some(
+            (file) => normalizeRelativePath(file.path) === normalizedTarget,
+          );
+          if (found) {
+            return current.map((file) =>
+              normalizeRelativePath(file.path) === normalizedTarget
+                ? { ...file, content: nextContent }
+                : file,
+            );
+          }
+          return [...current, { path: normalizedTarget, content: nextContent }];
+        });
+
+        await refreshProject(currentProject);
+        setStatusMessage(`Added BibTeX stub to ${entry.relativePath}`);
+      } catch (error) {
+        setStatusMessage(
+          error instanceof Error ? error.message : "Could not update BibTeX file",
+        );
+      }
+    },
+    [refreshProject],
+  );
+
   useEffect(() => {
     if (historyAutoCaptureTimerRef.current !== null) {
       window.clearTimeout(historyAutoCaptureTimerRef.current);
@@ -4598,6 +4792,13 @@ ${macroEnd}
               title="Notation Manager"
             >
               <Variable size={21} />
+            </button>
+            <button
+              className={`activity-button ${citationManagerOpen ? "active" : ""}`}
+              onClick={() => setCitationManagerOpen((open) => !open)}
+              title="Citation Manager"
+            >
+              <BookOpenText size={21} />
             </button>
           </div>
           <div>
@@ -5530,6 +5731,33 @@ ${macroEnd}
                     handleInsertNotationCode(code);
                     setNotationManagerOpen(false);
                   }}
+                />
+              </div>
+            </div>
+          )}
+
+          {citationManagerOpen && (
+            <div className="tikz-modal-overlay">
+              <div className="tikz-modal-header">
+                <span className="tikz-modal-title">
+                  <BookOpenText size={16} />
+                  <span>Citation Manager</span>
+                </span>
+                <button
+                  className="tikz-modal-close"
+                  onClick={() => setCitationManagerOpen(false)}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="tikz-modal-content">
+                <CitationManager
+                  analysis={citationAnalysis}
+                  loading={citationLibraryLoading}
+                  error={citationLibraryError}
+                  activeDocumentPath={activeDocument?.relativePath}
+                  onInsertCitation={handleInsertCitationCode}
+                  onAppendBibEntry={handleAppendBibEntry}
                 />
               </div>
             </div>
