@@ -26,9 +26,11 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { compileLatex } from "./compiler.js";
+import { importDocxIntoProject } from "./docxImport.js";
 import { backwardSyncTex, forwardSyncTex } from "./synctex.js";
 import type {
   Diagnostic,
+  DocxImportResult,
   GitCommitDetails,
   GitCommitEntry,
   CompileRequest,
@@ -62,6 +64,7 @@ const openSpellCheckerChannel = "tools:open-spellchecker";
 const openProjectChannel = "file:open-project";
 const createFileChannel = "file:create-dialog";
 const createFolderChannel = "folder:create-dialog";
+const importDocxChannel = "file:import-docx";
 const starterDocument = String.raw`\documentclass[11pt]{article}
 
 \usepackage[margin=1in]{geometry}
@@ -1258,6 +1261,13 @@ function buildApplicationMenu(): void {
             BrowserWindow.getFocusedWindow()?.webContents.send(createFolderChannel);
           },
         },
+        {
+          label: "Import DOCX...",
+          accelerator: "CmdOrCtrl+Shift+I",
+          click: () => {
+            BrowserWindow.getFocusedWindow()?.webContents.send(importDocxChannel);
+          },
+        },
         { type: "separator" },
         { role: "close" },
         ...(process.platform === "darwin"
@@ -2004,6 +2014,49 @@ app.whenReady().then(() => {
     }
     return relativeProjectPath(projectPath, filePath);
   });
+  ipcMain.handle(
+    "docx:import",
+    async (event, ...rawArgs: unknown[]): Promise<DocxImportResult | null> => {
+      const channel = "docx:import";
+      const [rawProjectId] = expectIpcArgs(channel, rawArgs, 1);
+      let project: OpenProject | null = null;
+      if (typeof rawProjectId === "string" && rawProjectId.trim()) {
+        const projectId = parseProjectId(channel, rawProjectId);
+        project = openProjects.get(projectId) ?? null;
+        if (!project) {
+          throw new Error("The requested project is not open.");
+        }
+      }
+      const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+      const dialogOptions = {
+        properties: ["openFile"],
+        title: "Import DOCX as LaTeX",
+        buttonLabel: "Import DOCX",
+        defaultPath: project?.rootPath ?? app.getPath("documents"),
+        filters: [
+          { name: "Word documents", extensions: ["docx"] },
+          { name: "All files", extensions: ["*"] },
+        ],
+      } satisfies Electron.OpenDialogOptions;
+      const result = window
+        ? await dialog.showOpenDialog(window, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions);
+
+      if (result.canceled || !result.filePaths[0]) {
+        return null;
+      }
+
+      project ??= registerProject(path.dirname(result.filePaths[0]));
+      const imported = await importDocxIntoProject(
+        project.rootPath,
+        result.filePaths[0],
+      );
+      return {
+        ...imported,
+        project,
+      };
+    },
+  );
   ipcMain.handle("folder:create", async (_event, ...rawArgs: unknown[]) => {
     const channel = "folder:create";
     const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);

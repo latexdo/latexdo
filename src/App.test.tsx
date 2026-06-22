@@ -122,6 +122,7 @@ function installLatexDoMock(options?: {
     fileExists: vi.fn().mockResolvedValue(false),
     createFile: vi.fn().mockResolvedValue("chapter.tex"),
     createFolder: vi.fn().mockResolvedValue("chapters"),
+    importDocx: vi.fn().mockResolvedValue(null),
     moveEntry: vi.fn().mockResolvedValue("main.tex"),
     getGitStatus: vi.fn().mockResolvedValue(
       options?.gitStatus ?? {
@@ -188,6 +189,7 @@ function installLatexDoMock(options?: {
     onOpenProjectMenu: vi.fn(() => vi.fn()),
     onCreateFileMenu: vi.fn(() => vi.fn()),
     onCreateFolderMenu: vi.fn(() => vi.fn()),
+    onImportDocxMenu: vi.fn(() => vi.fn()),
   };
 
   Object.defineProperty(window, "latexdo", {
@@ -249,6 +251,20 @@ describe("App critical UI controls", () => {
       expect(api.updateProofreadingSettings).toHaveBeenCalledWith(
         expect.objectContaining({ enabled: true }),
       );
+    });
+  });
+
+  it("opens DOCX import from the welcome screen without an open project", async () => {
+    const api = installLatexDoMock();
+
+    render(<App />);
+
+    const welcomeImport = screen.getByText("Import DOCX").closest("button");
+    expect(welcomeImport).not.toBeNull();
+    fireEvent.click(welcomeImport as HTMLButtonElement);
+
+    await waitFor(() => {
+      expect(api.importDocx).toHaveBeenCalledWith(undefined);
     });
   });
 
