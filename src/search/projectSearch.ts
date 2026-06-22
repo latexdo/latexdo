@@ -230,7 +230,8 @@ function findLiteralMatches(
     const before = line[index - 1] ?? "";
     const after = line[index + needle.length] ?? "";
     const isWholeWordMatch =
-      !options.wholeWord || (!/[A-Za-z0-9_]/.test(before) && !/[A-Za-z0-9_]/.test(after));
+      !options.wholeWord ||
+      (!/[A-Za-z0-9_]/.test(before) && !/[A-Za-z0-9_]/.test(after));
     if (isWholeWordMatch) {
       matches.push({ index, text: matchedText });
     }

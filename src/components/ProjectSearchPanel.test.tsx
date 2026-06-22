@@ -81,7 +81,9 @@ describe("ProjectSearchPanel", () => {
     const summary = await screen.findByText(/1 matches in 1 files/i);
     const summaryRow = summary.closest(".project-search-summary");
     expect(summaryRow).not.toBeNull();
-    fireEvent.click(within(summaryRow as HTMLElement).getByRole("button", { name: /copy/i }));
+    fireEvent.click(
+      within(summaryRow as HTMLElement).getByRole("button", { name: /copy/i }),
+    );
 
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith(

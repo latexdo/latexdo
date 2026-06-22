@@ -234,7 +234,11 @@ export function CitationManager({
           </p>
         </div>
         <div className="citation-manager-status">
-          {loading ? "Scanning project..." : copied ? `Copied ${copied}` : "Local BibTeX"}
+          {loading
+            ? "Scanning project..."
+            : copied
+              ? `Copied ${copied}`
+              : "Local BibTeX"}
         </div>
       </div>
 
@@ -300,7 +304,10 @@ export function CitationManager({
                 const score = citationQualityScore(entry);
                 const issues = qualityIssuesByKey.get(entry.key) ?? [];
                 return (
-                  <article key={`${entry.sourceFile}:${entry.key}`} className="citation-card">
+                  <article
+                    key={`${entry.sourceFile}:${entry.key}`}
+                    className="citation-card"
+                  >
                     <div className="citation-card-main">
                       <div className="citation-card-heading">
                         <strong>{entry.key}</strong>
@@ -401,7 +408,9 @@ export function CitationManager({
                     ) : (
                       <AlertTriangle size={15} />
                     )}
-                    <span>{row.usages.length} use{row.usages.length === 1 ? "" : "s"}</span>
+                    <span>
+                      {row.usages.length} use{row.usages.length === 1 ? "" : "s"}
+                    </span>
                   </div>
                 </article>
               ))
@@ -451,7 +460,10 @@ export function CitationManager({
                       </small>
                     </div>
                     <div className="citation-card-actions">
-                      <button type="button" onClick={() => void copyText(`${key}.stub`, stub)}>
+                      <button
+                        type="button"
+                        onClick={() => void copyText(`${key}.stub`, stub)}
+                      >
                         <Copy size={12} />
                         Copy stub
                       </button>

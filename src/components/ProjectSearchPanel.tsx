@@ -68,10 +68,7 @@ export function ProjectSearchPanel({
   const queryPending = options.query !== deferredQuery;
 
   const setOption = useCallback(
-    <K extends keyof ProjectSearchOptions>(
-      key: K,
-      value: ProjectSearchOptions[K],
-    ) => {
+    <K extends keyof ProjectSearchOptions>(key: K, value: ProjectSearchOptions[K]) => {
       setOptions((current) => updateOption(current, key, value));
     },
     [],
@@ -247,8 +244,8 @@ export function ProjectSearchPanel({
       <div className="project-search-results">
         {!options.query ? (
           <div className="project-search-empty">
-            Search supports regex, case sensitivity, whole-word matching, include/exclude
-            globs, and exact source navigation.
+            Search supports regex, case sensitivity, whole-word matching,
+            include/exclude globs, and exact source navigation.
           </div>
         ) : result.error ? (
           <div className="project-search-empty">Fix the query to search again.</div>
@@ -280,7 +277,9 @@ export function ProjectSearchPanel({
                     </span>
                   ))}
                   <span className="project-search-hit-line">
-                    <b>{match.line}:{match.column}</b>
+                    <b>
+                      {match.line}:{match.column}
+                    </b>
                     <span>
                       <HighlightedLine match={match} />
                     </span>
