@@ -1710,12 +1710,16 @@ button {
 
 .source-toolbar {
   display: flex;
+  height: 40px;
   min-width: 0;
   align-items: center;
   gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
   padding: 0 9px 0 13px;
   border-bottom: 1px solid var(--border-default);
   background: var(--bg-surface);
+  white-space: nowrap;
 }
 
 .pane-label {
@@ -1770,6 +1774,59 @@ button {
 
 .toolbar-spacer {
   flex: 1;
+}
+
+.tex-format-toolbar {
+  display: inline-flex;
+  min-width: 0;
+  max-width: min(660px, 52vw);
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  padding: 3px;
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  background: var(--bg-panel);
+}
+
+.tex-format-button {
+  display: inline-flex;
+  height: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.tex-format-button.icon-only {
+  width: 26px;
+  padding: 0;
+}
+
+.tex-format-button:hover {
+  background: var(--bg-row-hover);
+  color: var(--text-primary);
+}
+
+.tex-format-button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.tex-format-divider {
+  width: 1px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin: 0 3px;
+  background: var(--border-card);
 }
 
 .engine-select select {

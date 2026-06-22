@@ -7,6 +7,7 @@ import {
   AlertCircle,
   BookOpenText,
   Box,
+  Bold,
   Check,
   ChevronDown,
   CircleAlert,
@@ -20,9 +21,15 @@ import {
   FolderPlus,
   FolderOpen,
   GitBranch,
+  Heading1,
+  Heading2,
   History,
   House,
   ImageUp,
+  Italic,
+  Link,
+  List,
+  ListOrdered,
   LoaderCircle,
   MessageCircle,
   MessageSquare,
@@ -38,7 +45,9 @@ import {
   RefreshCw,
   Search,
   Settings,
+  Sigma,
   TerminalSquare,
+  Underline,
   User,
   Variable,
   Wand,
@@ -129,6 +138,19 @@ type PanelKind =
   | "structureReport"
   | "pdfReport";
 type SidebarView = "explorer" | "sourceControl" | "history" | "search";
+type LatexToolbarCommand =
+  | "bold"
+  | "italic"
+  | "underline"
+  | "math"
+  | "section"
+  | "subsection"
+  | "equation"
+  | "itemize"
+  | "enumerate"
+  | "cite"
+  | "ref"
+  | "href";
 
 interface GitDiffSession extends GitDiffEditorInput {
   label: string;
@@ -1294,6 +1316,9 @@ export default function App() {
   const historyAutoCaptureTimerRef = useRef<number | null>(null);
 
   const activeDocument = documents.find((document) => document.path === activePath);
+  const activeDocumentIsLatex = activeDocument
+    ? languageFor(activeDocument.name) === "latex"
+    : false;
   const hasVisibleProject = Boolean(projectId) && !hideProjectEntries;
   const showWelcome = welcomeOpen && !activePath;
   const showBlankWorkspace = hideProjectEntries && !welcomeOpen && !activePath;
@@ -4209,6 +4234,159 @@ ${macroEnd}
     }
   }, []);
 
+  const applyLatexToolbarCommand = useCallback((command: LatexToolbarCommand) => {
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    const document = documentsRef.current.find((d) => d.path === activePathRef.current);
+    if (!editor || !model || !document || languageFor(document.name) !== "latex") {
+      setStatusMessage("Open a TeX file to use formatting controls.");
+      return;
+    }
+
+    const selection = editor.getSelection();
+    if (!selection) return;
+
+    const selectedText = model.getValueInRange(selection);
+    const hasSelection = !selection.isEmpty() && selectedText.length > 0;
+
+    const replaceSelection = (
+      text: string,
+      selectStartOffset: number | null,
+      selectEndOffset: number | null,
+      status: string,
+    ) => {
+      const startOffset = model.getOffsetAt(selection.getStartPosition());
+      editor.executeEdits("latex-toolbar", [
+        {
+          range: selection,
+          text,
+          forceMoveMarkers: true,
+        },
+      ]);
+
+      if (selectStartOffset !== null && selectEndOffset !== null) {
+        const start = model.getPositionAt(startOffset + selectStartOffset);
+        const end = model.getPositionAt(startOffset + selectEndOffset);
+        editor.setSelection(
+          new monaco.Selection(
+            start.lineNumber,
+            start.column,
+            end.lineNumber,
+            end.column,
+          ),
+        );
+      } else {
+        const end = model.getPositionAt(startOffset + text.length);
+        editor.setPosition(end);
+      }
+
+      editor.focus();
+      setStatusMessage(status);
+    };
+
+    const wrapInline = (
+      before: string,
+      after: string,
+      fallback: string,
+      status: string,
+    ) => {
+      const inner = hasSelection ? selectedText : fallback;
+      replaceSelection(
+        `${before}${inner}${after}`,
+        before.length,
+        before.length + inner.length,
+        status,
+      );
+    };
+
+    const wrapBlock = (
+      before: string,
+      after: string,
+      fallback: string,
+      status: string,
+    ) => {
+      const inner = hasSelection ? selectedText : fallback;
+      replaceSelection(
+        `${before}${inner}${after}`,
+        before.length,
+        before.length + inner.length,
+        status,
+      );
+    };
+
+    const insertList = (environment: "itemize" | "enumerate") => {
+      const fallback = "Item";
+      const lines = hasSelection
+        ? selectedText
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean)
+        : [fallback];
+      const body = lines.map((line) => `\t\\item ${line}`).join("\n");
+      const text = `\\begin{${environment}}\n${body}\n\\end{${environment}}\n`;
+      const firstItemOffset = `\\begin{${environment}}\n\t\\item `.length;
+      replaceSelection(
+        text,
+        hasSelection ? null : firstItemOffset,
+        hasSelection ? null : firstItemOffset + fallback.length,
+        `Inserted ${environment} list.`,
+      );
+    };
+
+    switch (command) {
+      case "bold":
+        wrapInline("\\textbf{", "}", "bold text", "Inserted bold text.");
+        break;
+      case "italic":
+        wrapInline("\\emph{", "}", "emphasized text", "Inserted italic text.");
+        break;
+      case "underline":
+        wrapInline("\\underline{", "}", "underlined text", "Inserted underline.");
+        break;
+      case "math":
+        wrapInline("$", "$", "x", "Inserted inline math.");
+        break;
+      case "section":
+        wrapInline("\\section{", "}\n", "Section title", "Inserted section.");
+        break;
+      case "subsection":
+        wrapInline("\\subsection{", "}\n", "Subsection title", "Inserted subsection.");
+        break;
+      case "equation":
+        wrapBlock(
+          "\\begin{equation}\n",
+          "\n\\end{equation}\n",
+          "E = mc^2",
+          "Inserted equation block.",
+        );
+        break;
+      case "itemize":
+        insertList("itemize");
+        break;
+      case "enumerate":
+        insertList("enumerate");
+        break;
+      case "cite":
+        wrapInline("\\cite{", "}", "key", "Inserted citation command.");
+        break;
+      case "ref":
+        wrapInline("\\ref{", "}", "label", "Inserted reference command.");
+        break;
+      case "href":
+        if (hasSelection) {
+          replaceSelection(
+            `\\href{url}{${selectedText}}`,
+            "\\href{".length,
+            "\\href{url".length,
+            "Inserted link command.",
+          );
+        } else {
+          wrapInline("\\href{url}{", "}", "link text", "Inserted link command.");
+        }
+        break;
+    }
+  }, []);
+
   const handleAddReviewChat = useCallback(() => {
     const editor = editorRef.current;
     const document = documentsRef.current.find((d) => d.path === activePathRef.current);
@@ -5501,6 +5679,129 @@ ${macroEnd}
                       </button>
                     </div>
                   </div>
+
+                  {activeDocumentIsLatex ? (
+                    <div
+                      className="tex-format-toolbar"
+                      role="toolbar"
+                      aria-label="LaTeX formatting"
+                    >
+                      <button
+                        type="button"
+                        className="tex-format-button icon-only"
+                        onClick={() => applyLatexToolbarCommand("bold")}
+                        title={"Bold (\\textbf{})"}
+                        aria-label="Bold"
+                      >
+                        <Bold size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="tex-format-button icon-only"
+                        onClick={() => applyLatexToolbarCommand("italic")}
+                        title={"Italic (\\emph{})"}
+                        aria-label="Italic"
+                      >
+                        <Italic size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="tex-format-button icon-only"
+                        onClick={() => applyLatexToolbarCommand("underline")}
+                        title={"Underline (\\underline{})"}
+                        aria-label="Underline"
+                      >
+                        <Underline size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="tex-format-button icon-only"
+                        onClick={() => applyLatexToolbarCommand("math")}
+                        title="Inline math"
+                        aria-label="Inline math"
+                      >
+                        <Sigma size={14} />
+                      </button>
+
+                      <span className="tex-format-divider" aria-hidden="true" />
+
+                      <button
+                        type="button"
+                        className="tex-format-button"
+                        onClick={() => applyLatexToolbarCommand("section")}
+                        title={"Section (\\section{})"}
+                      >
+                        <Heading1 size={14} />
+                        <span>Section</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="tex-format-button"
+                        onClick={() => applyLatexToolbarCommand("subsection")}
+                        title={"Subsection (\\subsection{})"}
+                      >
+                        <Heading2 size={14} />
+                        <span>Subsection</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="tex-format-button"
+                        onClick={() => applyLatexToolbarCommand("equation")}
+                        title="Equation block"
+                      >
+                        <Sigma size={14} />
+                        <span>Equation</span>
+                      </button>
+
+                      <span className="tex-format-divider" aria-hidden="true" />
+
+                      <button
+                        type="button"
+                        className="tex-format-button icon-only"
+                        onClick={() => applyLatexToolbarCommand("itemize")}
+                        title="Bullet list"
+                        aria-label="Bullet list"
+                      >
+                        <List size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="tex-format-button icon-only"
+                        onClick={() => applyLatexToolbarCommand("enumerate")}
+                        title="Numbered list"
+                        aria-label="Numbered list"
+                      >
+                        <ListOrdered size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="tex-format-button"
+                        onClick={() => applyLatexToolbarCommand("cite")}
+                        title={"Citation (\\cite{})"}
+                      >
+                        <BookOpenText size={14} />
+                        <span>Cite</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="tex-format-button"
+                        onClick={() => applyLatexToolbarCommand("ref")}
+                        title={"Reference (\\ref{})"}
+                      >
+                        <Link size={14} />
+                        <span>Ref</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="tex-format-button icon-only"
+                        onClick={() => applyLatexToolbarCommand("href")}
+                        title={"Link (\\href{}{})"}
+                        aria-label="Link"
+                      >
+                        <Link size={14} />
+                      </button>
+                    </div>
+                  ) : null}
 
                   <div className="toolbar-spacer" />
 
