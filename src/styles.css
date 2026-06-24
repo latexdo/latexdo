@@ -2122,7 +2122,7 @@ button {
 .welcome-tip {
   position: relative;
   z-index: 1;
-  width: min(700px, 100%);
+  width: min(920px, 100%);
 }
 
 .welcome-hero {
@@ -2166,6 +2166,10 @@ button {
   color: var(--text-primary);
   font-size: 13px;
   font-weight: 600;
+}
+
+.welcome-template-section {
+  min-width: 0;
 }
 
 .welcome-action {
@@ -2216,6 +2220,80 @@ button {
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.welcome-template-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.welcome-template-card {
+  display: flex;
+  min-width: 0;
+  min-height: 92px;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    transform 0.15s;
+}
+
+.welcome-template-card:hover:not(:disabled) {
+  border-color: var(--border-hover);
+  background: var(--bg-surface-hover);
+  transform: translateY(-1px);
+}
+
+.welcome-template-card:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.welcome-template-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 7px;
+  background: var(--accent-panel);
+  color: var(--accent);
+  place-items: center;
+}
+
+.welcome-template-copy {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.welcome-template-copy strong {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.welcome-template-copy small {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.welcome-template-copy em {
+  color: var(--accent);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .welcome-project-card {
@@ -4114,6 +4192,10 @@ button {
   .welcome-grid {
     grid-template-columns: 1fr;
     gap: 30px;
+  }
+
+  .welcome-template-grid {
+    grid-template-columns: 1fr;
   }
 
   .welcome-page {

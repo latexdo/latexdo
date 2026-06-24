@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   CompileRequest,
   CompileResult,
+  CreateProjectOptions,
   DocxImportResult,
   GitCommitDetails,
   GitDiscardResult,
@@ -21,8 +22,10 @@ import type {
 
 const api = {
   openProject: (): Promise<OpenProject | null> => ipcRenderer.invoke("project:open"),
-  createProject: (): Promise<OpenProject | null> =>
-    ipcRenderer.invoke("project:create"),
+  createProject: (options?: CreateProjectOptions): Promise<OpenProject | null> =>
+    options === undefined
+      ? ipcRenderer.invoke("project:create")
+      : ipcRenderer.invoke("project:create", options),
   listProject: (projectId: string): Promise<ProjectEntry[]> =>
     ipcRenderer.invoke("project:list", projectId),
   readFile: (projectId: string, relativePath: string): Promise<string> =>

@@ -268,6 +268,30 @@ describe("App critical UI controls", () => {
     });
   });
 
+  it("creates a project from a welcome template", async () => {
+    const api = installLatexDoMock();
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /research paper/i }));
+
+    await waitFor(() => {
+      expect(api.createProject).toHaveBeenCalledWith({
+        folderName: "Research Paper",
+      });
+    });
+    expect(api.writeFile).toHaveBeenCalledWith(
+      "project-1",
+      "main.tex",
+      expect.stringContaining("\\section{Introduction}"),
+    );
+    expect(api.writeFile).toHaveBeenCalledWith(
+      "project-1",
+      "references.bib",
+      expect.stringContaining("@misc{latexdo2026"),
+    );
+  });
+
   it("disables discard-all when there are no unstaged Git changes", async () => {
     installLatexDoMock({
       gitStatus: {
