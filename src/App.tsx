@@ -169,7 +169,7 @@ function AppIcon({ className }: { className?: string }) {
   );
 }
 
-type ColorTheme = "graphite" | "midnight" | "forest" | "sepia";
+type ColorTheme = "graphite" | "midnight" | "forest" | "sepia" | "studio" | "paper";
 
 const colorThemeOptions: {
   id: ColorTheme;
@@ -200,6 +200,18 @@ const colorThemeOptions: {
     name: "Warm Sepia Dark",
     description: "Warm low-glare theme for reading dense drafts.",
     swatches: ["#17120d", "#d69a5b", "#eee4d4"],
+  },
+  {
+    id: "studio",
+    name: "Studio White",
+    description: "Clean white workspace with quiet graphite contrast.",
+    swatches: ["#f7f9fc", "#2f6fdb", "#1f2937"],
+  },
+  {
+    id: "paper",
+    name: "Paper White",
+    description: "Soft white theme with ink-like text and green accents.",
+    swatches: ["#fbfbf8", "#2f8f6b", "#252a31"],
   },
 ];
 
@@ -3398,6 +3410,7 @@ ${macroEnd}
     const themes = [
       {
         id: "latexdo-graphite",
+        base: "vs-dark" as const,
         rules: sharedRules,
         colors: {
           "editor.background": "#15181e",
@@ -3414,6 +3427,7 @@ ${macroEnd}
       },
       {
         id: "latexdo-midnight",
+        base: "vs-dark" as const,
         rules: [
           { token: "comment", foreground: "64748B", fontStyle: "italic" },
           { token: "keyword", foreground: "74B8FF" },
@@ -3437,6 +3451,7 @@ ${macroEnd}
       },
       {
         id: "latexdo-forest",
+        base: "vs-dark" as const,
         rules: [
           { token: "comment", foreground: "6D7D73", fontStyle: "italic" },
           { token: "keyword", foreground: "76D99B" },
@@ -3460,6 +3475,7 @@ ${macroEnd}
       },
       {
         id: "latexdo-sepia",
+        base: "vs-dark" as const,
         rules: [
           { token: "comment", foreground: "8D7C69", fontStyle: "italic" },
           { token: "keyword", foreground: "E2A86D" },
@@ -3481,11 +3497,59 @@ ${macroEnd}
           "editorIndentGuide.activeBackground1": "#5d4633",
         },
       },
+      {
+        id: "latexdo-studio",
+        base: "vs" as const,
+        rules: [
+          { token: "comment", foreground: "667085", fontStyle: "italic" },
+          { token: "keyword", foreground: "1D5FD0" },
+          { token: "keyword.control", foreground: "7A3FB3" },
+          { token: "string", foreground: "21815F" },
+          { token: "number", foreground: "B15D22" },
+          { token: "delimiter", foreground: "374151" },
+        ],
+        colors: {
+          "editor.background": "#ffffff",
+          "editor.foreground": "#1f2937",
+          "editorLineNumber.foreground": "#9aa4b2",
+          "editorLineNumber.activeForeground": "#374151",
+          "editor.lineHighlightBackground": "#f3f6fb",
+          "editorCursor.foreground": "#2f6fdb",
+          "editor.selectionBackground": "#c9dcff",
+          "editor.inactiveSelectionBackground": "#dce7fb",
+          "editorIndentGuide.background1": "#dde4ef",
+          "editorIndentGuide.activeBackground1": "#9fb2d0",
+        },
+      },
+      {
+        id: "latexdo-paper",
+        base: "vs" as const,
+        rules: [
+          { token: "comment", foreground: "6b7280", fontStyle: "italic" },
+          { token: "keyword", foreground: "1f6eb3" },
+          { token: "keyword.control", foreground: "8b4aa6" },
+          { token: "string", foreground: "1d7a56" },
+          { token: "number", foreground: "a65f1b" },
+          { token: "delimiter", foreground: "3a414c" },
+        ],
+        colors: {
+          "editor.background": "#fffefa",
+          "editor.foreground": "#252a31",
+          "editorLineNumber.foreground": "#a0a8b2",
+          "editorLineNumber.activeForeground": "#3a414c",
+          "editor.lineHighlightBackground": "#f2f6f1",
+          "editorCursor.foreground": "#2f8f6b",
+          "editor.selectionBackground": "#cce8d9",
+          "editor.inactiveSelectionBackground": "#e1efe7",
+          "editorIndentGuide.background1": "#dce5dd",
+          "editorIndentGuide.activeBackground1": "#98b6a6",
+        },
+      },
     ];
 
     for (const theme of themes) {
       instance.editor.defineTheme(theme.id, {
-        base: "vs-dark",
+        base: theme.base,
         inherit: true,
         rules: theme.rules,
         colors: theme.colors,
