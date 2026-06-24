@@ -46,6 +46,7 @@ import type {
   ProjectEntry,
   SpellCheckerSettings,
   UpdateCheckResult,
+  CreateProjectOptions,
 } from "./types.js";
 import { registerTerminalIpc } from "./terminal.js";
 
@@ -234,6 +235,17 @@ const reservedProjectPathSegments = new Set([".git", "node_modules"]);
 const compileEngines = new Set(["pdflatex", "xelatex", "lualatex"]);
 const languageCodePattern = /^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$/;
 const gitHashPattern = /^[0-9a-fA-F]{7,64}$/;
+const invalidProjectFolderCharacters = new Set([
+  "<",
+  ">",
+  ":",
+  '"',
+  "/",
+  "\\",
+  "|",
+  "?",
+  "*",
+]);
 
 function invalidIpcInput(channel: string): never {
   throw new Error(`Invalid IPC input for ${channel}.`);
@@ -350,6 +362,64 @@ function parseProjectId(channel: string, value: unknown): string {
     maxLength: maxProjectIdLength,
     rejectControlChars: true,
   });
+}
+
+function sanitizeProjectFolderName(value: string): string {
+  const sanitized = value
+    .split("")
+    .map((character) => {
+      const code = character.charCodeAt(0);
+      return invalidProjectFolderCharacters.has(character) || code < 32
+        ? " "
+        : character;
+    })
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^\.+$/, "");
+  return sanitized || "LatexDo Project";
+}
+
+function parseCreateProjectOptions(
+  channel: string,
+  value: unknown,
+): CreateProjectOptions {
+  if (value === undefined) {
+    return {};
+  }
+  if (!isRecord(value)) {
+    invalidIpcInput(channel);
+  }
+
+  const options: CreateProjectOptions = {};
+  if (value.folderName !== undefined) {
+    options.folderName = sanitizeProjectFolderName(
+      parseString(channel, value.folderName, {
+        maxLength: 96,
+        rejectControlChars: true,
+      }),
+    );
+  }
+  return options;
+}
+
+async function availableProjectPath(
+  parentPath: string,
+  folderName: string,
+): Promise<string> {
+  for (let index = 0; index < 100; index += 1) {
+    const candidateName = index === 0 ? folderName : `${folderName} ${index + 1}`;
+    const candidatePath = path.join(parentPath, candidateName);
+    try {
+      await stat(candidatePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return candidatePath;
+      }
+      throw error;
+    }
+  }
+  throw new Error(`Could not find an available folder named "${folderName}".`);
 }
 
 function parseRelativePath(
@@ -1928,19 +1998,24 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("project:create", async (_event, ...rawArgs: unknown[]) => {
     const channel = "project:create";
-    expectIpcArgs(channel, rawArgs, 0);
+    const [rawOptions] = expectIpcArgRange(channel, rawArgs, 0, 1);
+    const options = parseCreateProjectOptions(channel, rawOptions);
     const result = await dialog.showOpenDialog({
       properties: ["openDirectory", "createDirectory"],
-      title: "Choose a folder for the new LaTeX project",
-      buttonLabel: "Create Project",
+      title: options.folderName
+        ? `Choose where to create ${options.folderName}`
+        : "Choose a folder for the new LaTeX project",
+      buttonLabel: options.folderName ? "Create Here" : "Create Project",
       defaultPath: app.getPath("documents"),
     });
     if (result.canceled) {
       return null;
     }
 
-    const projectPath = result.filePaths[0];
-    await mkdir(projectPath, { recursive: true });
+    const projectPath = options.folderName
+      ? await availableProjectPath(result.filePaths[0], options.folderName)
+      : result.filePaths[0];
+    await mkdir(projectPath, { recursive: !options.folderName });
     try {
       await atomicWriteUtf8(path.join(projectPath, "main.tex"), starterDocument, {
         exclusive: true,

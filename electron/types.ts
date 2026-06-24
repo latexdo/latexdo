@@ -14,6 +14,10 @@ export interface OpenProject {
   name: string;
 }
 
+export interface CreateProjectOptions {
+  folderName?: string;
+}
+
 export interface DocxImportResult {
   sourcePath: string;
   relativePath: string;

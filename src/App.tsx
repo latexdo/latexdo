@@ -171,6 +171,17 @@ function AppIcon({ className }: { className?: string }) {
 
 type ColorTheme = "graphite" | "midnight" | "forest" | "sepia" | "studio" | "paper";
 
+type WelcomeTemplateId = "article" | "research" | "notes" | "response";
+
+interface WelcomeTemplate {
+  id: WelcomeTemplateId;
+  name: string;
+  summary: string;
+  files: string;
+  mainTex: string;
+  bibTex?: string;
+}
+
 const colorThemeOptions: {
   id: ColorTheme;
   name: string;
@@ -212,6 +223,216 @@ const colorThemeOptions: {
     name: "Paper White",
     description: "Soft white theme with ink-like text and green accents.",
     swatches: ["#fbfbf8", "#2f8f6b", "#252a31"],
+  },
+];
+
+const welcomeTemplates: WelcomeTemplate[] = [
+  {
+    id: "article",
+    name: "Clean Article",
+    summary: "A minimal paper with title, abstract, sections, and conclusion.",
+    files: "main.tex",
+    mainTex: String.raw`\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{hyperref}
+
+\title{Untitled Article}
+\author{Your Name}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Write a one-paragraph summary of the work here.
+\end{abstract}
+
+\section{Introduction}
+
+Start with the problem, context, and main claim.
+
+\section{Main Result}
+
+Develop the argument or result.
+
+\section{Conclusion}
+
+Close with the key takeaway.
+
+\end{document}
+`,
+  },
+  {
+    id: "research",
+    name: "Research Paper",
+    summary: "Structured manuscript with figures, tables, and bibliography.",
+    files: "main.tex + references.bib",
+    mainTex: String.raw`\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{microtype}
+\usepackage{hyperref}
+
+\title{Research Paper Title}
+\author{Your Name}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Summarize the question, approach, result, and implication.
+\end{abstract}
+
+\section{Introduction}
+
+State the problem and why it matters. Cite the closest related work here \cite{latexdo2026}.
+
+\section{Method}
+
+Describe the setup, assumptions, and procedure.
+
+\section{Results}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrr}
+\toprule
+Condition & Baseline & Ours \\
+\midrule
+Example & 0.72 & 0.84 \\
+\bottomrule
+\end{tabular}
+\caption{Replace this table with your main result.}
+\end{table}
+
+\section{Discussion}
+
+Explain what changed, what stayed uncertain, and what follows next.
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}
+`,
+    bibTex: String.raw`@misc{latexdo2026,
+  author = {LatexDo},
+  title = {A Local LaTeX Writing Workflow},
+  year = {2026},
+  note = {Starter reference}
+}
+`,
+  },
+  {
+    id: "notes",
+    name: "Lecture Notes",
+    summary: "Definitions, theorem blocks, examples, and exercises.",
+    files: "main.tex",
+    mainTex: String.raw`\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{microtype}
+\usepackage{hyperref}
+
+\newtheorem{definition}{Definition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{example}{Example}
+
+\title{Lecture Notes}
+\author{Course or Topic}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Topic}
+
+\begin{definition}
+Write the main definition here.
+\end{definition}
+
+\begin{theorem}
+State the main claim.
+\end{theorem}
+
+\begin{proof}
+Add the proof or derivation.
+\end{proof}
+
+\begin{example}
+Work through a concrete example.
+\end{example}
+
+\section{Exercises}
+
+\begin{enumerate}
+  \item Add the first exercise.
+  \item Add a follow-up exercise.
+\end{enumerate}
+
+\end{document}
+`,
+  },
+  {
+    id: "response",
+    name: "Review Response",
+    summary: "A concise rebuttal letter with reviewer-by-reviewer sections.",
+    files: "main.tex",
+    mainTex: String.raw`\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{hyperref}
+
+\newcommand{\reviewer}[1]{\section*{Reviewer #1}}
+\newcommand{\comment}[1]{\paragraph{Comment.}\emph{#1}}
+\newcommand{\response}[1]{\paragraph{Response.}#1}
+
+\title{Response to Reviewers}
+\author{Paper ID or Title}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+We thank the reviewers for their careful reading and constructive feedback.
+
+\reviewer{1}
+
+\comment{Summarize the first reviewer comment.}
+
+\response{Describe the change made in the manuscript and point to the relevant section, figure, or line.}
+
+\reviewer{2}
+
+\comment{Summarize the second reviewer comment.}
+
+\response{Explain the clarification, added experiment, or limitation.}
+
+\section*{Summary of Changes}
+
+\begin{itemize}[leftmargin=*]
+  \item Added or revised the main contribution.
+  \item Clarified the experimental setup.
+  \item Updated the discussion of limitations.
+\end{itemize}
+
+\end{document}
+`,
   },
 ];
 
@@ -1227,6 +1448,9 @@ export default function App() {
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
   const [docxImporting, setDocxImporting] = useState(false);
+  const [templateCreating, setTemplateCreating] = useState<WelcomeTemplateId | null>(
+    null,
+  );
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState("editor");
@@ -3604,6 +3828,51 @@ ${macroEnd}
       setStatusMessage(
         error instanceof Error ? error.message : "Could not create project",
       );
+    }
+  };
+
+  const createProjectFromTemplate = async (template: WelcomeTemplate) => {
+    if (templateCreating) return;
+
+    setTemplateCreating(template.id);
+    setStatusMessage(`Creating ${template.name} project...`);
+    try {
+      const project = await window.latexdo.createProject({
+        folderName: template.name,
+      });
+      if (!project) {
+        return;
+      }
+
+      await window.latexdo.writeFile(project.id, "main.tex", template.mainTex);
+      if (template.bibTex) {
+        await window.latexdo.writeFile(project.id, "references.bib", template.bibTex);
+      }
+
+      await loadProject(project, true, false);
+      setStatusMessage(`${template.name} project created`);
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error
+          ? error.message
+          : `Could not create ${template.name} project`,
+      );
+    } finally {
+      setTemplateCreating(null);
+    }
+  };
+
+  const renderTemplateIcon = (template: WelcomeTemplate) => {
+    switch (template.id) {
+      case "research":
+        return <BookOpenText size={17} />;
+      case "notes":
+        return <Sigma size={17} />;
+      case "response":
+        return <MessageSquare size={17} />;
+      case "article":
+      default:
+        return <FilePlus2 size={17} />;
     }
   };
 
@@ -5991,7 +6260,7 @@ ${macroEnd}
                     <AppIcon className="welcome-brand" />
                     <div>
                       <h1>LatexDo</h1>
-                      <p>Write beautifully. Compile locally.</p>
+                      <p>Start from a working LaTeX document. Compile locally.</p>
                     </div>
                   </div>
 
@@ -6042,6 +6311,33 @@ ${macroEnd}
                           <small>Open an existing LaTeX project</small>
                         </span>
                       </button>
+                    </section>
+                    <section className="welcome-section welcome-template-section">
+                      <h2>Template gallery</h2>
+                      <div className="welcome-template-grid">
+                        {welcomeTemplates.map((template) => (
+                          <button
+                            key={template.id}
+                            type="button"
+                            className="welcome-template-card"
+                            onClick={() => void createProjectFromTemplate(template)}
+                            disabled={templateCreating !== null}
+                          >
+                            <span className="welcome-template-icon">
+                              {renderTemplateIcon(template)}
+                            </span>
+                            <span className="welcome-template-copy">
+                              <strong>{template.name}</strong>
+                              <small>{template.summary}</small>
+                              <em>
+                                {templateCreating === template.id
+                                  ? "Creating..."
+                                  : template.files}
+                              </em>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
                     </section>
                   </div>
 
