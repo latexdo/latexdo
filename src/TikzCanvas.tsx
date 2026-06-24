@@ -81,6 +81,17 @@ function defaultShape(kind: ShapeKind): DrawShape {
   };
 }
 
+function cloneShape(shape: DrawShape): DrawShape {
+  return {
+    ...shape,
+    points: shape.points.map(([x, y]) => [x, y]),
+  };
+}
+
+function cloneShapes(shapes: DrawShape[]): DrawShape[] {
+  return shapes.map(cloneShape);
+}
+
 function shapeContains(s: DrawShape, px: number, py: number): boolean {
   const margin = 6;
   if (s.kind === "line" || s.kind === "arrow" || s.kind === "freehand") {
@@ -130,6 +141,14 @@ interface HistoryEntry {
   shapes: DrawShape[];
 }
 
+interface DragSession {
+  selectedId: string;
+  start: { x: number; y: number };
+  originalShapes: DrawShape[];
+  latestShapes: DrawShape[];
+  moved: boolean;
+}
+
 export interface TikzCanvasProps {
   onInsertCode?: (code: string) => void;
 }
@@ -137,9 +156,12 @@ export interface TikzCanvasProps {
 export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const codeRef = useRef<HTMLPreElement>(null);
+  const dragSessionRef = useRef<DragSession | null>(null);
+  const drawingShapeIdRef = useRef<string | null>(null);
+  const shapesRef = useRef<DrawShape[]>([]);
 
   // -- state --
-  const [shapes, setShapes] = useState<DrawShape[]>([]);
+  const [shapes, setShapesState] = useState<DrawShape[]>([]);
   const [tool, setTool] = useState<ToolType>("select");
   const [stroke, setStroke] = useState(DEFAULT_STROKE);
   const [fill, setFill] = useState(DEFAULT_FILL);
@@ -150,9 +172,20 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [drawing, setDrawing] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number } | null>(null);
   const [codeMode, setCodeMode] = useState<"tikz" | "full">("tikz");
   const [copied, setCopied] = useState(false);
+
+  const setShapes = useCallback((next: DrawShape[]) => {
+    shapesRef.current = next;
+    setShapesState(next);
+  }, []);
+
+  const updateShapes = useCallback((updater: (current: DrawShape[]) => DrawShape[]) => {
+    const next = updater(shapesRef.current);
+    shapesRef.current = next;
+    setShapesState(next);
+    return next;
+  }, []);
 
   // -- undo / redo --
   const [history, setHistory] = useState<HistoryEntry[]>([{ shapes: [] }]);
@@ -175,7 +208,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     setHistoryIndex(newIndex);
     setShapes(history[newIndex].shapes);
     setSelected(null);
-  }, [history, historyIndex]);
+  }, [history, historyIndex, setShapes]);
 
   const redo = useCallback(() => {
     if (historyIndex >= history.length - 1) return;
@@ -183,7 +216,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     setHistoryIndex(newIndex);
     setShapes(history[newIndex].shapes);
     setSelected(null);
-  }, [history, historyIndex]);
+  }, [history, historyIndex, setShapes]);
 
   // -- canvas dimensions --
   const canvasWidth = 1200;
@@ -272,7 +305,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     };
     window.addEventListener("keydown", handle);
     return () => window.removeEventListener("keydown", handle);
-  }, [selected, shapes, pushHistory, undo, redo]);
+  }, [selected, shapes, setShapes, pushHistory, undo, redo]);
 
   // -- helper: commit shape with history --
   const commitShape = useCallback(
@@ -280,7 +313,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
       setShapes(next);
       pushHistory(next);
     },
-    [pushHistory],
+    [setShapes, pushHistory],
   );
 
   // -- event handlers --
@@ -295,18 +328,30 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
+    e.preventDefault();
     const pt = getSvgPoint(e);
     const x = snap(pt.x);
     const y = snap(pt.y);
+    const currentShapes = shapesRef.current;
 
     if (tool === "select") {
       // check if clicking a shape
-      const hit = [...shapes].reverse().find((s) => shapeContains(s, pt.x, pt.y));
+      const hit = [...currentShapes]
+        .reverse()
+        .find((s) => shapeContains(s, pt.x, pt.y));
       if (hit) {
+        const originalShapes = cloneShapes(currentShapes);
+        dragSessionRef.current = {
+          selectedId: hit.id,
+          start: pt,
+          originalShapes,
+          latestShapes: originalShapes,
+          moved: false,
+        };
         setSelected(hit.id);
         setDragStart(pt);
-        setDragOffset({ x: pt.x - hit.x, y: pt.y - hit.y });
       } else {
+        dragSessionRef.current = null;
         setSelected(null);
       }
       return;
@@ -325,12 +370,15 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
         stroke,
         fontSize: DEFAULT_FONT_SIZE,
       };
-      commitShape([...shapes, shape]);
+      commitShape([...currentShapes, shape]);
+      setSelected(shape.id);
+      setTool("select");
       return;
     }
 
     setDrawing(true);
     setDragStart({ x, y });
+    setSelected(null);
 
     if (tool === "line" || tool === "arrow") {
       const shape: DrawShape = {
@@ -344,7 +392,8 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
           [x, y],
         ],
       };
-      setShapes([...shapes, shape]);
+      drawingShapeIdRef.current = shape.id;
+      setShapes([...currentShapes, shape]);
       return;
     }
 
@@ -357,7 +406,8 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
         dashed,
         points: [[pt.x, pt.y]],
       };
-      setShapes([...shapes, shape]);
+      drawingShapeIdRef.current = shape.id;
+      setShapes([...currentShapes, shape]);
       return;
     }
 
@@ -373,36 +423,32 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
       strokeWidth,
       dashed,
     };
-    setShapes([...shapes, shape]);
+    drawingShapeIdRef.current = shape.id;
+    setShapes([...currentShapes, shape]);
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     const pt = getSvgPoint(e);
 
     // dragging in select mode
-    if (tool === "select" && dragStart && selected) {
-      const dx = pt.x - dragStart.x;
-      const dy = pt.y - dragStart.y;
-      setShapes((prev) =>
-        prev.map((s) => {
-          if (s.id !== selected) return s;
-          if (s.kind === "line" || s.kind === "arrow" || s.kind === "freehand") {
-            const origPoints = history[historyIndex].shapes.find(
-              (h) => h.id === s.id,
-            )?.points;
-            if (!origPoints) return s;
-            return {
-              ...s,
-              points: origPoints.map(
-                ([ox, oy]) => [ox + dx, oy + dy] as [number, number],
-              ),
-            };
-          }
-          const orig = history[historyIndex].shapes.find((h) => h.id === s.id);
-          if (!orig) return s;
-          return { ...s, x: orig.x + dx, y: orig.y + dy };
-        }),
-      );
+    if (tool === "select" && dragSessionRef.current) {
+      e.preventDefault();
+      const drag = dragSessionRef.current;
+      const dx = pt.x - drag.start.x;
+      const dy = pt.y - drag.start.y;
+      drag.moved = drag.moved || Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5;
+      const next = drag.originalShapes.map((s) => {
+        if (s.id !== drag.selectedId) return s;
+        if (s.kind === "line" || s.kind === "arrow" || s.kind === "freehand") {
+          return {
+            ...s,
+            points: s.points.map(([ox, oy]) => [ox + dx, oy + dy] as [number, number]),
+          };
+        }
+        return { ...s, x: s.x + dx, y: s.y + dy };
+      });
+      drag.latestShapes = next;
+      setShapes(next);
       return;
     }
 
@@ -412,7 +458,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     const y = snap(pt.y);
 
     if (tool === "line" || tool === "arrow") {
-      setShapes((prev) => {
+      updateShapes((prev) => {
         const last = prev[prev.length - 1];
         if (!last) return prev;
         const pts = [...last.points];
@@ -423,7 +469,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     }
 
     if (tool === "freehand") {
-      setShapes((prev) => {
+      updateShapes((prev) => {
         const last = prev[prev.length - 1];
         if (!last) return prev;
         return [
@@ -435,7 +481,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     }
 
     // rect, circle, ellipse, diamond, triangle, parallelogram, cylinder, grid, axes
-    setShapes((prev) => {
+    updateShapes((prev) => {
       const last = prev[prev.length - 1];
       if (!last) return prev;
       const nx = Math.min(dragStart.x, x);
@@ -447,35 +493,41 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
   };
 
   const handleMouseUp = () => {
-    if (tool === "select" && dragStart && selected) {
+    if (tool === "select" && dragSessionRef.current) {
       // commit drag
-      pushHistory([...shapes]);
+      const drag = dragSessionRef.current;
+      if (drag.moved) {
+        setShapes(drag.latestShapes);
+        pushHistory(drag.latestShapes);
+      }
+      dragSessionRef.current = null;
       setDragStart(null);
-      setDragOffset(null);
       return;
     }
 
     if (!drawing) return;
     setDrawing(false);
     setDragStart(null);
+    const drawnShapeId = drawingShapeIdRef.current;
+    drawingShapeIdRef.current = null;
+    let next = shapesRef.current;
 
     // simplify freehand: reduce points
-    if (tool === "freehand") {
-      setShapes((prev) => {
-        const last = prev[prev.length - 1];
-        if (!last || last.points.length < 3) return prev;
+    if (tool === "freehand" && drawnShapeId) {
+      const last = next[next.length - 1];
+      if (last?.id === drawnShapeId && last.points.length >= 3) {
         // Douglas-Peucker-like simplification: take every 3rd point
         const simplified = last.points.filter(
           (_, i) => i === 0 || i === last.points.length - 1 || i % 3 === 0,
         );
-        return [...prev.slice(0, -1), { ...last, points: simplified }];
-      });
+        next = [...next.slice(0, -1), { ...last, points: simplified }];
+      }
     }
 
     // Remove shapes with zero size
-    setShapes((prev) => {
-      const last = prev[prev.length - 1];
-      if (!last) return prev;
+    const last = next[next.length - 1];
+    let keptDrawnShape = Boolean(last && last.id === drawnShapeId);
+    if (last && last.id === drawnShapeId) {
       if (
         (last.kind === "rect" ||
           last.kind === "circle" ||
@@ -489,18 +541,31 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
         last.w < 4 &&
         last.h < 4
       ) {
-        return prev.slice(0, -1);
+        next = next.slice(0, -1);
+        keptDrawnShape = false;
       }
       if ((last.kind === "line" || last.kind === "arrow") && last.points.length >= 2) {
         const [x1, y1] = last.points[0];
         const [x2, y2] = last.points[last.points.length - 1];
         if (Math.abs(x2 - x1) < 4 && Math.abs(y2 - y1) < 4) {
-          return prev.slice(0, -1);
+          next = next.slice(0, -1);
+          keptDrawnShape = false;
         }
       }
-      pushHistory(prev);
-      return prev;
-    });
+      if (last.kind === "freehand" && last.points.length < 2) {
+        next = next.slice(0, -1);
+        keptDrawnShape = false;
+      }
+    }
+
+    setShapes(next);
+    if (keptDrawnShape && drawnShapeId) {
+      pushHistory(next);
+      setSelected(drawnShapeId);
+      setTool("select");
+    } else {
+      setSelected(null);
+    }
   };
 
   // -- copy code --
