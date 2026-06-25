@@ -115,7 +115,14 @@ function builtInImport(mdContent: string): string {
       closeList();
       const level = headingMatch[1].length;
       const text = inlineFormatting(headingMatch[2]);
-      const cmd = ["\\section", "\\subsection", "\\subsubsection", "\\paragraph", "\\subparagraph", "\\textbf"][level - 1];
+      const cmd = [
+        "\\section",
+        "\\subsection",
+        "\\subsubsection",
+        "\\paragraph",
+        "\\subparagraph",
+        "\\textbf",
+      ][level - 1];
       latexLines.push(`${cmd}{${text}}`);
       continue;
     }

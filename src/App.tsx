@@ -4062,7 +4062,8 @@ ${macroEnd}
         `Imported ${fileName(result.sourcePath)} to ${result.relativePath} via ${converterName}.${warningSummary}`,
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not import Markdown.";
+      const message =
+        error instanceof Error ? error.message : "Could not import Markdown.";
       if (
         message.includes("No handler registered") ||
         message.includes("importMarkdown is not a function")
@@ -6410,9 +6411,7 @@ ${macroEnd}
                         <Code2 size={18} />
                         <span>
                           <strong>Import Markdown</strong>
-                          <small>
-                            Convert a Markdown file into LaTeX
-                          </small>
+                          <small>Convert a Markdown file into LaTeX</small>
                         </span>
                       </button>
                       <button className="welcome-action" onClick={openProject}>
