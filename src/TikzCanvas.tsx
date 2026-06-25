@@ -161,7 +161,12 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
   const dragSessionRef = useRef<DragSession | null>(null);
   const drawingShapeIdRef = useRef<string | null>(null);
   const shapesRef = useRef<DrawShape[]>([]);
-  const panStartRef = useRef<{ mouseX: number; mouseY: number; vbX: number; vbY: number } | null>(null);
+  const panStartRef = useRef<{
+    mouseX: number;
+    mouseY: number;
+    vbX: number;
+    vbY: number;
+  } | null>(null);
 
   // -- viewBox (zoom / pan) --
   const [viewBox, setViewBox] = useState({ x: 0, y: 0, w: 1200, h: 800 });
@@ -1142,12 +1147,28 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     const step = GRID_SIZE * Math.max(1, Math.ceil(Math.max(xCount, yCount) / 100));
     for (let x = startX; x <= endX; x += step) {
       lines.push(
-        <line key={`gv${x}`} x1={x} y1={startY} x2={x} y2={endY} stroke="#252a34" strokeWidth={0.5} />,
+        <line
+          key={`gv${x}`}
+          x1={x}
+          y1={startY}
+          x2={x}
+          y2={endY}
+          stroke="#252a34"
+          strokeWidth={0.5}
+        />,
       );
     }
     for (let y = startY; y <= endY; y += step) {
       lines.push(
-        <line key={`gh${y}`} x1={startX} y1={y} x2={endX} y2={y} stroke="#252a34" strokeWidth={0.5} />,
+        <line
+          key={`gh${y}`}
+          x1={startX}
+          y1={y}
+          x2={endX}
+          y2={y}
+          stroke="#252a34"
+          strokeWidth={0.5}
+        />,
       );
     }
     return <g className="tikz-grid">{lines}</g>;
@@ -1351,9 +1372,23 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
             }}
           >
             {/* Open-world background */}
-            <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="#15181e" />
+            <rect
+              x={viewBox.x}
+              y={viewBox.y}
+              width={viewBox.w}
+              height={viewBox.h}
+              fill="#15181e"
+            />
             {/* Document area outline & dimension label */}
-            <rect x={0} y={0} width={canvasSize.width} height={canvasSize.height} fill="none" stroke="#3a3f49" strokeWidth={1} />
+            <rect
+              x={0}
+              y={0}
+              width={canvasSize.width}
+              height={canvasSize.height}
+              fill="none"
+              stroke="#3a3f49"
+              strokeWidth={1}
+            />
             <text
               x={canvasSize.width}
               y={canvasSize.height}
@@ -1365,7 +1400,9 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
               dy={-4}
               style={{ pointerEvents: "none" }}
             >
-              {canvasSize.width} × {canvasSize.height} px  ({(canvasSize.width * 0.02).toFixed(1)}×{(canvasSize.height * 0.02).toFixed(1)} cm)
+              {canvasSize.width} × {canvasSize.height} px (
+              {(canvasSize.width * 0.02).toFixed(1)}×
+              {(canvasSize.height * 0.02).toFixed(1)} cm)
             </text>
             {renderGrid()}
             {shapes.map(renderShape)}
@@ -1508,7 +1545,9 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
             {shapes.length} shape{shapes.length !== 1 ? "s" : ""}
           </span>
           <span>
-            Canvas: {canvasSize.width}×{canvasSize.height}px ({(canvasSize.width * 0.02).toFixed(1)}×{(canvasSize.height * 0.02).toFixed(1)}cm)
+            Canvas: {canvasSize.width}×{canvasSize.height}px (
+            {(canvasSize.width * 0.02).toFixed(1)}×
+            {(canvasSize.height * 0.02).toFixed(1)}cm)
           </span>
           <select
             className="tikz-canvas-preset"

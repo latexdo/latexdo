@@ -2175,10 +2175,7 @@ app.whenReady().then(() => {
       }
 
       project ??= registerProject(path.dirname(result.filePaths[0]));
-      const imported = await importMarkdown(
-        project.rootPath,
-        result.filePaths[0],
-      );
+      const imported = await importMarkdown(project.rootPath, result.filePaths[0]);
       return {
         ...imported,
         project,
