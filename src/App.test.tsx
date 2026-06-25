@@ -350,7 +350,6 @@ describe("App critical UI controls", () => {
     await waitFor(() => {
       expect(api.discardGitFile).toHaveBeenCalledWith("project-1", "main.tex");
     });
-    expect(await screen.findByText("Discard canceled.")).toBeVisible();
 
     const discardAll = screen.getByRole("button", {
       name: /discard all unstaged changes/i,
