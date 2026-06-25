@@ -441,6 +441,436 @@ export function generateTikzCode(
   return "\\begin{tikzpicture}\n" + lines.join("\n") + "\n\\end{tikzpicture}";
 }
 
+// ---------- TikZ parser (for round-tripping edits) ----------
+
+const INV_SCALE = 1 / SCALE; // 50
+
+const COLOR_TO_HEX: Record<string, string> = {
+  black: "#000000",
+  white: "#ffffff",
+  red: "#ff0000",
+  green: "#00ff00",
+  blue: "#0000ff",
+  yellow: "#ffff00",
+  magenta: "#ff00ff",
+  cyan: "#00ffff",
+  gray: "#808080",
+  orange: "#ffa500",
+  purple: "#800080",
+  brown: "#a0522d",
+  pink: "#ffc0cb",
+  lime: "#90ee90",
+  teal: "#008080",
+  violet: "#000080",
+};
+
+function parseHexColor(tikz: string): string {
+  const named = COLOR_TO_HEX[tikz.toLowerCase()];
+  if (named) return named;
+  const rgb = tikz.match(/\{rgb,255:red,(\d+);green,(\d+);blue,(\d+)\}/);
+  if (rgb) {
+    return `#${[1, 2, 3].map((i) => parseInt(rgb[i], 10).toString(16).padStart(2, "0")).join("")}`;
+  }
+  return "#d6dae2";
+}
+
+function tikzPtToCanvas(tikzPt: string, ch: number): [number, number] | null {
+  const m = tikzPt.match(/\(([-\d.]+),\s*([-\d.]+)\)/);
+  if (!m) return null;
+  return [parseFloat(m[1]) * INV_SCALE, ch - parseFloat(m[2]) * INV_SCALE];
+}
+
+function parseTikzOptions(optsStr: string): {
+  stroke: string;
+  fill: string;
+  strokeWidth: number;
+  dashed: boolean;
+  rotation: number;
+  fontSize: number;
+} {
+  let stroke = "#d6dae2";
+  let fill = "none";
+  let strokeWidth = 1.5;
+  let dashed = false;
+  let rotation = 0;
+  let fontSize = 14;
+  if (!optsStr) return { stroke, fill, strokeWidth, dashed, rotation, fontSize };
+  const opts = optsStr
+    .replace(/^\[|\]$/g, "")
+    .split(",")
+    .map((s) => s.trim());
+  for (const opt of opts) {
+    if (opt === "dashed") dashed = true;
+    else if (opt.startsWith("rotate=")) rotation = parseFloat(opt.slice(7)) || 0;
+    else if (opt.startsWith("draw=")) stroke = parseHexColor(opt.slice(5));
+    else if (opt.startsWith("fill=")) fill = parseHexColor(opt.slice(5));
+    else if (opt.startsWith("text=")) stroke = parseHexColor(opt.slice(5));
+    else if (opt.startsWith("font=")) {
+      const fm = opt.match(/\\fontsize\{([\d.]+)\}/);
+      if (fm) fontSize = Math.round(parseFloat(fm[1]) / 0.75);
+    } else if (opt === "ultra thin") strokeWidth = 0.4;
+    else if (opt === "very thin") strokeWidth = 0.6;
+    else if (opt === "thin") strokeWidth = 0.8;
+    else if (opt === "semithick") strokeWidth = 1.2;
+    else if (opt === "thick") strokeWidth = 1.6;
+    else if (opt === "very thick") strokeWidth = 2.4;
+    else if (opt === "ultra thick") strokeWidth = 3.2;
+  }
+  return { stroke, fill, strokeWidth, dashed, rotation, fontSize };
+}
+
+let parseId = 0;
+function nextParseId(): string {
+  return `p${(++parseId).toString(36)}`;
+}
+
+function parseTikzDraw(line: string, ch: number): DrawShape | null {
+  // Extract options
+  const optMatch = line.match(/\\draw\s*\[([^\]]*)\]/);
+  const opts = parseTikzOptions(optMatch ? optMatch[1] : "");
+  const hasArrow = optMatch && optMatch[1].includes("->");
+
+  // Extract coordinates list
+  const coordMatches = [...line.matchAll(/\(([-\d.]+)\s*,\s*([-\d.]+)\)/g)];
+  const coords: [number, number][] = coordMatches
+    .map((m) => tikzPtToCanvas(m[0], ch))
+    .filter((c): c is [number, number] => c !== null);
+
+  if (coords.length < 2) return null;
+
+  // rectangle
+  if (line.includes("rectangle")) {
+    const p1 = coords[0];
+    const p2 = coords[1];
+    return {
+      id: nextParseId(),
+      kind: "rect",
+      x: Math.min(p1[0], p2[0]),
+      y: Math.min(p1[1], p2[1]),
+      w: Math.abs(p2[0] - p1[0]),
+      h: Math.abs(p2[1] - p1[1]),
+      label: "",
+      points: [],
+      ...opts,
+    };
+  }
+
+  // circle
+  if (line.includes("circle")) {
+    const [cx, cy] = coords[0];
+    const r = coordMatches[coordMatches.length - 1];
+    const radius = parseFloat(r[1]) * INV_SCALE;
+    return {
+      id: nextParseId(),
+      kind: "circle",
+      x: cx - radius,
+      y: cy - radius,
+      w: radius * 2,
+      h: radius * 2,
+      label: "",
+      points: [],
+      ...opts,
+    };
+  }
+
+  // ellipse
+  if (line.includes("ellipse")) {
+    const [cx, cy] = coords[0];
+    const andMatch = line.match(/ellipse\s*\(([-\d.]+)\s+and\s+([-\d.]+)\)/);
+    if (!andMatch) return null;
+    const rx = parseFloat(andMatch[1]) * INV_SCALE;
+    const ry = parseFloat(andMatch[2]) * INV_SCALE;
+    return {
+      id: nextParseId(),
+      kind: "ellipse",
+      x: cx - rx,
+      y: cy - ry,
+      w: rx * 2,
+      h: ry * 2,
+      label: "",
+      points: [],
+      ...opts,
+    };
+  }
+
+  // grid
+  if (line.includes("grid")) {
+    return {
+      id: nextParseId(),
+      kind: "grid",
+      x: Math.min(coords[0][0], coords[1][0]),
+      y: Math.min(coords[0][1], coords[1][1]),
+      w: Math.abs(coords[1][0] - coords[0][0]),
+      h: Math.abs(coords[1][1] - coords[0][1]),
+      label: "",
+      points: [],
+      ...opts,
+    };
+  }
+
+  // axes
+  if (hasArrow && line.includes("node")) {
+    // Simplified: take bounding box from first and second points
+    const origin = coords[0];
+    // Find the furthest point in x and y
+    let maxX = origin[0],
+      maxY = origin[1];
+    let minX = origin[0],
+      minY = origin[1];
+    for (const c of coords) {
+      maxX = Math.max(maxX, c[0]);
+      minX = Math.min(minX, c[0]);
+      maxY = Math.max(maxY, c[1]);
+      minY = Math.min(minY, c[1]);
+    }
+    return {
+      id: nextParseId(),
+      kind: "axes",
+      x: minX,
+      y: minY,
+      w: maxX - minX,
+      h: maxY - minY,
+      label: "",
+      points: [],
+      ...opts,
+    };
+  }
+
+  // -- cycle polygon: diamond, triangle, parallelogram, pentagon, hexagon, star, trapezium
+  if (line.includes("-- cycle")) {
+    const n = coords.length;
+    if (n === 3) {
+      const xs = coords.map((c) => c[0]);
+      const ys = coords.map((c) => c[1]);
+      const minX = Math.min(...xs);
+      const minY = Math.min(...ys);
+      const maxX = Math.max(...xs);
+      const maxY = Math.max(...ys);
+      return {
+        id: nextParseId(),
+        kind: "triangle",
+        x: minX,
+        y: minY,
+        w: maxX - minX,
+        h: maxY - minY,
+        label: "",
+        points: [],
+        ...opts,
+      };
+    }
+    if (n === 4) {
+      const xs = coords.map((c) => c[0]);
+      const ys = coords.map((c) => c[1]);
+      const minX = Math.min(...xs);
+      const minY = Math.min(...ys);
+      const maxX = Math.max(...xs);
+      const maxY = Math.max(...ys);
+      // Detect parallelogram: check if top & bottom edges are same length and offset
+      const topDx = coords[1][0] - coords[0][0];
+      const bottomDx = coords[2][0] - coords[3][0];
+      const isParallelogram =
+        Math.abs(topDx - bottomDx) > 5 && topDx > 0 && bottomDx > 0;
+      // Detect trapezium: top shorter than bottom
+      const topLen = Math.abs(coords[1][0] - coords[0][0]);
+      const botLen = Math.abs(coords[2][0] - coords[3][0]);
+      const isTrapezium = isParallelogram && Math.abs(topLen - botLen) > 10;
+      // Detect diamond: all 4 points at midpoints of bounding box
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      const isDiamond =
+        coords.every(
+          ([x, y]) =>
+            (Math.abs(x - cx) < 5 ||
+              Math.abs(x - minX) < 5 ||
+              Math.abs(x - maxX) < 5) &&
+            (Math.abs(y - cy) < 5 || Math.abs(y - minY) < 5 || Math.abs(y - maxY) < 5),
+        ) &&
+        coords.some(([x]) => Math.abs(x - cx) < 5) &&
+        coords.some(([, y]) => Math.abs(y - cy) < 5);
+
+      let kind: ShapeKind = "rect";
+      if (isDiamond) kind = "diamond";
+      else if (isTrapezium) kind = "trapezium";
+      else if (isParallelogram) kind = "parallelogram";
+      return {
+        id: nextParseId(),
+        kind,
+        x: minX,
+        y: minY,
+        w: maxX - minX,
+        h: maxY - minY,
+        label: "",
+        points: [],
+        ...opts,
+      };
+    }
+    if (n === 5) {
+      const xs = coords.map((c) => c[0]);
+      const ys = coords.map((c) => c[1]);
+      return {
+        id: nextParseId(),
+        kind: "pentagon",
+        x: Math.min(...xs),
+        y: Math.min(...ys),
+        w: Math.max(...xs) - Math.min(...xs),
+        h: Math.max(...ys) - Math.min(...ys),
+        label: "",
+        points: [],
+        ...opts,
+      };
+    }
+    if (n === 6) {
+      const xs = coords.map((c) => c[0]);
+      const ys = coords.map((c) => c[1]);
+      return {
+        id: nextParseId(),
+        kind: "hexagon",
+        x: Math.min(...xs),
+        y: Math.min(...ys),
+        w: Math.max(...xs) - Math.min(...xs),
+        h: Math.max(...ys) - Math.min(...ys),
+        label: "",
+        points: [],
+        ...opts,
+      };
+    }
+    if (n >= 8) {
+      // star-like (many points)
+      const xs = coords.map((c) => c[0]);
+      const ys = coords.map((c) => c[1]);
+      return {
+        id: nextParseId(),
+        kind: "star",
+        x: Math.min(...xs),
+        y: Math.min(...ys),
+        w: Math.max(...xs) - Math.min(...xs),
+        h: Math.max(...ys) - Math.min(...ys),
+        label: "",
+        points: [],
+        ...opts,
+      };
+    }
+    return null;
+  }
+
+  // Plain polyline: line (or arrow if hasArrow)
+  if (hasArrow) {
+    const xs = coords.map((c) => c[0]);
+    const ys = coords.map((c) => c[1]);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    return {
+      id: nextParseId(),
+      kind: "arrow",
+      x: minX,
+      y: minY,
+      w: Math.max(...xs) - minX,
+      h: Math.max(...ys) - minY,
+      label: "",
+      points: coords,
+      ...opts,
+    };
+  }
+
+  // Plain line
+  const xs = coords.map((c) => c[0]);
+  const ys = coords.map((c) => c[1]);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  return {
+    id: nextParseId(),
+    kind: "line",
+    x: minX,
+    y: minY,
+    w: Math.max(...xs) - minX,
+    h: Math.max(...ys) - minY,
+    label: "",
+    points: coords,
+    ...opts,
+  };
+}
+
+function parseTikzNode(line: string, ch: number): DrawShape | null {
+  const optMatch = line.match(/\\node\s*\[([^\]]*)\]/);
+  const opts = parseTikzOptions(optMatch ? optMatch[1] : "");
+  const atMatch = line.match(/at\s*\(([-\d.]+),\s*([-\d.]+)\)/);
+  if (!atMatch) return null;
+  const pos = tikzPtToCanvas(`(${atMatch[1]},${atMatch[2]})`, ch);
+  if (!pos) return null;
+  const labelMatch = line.match(/\{([^}]*)\}/);
+  const label = labelMatch ? labelMatch[1] : "text";
+
+  return {
+    id: nextParseId(),
+    kind: "text",
+    x: pos[0],
+    y: pos[1],
+    w: 0,
+    h: 0,
+    label,
+    points: [],
+    ...opts,
+  };
+}
+
+export function parseTikzCode(
+  code: string,
+  canvasWidth: number,
+  canvasHeight: number,
+): DrawShape[] {
+  parseId = 0;
+  const shapes: DrawShape[] = [];
+  const lines = code
+    .replace(/\\begin\{tikzpicture\}.*?\n/, "")
+    .replace(/\\end\{tikzpicture\}/, "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("%"));
+
+  let pendingLabel: string | null = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Try to match \node command
+    if (line.startsWith("\\node")) {
+      const shape = parseTikzNode(line, canvasHeight);
+      if (shape) {
+        // If previous line is a \draw, attach this as label to the previous shape
+        if (shapes.length > 0) {
+          const prev = shapes[shapes.length - 1];
+          if (prev.label === "" && !prev.points.length) {
+            prev.label = shape.label;
+            continue;
+          }
+        }
+        shapes.push(shape);
+      }
+      continue;
+    }
+
+    // Try to match \draw command
+    if (line.startsWith("\\draw") || line.startsWith("\\fill")) {
+      const shape = parseTikzDraw(line, canvasHeight);
+      if (shape) {
+        // Check if next line is a \node for label
+        if (i + 1 < lines.length && lines[i + 1].startsWith("\\node")) {
+          const nextLine = lines[i + 1];
+          const labelMatch = nextLine.match(/\{([^}]*)\}/);
+          if (labelMatch) {
+            shape.label = labelMatch[1];
+            i++; // skip the label line
+          }
+        }
+        shapes.push(shape);
+      }
+      continue;
+    }
+  }
+
+  return shapes;
+}
+
 /** Full document wrapper that can be compiled standalone */
 export function generateFullDocument(
   shapes: DrawShape[],

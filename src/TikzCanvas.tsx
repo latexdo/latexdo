@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DrawShape, ShapeKind } from "./tikzGenerator";
-import { generateFullDocument, generateTikzCode } from "./tikzGenerator";
+import { generateFullDocument, generateTikzCode, parseTikzCode } from "./tikzGenerator";
 import React from "react";
 import type { ReactElement } from "react";
 
@@ -160,7 +160,6 @@ export interface TikzCanvasProps {
 
 export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const codeRef = useRef<HTMLPreElement>(null);
   const dragSessionRef = useRef<DragSession | null>(null);
   const drawingShapeIdRef = useRef<string | null>(null);
   const shapesRef = useRef<DrawShape[]>([]);
@@ -194,6 +193,9 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [codeMode, setCodeMode] = useState<"tikz" | "full">("tikz");
   const [copied, setCopied] = useState(false);
+  const [editableCode, setEditableCode] = useState("");
+  const [parseError, setParseError] = useState<string | null>(null);
+  const manualEditRef = useRef(false);
 
   const setShapes = useCallback((next: DrawShape[]) => {
     shapesRef.current = next;
@@ -646,6 +648,29 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
       setTool("select");
     } else {
       setSelected(null);
+    }
+  };
+
+  // -- sync code from canvas to editable textarea --
+  useEffect(() => {
+    if (!manualEditRef.current) {
+      setEditableCode(tikzCode);
+    }
+  }, [tikzCode]);
+
+  // -- parse edited code back to shapes --
+  const handleApplyCode = () => {
+    manualEditRef.current = false;
+    try {
+      const parsed = parseTikzCode(editableCode, canvasSize.width, canvasSize.height);
+      if (parsed.length === 0 && editableCode.trim()) {
+        setParseError("Could not parse any shapes from the code.");
+        return;
+      }
+      setParseError(null);
+      commitShape(parsed);
+    } catch (e) {
+      setParseError(e instanceof Error ? e.message : "Failed to parse TikZ code.");
     }
   };
 
@@ -1878,12 +1903,28 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
                 Insert
               </button>
             )}
+            <button
+              className="tikz-code-action-btn tikz-apply-btn"
+              onClick={handleApplyCode}
+              title="Apply edited code to canvas"
+            >
+              &#9654; Apply
+            </button>
           </div>
         </div>
         <div className="tikz-code-body">
-          <pre ref={codeRef} className="tikz-code-pre">
-            <code>{tikzCode}</code>
-          </pre>
+          {parseError && <div className="tikz-parse-error">{parseError}</div>}
+          <textarea
+            className="tikz-code-textarea"
+            value={editableCode}
+            onChange={(e) => {
+              manualEditRef.current = true;
+              setEditableCode(e.target.value);
+              setParseError(null);
+            }}
+            spellCheck={false}
+            wrap="off"
+          />
         </div>
         <div className="tikz-code-footer">
           <span>

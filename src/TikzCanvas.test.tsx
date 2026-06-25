@@ -11,7 +11,8 @@ function getSvg(container: HTMLElement): SVGSVGElement {
 }
 
 function generatedCode(container: HTMLElement): string {
-  return container.querySelector(".tikz-code-pre code")?.textContent ?? "";
+  const textarea = container.querySelector<HTMLTextAreaElement>(".tikz-code-textarea");
+  return textarea?.value ?? "";
 }
 
 describe("TikzCanvas interactions", () => {
