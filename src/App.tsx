@@ -5337,21 +5337,62 @@ ${macroEnd}
     showWelcome,
   ]);
 
-  const startResize = (event: React.PointerEvent) => {
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const handleMove = (moveEvent: PointerEvent) => {
-      const workspace = document.querySelector(".editor-preview")!;
-      const bounds = workspace.getBoundingClientRect();
-      const percent = ((moveEvent.clientX - bounds.left) / bounds.width) * 100;
-      setSplitPercent(Math.min(80, Math.max(20, percent)));
+  const MIN_SOURCE_WIDTH = 280;
+  const MIN_PREVIEW_WIDTH = 360;
+  const SPLIT_HANDLE_WIDTH = 6;
+  function clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+  }
+  const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const container = editorPreviewRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      const totalWidth = rect.width;
+      const maxSourceWidth =
+        totalWidth - MIN_PREVIEW_WIDTH - SPLIT_HANDLE_WIDTH;
+      const sourceWidth = clamp(
+        moveEvent.clientX - rect.left,
+        MIN_SOURCE_WIDTH,
+        Math.max(MIN_SOURCE_WIDTH, maxSourceWidth),
+      );
+      const nextPercent = (sourceWidth / totalWidth) * 100;
+      setSplitPercent(nextPercent);
     };
-    const handleUp = () => {
-      window.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleUp);
+    const onPointerUp = () => {
+      document.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerup", onPointerUp);
     };
-    window.addEventListener("pointermove", handleMove);
-    window.addEventListener("pointerup", handleUp);
+    document.addEventListener("pointermove", onPointerMove);
+    document.addEventListener("pointerup", onPointerUp);
   };
+
+  useEffect(() => {
+    if (!previewShown) return;
+    const container = editorPreviewRef.current;
+    if (!container) return;
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      const totalWidth = entry.contentRect.width;
+      const maxSourceWidth =
+        totalWidth - MIN_PREVIEW_WIDTH - SPLIT_HANDLE_WIDTH;
+      if (maxSourceWidth <= MIN_SOURCE_WIDTH) {
+        setSplitPercent(50);
+        return;
+      }
+      const currentSourceWidth = (splitPercent / 100) * totalWidth;
+      if (currentSourceWidth > maxSourceWidth) {
+        setSplitPercent((maxSourceWidth / totalWidth) * 100);
+      }
+      if (currentSourceWidth < MIN_SOURCE_WIDTH) {
+        setSplitPercent((MIN_SOURCE_WIDTH / totalWidth) * 100);
+      }
+    });
+    resizeObserver.observe(container);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [previewShown, splitPercent]);
 
   const startPanelResize = (event: React.PointerEvent) => {
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -6121,7 +6162,8 @@ ${macroEnd}
           </div>
 
           <div
-            className="editor-preview"
+            ref={editorPreviewRef}
+            className={`editor-preview ${previewShown ? "with-preview" : "without-preview"}`}
             style={
               {
                 "--source-width": previewShown ? `${splitPercent}%` : "100%",
@@ -6300,44 +6342,6 @@ ${macroEnd}
                       </button>
                     </div>
                   ) : null}
-
-                  <div className="root-control import-buttons">
-                    <span className="control-label">IMPORT</span>
-                    <button
-                      className="small-icon"
-                      onClick={() => void importDocx()}
-                      disabled={docxImporting}
-                      title="Import DOCX (Word)"
-                    >
-                      <FileUp size={14} />
-                    </button>
-                    <button
-                      className="small-icon"
-                      onClick={() => void importMarkdown()}
-                      disabled={markdownImporting}
-                      title="Import Markdown"
-                    >
-                      <Code2 size={14} />
-                    </button>
-                  </div>
-
-                  <div className="toolbar-spacer" />
-
-                  <div className="root-control">
-                    <span className="control-label">COMPILER</span>
-                    <div className="engine-select select-wrap">
-                      <select
-                        value={engine}
-                        onChange={(event) => setEngine(event.target.value as Engine)}
-                        title="LaTeX engine"
-                      >
-                        <option value="pdflatex">pdfLaTeX</option>
-                        <option value="xelatex">XeLaTeX</option>
-                        <option value="lualatex">LuaLaTeX</option>
-                      </select>
-                      <ChevronDown size={13} />
-                    </div>
-                  </div>
 
                   <button
                     className={`compile-button ${compiling ? "compiling" : ""}`}
