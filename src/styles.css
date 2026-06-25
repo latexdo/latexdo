@@ -4488,16 +4488,38 @@ button {
 
 .tikz-selected-props {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 6px;
   padding: 6px 12px;
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-surface);
 }
 
+.tikz-selected-props-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tikz-zorder-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.tikz-zorder-btn {
+  font-size: 12px !important;
+  padding: 2px 6px !important;
+  line-height: 1;
+}
+
 .tikz-selected-props-row {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tikz-selected-style-row {
+  gap: 12px;
 }
 
 .tikz-mini-prop {
@@ -4531,6 +4553,54 @@ button {
 
 .tikz-mini-prop-wide input {
   width: 100px;
+}
+
+.tikz-mini-prop-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tikz-mini-prop-group .tikz-prop-label {
+  font-size: 9px;
+}
+
+.tikz-mini-prop-slider {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 4px;
+}
+
+.tikz-mini-prop-slider input[type="range"] {
+  width: 60px;
+  height: 4px;
+  accent-color: #5a7acc;
+}
+
+.tikz-mini-prop-slider .tikz-prop-value {
+  font-size: 9px;
+  color: var(--text-dim);
+  min-width: 30px;
+}
+
+.tikz-color-row-small {
+  gap: 3px;
+}
+
+.tikz-color-swatch-sm {
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 3px !important;
+}
+
+.tikz-checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tikz-checkbox-group input[type="checkbox"] {
+  accent-color: #5a7acc;
 }
 
 /* ---------- Right: code panel ---------- */
