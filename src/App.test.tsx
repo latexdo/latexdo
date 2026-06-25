@@ -123,6 +123,7 @@ function installLatexDoMock(options?: {
     createFile: vi.fn().mockResolvedValue("chapter.tex"),
     createFolder: vi.fn().mockResolvedValue("chapters"),
     importDocx: vi.fn().mockResolvedValue(null),
+    importMarkdown: vi.fn().mockResolvedValue(null),
     moveEntry: vi.fn().mockResolvedValue("main.tex"),
     getGitStatus: vi.fn().mockResolvedValue(
       options?.gitStatus ?? {
@@ -190,6 +191,7 @@ function installLatexDoMock(options?: {
     onCreateFileMenu: vi.fn(() => vi.fn()),
     onCreateFolderMenu: vi.fn(() => vi.fn()),
     onImportDocxMenu: vi.fn(() => vi.fn()),
+    onImportMarkdownMenu: vi.fn(() => vi.fn()),
   };
 
   Object.defineProperty(window, "latexdo", {

@@ -28,6 +28,14 @@ export interface DocxImportResult {
   project?: OpenProject;
 }
 
+export interface MarkdownImportResult {
+  sourcePath: string;
+  relativePath: string;
+  converter: "pandoc" | "built-in";
+  warnings: string[];
+  project?: OpenProject;
+}
+
 export interface DiagnosticContextLine {
   line: number;
   text: string;

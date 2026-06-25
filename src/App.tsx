@@ -1448,6 +1448,7 @@ export default function App() {
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
   const [docxImporting, setDocxImporting] = useState(false);
+  const [markdownImporting, setMarkdownImporting] = useState(false);
   const [templateCreating, setTemplateCreating] = useState<WelcomeTemplateId | null>(
     null,
   );
@@ -4012,6 +4013,69 @@ ${macroEnd}
     }
   }, [loadProject, openDocument, refreshProject]);
 
+  const importMarkdown = useCallback(async () => {
+    if (typeof window.latexdo.importMarkdown !== "function") {
+      setStatusMessage(
+        "Markdown import is not loaded in this app window. Restart the dev app and try again.",
+      );
+      return;
+    }
+
+    const currentProject =
+      projectIdRef.current && !hideProjectEntriesRef.current
+        ? projectIdRef.current
+        : undefined;
+
+    setMarkdownImporting(true);
+    try {
+      const result = await window.latexdo.importMarkdown(currentProject);
+      if (!result) return;
+
+      const targetProject = result.project?.id ?? currentProject;
+      if (!targetProject) {
+        throw new Error("Markdown import did not return a project.");
+      }
+
+      if (result.project && result.project.id !== currentProject) {
+        await loadProject(result.project, false, false);
+      }
+
+      const entries = await refreshProject(targetProject);
+      const importedEntry = flattenEntries(entries).find(
+        (entry) =>
+          entry.type === "file" &&
+          normalizeRelativePath(entry.relativePath) ===
+            normalizeRelativePath(result.relativePath),
+      );
+
+      if (importedEntry) {
+        setWelcomeOpen(false);
+        await openDocument(importedEntry, targetProject);
+        setRootFile(importedEntry.relativePath);
+        rootFileRef.current = importedEntry.relativePath;
+      }
+
+      const converterName =
+        result.converter === "pandoc" ? "Pandoc" : "built-in converter";
+      const warningSummary = result.warnings.length ? ` ${result.warnings[0]}` : "";
+      setStatusMessage(
+        `Imported ${fileName(result.sourcePath)} to ${result.relativePath} via ${converterName}.${warningSummary}`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not import Markdown.";
+      if (
+        message.includes("No handler registered") ||
+        message.includes("importMarkdown is not a function")
+      ) {
+        setStatusMessage("Restart the LatexDo app to finish loading Markdown import.");
+        return;
+      }
+      setStatusMessage(message.replace(/^Error invoking remote method '[^']+': /, ""));
+    } finally {
+      setMarkdownImporting(false);
+    }
+  }, [loadProject, openDocument, refreshProject]);
+
   const closeDocument = (path: string) => {
     const target = documents.find((document) => document.path === path);
     if (
@@ -4253,6 +4317,12 @@ ${macroEnd}
       void importDocx();
     });
   }, [importDocx]);
+
+  useEffect(() => {
+    return window.latexdo.onImportMarkdownMenu(() => {
+      void importMarkdown();
+    });
+  }, [importMarkdown]);
 
   const toggleSidebar = () => {
     setSidebarVisible((visible) => !visible);
@@ -5591,6 +5661,14 @@ ${macroEnd}
                     </button>
                     <button
                       className="small-icon"
+                      onClick={() => void importMarkdown()}
+                      title="Import Markdown"
+                      disabled={markdownImporting}
+                    >
+                      <Code2 size={15} />
+                    </button>
+                    <button
+                      className="small-icon"
                       onClick={() => void refreshProject()}
                       title="Refresh"
                       disabled={!hasVisibleProject}
@@ -6222,6 +6300,26 @@ ${macroEnd}
                     </div>
                   ) : null}
 
+                  <div className="root-control import-buttons">
+                    <span className="control-label">IMPORT</span>
+                    <button
+                      className="small-icon"
+                      onClick={() => void importDocx()}
+                      disabled={docxImporting}
+                      title="Import DOCX (Word)"
+                    >
+                      <FileUp size={14} />
+                    </button>
+                    <button
+                      className="small-icon"
+                      onClick={() => void importMarkdown()}
+                      disabled={markdownImporting}
+                      title="Import Markdown"
+                    >
+                      <Code2 size={14} />
+                    </button>
+                  </div>
+
                   <div className="toolbar-spacer" />
 
                   <div className="root-control">
@@ -6301,6 +6399,19 @@ ${macroEnd}
                           <strong>Import DOCX</strong>
                           <small>
                             Convert a Word document into LaTeX and extracted media
+                          </small>
+                        </span>
+                      </button>
+                      <button
+                        className="welcome-action"
+                        onClick={() => void importMarkdown()}
+                        disabled={markdownImporting}
+                      >
+                        <Code2 size={18} />
+                        <span>
+                          <strong>Import Markdown</strong>
+                          <small>
+                            Convert a Markdown file into LaTeX
                           </small>
                         </span>
                       </button>

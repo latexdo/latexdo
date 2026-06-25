@@ -27,10 +27,12 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { compileLatex } from "./compiler.js";
 import { importDocxIntoProject } from "./docxImport.js";
+import { importMarkdown } from "./markdownImport.js";
 import { backwardSyncTex, forwardSyncTex } from "./synctex.js";
 import type {
   Diagnostic,
   DocxImportResult,
+  MarkdownImportResult,
   GitCommitDetails,
   GitCommitEntry,
   CompileRequest,
@@ -66,6 +68,7 @@ const openProjectChannel = "file:open-project";
 const createFileChannel = "file:create-dialog";
 const createFolderChannel = "folder:create-dialog";
 const importDocxChannel = "file:import-docx";
+const importMarkdownChannel = "file:import-markdown";
 const starterDocument = String.raw`\documentclass[11pt]{article}
 
 \usepackage[margin=1in]{geometry}
@@ -1338,6 +1341,13 @@ function buildApplicationMenu(): void {
             BrowserWindow.getFocusedWindow()?.webContents.send(importDocxChannel);
           },
         },
+        {
+          label: "Import Markdown...",
+          accelerator: "CmdOrCtrl+Shift+M",
+          click: () => {
+            BrowserWindow.getFocusedWindow()?.webContents.send(importMarkdownChannel);
+          },
+        },
         { type: "separator" },
         { role: "close" },
         ...(process.platform === "darwin"
@@ -2123,6 +2133,49 @@ app.whenReady().then(() => {
 
       project ??= registerProject(path.dirname(result.filePaths[0]));
       const imported = await importDocxIntoProject(
+        project.rootPath,
+        result.filePaths[0],
+      );
+      return {
+        ...imported,
+        project,
+      };
+    },
+  );
+  ipcMain.handle(
+    "markdown:import",
+    async (event, ...rawArgs: unknown[]): Promise<MarkdownImportResult | null> => {
+      const channel = "markdown:import";
+      const [rawProjectId] = expectIpcArgs(channel, rawArgs, 1);
+      let project: OpenProject | null = null;
+      if (typeof rawProjectId === "string" && rawProjectId.trim()) {
+        const projectId = parseProjectId(channel, rawProjectId);
+        project = openProjects.get(projectId) ?? null;
+        if (!project) {
+          throw new Error("The requested project is not open.");
+        }
+      }
+      const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+      const dialogOptions = {
+        properties: ["openFile"],
+        title: "Import Markdown as LaTeX",
+        buttonLabel: "Import Markdown",
+        defaultPath: project?.rootPath ?? app.getPath("documents"),
+        filters: [
+          { name: "Markdown documents", extensions: ["md", "markdown"] },
+          { name: "All files", extensions: ["*"] },
+        ],
+      } satisfies Electron.OpenDialogOptions;
+      const result = window
+        ? await dialog.showOpenDialog(window, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions);
+
+      if (result.canceled || !result.filePaths[0]) {
+        return null;
+      }
+
+      project ??= registerProject(path.dirname(result.filePaths[0]));
+      const imported = await importMarkdown(
         project.rootPath,
         result.filePaths[0],
       );

@@ -4,6 +4,7 @@ import type {
   CompileResult,
   CreateProjectOptions,
   DocxImportResult,
+  MarkdownImportResult,
   GitCommitDetails,
   GitDiscardResult,
   GitDiffEditorInput,
@@ -44,6 +45,8 @@ const api = {
     ipcRenderer.invoke("folder:create", projectId, relativePath),
   importDocx: (projectId?: string): Promise<DocxImportResult | null> =>
     ipcRenderer.invoke("docx:import", projectId ?? ""),
+  importMarkdown: (projectId?: string): Promise<MarkdownImportResult | null> =>
+    ipcRenderer.invoke("markdown:import", projectId ?? ""),
   moveEntry: (
     projectId: string,
     fromRelativePath: string,
@@ -189,6 +192,17 @@ const api = {
 
     return () => {
       ipcRenderer.removeListener("file:import-docx", listener);
+    };
+  },
+  onImportMarkdownMenu: (callback: () => void) => {
+    const listener = () => {
+      callback();
+    };
+
+    ipcRenderer.on("file:import-markdown", listener);
+
+    return () => {
+      ipcRenderer.removeListener("file:import-markdown", listener);
     };
   },
 };
