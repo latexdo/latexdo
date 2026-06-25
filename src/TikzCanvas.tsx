@@ -21,6 +21,8 @@ import {
   Triangle,
   Type,
   Undo2,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DrawShape, ShapeKind } from "./tikzGenerator";
@@ -159,6 +161,14 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
   const dragSessionRef = useRef<DragSession | null>(null);
   const drawingShapeIdRef = useRef<string | null>(null);
   const shapesRef = useRef<DrawShape[]>([]);
+  const panStartRef = useRef<{ mouseX: number; mouseY: number; vbX: number; vbY: number } | null>(null);
+
+  // -- viewBox (zoom / pan) --
+  const [viewBox, setViewBox] = useState({ x: 0, y: 0, w: 1200, h: 800 });
+  const viewBoxRef = useRef(viewBox);
+  viewBoxRef.current = viewBox;
+  const [isPanning, setIsPanning] = useState(false);
+  const zoomPercent = Math.round((1200 / viewBox.w) * 100);
 
   // -- state --
   const [shapes, setShapesState] = useState<DrawShape[]>([]);
@@ -218,17 +228,23 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     setSelected(null);
   }, [history, historyIndex, setShapes]);
 
-  // -- canvas dimensions --
-  const canvasWidth = 1200;
-  const canvasHeight = 800;
+  // -- canvas presets --
+  const CANVAS_PRESETS = [
+    { label: "Default (24×16cm)", width: 1200, height: 800 },
+    { label: "A4 Portrait (21×29.7cm)", width: 1050, height: 1485 },
+    { label: "A4 Landscape (29.7×21cm)", width: 1485, height: 1050 },
+    { label: "Beamer (12.8×9.6cm)", width: 640, height: 480 },
+    { label: "Letter (21.6×27.9cm)", width: 1080, height: 1397 },
+  ];
+  const [canvasSize, setCanvasSize] = useState({ width: 1200, height: 800 });
 
   // -- generated code --
   const tikzCode = useMemo(() => {
     if (codeMode === "full") {
-      return generateFullDocument(shapes, canvasWidth, canvasHeight);
+      return generateFullDocument(shapes, canvasSize.width, canvasSize.height);
     }
-    return generateTikzCode(shapes, canvasWidth, canvasHeight);
-  }, [shapes, codeMode]);
+    return generateTikzCode(shapes, canvasSize.width, canvasSize.height);
+  }, [shapes, codeMode, canvasSize]);
 
   // -- snap helper --
   const snap = useCallback(
@@ -307,6 +323,32 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     return () => window.removeEventListener("keydown", handle);
   }, [selected, shapes, setShapes, pushHistory, undo, redo]);
 
+  // -- wheel zoom (non-passive listener) --
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      const vb = viewBoxRef.current;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const factor = e.deltaY > 0 ? 1.1 : 1 / 1.1;
+      const newW = Math.max(60, Math.min(24000, vb.w * factor));
+      const newH = newW * (800 / 1200);
+      const svgX = mouseX * (vb.w / rect.width) + vb.x;
+      const svgY = mouseY * (vb.h / rect.height) + vb.y;
+      const newX = svgX - mouseX * (newW / rect.width);
+      const newY = svgY - mouseY * (newH / rect.height);
+      const next = { x: newX, y: newY, w: newW, h: newH };
+      setViewBox(next);
+      viewBoxRef.current = next;
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, []);
+
   // -- helper: commit shape with history --
   const commitShape = useCallback(
     (next: DrawShape[]) => {
@@ -320,9 +362,11 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
   const getSvgPoint = (e: React.MouseEvent): { x: number; y: number } => {
     const svg = svgRef.current!;
     const rect = svg.getBoundingClientRect();
+    const sx = rect.width > 0 ? viewBox.w / rect.width : 1;
+    const sy = rect.height > 0 ? viewBox.h / rect.height : 1;
     return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+      x: (e.clientX - rect.left) * sx + viewBox.x,
+      y: (e.clientY - rect.top) * sy + viewBox.y,
     };
   };
 
@@ -357,7 +401,16 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
       return;
     }
 
-    if (tool === "pan") return;
+    if (tool === "pan") {
+      panStartRef.current = {
+        mouseX: e.clientX,
+        mouseY: e.clientY,
+        vbX: viewBox.x,
+        vbY: viewBox.y,
+      };
+      setIsPanning(true);
+      return;
+    }
 
     if (tool === "text") {
       const label = prompt("Enter text:") || "";
@@ -430,6 +483,22 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
   const handleMouseMove = (e: React.MouseEvent) => {
     const pt = getSvgPoint(e);
 
+    // pan
+    if (panStartRef.current) {
+      const pan = panStartRef.current;
+      const svg = svgRef.current!;
+      const rect = svg.getBoundingClientRect();
+      const vb = viewBoxRef.current;
+      const sx = rect.width > 0 ? vb.w / rect.width : 1;
+      const sy = rect.height > 0 ? vb.h / rect.height : 1;
+      const dx = (e.clientX - pan.mouseX) * sx;
+      const dy = (e.clientY - pan.mouseY) * sy;
+      const next = { ...vb, x: pan.vbX - dx, y: pan.vbY - dy };
+      setViewBox(next);
+      viewBoxRef.current = next;
+      return;
+    }
+
     // dragging in select mode
     if (tool === "select" && dragSessionRef.current) {
       e.preventDefault();
@@ -493,6 +562,13 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
   };
 
   const handleMouseUp = () => {
+    if (panStartRef.current) {
+      panStartRef.current = null;
+      setIsPanning(false);
+      setDragStart(null);
+      return;
+    }
+
     if (tool === "select" && dragSessionRef.current) {
       // commit drag
       const drag = dragSessionRef.current;
@@ -576,7 +652,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
   };
 
   const handleDownload = () => {
-    const fullDoc = generateFullDocument(shapes, canvasWidth, canvasHeight);
+    const fullDoc = generateFullDocument(shapes, canvasSize.width, canvasSize.height);
     const blob = new Blob([fullDoc], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1053,34 +1129,25 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     }
   }
 
-  // -- grid pattern --
+  // -- grid pattern (covers visible area) --
   function renderGrid() {
     if (!showGrid) return null;
     const lines: ReactElement[] = [];
-    for (let x = 0; x <= canvasWidth; x += GRID_SIZE) {
+    const startX = Math.floor(viewBox.x / GRID_SIZE) * GRID_SIZE;
+    const startY = Math.floor(viewBox.y / GRID_SIZE) * GRID_SIZE;
+    const endX = viewBox.x + viewBox.w;
+    const endY = viewBox.y + viewBox.h;
+    const xCount = Math.ceil((endX - startX) / GRID_SIZE);
+    const yCount = Math.ceil((endY - startY) / GRID_SIZE);
+    const step = GRID_SIZE * Math.max(1, Math.ceil(Math.max(xCount, yCount) / 100));
+    for (let x = startX; x <= endX; x += step) {
       lines.push(
-        <line
-          key={`gv${x}`}
-          x1={x}
-          y1={0}
-          x2={x}
-          y2={canvasHeight}
-          stroke="#252a34"
-          strokeWidth={0.5}
-        />,
+        <line key={`gv${x}`} x1={x} y1={startY} x2={x} y2={endY} stroke="#252a34" strokeWidth={0.5} />,
       );
     }
-    for (let y = 0; y <= canvasHeight; y += GRID_SIZE) {
+    for (let y = startY; y <= endY; y += step) {
       lines.push(
-        <line
-          key={`gh${y}`}
-          x1={0}
-          y1={y}
-          x2={canvasWidth}
-          y2={y}
-          stroke="#252a34"
-          strokeWidth={0.5}
-        />,
+        <line key={`gh${y}`} x1={startX} y1={y} x2={endX} y2={y} stroke="#252a34" strokeWidth={0.5} />,
       );
     }
     return <g className="tikz-grid">{lines}</g>;
@@ -1263,9 +1330,9 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
           <svg
             ref={svgRef}
             className="tikz-svg"
-            width={canvasWidth}
-            height={canvasHeight}
-            viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
+            width={1200}
+            height={800}
+            viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -1275,14 +1342,31 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
                 tool === "select"
                   ? "default"
                   : tool === "pan"
-                    ? "grab"
+                    ? isPanning
+                      ? "grabbing"
+                      : "grab"
                     : tool === "text"
                       ? "text"
                       : "crosshair",
             }}
           >
-            {/* Background */}
-            <rect width={canvasWidth} height={canvasHeight} fill="#15181e" />
+            {/* Open-world background */}
+            <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="#15181e" />
+            {/* Document area outline & dimension label */}
+            <rect x={0} y={0} width={canvasSize.width} height={canvasSize.height} fill="none" stroke="#3a3f49" strokeWidth={1} />
+            <text
+              x={canvasSize.width}
+              y={canvasSize.height}
+              fill="#616870"
+              fontSize={10}
+              textAnchor="end"
+              dominantBaseline="auto"
+              dx={-4}
+              dy={-4}
+              style={{ pointerEvents: "none" }}
+            >
+              {canvasSize.width} × {canvasSize.height} px  ({(canvasSize.width * 0.02).toFixed(1)}×{(canvasSize.height * 0.02).toFixed(1)} cm)
+            </text>
             {renderGrid()}
             {shapes.map(renderShape)}
           </svg>
@@ -1424,9 +1508,67 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
             {shapes.length} shape{shapes.length !== 1 ? "s" : ""}
           </span>
           <span>
-            Canvas: {canvasWidth}×{canvasHeight}px
+            Canvas: {canvasSize.width}×{canvasSize.height}px ({(canvasSize.width * 0.02).toFixed(1)}×{(canvasSize.height * 0.02).toFixed(1)}cm)
           </span>
-          <span>Scale: 1px = 0.02cm</span>
+          <select
+            className="tikz-canvas-preset"
+            value={`${canvasSize.width}x${canvasSize.height}`}
+            onChange={(e) => {
+              const [w, h] = e.target.value.split("x").map(Number);
+              setCanvasSize({ width: w, height: h });
+            }}
+            title="Canvas dimensions preset"
+          >
+            {CANVAS_PRESETS.map((p) => (
+              <option key={`${p.width}x${p.height}`} value={`${p.width}x${p.height}`}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          <span className="tikz-zoom-controls">
+            <button
+              className="tikz-zoom-btn"
+              onClick={() => {
+                const newW = Math.max(60, viewBox.w * (1 / 1.1));
+                const newH = newW * (800 / 1200);
+                const cx = viewBox.x + viewBox.w / 2;
+                const cy = viewBox.y + viewBox.h / 2;
+                const next = { x: cx - newW / 2, y: cy - newH / 2, w: newW, h: newH };
+                setViewBox(next);
+                viewBoxRef.current = next;
+              }}
+              title="Zoom in"
+            >
+              <ZoomIn size={11} />
+            </button>
+            <span className="tikz-zoom-label">{zoomPercent}%</span>
+            <button
+              className="tikz-zoom-btn"
+              onClick={() => {
+                const newW = Math.min(24000, viewBox.w * 1.1);
+                const newH = newW * (800 / 1200);
+                const cx = viewBox.x + viewBox.w / 2;
+                const cy = viewBox.y + viewBox.h / 2;
+                const next = { x: cx - newW / 2, y: cy - newH / 2, w: newW, h: newH };
+                setViewBox(next);
+                viewBoxRef.current = next;
+              }}
+              title="Zoom out"
+            >
+              <ZoomOut size={11} />
+            </button>
+            <button
+              className="tikz-zoom-btn"
+              onClick={() => {
+                const next = { x: 0, y: 0, w: 1200, h: 800 };
+                setViewBox(next);
+                viewBoxRef.current = next;
+              }}
+              title="Reset zoom/pan (100%)"
+            >
+              &bull;
+            </button>
+          </span>
         </div>
       </div>
     </div>
