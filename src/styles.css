@@ -4684,10 +4684,62 @@ button {
 .tikz-code-footer {
   display: flex;
   gap: 14px;
+  align-items: center;
   padding: 6px 12px;
   border-top: 1px solid var(--border-subtle);
   color: #616870;
   font-size: 9px;
+}
+
+.tikz-canvas-preset {
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-input);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 9px;
+  cursor: pointer;
+  outline: none;
+  max-width: 170px;
+}
+
+.tikz-canvas-preset:hover {
+  border-color: var(--text-muted);
+}
+
+.tikz-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.tikz-zoom-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  background: transparent;
+  color: #858e9c;
+  cursor: pointer;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.tikz-zoom-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+
+.tikz-zoom-label {
+  min-width: 32px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: #858e9c;
 }
 
 /* ===== Responsive ===== */
