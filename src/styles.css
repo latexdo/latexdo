@@ -4776,6 +4776,44 @@ button {
   color: inherit;
 }
 
+.tikz-code-textarea {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 14px 16px;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: #c8cdd6;
+  font-family: "SFMono-Regular", "Cascadia Code", "Fira Code", Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.65;
+  tab-size: 2;
+}
+
+.tikz-code-textarea:focus {
+  background: #0e1116;
+}
+
+.tikz-apply-btn {
+  background: #2a7f36 !important;
+  color: #fff !important;
+  font-weight: 600;
+}
+
+.tikz-apply-btn:hover {
+  background: #34933f !important;
+}
+
+.tikz-parse-error {
+  padding: 6px 12px;
+  color: #f87171;
+  font-size: 11px;
+  background: #2d1517;
+  border-bottom: 1px solid #4a2022;
+}
+
 /* Code footer */
 
 .tikz-code-footer {
