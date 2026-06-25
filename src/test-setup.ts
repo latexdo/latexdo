@@ -29,3 +29,21 @@ if (typeof HTMLCanvasElement !== "undefined") {
     }),
   });
 }
+
+if (!("ResizeObserver" in globalThis)) {
+  Object.defineProperty(globalThis, "ResizeObserver", {
+    writable: true,
+    configurable: true,
+    value: class ResizeObserver {
+      observe() {
+        // jsdom does not perform layout, so this is intentionally empty.
+      }
+      unobserve() {
+        // jsdom does not perform layout, so this is intentionally empty.
+      }
+      disconnect() {
+        // jsdom does not perform layout, so this is intentionally empty.
+      }
+    },
+  });
+}
