@@ -5350,8 +5350,7 @@ ${macroEnd}
     const rect = container.getBoundingClientRect();
     const onPointerMove = (moveEvent: PointerEvent) => {
       const totalWidth = rect.width;
-      const maxSourceWidth =
-        totalWidth - MIN_PREVIEW_WIDTH - SPLIT_HANDLE_WIDTH;
+      const maxSourceWidth = totalWidth - MIN_PREVIEW_WIDTH - SPLIT_HANDLE_WIDTH;
       const sourceWidth = clamp(
         moveEvent.clientX - rect.left,
         MIN_SOURCE_WIDTH,
@@ -5374,8 +5373,7 @@ ${macroEnd}
     if (!container) return;
     const resizeObserver = new ResizeObserver(([entry]) => {
       const totalWidth = entry.contentRect.width;
-      const maxSourceWidth =
-        totalWidth - MIN_PREVIEW_WIDTH - SPLIT_HANDLE_WIDTH;
+      const maxSourceWidth = totalWidth - MIN_PREVIEW_WIDTH - SPLIT_HANDLE_WIDTH;
       if (maxSourceWidth <= MIN_SOURCE_WIDTH) {
         setSplitPercent(50);
         return;
