@@ -1,6 +1,7 @@
 import {
   ArrowRight,
   Circle,
+  Cloud,
   Copy,
   CornerUpRight,
   Database,
@@ -14,9 +15,11 @@ import {
   MousePointer2,
   MoveHorizontal,
   Pen,
+  Pentagon,
   Plus,
   Redo2,
   Square,
+  Star,
   Trash2,
   Triangle,
   Type,
@@ -321,6 +324,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
           case "x":
             setTool("axes");
             break;
+          // new shapes (no shortcut keys assigned)
         }
       }
     };
@@ -618,7 +622,12 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
           last.kind === "parallelogram" ||
           last.kind === "cylinder" ||
           last.kind === "grid" ||
-          last.kind === "axes") &&
+          last.kind === "axes" ||
+          last.kind === "pentagon" ||
+          last.kind === "hexagon" ||
+          last.kind === "star" ||
+          last.kind === "cloud" ||
+          last.kind === "trapezium") &&
         last.w < 4 &&
         last.h < 4
       ) {
@@ -1076,6 +1085,174 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
           </g>
         );
       }
+      case "pentagon":
+      case "hexagon": {
+        const sides = s.kind === "pentagon" ? 5 : 6;
+        const pts: string[] = [];
+        const pcx = s.x + s.w / 2;
+        const pcy = s.y + s.h / 2;
+        const prx = s.w / 2;
+        const pry = s.h / 2;
+        for (let i = 0; i < sides; i++) {
+          const angle = (Math.PI / 2) * -1 + (i * 2 * Math.PI) / sides;
+          pts.push(`${pcx + prx * Math.cos(angle)},${pcy + pry * Math.sin(angle)}`);
+        }
+        return (
+          <g key={s.id}>
+            <polygon points={pts.join(" ")} {...base} />
+            {isSelected && (
+              <rect
+                x={s.x - 2}
+                y={s.y - 2}
+                width={s.w + 4}
+                height={s.h + 4}
+                fill="none"
+                stroke="#729bf0"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+              />
+            )}
+            {s.label && (
+              <text
+                x={pcx}
+                y={pcy}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill={s.stroke}
+                fontSize={s.fontSize}
+                style={{ pointerEvents: "none" }}
+              >
+                {s.label}
+              </text>
+            )}
+          </g>
+        );
+      }
+      case "star": {
+        const scx = s.x + s.w / 2;
+        const scy = s.y + s.h / 2;
+        const outerR = Math.min(s.w, s.h) / 2;
+        const innerR = outerR * 0.4;
+        const spts: string[] = [];
+        for (let i = 0; i < 10; i++) {
+          const angle = (Math.PI / 2) * -1 + (i * Math.PI) / 5;
+          const r = i % 2 === 0 ? outerR : innerR;
+          spts.push(`${scx + r * Math.cos(angle)},${scy + r * Math.sin(angle)}`);
+        }
+        return (
+          <g key={s.id}>
+            <polygon points={spts.join(" ")} {...base} />
+            {isSelected && (
+              <rect
+                x={s.x - 2}
+                y={s.y - 2}
+                width={s.w + 4}
+                height={s.h + 4}
+                fill="none"
+                stroke="#729bf0"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+              />
+            )}
+            {s.label && (
+              <text
+                x={scx}
+                y={scy}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill={s.stroke}
+                fontSize={s.fontSize}
+                style={{ pointerEvents: "none" }}
+              >
+                {s.label}
+              </text>
+            )}
+          </g>
+        );
+      }
+      case "cloud": {
+        const ccx = s.x + s.w / 2;
+        const ccy = s.y + s.h / 2;
+        const crx = s.w / 2;
+        const cry = s.h / 2;
+        const cd = [
+          `M ${ccx - crx * 0.5} ${ccy + cry * 0.8}`,
+          `A ${crx * 0.35} ${cry * 0.35} 0 0 0 ${ccx - crx * 0.5 - 0.01} ${ccy + cry * 0.8}`,
+          `A ${crx * 0.3} ${cry * 0.3} 0 0 1 ${ccx + crx * 0.25} ${ccy - cry * 0.25}`,
+          `A ${crx * 0.35} ${cry * 0.35} 0 0 1 ${ccx + crx * 0.5} ${ccy - cry * 0.1}`,
+          `A ${crx * 0.3} ${cry * 0.3} 0 0 1 ${ccx - crx * 0.2} ${ccy + cry * 0.6}`,
+          "Z",
+        ].join(" ");
+        return (
+          <g key={s.id}>
+            <path d={cd} {...base} />
+            {isSelected && (
+              <rect
+                x={s.x - 2}
+                y={s.y - 2}
+                width={s.w + 4}
+                height={s.h + 4}
+                fill="none"
+                stroke="#729bf0"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+              />
+            )}
+            {s.label && (
+              <text
+                x={ccx}
+                y={ccy}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill={s.stroke}
+                fontSize={s.fontSize}
+                style={{ pointerEvents: "none" }}
+              >
+                {s.label}
+              </text>
+            )}
+          </g>
+        );
+      }
+      case "trapezium": {
+        const skew = s.w * 0.15;
+        const tpts = [
+          `${s.x + skew},${s.y}`,
+          `${s.x + s.w - skew},${s.y}`,
+          `${s.x + s.w},${s.y + s.h}`,
+          `${s.x},${s.y + s.h}`,
+        ].join(" ");
+        return (
+          <g key={s.id}>
+            <polygon points={tpts} {...base} />
+            {isSelected && (
+              <rect
+                x={s.x - 2}
+                y={s.y - 2}
+                width={s.w + 4}
+                height={s.h + 4}
+                fill="none"
+                stroke="#729bf0"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+              />
+            )}
+            {s.label && (
+              <text
+                x={s.x + s.w / 2}
+                y={s.y + s.h / 2}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill={s.stroke}
+                fontSize={s.fontSize}
+                style={{ pointerEvents: "none" }}
+              >
+                {s.label}
+              </text>
+            )}
+          </g>
+        );
+      }
       case "axes": {
         return (
           <g key={s.id} {...base} fill="none">
@@ -1194,6 +1371,11 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     { id: "diamond", icon: <Diamond size={16} />, label: "Diamond", key: "D" },
     { id: "triangle", icon: <Triangle size={16} />, label: "Triangle", key: "" },
     { id: "freehand", icon: <Pen size={16} />, label: "Freehand", key: "P" },
+    { id: "pentagon", icon: <Pentagon size={16} />, label: "Pentagon", key: "" },
+    { id: "hexagon", icon: <Hexagon size={16} />, label: "Hexagon", key: "" },
+    { id: "star", icon: <Star size={16} />, label: "Star", key: "" },
+    { id: "cloud", icon: <Cloud size={16} />, label: "Cloud", key: "" },
+    { id: "trapezium", icon: <CornerUpRight size={16} />, label: "Trapezium", key: "" },
     { id: "grid", icon: <Grid size={16} />, label: "Grid", key: "G" },
     { id: "axes", icon: <CornerUpRight size={16} />, label: "Axes", key: "X" },
   ];
@@ -1412,7 +1594,41 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
         {/* Selected shape properties */}
         {selectedShape && (
           <div className="tikz-selected-props">
-            <span className="tikz-prop-label">Selected: {selectedShape.kind}</span>
+            <div className="tikz-selected-props-header">
+              <span className="tikz-prop-label">Selected: {selectedShape.kind}</span>
+              <div className="tikz-zorder-controls">
+                <button
+                  className="tikz-tool-btn tikz-zorder-btn"
+                  onClick={() => {
+                    const idx = shapes.findIndex((s) => s.id === selected);
+                    if (idx > 0) {
+                      const next = [...shapes];
+                      [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+                      setShapes(next);
+                      pushHistory(next);
+                    }
+                  }}
+                  title="Send backward"
+                >
+                  &#8592;
+                </button>
+                <button
+                  className="tikz-tool-btn tikz-zorder-btn"
+                  onClick={() => {
+                    const idx = shapes.findIndex((s) => s.id === selected);
+                    if (idx < shapes.length - 1) {
+                      const next = [...shapes];
+                      [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+                      setShapes(next);
+                      pushHistory(next);
+                    }
+                  }}
+                  title="Bring forward"
+                >
+                  &#8594;
+                </button>
+              </div>
+            </div>
             <div className="tikz-selected-props-row">
               {selectedShape.kind !== "line" &&
                 selectedShape.kind !== "arrow" &&
@@ -1459,14 +1675,113 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
                     </label>
                   </>
                 )}
-              {(selectedShape.kind === "rect" ||
-                selectedShape.kind === "circle" ||
-                selectedShape.kind === "ellipse" ||
-                selectedShape.kind === "diamond" ||
-                selectedShape.kind === "triangle" ||
-                selectedShape.kind === "parallelogram" ||
-                selectedShape.kind === "cylinder" ||
-                selectedShape.kind === "text") && (
+            </div>
+            <div className="tikz-selected-props-row tikz-selected-style-row">
+              {/* Stroke color */}
+              <div className="tikz-mini-prop-group">
+                <span className="tikz-prop-label">Stroke</span>
+                <div className="tikz-color-row tikz-color-row-small">
+                  {COLORS.map((c) => (
+                    <button
+                      key={`ss-${c}`}
+                      className={`tikz-color-swatch tikz-color-swatch-sm ${
+                        selectedShape.stroke === c ? "active" : ""
+                      }`}
+                      style={{ background: c }}
+                      onClick={() => updateSelected({ stroke: c })}
+                      title={c}
+                    />
+                  ))}
+                </div>
+              </div>
+              {/* Fill color */}
+              <div className="tikz-mini-prop-group">
+                <span className="tikz-prop-label">Fill</span>
+                <div className="tikz-color-row tikz-color-row-small">
+                  <button
+                    className={`tikz-color-swatch tikz-color-swatch-sm tikz-no-fill ${
+                      selectedShape.fill === "none" ? "active" : ""
+                    }`}
+                    onClick={() => updateSelected({ fill: "none" })}
+                    title="No fill"
+                  >
+                    <Eraser size={8} />
+                  </button>
+                  {COLORS.map((c) => (
+                    <button
+                      key={`sf-${c}`}
+                      className={`tikz-color-swatch tikz-color-swatch-sm ${
+                        selectedShape.fill === c ? "active" : ""
+                      }`}
+                      style={{ background: c }}
+                      onClick={() => updateSelected({ fill: c })}
+                      title={c}
+                    />
+                  ))}
+                </div>
+              </div>
+              {/* Stroke width */}
+              <label className="tikz-mini-prop-group tikz-mini-prop-slider">
+                <span className="tikz-prop-label">Width</span>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="5"
+                  step="0.5"
+                  value={selectedShape.strokeWidth}
+                  onChange={(e) =>
+                    updateSelected({ strokeWidth: Number(e.target.value) })
+                  }
+                />
+                <span className="tikz-prop-value">{selectedShape.strokeWidth}px</span>
+              </label>
+              {/* Dashed */}
+              <label className="tikz-mini-prop-group tikz-checkbox-group">
+                <input
+                  type="checkbox"
+                  checked={selectedShape.dashed}
+                  onChange={(e) => updateSelected({ dashed: e.target.checked })}
+                />
+                <span className="tikz-prop-label">Dashed</span>
+              </label>
+              {/* Font size (text shapes) */}
+              {selectedShape.kind === "text" && (
+                <label className="tikz-mini-prop-group tikz-mini-prop-slider">
+                  <span className="tikz-prop-label">Font</span>
+                  <input
+                    type="range"
+                    min="8"
+                    max="48"
+                    step="1"
+                    value={selectedShape.fontSize}
+                    onChange={(e) =>
+                      updateSelected({ fontSize: Number(e.target.value) })
+                    }
+                  />
+                  <span className="tikz-prop-value">{selectedShape.fontSize}px</span>
+                </label>
+              )}
+              {/* Rotation */}
+              <label className="tikz-mini-prop-group tikz-mini-prop-slider">
+                <span className="tikz-prop-label">Rotate</span>
+                <input
+                  type="range"
+                  min="-180"
+                  max="180"
+                  step="5"
+                  value={selectedShape.rotation}
+                  onChange={(e) => updateSelected({ rotation: Number(e.target.value) })}
+                />
+                <span className="tikz-prop-value">{selectedShape.rotation}deg</span>
+              </label>
+            </div>
+            {(selectedShape.kind === "text" ||
+              (selectedShape.kind !== "line" &&
+                selectedShape.kind !== "arrow" &&
+                selectedShape.kind !== "freehand" &&
+                selectedShape.kind !== "grid" &&
+                selectedShape.kind !== "axes")) && (
+              <div className="tikz-selected-props-row">
                 <label className="tikz-mini-prop tikz-mini-prop-wide">
                   <span>Label</span>
                   <input
@@ -1476,8 +1791,8 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
                     placeholder="Text…"
                   />
                 </label>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         )}
       </div>

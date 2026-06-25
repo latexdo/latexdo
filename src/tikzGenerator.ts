@@ -13,7 +13,12 @@ export type ShapeKind =
   | "parallelogram"
   | "cylinder"
   | "grid"
-  | "axes";
+  | "axes"
+  | "pentagon"
+  | "hexagon"
+  | "star"
+  | "cloud"
+  | "trapezium";
 
 export interface DrawShape {
   id: string;
@@ -291,6 +296,105 @@ function genAxes(s: DrawShape, ch: number): string {
   return `  \\draw[${drawOpt}] ${pOrigin} -- ${pX} node[right] {$x$};\n  \\draw[${drawOpt}] ${pOrigin} -- ${pY} node[above] {$y$};`;
 }
 
+function genPentagon(s: DrawShape, ch: number): string {
+  const opts = drawOptions(s);
+  const cx = s.x + s.w / 2;
+  const cy = s.y + s.h / 2;
+  const rx = s.w / 2;
+  const ry = s.h / 2;
+  const pts: string[] = [];
+  for (let i = 0; i < 5; i++) {
+    const angle = (Math.PI / 2) * -1 + (i * 2 * Math.PI) / 5;
+    pts.push(tikzPt(cx + rx * Math.cos(angle), cy + ry * Math.sin(angle), ch));
+  }
+  let code = `  \\draw${opts} ${pts.join(" -- ")} -- cycle;`;
+  if (s.label) {
+    code += `\n  \\node at ${tikzPt(cx, cy, ch)} {${s.label}};`;
+  }
+  return code;
+}
+
+function genHexagon(s: DrawShape, ch: number): string {
+  const opts = drawOptions(s);
+  const cx = s.x + s.w / 2;
+  const cy = s.y + s.h / 2;
+  const rx = s.w / 2;
+  const ry = s.h / 2;
+  const pts: string[] = [];
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI / 2) * -1 + (i * 2 * Math.PI) / 6;
+    pts.push(tikzPt(cx + rx * Math.cos(angle), cy + ry * Math.sin(angle), ch));
+  }
+  let code = `  \\draw${opts} ${pts.join(" -- ")} -- cycle;`;
+  if (s.label) {
+    code += `\n  \\node at ${tikzPt(cx, cy, ch)} {${s.label}};`;
+  }
+  return code;
+}
+
+function genStar(s: DrawShape, ch: number): string {
+  const opts = drawOptions(s);
+  const cx = s.x + s.w / 2;
+  const cy = s.y + s.h / 2;
+  const outerR = Math.min(s.w, s.h) / 2;
+  const innerR = outerR * 0.4;
+  const pts: string[] = [];
+  for (let i = 0; i < 10; i++) {
+    const angle = (Math.PI / 2) * -1 + (i * Math.PI) / 5;
+    const r = i % 2 === 0 ? outerR : innerR;
+    pts.push(tikzPt(cx + r * Math.cos(angle), cy + r * Math.sin(angle), ch));
+  }
+  let code = `  \\draw${opts} ${pts.join(" -- ")} -- cycle;`;
+  if (s.label) {
+    code += `\n  \\node at ${tikzPt(cx, cy, ch)} {${s.label}};`;
+  }
+  return code;
+}
+
+function genCloud(s: DrawShape, ch: number): string {
+  const opts = drawOptions(s);
+  const cx = s.x + s.w / 2;
+  const cy = s.y + s.h / 2;
+  const rx = s.w / 2;
+  const ry = s.h / 2;
+  const cpx = round((cx - rx * 0.5) * SCALE);
+  const cpy = round((ch - (cy + ry * 0.8)) * SCALE);
+  const r1x = round(rx * 0.35 * SCALE);
+  const r1y = round(ry * 0.35 * SCALE);
+  const r2x = round(rx * 0.3 * SCALE);
+  const r2y = round(ry * 0.3 * SCALE);
+  const parts = [
+    `(${cpx},${cpy})`,
+    `arc (180:120:${r1x} and ${r1y})`,
+    `arc (90:30:${r2x} and ${r2y})`,
+    `arc (0:-60:${r1x} and ${r1y})`,
+    `arc (-90:-150:${r2x} and ${r2y})`,
+  ];
+  let code = `  \\draw${opts} ${parts.join("\n    ")} -- cycle;`;
+  if (s.label) {
+    code += `\n  \\node at ${tikzPt(cx, cy, ch)} {${s.label}};`;
+  }
+  return code;
+}
+
+function genTrapezium(s: DrawShape, ch: number): string {
+  const opts = drawOptions(s);
+  const skew = s.w * 0.15;
+  const pts = [
+    tikzPt(s.x + skew, s.y, ch),
+    tikzPt(s.x + s.w - skew, s.y, ch),
+    tikzPt(s.x + s.w, s.y + s.h, ch),
+    tikzPt(s.x, s.y + s.h, ch),
+  ];
+  let code = `  \\draw${opts} ${pts.join(" -- ")} -- cycle;`;
+  if (s.label) {
+    const cx = s.x + s.w / 2;
+    const cy = s.y + s.h / 2;
+    code += `\n  \\node at ${tikzPt(cx, cy, ch)} {${s.label}};`;
+  }
+  return code;
+}
+
 // ---------- main export ----------
 
 const generators: Record<ShapeKind, (s: DrawShape, ch: number) => string> = {
@@ -307,6 +411,11 @@ const generators: Record<ShapeKind, (s: DrawShape, ch: number) => string> = {
   cylinder: genCylinder,
   grid: genGrid,
   axes: genAxes,
+  pentagon: genPentagon,
+  hexagon: genHexagon,
+  star: genStar,
+  cloud: genCloud,
+  trapezium: genTrapezium,
 };
 
 export function generateTikzCode(
