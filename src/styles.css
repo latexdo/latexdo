@@ -4484,6 +4484,33 @@ button {
     0 12px 40px rgb(0 0 0 / 30%);
 }
 
+/* Text prompt bar */
+.tikz-text-prompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+
+.tikz-text-prompt-input {
+  flex: 1;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  outline: none;
+  background: #12151a;
+  color: #d7dce5;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.tikz-text-prompt-input:focus {
+  border-color: #5a7acc;
+}
+
 /* Selected shape properties bar */
 
 .tikz-selected-props {

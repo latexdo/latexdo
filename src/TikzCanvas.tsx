@@ -189,6 +189,8 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
   const [showGrid, setShowGrid] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
   const [drawing, setDrawing] = useState(false);
+  const [textPrompt, setTextPrompt] = useState<{ x: number; y: number } | null>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [codeMode, setCodeMode] = useState<"tikz" | "full">("tikz");
   const [copied, setCopied] = useState(false);
@@ -422,19 +424,8 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     }
 
     if (tool === "text") {
-      const label = prompt("Enter text:") || "";
-      if (!label) return;
-      const shape: DrawShape = {
-        ...defaultShape("text"),
-        x,
-        y,
-        label,
-        stroke,
-        fontSize: DEFAULT_FONT_SIZE,
-      };
-      commitShape([...currentShapes, shape]);
-      setSelected(shape.id);
-      setTool("select");
+      setTextPrompt({ x, y });
+      setDrawing(false);
       return;
     }
 
@@ -1590,6 +1581,45 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
             {shapes.map(renderShape)}
           </svg>
         </div>
+
+        {/* Text prompt (replaces window.prompt which is blocked in sandboxed Electron) */}
+        {textPrompt && (
+          <div className="tikz-text-prompt">
+            <span className="tikz-prop-label">Enter text:</span>
+            <input
+              ref={textInputRef}
+              className="tikz-text-prompt-input"
+              type="text"
+              placeholder="Text…"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const label = e.currentTarget.value.trim();
+                  if (label) {
+                    commitShape([
+                      ...shapesRef.current,
+                      {
+                        ...defaultShape("text"),
+                        x: textPrompt.x,
+                        y: textPrompt.y,
+                        label,
+                        stroke,
+                        fontSize: DEFAULT_FONT_SIZE,
+                      },
+                    ]);
+                    setTextPrompt(null);
+                    setSelected(null);
+                    setTool("select");
+                  }
+                }
+                if (e.key === "Escape") {
+                  setTextPrompt(null);
+                }
+              }}
+              onBlur={() => setTextPrompt(null)}
+            />
+          </div>
+        )}
 
         {/* Selected shape properties */}
         {selectedShape && (
