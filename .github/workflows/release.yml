@@ -175,7 +175,24 @@ jobs:
       - name: Add unsigned macOS install note
         if: ${{ steps.macos_signing.outputs.signed != 'true' }}
         shell: bash
-        run: cp .github/MACOS_UNSIGNED_INSTALL.md artifacts/README-macos-unsigned.txt
+        run: |
+          {
+            echo "# Opening the unsigned macOS build"
+            echo
+            echo "This macOS build is unsigned. macOS may block it or say it is damaged"
+            echo "the first time because it was downloaded from the internet."
+            echo
+            echo "To open LatexDo:"
+            echo
+            echo "1. Open the DMG and drag LatexDo.app into Applications."
+            echo "2. Try to open LatexDo once."
+            echo "3. If macOS blocks it or says it is damaged, open System Settings."
+            echo "4. Go to Privacy & Security."
+            echo "5. Scroll to Security and click Open Anyway for LatexDo."
+            echo "6. Confirm with Open."
+            echo
+            echo "You can also right-click LatexDo.app and choose Open."
+          } > artifacts/README-macos-unsigned.txt
 
       - uses: actions/upload-artifact@v7
         with:
