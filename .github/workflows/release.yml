@@ -30,10 +30,24 @@ jobs:
       - run: npm run typecheck
 
   build_macos:
-    name: build / macOS
+    name: build / macOS (${{ matrix.label }})
     needs: quality
-    runs-on: macos-15
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Apple Silicon
+            runner: macos-15
+            arch: arm64
+            artifact: macos-arm64
+            asset: LatexDo-macos-arm64.dmg
+          - label: Intel
+            runner: macos-15-intel
+            arch: x64
+            artifact: macos-x64
+            asset: LatexDo-macos-x64.dmg
 
     steps:
       - uses: actions/checkout@v6
@@ -57,211 +71,94 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      - name: Select macOS signing mode
-        id: macos_signing
+      - name: Configure Apple signing and notarization
         env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          LEGACY_CSC_LINK: ${{ secrets.CSC_LINK }}
+          LEGACY_CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         shell: bash
         run: |
+          certificate_p12="${MACOS_CERTIFICATE_P12:-${LEGACY_CSC_LINK:-}}"
+          certificate_password="${MACOS_CERTIFICATE_PASSWORD:-${LEGACY_CSC_KEY_PASSWORD:-}}"
+
           missing=()
-          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+          if [ -z "$certificate_p12" ]; then
+            missing+=("MACOS_CERTIFICATE_P12")
+          fi
+          if [ -z "$certificate_password" ]; then
+            missing+=("MACOS_CERTIFICATE_PASSWORD")
+          fi
+          for name in APPLE_API_KEY_P8 APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_TEAM_ID; do
             if [ -z "${!name:-}" ]; then
               missing+=("$name")
             fi
           done
 
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "signed=false" >> "$GITHUB_OUTPUT"
-            echo "macos_note=unsigned" >> "$GITHUB_OUTPUT"
-            {
-              echo "### macOS signing"
-              echo
-              echo "Building an unsigned macOS DMG because signing/notarization secrets are missing:"
-              printf -- "- %s\n" "${missing[@]}"
-              echo
-              echo "Users must allow the app in System Settings > Privacy & Security after download."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+            echo "::error::Refusing to publish a macOS release without Developer ID signing and notarization. Missing: ${missing[*]}"
+            exit 1
           fi
 
-          echo "signed=true" >> "$GITHUB_OUTPUT"
-          echo "macos_note=signed and notarized" >> "$GITHUB_OUTPUT"
+          api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          if ! printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$api_key_path"; then
+            echo "::error::APPLE_API_KEY_P8 must be base64-encoded .p8 content."
+            exit 1
+          fi
+          chmod 600 "$api_key_path"
 
-      - name: Package signed macOS DMG
-        if: ${{ steps.macos_signing.outputs.signed == 'true' }}
-        env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          {
+            echo "CSC_LINK=$certificate_p12"
+            echo "CSC_KEY_PASSWORD=$certificate_password"
+            echo "APPLE_API_KEY=$api_key_path"
+            echo "APPLE_API_KEY_ID=$APPLE_API_KEY_ID"
+            echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+            echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+          } >> "$GITHUB_ENV"
+
+      - name: Disable Spotlight indexing
+        run: sudo mdutil -a -i off
+
+      - name: Sign, notarize, and package macOS DMG
         run: >
           npx electron-builder
-          --mac dmg
-          --arm64
+          --mac dmg zip
+          --${{ matrix.arch }}
           --publish never
-          --config.mac.forceCodeSigning=true
-          --config.mac.notarize=true
-          --config.directories.output=release/macos
+          --config.forceCodeSigning=true
+          --config.directories.output=release/${{ matrix.arch }}
 
-      - name: Package unsigned macOS DMG
-        if: ${{ steps.macos_signing.outputs.signed != 'true' }}
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Test packaged macOS application
         shell: bash
         run: |
-          unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
-          npx electron-builder \
-            --mac dmg \
-            --arm64 \
-            --publish never \
-            --config.mac.identity=- \
-            --config.directories.output=release/macos
+          executable="$(find "release/${{ matrix.arch }}" -type f -path '*/LatexDo.app/Contents/MacOS/LatexDo' -print -quit)"
+          if [ -z "$executable" ]; then
+            echo "The packaged macOS executable was not found."
+            exit 1
+          fi
+          "$executable" --smoke-test
 
       - name: Prepare artifact
         shell: bash
         run: |
-          pkg="$(find release/macos -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          pkg="$(find "release/${{ matrix.arch }}" -maxdepth 1 -type f -name '*.dmg' -print -quit)"
           [ -n "$pkg" ] || { echo "No DMG produced"; exit 1; }
           mkdir -p artifacts
-          cp "$pkg" artifacts/LatexDo-macos-arm64.dmg
+          cp "$pkg" "artifacts/${{ matrix.asset }}"
 
-      - name: Add unsigned macOS launcher to DMG
-        if: ${{ steps.macos_signing.outputs.signed != 'true' }}
-        shell: bash
-        run: |
-          helper_dir="$(mktemp -d)"
-          helper_path="$helper_dir/Open LatexDo.command"
-          cat > "$helper_path" <<'SCRIPT'
-          #!/bin/bash
-          set -euo pipefail
-
-          APP_NAME="LatexDo.app"
-          SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-          SOURCE_APP="$SCRIPT_DIR/$APP_NAME"
-          SYSTEM_APP="/Applications/$APP_NAME"
-          USER_APPS="$HOME/Applications"
-          USER_APP="$USER_APPS/$APP_NAME"
-
-          if [ -d "$SYSTEM_APP" ]; then
-            TARGET_APP="$SYSTEM_APP"
-          else
-            if [ ! -d "$SOURCE_APP" ]; then
-              osascript -e 'display alert "LatexDo.app was not found" message "Open this helper from the mounted LatexDo DMG, next to LatexDo.app."'
-              exit 1
-            fi
-
-            TARGET_APP="$SYSTEM_APP"
-            if [ ! -w "/Applications" ]; then
-              mkdir -p "$USER_APPS"
-              TARGET_APP="$USER_APP"
-            fi
-
-            rm -rf "$TARGET_APP"
-            ditto "$SOURCE_APP" "$TARGET_APP"
-          fi
-
-          xattr -dr com.apple.quarantine "$TARGET_APP" 2>/dev/null || true
-          open "$TARGET_APP"
-          SCRIPT
-          sed -i '' 's/^          //' "$helper_path"
-          chmod +x "$helper_path"
-
-          rw_base="$(mktemp -u "${RUNNER_TEMP:-/tmp}/latexdo-rw.XXXXXX")"
-          final_base="$(mktemp -u "${RUNNER_TEMP:-/tmp}/latexdo-final.XXXXXX")"
-          rw_dmg="${rw_base}.dmg"
-          final_dmg="${final_base}.dmg"
-          mount_dir="$(mktemp -d)"
-
-          cleanup() {
-            hdiutil detach "$mount_dir" -quiet || true
-            rm -rf "$mount_dir" "$helper_dir" "$rw_dmg" "$final_dmg"
-          }
-          trap cleanup EXIT
-
-          hdiutil convert artifacts/LatexDo-macos-arm64.dmg -format UDRW -o "$rw_base"
-          hdiutil resize -size 1g "$rw_dmg"
-          hdiutil attach "$rw_dmg" -nobrowse -readwrite -mountpoint "$mount_dir"
-          cp "$helper_path" "$mount_dir/Open LatexDo.command"
-          hdiutil detach "$mount_dir" -quiet
-
-          hdiutil convert "$rw_dmg" -format UDZO -o "$final_base"
-          mv "$final_dmg" artifacts/LatexDo-macos-arm64.dmg
-
-      - name: Verify macOS notarization
-        if: ${{ steps.macos_signing.outputs.signed == 'true' }}
-        shell: bash
-        run: |
-          mount_dir="$(mktemp -d)"
-          cleanup() {
-            hdiutil detach "$mount_dir" -quiet || true
-            rm -rf "$mount_dir"
-          }
-          trap cleanup EXIT
-
-          hdiutil attach artifacts/LatexDo-macos-arm64.dmg \
-            -nobrowse \
-            -readonly \
-            -mountpoint "$mount_dir"
-
-          app_path="$(find "$mount_dir" -maxdepth 1 -name '*.app' -print -quit)"
-          [ -n "$app_path" ] || { echo "No app bundle found in DMG"; exit 1; }
-
-          codesign --verify --deep --strict --verbose=2 "$app_path"
-          xcrun stapler validate "$app_path"
-          spctl --assess --type execute --verbose=4 "$app_path"
-
-      - name: Verify unsigned macOS DMG mounts
-        if: ${{ steps.macos_signing.outputs.signed != 'true' }}
-        shell: bash
-        run: |
-          mount_dir="$(mktemp -d)"
-          cleanup() {
-            hdiutil detach "$mount_dir" -quiet || true
-            rm -rf "$mount_dir"
-          }
-          trap cleanup EXIT
-
-          hdiutil attach artifacts/LatexDo-macos-arm64.dmg \
-            -nobrowse \
-            -readonly \
-            -mountpoint "$mount_dir"
-
-          app_path="$(find "$mount_dir" -maxdepth 1 -name '*.app' -print -quit)"
-          [ -n "$app_path" ] || { echo "No app bundle found in DMG"; exit 1; }
-          test -x "$mount_dir/Open LatexDo.command"
-
-      - name: Add unsigned macOS install note
-        if: ${{ steps.macos_signing.outputs.signed != 'true' }}
-        shell: bash
-        run: |
-          {
-            echo "# Opening the unsigned macOS build"
-            echo
-            echo "This macOS build is unsigned. macOS may block it or say it is damaged"
-            echo "the first time because it was downloaded from the internet."
-            echo
-            echo "To open LatexDo:"
-            echo
-            echo "1. Open the DMG."
-            echo "2. Double-click Open LatexDo.command."
-            echo "3. The helper copies LatexDo to Applications or ~/Applications,"
-            echo "   removes the macOS quarantine flag, and opens the app."
-            echo
-            echo "If you already dragged LatexDo.app into Applications, run the helper anyway."
-            echo
-            echo "Manual fallback:"
-            echo "xattr -dr com.apple.quarantine /Applications/LatexDo.app"
-            echo "open /Applications/LatexDo.app"
-          } > artifacts/README-macos-unsigned.txt
+      - name: Verify Gatekeeper acceptance
+        run: >
+          bash scripts/verify-macos-release.sh
+          "artifacts/${{ matrix.asset }}"
+          "$APPLE_TEAM_ID"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: latexdo-macos
+          name: latexdo-${{ matrix.artifact }}
           path: artifacts/*
           if-no-files-found: error
           retention-days: 1
@@ -346,6 +243,9 @@ jobs:
         shell: bash
         run: |
           cd artifacts
+          test -f LatexDo-macos-arm64.dmg
+          test -f LatexDo-macos-x64.dmg
+          test -f LatexDo-windows-x64.exe
           sha256sum *.dmg *.exe > SHA256SUMS.txt
 
       - name: Delete old rolling release and tag
@@ -371,15 +271,9 @@ jobs:
               ;;
           esac
 
-          if [ -f artifacts/README-macos-unsigned.txt ]; then
-            notes="${notes}
+          notes="${notes}
 
-          macOS: this DMG is unsigned. If macOS says LatexDo is damaged, open the DMG and double-click Open LatexDo.command. The helper removes quarantine and opens the app. The release includes README-macos-unsigned.txt with the same steps."
-          else
-            notes="${notes}
-
-          macOS: this DMG is signed and notarized."
-          fi
+          macOS: Apple Silicon and Intel DMGs are signed, notarized, and verified with Gatekeeper before publishing."
 
           gh release create rolling \
             --repo "${{ github.repository }}" \
@@ -394,17 +288,9 @@ jobs:
         run: |
           gh release upload rolling \
             --repo "${{ github.repository }}" \
-            artifacts/LatexDo-macos-arm64.dmg --clobber
-
-      - name: Upload unsigned macOS install note
-        if: ${{ hashFiles('artifacts/README-macos-unsigned.txt') != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          gh release upload rolling \
-            --repo "${{ github.repository }}" \
-            artifacts/README-macos-unsigned.txt --clobber
+            artifacts/LatexDo-macos-arm64.dmg \
+            artifacts/LatexDo-macos-x64.dmg \
+            --clobber
 
       - name: Upload Windows artifact
         env:

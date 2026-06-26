@@ -85,21 +85,55 @@ jobs:
       - name: Build application
         run: npm run build
 
-      - name: Package macOS DMG
+      - name: Package macOS app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: >
           npx electron-builder
-          --mac dmg
+          --mac dir
           --arm64
           --publish never
           --config.mac.identity=-
+          --config.mac.hardenedRuntime=false
+          --config.mac.notarize=false
           --config.directories.output=release/macos
+
+      - name: Ad-hoc sign macOS app
+        shell: bash
+        run: |
+          app_path="$(find release/macos -type d -name 'LatexDo.app' -print -quit)"
+          if [ -z "$app_path" ]; then
+            echo "The packaged macOS app bundle was not found."
+            exit 1
+          fi
+          codesign --force --deep --sign - "$app_path"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          echo "MACOS_APP_PATH=$app_path" >> "$GITHUB_ENV"
+
+      - name: Test packaged macOS application
+        shell: bash
+        run: |
+          executable="$MACOS_APP_PATH/Contents/MacOS/LatexDo"
+          if [ ! -x "$executable" ]; then
+            echo "The packaged macOS executable was not found."
+            exit 1
+          fi
+          "$executable" --smoke-test
+
+      - name: Package macOS DMG
+        run: >
+          npx electron-builder
+          --mac dmg
+          --arm64
+          --prepackaged "$MACOS_APP_PATH"
+          --publish never
+          --config.mac.notarize=false
+          --config.directories.output=release/macos-dmg
 
       - name: Prepare macOS artifact
         shell: bash
         run: |
-          package_path="$(find release/macos -maxdepth 1 -type f -name '*.dmg' -print -quit)"
+          package_path="$(find release/macos-dmg -maxdepth 1 -type f -name '*.dmg' -print -quit)"
           if [ -z "$package_path" ]; then
             echo "No macOS DMG was produced."
             exit 1
@@ -107,6 +141,9 @@ jobs:
 
           mkdir -p artifacts
           cp "$package_path" artifacts/LatexDo-macos-arm64.dmg
+
+      - name: Verify ad-hoc macOS signature
+        run: bash scripts/verify-macos-adhoc-release.sh artifacts/LatexDo-macos-arm64.dmg
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v7
