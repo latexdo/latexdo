@@ -111,6 +111,7 @@ export interface SyncTexPdfLocation {
   v: number;
   width: number;
   height: number;
+  word?: string;
 }
 
 export interface GitStatusEntry {

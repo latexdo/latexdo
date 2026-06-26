@@ -1,10 +1,6 @@
 name: latexdo-release
 
 on:
-  pull_request:
-    types: [closed]
-    branches:
-      - main
   push:
     branches:
       - main
@@ -19,7 +15,6 @@ concurrency:
 
 jobs:
   quality:
-    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     name: test / typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -39,6 +34,12 @@ jobs:
     needs: quality
     runs-on: macos-15
     timeout-minutes: 30
+    env:
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
     steps:
       - uses: actions/checkout@v6
@@ -62,15 +63,29 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+      - name: Validate macOS signing secrets
+        shell: bash
+        run: |
+          missing=()
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf 'Missing GitHub Actions secrets required for signed macOS releases: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
       - name: Package macOS DMG
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: >
           npx electron-builder
           --mac dmg
           --arm64
           --publish never
-          --config.mac.identity=-
+          --config.mac.forceCodeSigning=true
+          --config.mac.notarize=true
           --config.directories.output=release/macos
 
       - name: Prepare artifact
@@ -80,6 +95,28 @@ jobs:
           [ -n "$pkg" ] || { echo "No DMG produced"; exit 1; }
           mkdir -p artifacts
           cp "$pkg" artifacts/LatexDo-macos-arm64.dmg
+
+      - name: Verify macOS notarization
+        shell: bash
+        run: |
+          mount_dir="$(mktemp -d)"
+          cleanup() {
+            hdiutil detach "$mount_dir" -quiet || true
+            rm -rf "$mount_dir"
+          }
+          trap cleanup EXIT
+
+          hdiutil attach artifacts/LatexDo-macos-arm64.dmg \
+            -nobrowse \
+            -readonly \
+            -mountpoint "$mount_dir"
+
+          app_path="$(find "$mount_dir" -maxdepth 1 -name '*.app' -print -quit)"
+          [ -n "$app_path" ] || { echo "No app bundle found in DMG"; exit 1; }
+
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          xcrun stapler validate "$app_path"
+          spctl --assess --type execute --verbose=4 "$app_path"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -181,20 +218,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
           GIT_SHA: ${{ github.sha }}
         shell: bash
         run: |
           case "$EVENT_NAME" in
-            pull_request)
-              notes="Automated build from PR #${PR_NUMBER}: ${PR_TITLE}"
-              ;;
             push)
-              notes="Automated build from main at ${GIT_SHA}."
+              notes="Signed and notarized automated build from main at ${GIT_SHA}."
               ;;
             *)
-              notes="Manual rolling build from ${GIT_SHA}."
+              notes="Signed and notarized manual rolling build from ${GIT_SHA}."
               ;;
           esac
 

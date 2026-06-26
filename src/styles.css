@@ -2560,7 +2560,14 @@ button {
   overflow: hidden;
   background: white;
   box-shadow: 0 8px 24px rgb(0 0 0 / 28%);
-  cursor: text;
+  cursor: pointer;
+  transition: box-shadow 120ms ease;
+}
+
+.pdf-page:hover {
+  box-shadow:
+    0 0 0 1px rgb(93 139 235 / 34%),
+    0 10px 28px rgb(0 0 0 / 30%);
 }
 
 .pdf-page canvas {
@@ -2653,6 +2660,24 @@ button {
   to {
     background: rgb(93 139 235 / 30%);
     box-shadow: 0 0 0 2px rgb(93 139 235 / 12%);
+  }
+}
+
+.monaco-editor .source-sync-highlight {
+  border-bottom: 2px solid rgb(56 118 244 / 92%);
+  background: rgb(88 166 255 / 24%);
+  animation: source-sync-flash 1.8s ease-out;
+}
+
+@keyframes source-sync-flash {
+  from {
+    background: rgb(88 166 255 / 42%);
+    box-shadow: 0 0 0 3px rgb(88 166 255 / 22%);
+  }
+
+  to {
+    background: rgb(88 166 255 / 8%);
+    box-shadow: 0 0 0 0 rgb(88 166 255 / 0%);
   }
 }
 
