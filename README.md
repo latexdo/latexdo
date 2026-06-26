@@ -37,5 +37,17 @@ After the `latexdo-ci` workflow succeeds, download the
 - `LatexDo-windows-x64.exe`
 - `SHA256SUMS.txt`
 
-The CI installers are unsigned development builds. Public distribution requires
-Apple code signing/notarization and Windows code signing.
+The CI macOS installer is an ad-hoc signed development build. Public macOS
+releases are built by `latexdo-release` and require Developer ID signing and
+notarization secrets:
+
+- `MACOS_CERTIFICATE_P12`
+- `MACOS_CERTIFICATE_PASSWORD`
+- `APPLE_API_KEY_P8` as base64-encoded `.p8` content
+- `APPLE_API_KEY_ID`
+- `APPLE_API_ISSUER`
+- `APPLE_TEAM_ID`
+
+The release workflow refuses to publish macOS DMGs when those secrets are
+missing, because unsigned downloaded apps can be blocked by Gatekeeper as
+damaged.

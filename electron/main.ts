@@ -56,6 +56,8 @@ const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
 const appIconPath = path.join(currentDirectory, "..", "build", "icon.png");
 const execFileAsync = promisify(execFile);
+const startupSmokeTest = process.argv.includes("--smoke-test");
+const startupSmokeTimeoutMs = 20_000;
 const githubReleasesPageUrl = "https://github.com/latexdo/latexdo/releases";
 const githubLatestReleaseUrl =
   "https://api.github.com/repos/latexdo/latexdo/releases/latest";
@@ -1943,7 +1945,7 @@ async function listProject(
   });
 }
 
-function createWindow(): void {
+function createWindow(): BrowserWindow {
   console.log("[latexdo] createWindow:start");
   nativeTheme.themeSource = "dark";
   const window = new BrowserWindow({
@@ -1986,6 +1988,74 @@ function createWindow(): void {
   } else {
     void window.loadFile(path.join(currentDirectory, "..", "dist", "index.html"));
   }
+
+  return window;
+}
+
+function waitForRendererLoad(window: BrowserWindow): Promise<void> {
+  if (!window.webContents.isLoadingMainFrame()) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("Renderer did not finish loading before the timeout."));
+    }, startupSmokeTimeoutMs);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      window.webContents.off("did-finish-load", handleFinish);
+      window.webContents.off("did-fail-load", handleFailure);
+    };
+
+    const handleFinish = () => {
+      cleanup();
+      resolve();
+    };
+
+    const handleFailure = (
+      _event: Electron.Event,
+      errorCode: number,
+      errorDescription: string,
+      validatedURL: string,
+    ) => {
+      cleanup();
+      reject(
+        new Error(
+          `Renderer failed to load ${validatedURL}: ${errorCode} ${errorDescription}`,
+        ),
+      );
+    };
+
+    window.webContents.once("did-finish-load", handleFinish);
+    window.webContents.once("did-fail-load", handleFailure);
+  });
+}
+
+async function runStartupSmokeTest(window: BrowserWindow): Promise<void> {
+  await waitForRendererLoad(window);
+
+  const result = (await window.webContents.executeJavaScript(`
+    (() => {
+      const root = document.getElementById("root");
+      return {
+        title: document.title,
+        rootChildCount: root?.childElementCount ?? 0,
+        hasLatexDoText: document.body?.innerText?.includes("LatexDo") ?? false,
+      };
+    })()
+  `)) as { title?: string; rootChildCount?: number; hasLatexDoText?: boolean };
+
+  if (
+    result.title !== "LatexDo" ||
+    !result.rootChildCount ||
+    result.hasLatexDoText !== true
+  ) {
+    throw new Error(`Renderer smoke test failed: ${JSON.stringify(result)}`);
+  }
+
+  console.log("[latexdo] packaged startup smoke test passed", result);
 }
 
 app.whenReady().then(() => {
@@ -2471,8 +2541,18 @@ app.whenReady().then(() => {
     return backwardSyncTex(projectPath, pdfPath, page, x, y);
   });
 
-  createWindow();
+  const window = createWindow();
   console.log("[latexdo] app:window-opened");
+  if (startupSmokeTest) {
+    void runStartupSmokeTest(window)
+      .then(() => app.exit(0))
+      .catch((error) => {
+        console.error("[latexdo] packaged startup smoke test failed", error);
+        app.exit(1);
+      });
+    return;
+  }
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();

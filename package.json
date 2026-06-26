@@ -80,7 +80,16 @@
       "target": [
         "dmg",
         "zip"
-      ]
+      ],
+      "type": "distribution",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "notarize": true,
+      "extendInfo": {
+        "NSDocumentsFolderUsageDescription": "LatexDo needs access to open and save LaTeX projects in your Documents folder.",
+        "NSDownloadsFolderUsageDescription": "LatexDo needs access to export generated PDFs and project files to Downloads."
+      }
     },
     "win": {
       "target": "nsis"
