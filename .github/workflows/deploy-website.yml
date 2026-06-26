@@ -1,0 +1,63 @@
+name: deploy-website
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "website/**"
+      - "build/icon.svg"
+      - ".github/workflows/deploy-website.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-website
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: deploy / latexdo.github.io
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare static website
+        shell: bash
+        run: |
+          mkdir -p website/assets
+          cp build/icon.svg website/assets/icon.svg
+
+      - name: Select deploy mode
+        id: deploy_mode
+        env:
+          LATEXDO_WEBSITE_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "$LATEXDO_WEBSITE_TOKEN" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Website deploy skipped"
+              echo
+              echo "Set the LATEXDO_WEBSITE_TOKEN repository secret with write access to latexdo/latexdo.github.io to publish automatically."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to latexdo.github.io
+        if: ${{ steps.deploy_mode.outputs.enabled == 'true' }}
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          external_repository: latexdo/latexdo.github.io
+          publish_branch: main
+          publish_dir: ./website
+          personal_token: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
+          user_name: github-actions[bot]
+          user_email: 41898282+github-actions[bot]@users.noreply.github.com
+          commit_message: Deploy website from latexdo@${{ github.sha }}

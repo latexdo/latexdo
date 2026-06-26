@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Try a browser preview of LatexDo, the focused desktop LaTeX editor with source editing, PDF preview, diagnostics, review tools, and local compilation."
+    />
+    <title>LatexDo - Try the LaTeX editor in your browser</title>
+    <link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <nav class="nav-shell" aria-label="Primary navigation">
+        <a class="brand" href="#demo" aria-label="LatexDo home">
+          <img src="assets/icon.svg" alt="" width="34" height="34" />
+          <span>LatexDo</span>
+        </a>
+        <div class="nav-links">
+          <a href="#demo">Try editor</a>
+          <a href="#why-install">Benefits</a>
+          <a href="#screens">Screens</a>
+          <a href="https://github.com/latexdo/latexdo/releases">Download</a>
+          <a href="https://github.com/latexdo/latexdo">GitHub</a>
+        </div>
+      </nav>
+    </header>
+
+    <main>
+      <section id="demo" class="demo-hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">Browser preview - no install needed</p>
+          <h1 id="hero-title">LatexDo</h1>
+          <p class="hero-lede">
+            Test the editing flow in the browser, then install the desktop app for real
+            local LaTeX builds, SyncTeX, PDF preview, and project files.
+          </p>
+          <div class="hero-actions">
+            <a
+              class="button primary"
+              href="https://github.com/latexdo/latexdo/releases"
+            >
+              Download desktop app
+            </a>
+            <a class="button secondary" href="#why-install">See what you get</a>
+          </div>
+        </div>
+
+        <div class="demo-workspace" aria-label="LatexDo browser demo">
+          <div class="workspace-topbar">
+            <div class="traffic" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <div class="project-meta">
+              <strong>paper.tex</strong>
+              <span id="build-state">Ready</span>
+            </div>
+            <div class="mode-switch" aria-label="Demo mode">
+              <button class="mode active" type="button" data-mode="author">
+                Author
+              </button>
+              <button class="mode" type="button" data-mode="review">Review</button>
+              <button class="mode" type="button" data-mode="rebuttal">Rebuttal</button>
+            </div>
+            <div class="toolbar-actions">
+              <button
+                id="insert-citation"
+                class="icon-button"
+                type="button"
+                title="Insert citation"
+              >
+                Cite
+              </button>
+              <button
+                id="fix-error"
+                class="icon-button"
+                type="button"
+                title="Fix demo error"
+              >
+                Fix
+              </button>
+              <button
+                id="sync-source"
+                class="icon-button"
+                type="button"
+                title="Jump from PDF to source"
+              >
+                Sync
+              </button>
+              <button id="compile-demo" class="button compact" type="button">
+                Compile
+              </button>
+            </div>
+          </div>
+
+          <div class="workspace-grid">
+            <section class="source-panel" aria-labelledby="source-title">
+              <div class="panel-title">
+                <span id="source-title">Source</span>
+                <span id="source-file">main.tex</span>
+              </div>
+              <div class="editor-shell">
+                <ol id="editor-lines" class="line-numbers" aria-hidden="true"></ol>
+                <textarea
+                  id="source-editor"
+                  spellcheck="false"
+                  aria-label="Editable LaTeX source demo"
+                ></textarea>
+              </div>
+            </section>
+
+            <section class="preview-panel" aria-labelledby="preview-title">
+              <div class="panel-title">
+                <span id="preview-title">PDF Preview</span>
+                <span id="pdf-page-count">1 page</span>
+              </div>
+              <div class="pdf-stage">
+                <article
+                  id="pdf-page"
+                  class="pdf-page"
+                  aria-label="Simulated PDF output"
+                >
+                  <p class="paper-label">LatexDo Browser Preview</p>
+                  <h2 id="pdf-title">A Better Way to Write Papers</h2>
+                  <p id="pdf-abstract" class="pdf-abstract">
+                    Compile the sample to generate a clean paper preview.
+                  </p>
+                  <div id="pdf-sections" class="pdf-sections"></div>
+                  <div class="pdf-equation" data-token="\\begin{equation}">
+                    L(\theta) = \sum_i \log p(y_i | x_i, \theta)
+                  </div>
+                  <p class="pdf-footer">
+                    Click a section in the preview to jump back to source.
+                  </p>
+                </article>
+              </div>
+            </section>
+
+            <aside class="inspector-panel" aria-labelledby="inspector-title">
+              <div class="panel-title">
+                <span id="inspector-title">Checks</span>
+                <span id="check-count">0 issues</span>
+              </div>
+              <div class="score-strip">
+                <div>
+                  <span class="metric" id="word-count">0</span>
+                  <span>words</span>
+                </div>
+                <div>
+                  <span class="metric" id="citation-count">0</span>
+                  <span>citations</span>
+                </div>
+                <div>
+                  <span class="metric" id="section-count">0</span>
+                  <span>sections</span>
+                </div>
+              </div>
+              <ul
+                id="diagnostics"
+                class="diagnostics"
+                aria-label="Demo diagnostics"
+              ></ul>
+              <div class="install-panel">
+                <strong>Install LatexDo for the real engine</strong>
+                <p>
+                  Local TeX builds, project files, SyncTeX, terminal access, and desktop
+                  PDF export.
+                </p>
+              </div>
+            </aside>
+          </div>
+
+          <div class="workspace-status" role="status">
+            <span id="status-dot" class="status-dot"></span>
+            <span id="status-text">Edit the source or press Compile.</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="why-install" class="section-band">
+        <div class="section-inner">
+          <div class="section-heading">
+            <p class="eyebrow">Why install the desktop app</p>
+            <h2>Everything serious paper writing needs, without browser limits.</h2>
+          </div>
+          <div class="benefit-grid">
+            <article class="benefit-card">
+              <span class="benefit-kicker">Local builds</span>
+              <h3>Compile real projects with your TeX distribution.</h3>
+              <p>
+                LatexDo talks to `latexmk`, reads the generated PDF, and keeps the build
+                output connected to the exact source that caused it.
+              </p>
+            </article>
+            <article class="benefit-card">
+              <span class="benefit-kicker">PDF workflow</span>
+              <h3>Move between source and PDF like a professional editor.</h3>
+              <p>
+                Forward and inverse SyncTeX navigation keep the preview and source in
+                sync while you edit long papers, figures, equations, and rebuttals.
+              </p>
+            </article>
+            <article class="benefit-card">
+              <span class="benefit-kicker">Paper intelligence</span>
+              <h3>Catch problems before reviewers or submission systems do.</h3>
+              <p>
+                Diagnostics, structure checks, citation checks, PDF compliance checks,
+                and review tools sit beside the source instead of hiding in logs.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="screens" class="screens-section">
+        <div class="section-inner">
+          <div class="section-heading">
+            <p class="eyebrow">Product pictures</p>
+            <h2>A complete writing room for LaTeX projects.</h2>
+          </div>
+          <div class="screen-grid">
+            <figure class="screen-shot">
+              <div class="shot-editor">
+                <div class="shot-bar"></div>
+                <div class="shot-lines">
+                  <span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <div class="shot-pdf">
+                  <strong>PDF</strong>
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+              <figcaption>
+                Source and PDF stay visible in one focused workspace.
+              </figcaption>
+            </figure>
+            <figure class="screen-shot">
+              <div class="shot-checks">
+                <div class="check-row ok"></div>
+                <div class="check-row warn"></div>
+                <div class="check-row"></div>
+                <div class="check-row"></div>
+                <div class="mini-report"></div>
+              </div>
+              <figcaption>
+                Compiler output becomes actionable checks instead of noise.
+              </figcaption>
+            </figure>
+            <figure class="screen-shot">
+              <div class="shot-review">
+                <div class="comment-card"></div>
+                <div class="comment-card active"></div>
+                <div class="reply-block"></div>
+              </div>
+              <figcaption>
+                Review and rebuttal workflows live next to the paper.
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="download-section">
+        <div class="download-inner">
+          <div>
+            <p class="eyebrow">Ready for the native app?</p>
+            <h2>Use the browser demo, then install LatexDo for real local work.</h2>
+          </div>
+          <a class="button primary" href="https://github.com/latexdo/latexdo/releases">
+            Download latest release
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>LatexDo</span>
+      <a href="https://github.com/latexdo/latexdo">Source</a>
+      <a href="https://github.com/latexdo/latexdo/issues">Issues</a>
+      <a href="https://github.com/latexdo/latexdo/releases">Releases</a>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>

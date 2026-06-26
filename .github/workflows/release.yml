@@ -130,6 +130,68 @@ jobs:
           mkdir -p artifacts
           cp "$pkg" artifacts/LatexDo-macos-arm64.dmg
 
+      - name: Add unsigned macOS launcher to DMG
+        if: ${{ steps.macos_signing.outputs.signed != 'true' }}
+        shell: bash
+        run: |
+          helper_dir="$(mktemp -d)"
+          helper_path="$helper_dir/Open LatexDo.command"
+          cat > "$helper_path" <<'SCRIPT'
+          #!/bin/bash
+          set -euo pipefail
+
+          APP_NAME="LatexDo.app"
+          SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+          SOURCE_APP="$SCRIPT_DIR/$APP_NAME"
+          SYSTEM_APP="/Applications/$APP_NAME"
+          USER_APPS="$HOME/Applications"
+          USER_APP="$USER_APPS/$APP_NAME"
+
+          if [ -d "$SYSTEM_APP" ]; then
+            TARGET_APP="$SYSTEM_APP"
+          else
+            if [ ! -d "$SOURCE_APP" ]; then
+              osascript -e 'display alert "LatexDo.app was not found" message "Open this helper from the mounted LatexDo DMG, next to LatexDo.app."'
+              exit 1
+            fi
+
+            TARGET_APP="$SYSTEM_APP"
+            if [ ! -w "/Applications" ]; then
+              mkdir -p "$USER_APPS"
+              TARGET_APP="$USER_APP"
+            fi
+
+            rm -rf "$TARGET_APP"
+            ditto "$SOURCE_APP" "$TARGET_APP"
+          fi
+
+          xattr -dr com.apple.quarantine "$TARGET_APP" 2>/dev/null || true
+          open "$TARGET_APP"
+          SCRIPT
+          sed -i '' 's/^          //' "$helper_path"
+          chmod +x "$helper_path"
+
+          rw_base="$(mktemp -u "${RUNNER_TEMP:-/tmp}/latexdo-rw.XXXXXX")"
+          final_base="$(mktemp -u "${RUNNER_TEMP:-/tmp}/latexdo-final.XXXXXX")"
+          rw_dmg="${rw_base}.dmg"
+          final_dmg="${final_base}.dmg"
+          mount_dir="$(mktemp -d)"
+
+          cleanup() {
+            hdiutil detach "$mount_dir" -quiet || true
+            rm -rf "$mount_dir" "$helper_dir" "$rw_dmg" "$final_dmg"
+          }
+          trap cleanup EXIT
+
+          hdiutil convert artifacts/LatexDo-macos-arm64.dmg -format UDRW -o "$rw_base"
+          hdiutil resize -size 1g "$rw_dmg"
+          hdiutil attach "$rw_dmg" -nobrowse -readwrite -mountpoint "$mount_dir"
+          cp "$helper_path" "$mount_dir/Open LatexDo.command"
+          hdiutil detach "$mount_dir" -quiet
+
+          hdiutil convert "$rw_dmg" -format UDZO -o "$final_base"
+          mv "$final_dmg" artifacts/LatexDo-macos-arm64.dmg
+
       - name: Verify macOS notarization
         if: ${{ steps.macos_signing.outputs.signed == 'true' }}
         shell: bash
@@ -171,6 +233,7 @@ jobs:
 
           app_path="$(find "$mount_dir" -maxdepth 1 -name '*.app' -print -quit)"
           [ -n "$app_path" ] || { echo "No app bundle found in DMG"; exit 1; }
+          test -x "$mount_dir/Open LatexDo.command"
 
       - name: Add unsigned macOS install note
         if: ${{ steps.macos_signing.outputs.signed != 'true' }}
@@ -184,14 +247,16 @@ jobs:
             echo
             echo "To open LatexDo:"
             echo
-            echo "1. Open the DMG and drag LatexDo.app into Applications."
-            echo "2. Try to open LatexDo once."
-            echo "3. If macOS blocks it or says it is damaged, open System Settings."
-            echo "4. Go to Privacy & Security."
-            echo "5. Scroll to Security and click Open Anyway for LatexDo."
-            echo "6. Confirm with Open."
+            echo "1. Open the DMG."
+            echo "2. Double-click Open LatexDo.command."
+            echo "3. The helper copies LatexDo to Applications or ~/Applications,"
+            echo "   removes the macOS quarantine flag, and opens the app."
             echo
-            echo "You can also right-click LatexDo.app and choose Open."
+            echo "If you already dragged LatexDo.app into Applications, run the helper anyway."
+            echo
+            echo "Manual fallback:"
+            echo "xattr -dr com.apple.quarantine /Applications/LatexDo.app"
+            echo "open /Applications/LatexDo.app"
           } > artifacts/README-macos-unsigned.txt
 
       - uses: actions/upload-artifact@v7
@@ -309,7 +374,7 @@ jobs:
           if [ -f artifacts/README-macos-unsigned.txt ]; then
             notes="${notes}
 
-          macOS: this DMG is unsigned. After installing, open System Settings > Privacy & Security and choose Open Anyway for LatexDo if macOS blocks it or says it is damaged. The release includes README-macos-unsigned.txt with the same steps."
+          macOS: this DMG is unsigned. If macOS says LatexDo is damaged, open the DMG and double-click Open LatexDo.command. The helper removes quarantine and opens the app. The release includes README-macos-unsigned.txt with the same steps."
           else
             notes="${notes}
 
