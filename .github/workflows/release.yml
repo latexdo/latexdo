@@ -63,7 +63,8 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      - name: Validate macOS signing secrets
+      - name: Select macOS signing mode
+        id: macos_signing
         shell: bash
         run: |
           missing=()
@@ -74,11 +75,24 @@ jobs:
           done
 
           if [ "${#missing[@]}" -gt 0 ]; then
-            printf 'Missing GitHub Actions secrets required for signed macOS releases: %s\n' "${missing[*]}" >&2
-            exit 1
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "macos_note=unsigned" >> "$GITHUB_OUTPUT"
+            {
+              echo "### macOS signing"
+              echo
+              echo "Building an unsigned macOS DMG because signing/notarization secrets are missing:"
+              printf -- "- %s\n" "${missing[@]}"
+              echo
+              echo "Users must allow the app in System Settings > Privacy & Security after download."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
 
-      - name: Package macOS DMG
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          echo "macos_note=signed and notarized" >> "$GITHUB_OUTPUT"
+
+      - name: Package signed macOS DMG
+        if: ${{ steps.macos_signing.outputs.signed == 'true' }}
         run: >
           npx electron-builder
           --mac dmg
@@ -86,6 +100,18 @@ jobs:
           --publish never
           --config.mac.forceCodeSigning=true
           --config.mac.notarize=true
+          --config.directories.output=release/macos
+
+      - name: Package unsigned macOS DMG
+        if: ${{ steps.macos_signing.outputs.signed != 'true' }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: >
+          npx electron-builder
+          --mac dmg
+          --arm64
+          --publish never
+          --config.mac.identity=-
           --config.directories.output=release/macos
 
       - name: Prepare artifact
@@ -97,6 +123,7 @@ jobs:
           cp "$pkg" artifacts/LatexDo-macos-arm64.dmg
 
       - name: Verify macOS notarization
+        if: ${{ steps.macos_signing.outputs.signed == 'true' }}
         shell: bash
         run: |
           mount_dir="$(mktemp -d)"
@@ -118,10 +145,34 @@ jobs:
           xcrun stapler validate "$app_path"
           spctl --assess --type execute --verbose=4 "$app_path"
 
+      - name: Verify unsigned macOS DMG mounts
+        if: ${{ steps.macos_signing.outputs.signed != 'true' }}
+        shell: bash
+        run: |
+          mount_dir="$(mktemp -d)"
+          cleanup() {
+            hdiutil detach "$mount_dir" -quiet || true
+            rm -rf "$mount_dir"
+          }
+          trap cleanup EXIT
+
+          hdiutil attach artifacts/LatexDo-macos-arm64.dmg \
+            -nobrowse \
+            -readonly \
+            -mountpoint "$mount_dir"
+
+          app_path="$(find "$mount_dir" -maxdepth 1 -name '*.app' -print -quit)"
+          [ -n "$app_path" ] || { echo "No app bundle found in DMG"; exit 1; }
+
+      - name: Add unsigned macOS install note
+        if: ${{ steps.macos_signing.outputs.signed != 'true' }}
+        shell: bash
+        run: cp .github/MACOS_UNSIGNED_INSTALL.md artifacts/README-macos-unsigned.txt
+
       - uses: actions/upload-artifact@v7
         with:
           name: latexdo-macos
-          path: artifacts/LatexDo-macos-arm64.dmg
+          path: artifacts/*
           if-no-files-found: error
           retention-days: 1
 
@@ -223,12 +274,22 @@ jobs:
         run: |
           case "$EVENT_NAME" in
             push)
-              notes="Signed and notarized automated build from main at ${GIT_SHA}."
+              notes="Automated build from main at ${GIT_SHA}."
               ;;
             *)
-              notes="Signed and notarized manual rolling build from ${GIT_SHA}."
+              notes="Manual rolling build from ${GIT_SHA}."
               ;;
           esac
+
+          if [ -f artifacts/README-macos-unsigned.txt ]; then
+            notes="${notes}
+
+          macOS: this DMG is unsigned. After installing, open System Settings > Privacy & Security and choose Open Anyway for LatexDo if macOS blocks it or says it is damaged. The release includes README-macos-unsigned.txt with the same steps."
+          else
+            notes="${notes}
+
+          macOS: this DMG is signed and notarized."
+          fi
 
           gh release create rolling \
             --repo "${{ github.repository }}" \
@@ -244,6 +305,16 @@ jobs:
           gh release upload rolling \
             --repo "${{ github.repository }}" \
             artifacts/LatexDo-macos-arm64.dmg --clobber
+
+      - name: Upload unsigned macOS install note
+        if: ${{ hashFiles('artifacts/README-macos-unsigned.txt') != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release upload rolling \
+            --repo "${{ github.repository }}" \
+            artifacts/README-macos-unsigned.txt --clobber
 
       - name: Upload Windows artifact
         env:
