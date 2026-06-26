@@ -56,7 +56,24 @@ vi.mock("./monaco", () => ({
 }));
 
 vi.mock("./PdfPreview", () => ({
-  default: () => <div data-testid="mock-pdf-preview" />,
+  default: ({
+    onNavigate,
+  }: {
+    onNavigate: (location: {
+      page: number;
+      x: number;
+      y: number;
+      word?: string;
+    }) => void;
+  }) => (
+    <button
+      type="button"
+      data-testid="mock-pdf-preview"
+      onDoubleClick={() => onNavigate({ page: 2, x: 42, y: 84, word: "Text" })}
+    >
+      PDF preview
+    </button>
+  ),
 }));
 
 vi.mock("./TikzCanvas", () => ({
@@ -179,6 +196,7 @@ function installLatexDoMock(options?: {
     }),
     compile: vi.fn().mockResolvedValue({
       ok: true,
+      pdfPath: "main.pdf",
       durationMs: 12,
       output: "",
       diagnostics: [],
@@ -360,5 +378,36 @@ describe("App critical UI controls", () => {
     await waitFor(() => {
       expect(api.discardAllGit).toHaveBeenCalledWith("project-1");
     });
+  });
+
+  it("uses PDF inverse search to open the matching source line", async () => {
+    const api = installLatexDoMock();
+    api.backwardSyncTex.mockResolvedValue({
+      file: "main.tex",
+      line: 3,
+      column: 1,
+    });
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    fireEvent.click(screen.getByTitle("Compile"));
+
+    await waitFor(() => {
+      expect(api.readPdf).toHaveBeenCalledWith("project-1", "main.pdf");
+    });
+
+    fireEvent.doubleClick(await screen.findByTestId("mock-pdf-preview"));
+
+    await waitFor(() => {
+      expect(api.backwardSyncTex).toHaveBeenCalledWith(
+        "project-1",
+        "main.pdf",
+        2,
+        42,
+        84,
+      );
+    });
+    expect(await screen.findByText("Opened main.tex:3 from PDF")).toBeVisible();
   });
 });

@@ -1549,6 +1549,9 @@ export default function App() {
     endColumn?: number;
     word?: string;
   } | null>(null);
+  const sourceSyncDecorationsRef = useRef<string[]>([]);
+  const sourceSyncClearTimerRef = useRef<number | null>(null);
+  const backwardSyncRunIdRef = useRef(0);
   const lastAutoCompileSignatureRef = useRef("");
   const compileRunIdRef = useRef(0);
   const historySaveTimerRef = useRef<number | null>(null);
@@ -2926,6 +2929,38 @@ ${macroEnd}
     editor.setSelection(range);
     editor.revealRangeInCenter(range, monaco.editor.ScrollType.Smooth);
     editor.focus();
+
+    if (sourceSyncClearTimerRef.current !== null) {
+      window.clearTimeout(sourceSyncClearTimerRef.current);
+      sourceSyncClearTimerRef.current = null;
+    }
+    sourceSyncDecorationsRef.current = editor.deltaDecorations(
+      sourceSyncDecorationsRef.current,
+      [
+        {
+          range,
+          options: {
+            className: "source-sync-highlight",
+            stickiness:
+              monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+            hoverMessage: { value: "PDF inverse search target" },
+          },
+        },
+      ],
+    );
+    sourceSyncClearTimerRef.current = window.setTimeout(() => {
+      const currentEditor = editorRef.current;
+      if (currentEditor) {
+        sourceSyncDecorationsRef.current = currentEditor.deltaDecorations(
+          sourceSyncDecorationsRef.current,
+          [],
+        );
+      } else {
+        sourceSyncDecorationsRef.current = [];
+      }
+      sourceSyncClearTimerRef.current = null;
+    }, 1800);
+
     pendingSourceRef.current = null;
     return true;
   }, []);
@@ -2985,8 +3020,16 @@ ${macroEnd}
     async (pdfLocation: PdfClickLocation) => {
       const pdfPath = pdfPathRef.current;
       if (!pdfPath) {
+        setStatusMessage("Compile successfully before using PDF inverse search");
         return;
       }
+
+      const syncRunId = backwardSyncRunIdRef.current + 1;
+      backwardSyncRunIdRef.current = syncRunId;
+      const sourceIsDirty = documentsRef.current.some(
+        (document) => document.content !== document.savedContent,
+      );
+      setStatusMessage("Finding source location from PDF...");
 
       try {
         const location: SyncTexSourceLocation | null =
@@ -2997,8 +3040,13 @@ ${macroEnd}
             pdfLocation.x,
             pdfLocation.y,
           );
+        if (syncRunId !== backwardSyncRunIdRef.current) {
+          return;
+        }
         if (!location) {
-          setStatusMessage("No source location was found for this PDF position");
+          setStatusMessage(
+            "No source location was found. Compile again if the PDF is stale.",
+          );
           return;
         }
 
@@ -3024,8 +3072,15 @@ ${macroEnd}
         requestAnimationFrame(() => {
           revealPendingSource();
         });
-        setStatusMessage(`Opened ${entry.relativePath}:${location.line}`);
+        setStatusMessage(
+          sourceIsDirty
+            ? `Opened ${entry.relativePath}:${location.line} from PDF. Compile if the jump looks stale.`
+            : `Opened ${entry.relativePath}:${location.line} from PDF`,
+        );
       } catch (error) {
+        if (syncRunId !== backwardSyncRunIdRef.current) {
+          return;
+        }
         setStatusMessage(
           error instanceof Error ? error.message : "Could not synchronize source",
         );
@@ -3801,6 +3856,17 @@ ${macroEnd}
   useEffect(
     () => () => {
       editorMouseDisposableRef.current?.dispose();
+      if (sourceSyncClearTimerRef.current !== null) {
+        window.clearTimeout(sourceSyncClearTimerRef.current);
+        sourceSyncClearTimerRef.current = null;
+      }
+      const editor = editorRef.current;
+      if (editor) {
+        sourceSyncDecorationsRef.current = editor.deltaDecorations(
+          sourceSyncDecorationsRef.current,
+          [],
+        );
+      }
       if (historySaveTimerRef.current !== null) {
         window.clearTimeout(historySaveTimerRef.current);
       }

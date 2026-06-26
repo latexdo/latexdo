@@ -254,7 +254,8 @@ function PdfPage({
     pageRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [cssScale, pageNumber, rendered, target]);
 
-  const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+  const handleDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
     const bounds = event.currentTarget.getBoundingClientRect();
     onNavigate({
       page: pageNumber,
@@ -269,7 +270,8 @@ function PdfPage({
       ref={pageRef}
       className="pdf-page"
       data-page-number={pageNumber}
-      onClick={handleClick}
+      title="Double-click to jump to source"
+      onDoubleClick={handleDoubleClick}
     >
       <canvas ref={canvasRef} />
       <div ref={textLayerRef} className="textLayer" />
