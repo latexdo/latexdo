@@ -100,8 +100,10 @@ jobs:
           done
 
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::Refusing to publish a macOS release without Developer ID signing and notarization. Missing: ${missing[*]}"
-            exit 1
+            echo "::warning::Apple signing is disabled because these secrets are missing: ${missing[*]}"
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "MACOS_SIGNING_ENABLED=false" >> "$GITHUB_ENV"
+            exit 0
           fi
 
           api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
@@ -118,12 +120,14 @@ jobs:
             echo "APPLE_API_KEY_ID=$APPLE_API_KEY_ID"
             echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
             echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+            echo "MACOS_SIGNING_ENABLED=true"
           } >> "$GITHUB_ENV"
 
       - name: Disable Spotlight indexing
         run: sudo mdutil -a -i off
 
       - name: Sign, notarize, and package macOS DMG
+        if: env.MACOS_SIGNING_ENABLED == 'true'
         run: >
           npx electron-builder
           --mac dmg zip
@@ -132,10 +136,42 @@ jobs:
           --config.forceCodeSigning=true
           --config.directories.output=release/${{ matrix.arch }}
 
+      - name: Package ad-hoc signed macOS DMG
+        if: env.MACOS_SIGNING_ENABLED != 'true'
+        shell: bash
+        run: |
+          npx electron-builder \
+            --mac dir \
+            --${{ matrix.arch }} \
+            --publish never \
+            --config.mac.identity=- \
+            --config.mac.hardenedRuntime=false \
+            --config.mac.notarize=false \
+            --config.directories.output=release/${{ matrix.arch }}-app
+
+          app_path="$(find "release/${{ matrix.arch }}-app" -type d -name 'LatexDo.app' -print -quit)"
+          if [ -z "$app_path" ]; then
+            echo "The packaged macOS app bundle was not found."
+            exit 1
+          fi
+
+          codesign --force --deep --sign - "$app_path"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+
+          npx electron-builder \
+            --mac dmg \
+            --${{ matrix.arch }} \
+            --prepackaged "$app_path" \
+            --publish never \
+            --config.mac.identity=- \
+            --config.mac.hardenedRuntime=false \
+            --config.mac.notarize=false \
+            --config.directories.output=release/${{ matrix.arch }}
+
       - name: Test packaged macOS application
         shell: bash
         run: |
-          executable="$(find "release/${{ matrix.arch }}" -type f -path '*/LatexDo.app/Contents/MacOS/LatexDo' -print -quit)"
+          executable="$(find "release/${{ matrix.arch }}" "release/${{ matrix.arch }}-app" -type f -path '*/LatexDo.app/Contents/MacOS/LatexDo' -print -quit 2>/dev/null || true)"
           if [ -z "$executable" ]; then
             echo "The packaged macOS executable was not found."
             exit 1
@@ -151,10 +187,17 @@ jobs:
           cp "$pkg" "artifacts/${{ matrix.asset }}"
 
       - name: Verify Gatekeeper acceptance
+        if: env.MACOS_SIGNING_ENABLED == 'true'
         run: >
           bash scripts/verify-macos-release.sh
           "artifacts/${{ matrix.asset }}"
           "$APPLE_TEAM_ID"
+
+      - name: Verify ad-hoc macOS signature
+        if: env.MACOS_SIGNING_ENABLED != 'true'
+        run: >
+          bash scripts/verify-macos-adhoc-release.sh
+          "artifacts/${{ matrix.asset }}"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -273,7 +316,7 @@ jobs:
 
           notes="${notes}
 
-          macOS: Apple Silicon and Intel DMGs are signed, notarized, and verified with Gatekeeper before publishing."
+          macOS: Apple Silicon and Intel DMGs are Developer ID signed and notarized when Apple credentials are configured. Otherwise, the release uses ad-hoc signed DMGs that require approval in macOS Privacy & Security."
 
           gh release create rolling \
             --repo "${{ github.repository }}" \

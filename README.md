@@ -38,8 +38,8 @@ After the `latexdo-ci` workflow succeeds, download the
 - `SHA256SUMS.txt`
 
 The CI macOS installer is an ad-hoc signed development build. Public macOS
-releases are built by `latexdo-release` and require Developer ID signing and
-notarization secrets:
+releases are built by `latexdo-release`. When configured, the release workflow
+uses Developer ID signing and notarization secrets:
 
 - `MACOS_CERTIFICATE_P12`
 - `MACOS_CERTIFICATE_PASSWORD`
@@ -48,6 +48,6 @@ notarization secrets:
 - `APPLE_API_ISSUER`
 - `APPLE_TEAM_ID`
 
-The release workflow refuses to publish macOS DMGs when those secrets are
-missing, because unsigned downloaded apps can be blocked by Gatekeeper as
-damaged.
+When those secrets are missing, the release workflow still publishes ad-hoc
+signed macOS DMGs. macOS users may need to allow the app from Privacy &
+Security before opening it.
