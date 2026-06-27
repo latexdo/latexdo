@@ -49,6 +49,10 @@ sync_website_repo() {
 
   npm --prefix "$SOURCE_DIR/website" ci
   npm --prefix "$SOURCE_DIR/website" run build
+  (
+    cd "$SOURCE_DIR"
+    npx prettier --write website/assets/site.js website/index.html website/style.css
+  )
 
   log "Syncing website repo: $WEBSITE_REPO"
   rsync -a --delete \

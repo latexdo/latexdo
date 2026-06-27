@@ -1024,11 +1024,7 @@ h3 {
 
 .command-line code {
   white-space: nowrap;
-  font-family:
-    "SFMono-Regular",
-    Consolas,
-    "Liberation Mono",
-    monospace;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 14px;
 }
 
