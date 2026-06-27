@@ -326,3 +326,10 @@ jobs:
           user_name: github-actions[bot]
           user_email: 41898282+github-actions[bot]@users.noreply.github.com
           commit_message: Publish LatexDo downloads from latexdo@${{ github.sha }}
+
+      - name: Verify deployed downloads
+        if: ${{ steps.deploy_mode.outputs.enabled == 'true' }}
+        env:
+          LATEXDO_VERIFY_RETRIES: 24
+          LATEXDO_VERIFY_DELAY_MS: 10000
+        run: node scripts/verify-deployed-downloads.mjs https://latexdo.github.io/downloads/
