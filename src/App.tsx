@@ -2375,7 +2375,7 @@ ${macroEnd}
   useEffect(() => {
     const runtime = (window.latexdo as typeof window.latexdo & { runtime?: string })
       .runtime;
-    if (runtime !== "browser" || browserAutoOpenRef.current) {
+    if ((runtime !== "browser" && runtime !== "cloud") || browserAutoOpenRef.current) {
       return;
     }
 
