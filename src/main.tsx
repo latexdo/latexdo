@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import appIconUrl from "../build/icon.svg";
 import App from "./App";
+import { installBrowserApis } from "./browserApi";
 import "./styles.css";
 
 const favicon =
@@ -14,6 +15,8 @@ favicon.href = appIconUrl;
 if (!favicon.parentElement) {
   document.head.appendChild(favicon);
 }
+
+installBrowserApis();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

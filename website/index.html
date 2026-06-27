@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Try a browser preview of LatexDo, the focused desktop LaTeX editor with source editing, PDF preview, diagnostics, review tools, and local compilation."
+      content="Open the LatexDo web editor in your browser, or install the focused desktop LaTeX editor for local compilation, PDF preview, diagnostics, and review tools."
     />
-    <title>LatexDo - Try the LaTeX editor in your browser</title>
+    <title>LatexDo - Web and desktop LaTeX editor</title>
     <link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
     <link rel="stylesheet" href="style.css" />
   </head>
@@ -19,7 +19,7 @@
           <span>LatexDo</span>
         </a>
         <div class="nav-links">
-          <a href="#demo">Try editor</a>
+          <a class="nav-editor-link" href="https://editor.latexdo.org"> Open editor </a>
           <a href="#why-install">Benefits</a>
           <a href="#screens">Screens</a>
           <a href="https://github.com/latexdo/latexdo/releases">Download</a>
@@ -31,20 +31,23 @@
     <main>
       <section id="demo" class="demo-hero" aria-labelledby="hero-title">
         <div class="hero-copy">
-          <p class="eyebrow">Browser preview - no install needed</p>
+          <p class="eyebrow">Web editor + desktop app</p>
           <h1 id="hero-title">LatexDo</h1>
           <p class="hero-lede">
-            Test the editing flow in the browser, then install the desktop app for real
-            local LaTeX builds, SyncTeX, PDF preview, and project files.
+            Open the real LatexDo editor in your browser at editor.latexdo.org, then
+            install the desktop app when you need local LaTeX builds, SyncTeX, terminal
+            access, and PDF export.
           </p>
           <div class="hero-actions">
+            <a class="button primary" href="https://editor.latexdo.org">
+              Open web editor
+            </a>
             <a
-              class="button primary"
+              class="button secondary"
               href="https://github.com/latexdo/latexdo/releases"
             >
               Download desktop app
             </a>
-            <a class="button secondary" href="#why-install">See what you get</a>
           </div>
         </div>
 
@@ -165,11 +168,12 @@
                 aria-label="Demo diagnostics"
               ></ul>
               <div class="install-panel">
-                <strong>Install LatexDo for the real engine</strong>
+                <strong>Open the real editor online</strong>
                 <p>
-                  Local TeX builds, project files, SyncTeX, terminal access, and desktop
-                  PDF export.
+                  Use editor.latexdo.org for browser editing. Install the desktop app
+                  for local TeX builds, SyncTeX, terminal access, and PDF export.
                 </p>
+                <a href="https://editor.latexdo.org">Open web editor</a>
               </div>
             </aside>
           </div>
@@ -267,18 +271,27 @@
       <section class="download-section">
         <div class="download-inner">
           <div>
-            <p class="eyebrow">Ready for the native app?</p>
-            <h2>Use the browser demo, then install LatexDo for real local work.</h2>
+            <p class="eyebrow">Start writing</p>
+            <h2>Open the web editor now, or install LatexDo for native builds.</h2>
           </div>
-          <a class="button primary" href="https://github.com/latexdo/latexdo/releases">
-            Download latest release
-          </a>
+          <div class="download-actions">
+            <a class="button primary" href="https://editor.latexdo.org">
+              Open web editor
+            </a>
+            <a
+              class="button secondary"
+              href="https://github.com/latexdo/latexdo/releases"
+            >
+              Download latest release
+            </a>
+          </div>
         </div>
       </section>
     </main>
 
     <footer class="site-footer">
       <span>LatexDo</span>
+      <a href="https://editor.latexdo.org">Editor</a>
       <a href="https://github.com/latexdo/latexdo">Source</a>
       <a href="https://github.com/latexdo/latexdo/issues">Issues</a>
       <a href="https://github.com/latexdo/latexdo/releases">Releases</a>

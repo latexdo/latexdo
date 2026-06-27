@@ -96,8 +96,24 @@ a {
   text-decoration: none;
 }
 
+.nav-links .nav-editor-link {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid var(--blue);
+  border-radius: 8px;
+  background: var(--blue);
+  color: white;
+}
+
 .nav-links a:hover {
   color: var(--blue);
+}
+
+.nav-links .nav-editor-link:hover {
+  background: var(--blue-dark);
+  color: white;
 }
 
 .demo-hero {
@@ -567,9 +583,20 @@ h3 {
 }
 
 .install-panel p {
-  margin-bottom: 0;
+  margin-bottom: 10px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.install-panel a {
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.install-panel a:hover {
+  color: var(--blue-dark);
 }
 
 .workspace-status {
@@ -793,6 +820,13 @@ h3 {
   gap: 28px;
 }
 
+.download-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .download-inner h2 {
   max-width: 680px;
 }
@@ -891,6 +925,10 @@ h3 {
   .download-inner {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .download-actions {
+    justify-content: flex-start;
   }
 }
 
