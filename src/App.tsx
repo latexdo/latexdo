@@ -1556,6 +1556,7 @@ export default function App() {
   const compileRunIdRef = useRef(0);
   const historySaveTimerRef = useRef<number | null>(null);
   const historyAutoCaptureTimerRef = useRef<number | null>(null);
+  const browserAutoOpenRef = useRef(false);
 
   const activeDocument = documents.find((document) => document.path === activePath);
   const activeDocumentIsLatex = activeDocument
@@ -2370,6 +2371,30 @@ ${macroEnd}
     },
     [loadHistoryData, loadReviewData, openDocument],
   );
+
+  useEffect(() => {
+    const runtime = (window.latexdo as typeof window.latexdo & { runtime?: string })
+      .runtime;
+    if (runtime !== "browser" || browserAutoOpenRef.current) {
+      return;
+    }
+
+    browserAutoOpenRef.current = true;
+    void (async () => {
+      try {
+        const project = await window.latexdo.openProject();
+        if (project) {
+          await loadProject(project, true, false);
+        }
+      } catch (error) {
+        setStatusMessage(
+          error instanceof Error
+            ? error.message
+            : "Could not open the browser workspace.",
+        );
+      }
+    })();
+  }, [loadProject]);
 
   const saveDocument = useCallback(async (document: OpenDocument) => {
     const currentProject = projectIdRef.current;
