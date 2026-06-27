@@ -1,0 +1,364 @@
+#!/usr/bin/env sh
+set -eu
+
+APP_REPO_DEFAULT="https://github.com/latexdo/latexdo.git"
+APP_BRANCH_DEFAULT="main"
+HOST_DEFAULT="127.0.0.1"
+PORT_DEFAULT="5173"
+
+LATEXDO_HOME="${LATEXDO_HOME:-$HOME/.latexdo}"
+APP_DIR="${LATEXDO_APP_DIR:-$LATEXDO_HOME/app}"
+APP_REPO="${LATEXDO_APP_REPO:-$APP_REPO_DEFAULT}"
+APP_BRANCH="${LATEXDO_APP_BRANCH:-$APP_BRANCH_DEFAULT}"
+HOST="${LATEXDO_HOST:-$HOST_DEFAULT}"
+PORT="${LATEXDO_PORT:-$PORT_DEFAULT}"
+SKIP_UPDATE="${LATEXDO_SKIP_UPDATE:-0}"
+NO_OPEN="${LATEXDO_NO_OPEN:-0}"
+
+command_exists() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+log() {
+  printf '%s\n' "$*"
+}
+
+warn() {
+  printf 'latexdo: %s\n' "$*" >&2
+}
+
+die() {
+  warn "$*"
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+LatexDo CLI
+
+Usage:
+  latexdo [open] [--host HOST] [--port PORT] [--no-update]
+  latexdo update
+  latexdo doctor
+  latexdo path
+  latexdo reset
+  latexdo help
+
+Environment:
+  LATEXDO_HOME       Cache directory. Default: ~/.latexdo
+  LATEXDO_APP_REPO   Source repository. Default: https://github.com/latexdo/latexdo.git
+  LATEXDO_APP_BRANCH Source branch. Default: main
+  LATEXDO_HOST       Local bind host. Default: 127.0.0.1
+  LATEXDO_PORT       Preferred local port. Default: 5173
+  LATEXDO_NO_OPEN    Set to 1 to print the localhost URL without opening a browser
+EOF
+}
+
+require_tool() {
+  command_exists "$1" || die "$1 is required. Install it and run latexdo again."
+}
+
+require_runtime_tools() {
+  require_tool git
+  require_tool node
+  require_tool npm
+
+  node_major="$(node -p "Number(process.versions.node.split('.')[0])" 2>/dev/null || printf '0')"
+  if [ "$node_major" -lt 20 ]; then
+    die "Node.js 20 or newer is required. Current version: $(node --version 2>/dev/null || printf 'unknown')"
+  fi
+}
+
+file_hash() {
+  if command_exists shasum; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command_exists sha256sum; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    cksum "$1" | awk '{print $1 "-" $2}'
+  fi
+}
+
+url_reachable() {
+  url="$1"
+  if command_exists curl; then
+    curl -fsS --max-time 1 "$url" >/dev/null 2>&1
+    return $?
+  fi
+
+  node -e "
+const url = process.argv[1];
+const controller = new AbortController();
+const timer = setTimeout(() => controller.abort(), 1000);
+fetch(url, { signal: controller.signal })
+  .then((response) => process.exit(response.status > 0 ? 0 : 1))
+  .catch(() => process.exit(1))
+  .finally(() => clearTimeout(timer));
+" "$url" >/dev/null 2>&1
+}
+
+find_free_port() {
+  node - "$HOST" "$1" <<'NODE'
+const net = require("node:net");
+const host = process.argv[2];
+let port = Number(process.argv[3]);
+
+function portStatus(candidate) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once("error", (error) => {
+      if (error && error.code === "EADDRINUSE") {
+        resolve("busy");
+        return;
+      }
+      resolve(`error:${error?.code || error?.message || "unknown"}`);
+    });
+    server.once("listening", () => {
+      server.close(() => resolve("free"));
+    });
+    server.listen(candidate, host);
+  });
+}
+
+(async () => {
+  while (port < 65536) {
+    const status = await portStatus(port);
+    if (status === "free") {
+      console.log(port);
+      return;
+    }
+    if (status !== "busy") {
+      throw new Error(`Cannot bind ${host}:${port} (${status.slice(6)}).`);
+    }
+    port += 1;
+  }
+  throw new Error(`No free port found at or above ${process.argv[3]}.`);
+})().catch((error) => {
+  console.error(error.message);
+  process.exit(1);
+});
+NODE
+}
+
+open_browser() {
+  url="$1"
+  case "$(uname -s 2>/dev/null || printf unknown)" in
+    Darwin)
+      open "$url" >/dev/null 2>&1 || log "Open $url"
+      ;;
+    Linux)
+      if command_exists xdg-open; then
+        xdg-open "$url" >/dev/null 2>&1 || log "Open $url"
+      else
+        log "Open $url"
+      fi
+      ;;
+    MINGW*|MSYS*|CYGWIN*)
+      cmd.exe /c start "" "$url" >/dev/null 2>&1 || log "Open $url"
+      ;;
+    *)
+      log "Open $url"
+      ;;
+  esac
+}
+
+sync_source() {
+  mkdir -p "$LATEXDO_HOME"
+
+  if [ ! -d "$APP_DIR/.git" ]; then
+    if [ -e "$APP_DIR" ]; then
+      die "$APP_DIR exists but is not a git checkout. Move it away or run: latexdo reset"
+    fi
+    log "Cloning LatexDo source into $APP_DIR"
+    git clone --depth 1 --branch "$APP_BRANCH" "$APP_REPO" "$APP_DIR"
+    return
+  fi
+
+  if [ "$SKIP_UPDATE" = "1" ]; then
+    return
+  fi
+
+  log "Checking for LatexDo updates"
+  if git -C "$APP_DIR" fetch --depth 1 origin "$APP_BRANCH"; then
+    git -C "$APP_DIR" checkout -q "$APP_BRANCH"
+    git -C "$APP_DIR" reset --hard "origin/$APP_BRANCH" >/dev/null
+  else
+    warn "Could not update from $APP_REPO. Using cached source at $APP_DIR."
+  fi
+}
+
+install_dependencies() {
+  [ -f "$APP_DIR/package.json" ] || die "LatexDo source is missing package.json at $APP_DIR"
+
+  cd "$APP_DIR"
+
+  if [ -f package-lock.json ]; then
+    current_hash="$(file_hash package-lock.json)"
+    state_file="$LATEXDO_HOME/package-lock.sha256"
+    previous_hash=""
+    [ -f "$state_file" ] && previous_hash="$(cat "$state_file")"
+
+    if [ ! -d node_modules ] || [ "$current_hash" != "$previous_hash" ]; then
+      log "Installing LatexDo npm dependencies"
+      npm ci
+      printf '%s\n' "$current_hash" >"$state_file"
+    fi
+    return
+  fi
+
+  if [ ! -d node_modules ]; then
+    log "Installing LatexDo npm dependencies"
+    npm install
+  fi
+}
+
+update_app() {
+  require_runtime_tools
+  sync_source
+  install_dependencies
+  log "LatexDo is ready at $APP_DIR"
+}
+
+serve_app() {
+  require_runtime_tools
+  sync_source
+  install_dependencies
+
+  preferred_url="http://$HOST:$PORT"
+  if url_reachable "$preferred_url"; then
+    log "Using existing LatexDo editor at $preferred_url"
+    if [ "$NO_OPEN" = "1" ]; then
+      log "$preferred_url"
+    else
+      open_browser "$preferred_url"
+    fi
+    return
+  fi
+
+  resolved_port="$(find_free_port "$PORT")"
+  url="http://$HOST:$resolved_port"
+  log "Starting LatexDo editor at $url"
+
+  cd "$APP_DIR"
+  npm exec vite -- --host "$HOST" --port "$resolved_port" --strictPort &
+  server_pid="$!"
+
+  cleanup() {
+    if kill -0 "$server_pid" >/dev/null 2>&1; then
+      kill "$server_pid" >/dev/null 2>&1 || true
+    fi
+  }
+  trap cleanup INT TERM EXIT
+
+  attempts=0
+  while [ "$attempts" -lt 120 ]; do
+    if url_reachable "$url"; then
+      if [ "$NO_OPEN" = "1" ]; then
+        log "LatexDo editor ready at $url"
+      else
+        open_browser "$url"
+      fi
+      wait "$server_pid"
+      exit $?
+    fi
+
+    if ! kill -0 "$server_pid" >/dev/null 2>&1; then
+      wait "$server_pid"
+      exit $?
+    fi
+
+    attempts=$((attempts + 1))
+    sleep 0.25
+  done
+
+  warn "Vite did not become reachable at $url"
+  wait "$server_pid"
+}
+
+doctor() {
+  log "LatexDo CLI doctor"
+  log "home: $LATEXDO_HOME"
+  log "app:  $APP_DIR"
+  log "repo: $APP_REPO#$APP_BRANCH"
+
+  for tool in git node npm curl; do
+    if command_exists "$tool"; then
+      case "$tool" in
+        node) log "$tool: $(node --version)" ;;
+        npm) log "$tool: $(npm --version)" ;;
+        *) log "$tool: $(command -v "$tool")" ;;
+      esac
+    else
+      warn "$tool: missing"
+    fi
+  done
+
+  if command_exists latexmk; then
+    log "latexmk: $(command -v latexmk)"
+  else
+    warn "latexmk: missing. Browser editing works, but local PDF compilation needs a TeX distribution."
+  fi
+}
+
+reset_app() {
+  if [ -d "$APP_DIR" ]; then
+    rm -rf "$APP_DIR"
+    rm -f "$LATEXDO_HOME/package-lock.sha256"
+    log "Removed cached LatexDo app at $APP_DIR"
+  else
+    log "No cached LatexDo app found at $APP_DIR"
+  fi
+}
+
+command_name="open"
+if [ "${1:-}" != "" ]; then
+  case "$1" in
+    open|serve|update|doctor|path|reset|help|--help|-h)
+      command_name="$1"
+      shift
+      ;;
+  esac
+fi
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --host)
+      [ "$#" -ge 2 ] || die "--host needs a value"
+      HOST="$2"
+      shift 2
+      ;;
+    --port)
+      [ "$#" -ge 2 ] || die "--port needs a value"
+      PORT="$2"
+      shift 2
+      ;;
+    --no-update)
+      SKIP_UPDATE="1"
+      shift
+      ;;
+    *)
+      die "Unknown option: $1"
+      ;;
+  esac
+done
+
+case "$command_name" in
+  open|serve)
+    serve_app
+    ;;
+  update)
+    update_app
+    ;;
+  doctor)
+    doctor
+    ;;
+  path)
+    printf '%s\n' "$APP_DIR"
+    ;;
+  reset)
+    reset_app
+    ;;
+  help|--help|-h)
+    usage
+    ;;
+esac

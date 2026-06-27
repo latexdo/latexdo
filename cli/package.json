@@ -1,0 +1,18 @@
+{
+  "name": "latexdo-cli",
+  "version": "0.1.0",
+  "description": "Command-line installer and launcher for the LatexDo local web editor.",
+  "license": "MIT",
+  "bin": {
+    "latexdo": "bin/latexdo"
+  },
+  "files": [
+    "bin/latexdo",
+    "install.sh",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "doctor": "bin/latexdo doctor"
+  }
+}

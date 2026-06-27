@@ -21,6 +21,34 @@ npm run dev
 
 Use `Cmd/Ctrl + Enter` to compile and `Cmd/Ctrl + S` to save.
 
+To run only the browser editor on localhost:
+
+```bash
+npm run web
+```
+
+## CLI
+
+The `latexdo` command is published from the sibling
+[`latexdo-cli`](https://github.com/latexdo/latexdo-cli) repo. Users install it
+with:
+
+```bash
+curl -fsSL https://latexdo.org/install.sh | bash
+```
+
+The CLI caches this source repo under `~/.latexdo/app`, installs npm
+dependencies when they change, starts the local web editor, and opens the
+localhost URL in the browser.
+
+Source for the CLI lives in `cli/` here so the main app stays the source of
+truth. To refresh `../latexdo-cli`, `../latexdo.org`, and
+`../editor.latexdo.org` from this checkout:
+
+```bash
+npm run sync:downstream
+```
+
 ## Production build
 
 ```bash
