@@ -220,13 +220,13 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
     checkForUpdates: async () => ({
       currentVersion: "0.1.0",
       latestVersion: null,
-      releaseUrl: "https://github.com/latexdo/latexdo/releases",
+      releaseUrl: "https://latexdo.github.io/downloads/",
       updateAvailable: false,
     }),
 
     async openReleasesPage() {
       window.open(
-        "https://github.com/latexdo/latexdo/releases",
+        "https://latexdo.github.io/downloads/",
         "_blank",
         "noopener,noreferrer",
       );

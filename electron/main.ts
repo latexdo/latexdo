@@ -58,11 +58,8 @@ const appIconPath = path.join(currentDirectory, "..", "build", "icon.png");
 const execFileAsync = promisify(execFile);
 const startupSmokeTest = process.argv.includes("--smoke-test");
 const startupSmokeTimeoutMs = 20_000;
-const githubReleasesPageUrl = "https://github.com/latexdo/latexdo/releases";
-const githubLatestReleaseUrl =
-  "https://api.github.com/repos/latexdo/latexdo/releases/latest";
-const githubReleasesUrl =
-  "https://api.github.com/repos/latexdo/latexdo/releases?per_page=10";
+const downloadsPageUrl = "https://latexdo.github.io/downloads/";
+const downloadsManifestUrl = "https://latexdo.github.io/downloads/manifest.json";
 const spellCheckerSettingsFile = "spellchecker-settings.json";
 const proofreadingSettingsFile = "proofreading-settings.json";
 const openSpellCheckerChannel = "tools:open-spellchecker";
@@ -1424,13 +1421,13 @@ function buildApplicationMenu(): void {
         {
           label: "Check for Updates",
           click: () => {
-            void shell.openExternal("https://github.com/latexdo/latexdo/releases");
+            void shell.openExternal(downloadsPageUrl);
           },
         },
         {
-          label: "LatexDo Releases",
+          label: "LatexDo Downloads",
           click: () => {
-            void shell.openExternal("https://github.com/latexdo/latexdo/releases");
+            void shell.openExternal(downloadsPageUrl);
           },
         },
       ],
@@ -1443,60 +1440,40 @@ function buildApplicationMenu(): void {
 async function checkForUpdates(): Promise<UpdateCheckResult> {
   const currentVersion = app.getVersion();
   const requestHeaders = {
-    Accept: "application/vnd.github+json",
+    Accept: "application/json",
     "User-Agent": `latexdo/${currentVersion}`,
   };
 
   try {
-    const response = await fetch(githubLatestReleaseUrl, {
+    const response = await fetch(downloadsManifestUrl, {
       headers: requestHeaders,
     });
-    let payload: {
-      tag_name?: string;
-      html_url?: string;
-      draft?: boolean;
-      prerelease?: boolean;
-    } | null = null;
 
-    if (response.ok) {
-      payload = (await response.json()) as typeof payload;
-    } else if (response.status === 404) {
-      const releasesResponse = await fetch(githubReleasesUrl, {
-        headers: requestHeaders,
-      });
-      if (!releasesResponse.ok) {
-        throw new Error(`Update check failed (${releasesResponse.status})`);
-      }
-      const releases = (await releasesResponse.json()) as Array<{
-        tag_name?: string;
-        html_url?: string;
-        draft?: boolean;
-        prerelease?: boolean;
-      }>;
-      payload =
-        releases.find((release) => !release.draft && !release.prerelease) ??
-        releases.find((release) => !release.draft) ??
-        null;
-    } else {
+    if (!response.ok) {
       throw new Error(`Update check failed (${response.status})`);
     }
 
-    if (!payload) {
+    const payload = (await response.json()) as {
+      version?: string | null;
+      downloadsPage?: string | null;
+    };
+    const latestVersion =
+      typeof payload.version === "string" ? payload.version.replace(/^v/i, "") : null;
+
+    if (!latestVersion) {
       return {
         currentVersion,
         latestVersion: null,
-        releaseUrl: githubReleasesPageUrl,
+        releaseUrl: downloadsPageUrl,
         updateAvailable: false,
-        error: "No GitHub releases found.",
+        error: "No website download manifest version found.",
       };
     }
-
-    const latestVersion = payload.tag_name?.replace(/^v/i, "") ?? null;
 
     return {
       currentVersion,
       latestVersion,
-      releaseUrl: payload.html_url ?? githubReleasesPageUrl,
+      releaseUrl: payload.downloadsPage ?? downloadsPageUrl,
       updateAvailable:
         latestVersion !== null && compareVersions(latestVersion, currentVersion) > 0,
     };
@@ -1504,7 +1481,7 @@ async function checkForUpdates(): Promise<UpdateCheckResult> {
     return {
       currentVersion,
       latestVersion: null,
-      releaseUrl: githubReleasesPageUrl,
+      releaseUrl: downloadsPageUrl,
       updateAvailable: false,
       error: error instanceof Error ? error.message : "Update check failed",
     };
@@ -2439,7 +2416,7 @@ app.whenReady().then(() => {
   ipcMain.handle("app:open-releases", async (_event, ...rawArgs: unknown[]) => {
     const channel = "app:open-releases";
     expectIpcArgs(channel, rawArgs, 0);
-    await shell.openExternal(githubReleasesPageUrl);
+    await shell.openExternal(downloadsPageUrl);
   });
   ipcMain.handle("spellchecker:get-settings", async (event, ...rawArgs: unknown[]) => {
     const channel = "spellchecker:get-settings";

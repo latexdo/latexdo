@@ -9057,7 +9057,7 @@ ${macroEnd}
                               ? `You are up to date on version ${updateInfo.currentVersion}.`
                               : updateInfo?.error
                                 ? updateInfo.error
-                                : "Check GitHub releases for updates."}
+                                : "Check the LatexDo downloads page for updates."}
                       </small>
                     </span>
                     <div className="settings-update-actions">
