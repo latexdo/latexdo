@@ -1,10 +1,12 @@
 import type { LatexDoApi } from "../electron/preload.cjs";
 import type {
+  CollaborationState,
   GitDiffEditorInput,
   GitDiffPreview,
   GitDiscardResult,
   GitHistorySummary,
   GitStatusSummary,
+  OpenProject,
   ProofreadingSettings,
   SpellCheckerSettings,
 } from "./types";
@@ -14,6 +16,9 @@ type CloudLatexDoApi = LatexDoApi & {
 };
 
 const cloudSessionKey = "latexdo.cloud.session";
+const cloudClientKey = "latexdo.cloud.client";
+const cloudClientNameKey = "latexdo.cloud.clientName";
+const cloudShareTokensKey = "latexdo.cloud.shareTokens";
 const cloudSpellCheckerSettingsKey = "latexdo.cloud.spellchecker";
 const cloudProofreadingSettingsKey = "latexdo.cloud.proofreading";
 
@@ -47,16 +52,52 @@ function sessionId(): string {
   return created;
 }
 
+function clientId(): string {
+  const existing = window.localStorage.getItem(cloudClientKey);
+  if (existing) return existing;
+
+  const created =
+    crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random()}`;
+  window.localStorage.setItem(cloudClientKey, created);
+  return created;
+}
+
+function clientName(): string {
+  const existing = window.localStorage.getItem(cloudClientNameKey);
+  if (existing) return existing;
+
+  const userAgentData = (
+    navigator as Navigator & { userAgentData?: { platform?: string } }
+  ).userAgentData;
+  const platform = userAgentData?.platform || navigator.platform || "this device";
+  const created = `LatexDo on ${platform}`.slice(0, 64);
+  window.localStorage.setItem(cloudClientNameKey, created);
+  return created;
+}
+
 function apiUrl(path: string): string {
   return `${apiBaseUrl()}${path}`;
 }
 
-async function requestJson<T>(path: string, options: RequestInit = {}): Promise<T> {
+function collaborationHeaders(shareToken?: string): Record<string, string> {
+  return {
+    "x-latexdo-session": sessionId(),
+    "x-latexdo-client": clientId(),
+    "x-latexdo-client-name": clientName(),
+    ...(shareToken ? { "x-latexdo-share-token": shareToken } : {}),
+  };
+}
+
+async function requestJson<T>(
+  path: string,
+  options: RequestInit = {},
+  shareToken?: string,
+): Promise<T> {
   const response = await fetch(apiUrl(path), {
     ...options,
     headers: {
       "content-type": "application/json",
-      "x-latexdo-session": sessionId(),
+      ...collaborationHeaders(shareToken),
       ...options.headers,
     },
   });
@@ -88,6 +129,48 @@ function readLocalSetting<T>(key: string, fallback: T): T {
   }
 }
 
+function shareTokens(): Record<string, string> {
+  return readLocalSetting<Record<string, string>>(cloudShareTokensKey, {});
+}
+
+function shareTokenForProject(projectId: string): string | undefined {
+  return shareTokens()[projectId];
+}
+
+function rememberShareToken(projectId: string, token: string): void {
+  window.localStorage.setItem(
+    cloudShareTokensKey,
+    JSON.stringify({ ...shareTokens(), [projectId]: token }),
+  );
+}
+
+function initialShareToken(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("share");
+  if (!token) return null;
+  params.delete("share");
+  const nextSearch = params.toString();
+  const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
+  window.history.replaceState(null, "", nextUrl);
+  return token;
+}
+
+function localShareState(projectId: string): CollaborationState {
+  const token = shareTokenForProject(projectId);
+  return token
+    ? {
+        enabled: true,
+        token,
+        shareUrl: `${window.location.origin}${window.location.pathname}?share=${encodeURIComponent(token)}`,
+        projectId,
+        users: [],
+      }
+    : {
+        enabled: false,
+        users: [],
+      };
+}
+
 function emptyGitStatus(): GitStatusSummary {
   return {
     isRepo: false,
@@ -102,14 +185,34 @@ function cloudUnavailable(feature: string): Error {
 }
 
 export function createCloudLatexDoApi(): CloudLatexDoApi {
+  const joinCollaboration = async (token: string) => {
+    const body = await requestJson<{
+      project: OpenProject;
+      collaboration: CollaborationState;
+    }>(`/api/shares/${encodeURIComponent(token)}/open`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    if (body.collaboration.token) {
+      rememberShareToken(body.project.id, body.collaboration.token);
+    }
+    return body;
+  };
+
   return {
     runtime: "cloud",
 
-    openProject: () =>
-      requestJson("/api/projects/open", {
+    openProject: async () => {
+      const token = initialShareToken();
+      if (token) {
+        return (await joinCollaboration(token)).project;
+      }
+
+      return requestJson("/api/projects/open", {
         method: "POST",
         body: JSON.stringify({}),
-      }),
+      });
+    },
 
     createProject: (options) =>
       requestJson("/api/projects", {
@@ -117,11 +220,18 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
         body: JSON.stringify(options ?? {}),
       }),
 
-    listProject: (projectId) => requestJson(`/api/projects/${projectId}/files`),
+    listProject: (projectId) =>
+      requestJson(
+        `/api/projects/${projectId}/files`,
+        {},
+        shareTokenForProject(projectId),
+      ),
 
     readFile: (projectId, relativePath) =>
       requestJson<{ content: string }>(
         `/api/projects/${projectId}/files/content?${filePathQuery(relativePath)}`,
+        {},
+        shareTokenForProject(projectId),
       ).then((body: { content: string }) => body.content),
 
     writeFile: (projectId, relativePath, content) =>
@@ -131,24 +241,35 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
           method: "PUT",
           body: JSON.stringify({ content }),
         },
+        shareTokenForProject(projectId),
       ),
 
     fileExists: (projectId, relativePath) =>
       requestJson<{ exists: boolean }>(
         `/api/projects/${projectId}/files/exists?${filePathQuery(relativePath)}`,
+        {},
+        shareTokenForProject(projectId),
       ).then((body) => body.exists),
 
     createFile: (projectId, relativePath) =>
-      requestJson<{ relativePath: string }>(`/api/projects/${projectId}/files`, {
-        method: "POST",
-        body: JSON.stringify({ relativePath, type: "file" }),
-      }).then((body) => body.relativePath),
+      requestJson<{ relativePath: string }>(
+        `/api/projects/${projectId}/files`,
+        {
+          method: "POST",
+          body: JSON.stringify({ relativePath, type: "file" }),
+        },
+        shareTokenForProject(projectId),
+      ).then((body) => body.relativePath),
 
     createFolder: (projectId, relativePath) =>
-      requestJson<{ relativePath: string }>(`/api/projects/${projectId}/files`, {
-        method: "POST",
-        body: JSON.stringify({ relativePath, type: "directory" }),
-      }).then((body) => body.relativePath),
+      requestJson<{ relativePath: string }>(
+        `/api/projects/${projectId}/files`,
+        {
+          method: "POST",
+          body: JSON.stringify({ relativePath, type: "directory" }),
+        },
+        shareTokenForProject(projectId),
+      ).then((body) => body.relativePath),
 
     importDocx: async () => {
       throw cloudUnavailable("DOCX import");
@@ -159,12 +280,77 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
     },
 
     moveEntry: (projectId, fromRelativePath, toRelativePath) =>
-      requestJson<{ relativePath: string }>(`/api/projects/${projectId}/files/move`, {
-        method: "POST",
-        body: JSON.stringify({ fromRelativePath, toRelativePath }),
-      }).then((body) => body.relativePath),
+      requestJson<{ relativePath: string }>(
+        `/api/projects/${projectId}/files/move`,
+        {
+          method: "POST",
+          body: JSON.stringify({ fromRelativePath, toRelativePath }),
+        },
+        shareTokenForProject(projectId),
+      ).then((body) => body.relativePath),
 
     getGitStatus: async () => emptyGitStatus(),
+
+    getCollaborationState: async (projectId) => {
+      const token = shareTokenForProject(projectId);
+      if (token) {
+        return requestJson<CollaborationState>(
+          `/api/shares/${encodeURIComponent(token)}/presence`,
+          {
+            method: "POST",
+            body: JSON.stringify({ clientId: clientId(), name: clientName() }),
+          },
+          token,
+        );
+      }
+
+      try {
+        const state = await requestJson<CollaborationState>(
+          `/api/projects/${projectId}/share`,
+        );
+        if (state.token) {
+          rememberShareToken(projectId, state.token);
+        }
+        return state;
+      } catch {
+        return localShareState(projectId);
+      }
+    },
+
+    createCollaborationLink: async (projectId) => {
+      const state = await requestJson<CollaborationState>(
+        `/api/projects/${projectId}/share`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        },
+      );
+      if (state.token) {
+        rememberShareToken(projectId, state.token);
+      }
+      return state;
+    },
+
+    joinCollaboration,
+
+    updateCollaborationPresence: async (projectId, currentFile) => {
+      const token = shareTokenForProject(projectId);
+      if (!token) return localShareState(projectId);
+
+      return requestJson<CollaborationState>(
+        `/api/shares/${encodeURIComponent(token)}/presence`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            clientId: clientId(),
+            name: clientName(),
+            currentFile: currentFile ?? null,
+          }),
+        },
+        token,
+      );
+    },
+
     stageGitFile: async () => {
       throw cloudUnavailable("Git staging");
     },
@@ -267,17 +453,21 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
     },
 
     compile: (request) =>
-      requestJson("/api/compile", {
-        method: "POST",
-        body: JSON.stringify(request),
-      }),
+      requestJson(
+        "/api/compile",
+        {
+          method: "POST",
+          body: JSON.stringify(request),
+        },
+        shareTokenForProject(request.projectId),
+      ),
 
     async readPdf(projectId, pdfRelativePath) {
       const response = await fetch(
         apiUrl(`/api/projects/${projectId}/pdf?${filePathQuery(pdfRelativePath)}`),
         {
           headers: {
-            "x-latexdo-session": sessionId(),
+            ...collaborationHeaders(shareTokenForProject(projectId)),
           },
         },
       );

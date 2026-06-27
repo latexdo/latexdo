@@ -1910,6 +1910,40 @@ button {
   min-width: 140px;
 }
 
+.collaboration-control {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.collaboration-button {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--border-input);
+  border-radius: 6px;
+  background: var(--bg-button-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.collaboration-button:hover:not(:disabled),
+.collaboration-button.active {
+  border-color: var(--accent);
+  background: var(--accent-panel);
+  color: var(--accent);
+}
+
+.collaboration-button:disabled {
+  cursor: progress;
+  opacity: 0.72;
+}
+
 .toolbar-spacer {
   flex: 1 0 12px;
   min-width: 12px;

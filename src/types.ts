@@ -14,6 +14,22 @@ export interface OpenProject {
   name: string;
 }
 
+export interface CollaboratorPresence {
+  clientId: string;
+  name: string;
+  currentFile: string | null;
+  lastSeen: number;
+}
+
+export interface CollaborationState {
+  enabled: boolean;
+  token?: string;
+  shareUrl?: string;
+  projectId?: string;
+  projectName?: string;
+  users: CollaboratorPresence[];
+}
+
 export interface OpenDocument {
   path: string;
   relativePath: string;

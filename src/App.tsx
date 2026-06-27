@@ -78,6 +78,7 @@ import type { RebuttalGeneratorSettings } from "./types";
 import { monaco } from "./monaco";
 import type {
   CompileResult,
+  CollaborationState,
   ConferenceCheckerSettings,
   CitationAssistantSettings,
   StructureAssistantSettings,
@@ -1534,6 +1535,12 @@ export default function App() {
   const [errorDoctorResult, setErrorDoctorResult] = useState<ErrorDoctorResult | null>(
     null,
   );
+  const [collaborationState, setCollaborationState] = useState<CollaborationState>({
+    enabled: false,
+    users: [],
+  });
+  const [collaborationBusy, setCollaborationBusy] = useState(false);
+  const [collaborationCopied, setCollaborationCopied] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Welcome to LatexDo");
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
   const [pdfTarget, setPdfTarget] = useState<SyncTexPdfLocation | null>(null);
@@ -1573,6 +1580,9 @@ export default function App() {
   const historySaveTimerRef = useRef<number | null>(null);
   const historyAutoCaptureTimerRef = useRef<number | null>(null);
   const browserAutoOpenRef = useRef(false);
+  const runtime = (window.latexdo as typeof window.latexdo & { runtime?: string })
+    .runtime;
+  const collaborationAvailable = runtime === "cloud";
 
   const activeDocument = documents.find((document) => document.path === activePath);
   const activeDocumentIsLatex = activeDocument
@@ -1585,6 +1595,8 @@ export default function App() {
   const projectName = hasVisibleProject
     ? fileName(projectPath) || "Project"
     : "No Folder";
+  const activeCollaborators = collaborationState.users;
+  const collaboratorCount = activeCollaborators.length;
   const diagnostics = useMemo(
     () => [
       ...(compileResult?.diagnostics ?? []),
@@ -3925,6 +3937,68 @@ ${macroEnd}
     }
   };
 
+  const copyToClipboard = async (text: string): Promise<void> => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textarea = globalThis.document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    globalThis.document.body.append(textarea);
+    textarea.focus();
+    textarea.select();
+    globalThis.document.execCommand("copy");
+    textarea.remove();
+  };
+
+  const refreshCollaborationState = useCallback(
+    async (currentProject = projectIdRef.current) => {
+      if (!currentProject || !collaborationAvailable) {
+        setCollaborationState({ enabled: false, users: [] });
+        return;
+      }
+
+      try {
+        const state = await window.latexdo.getCollaborationState(currentProject);
+        setCollaborationState(state);
+      } catch {
+        setCollaborationState({ enabled: false, users: [] });
+      }
+    },
+    [collaborationAvailable],
+  );
+
+  const createCollaborationLink = async () => {
+    const currentProject = projectIdRef.current;
+    if (!currentProject || !collaborationAvailable) {
+      setStatusMessage("Collaboration links are available in the hosted editor.");
+      return;
+    }
+
+    setCollaborationBusy(true);
+    try {
+      const state = await window.latexdo.createCollaborationLink(currentProject);
+      setCollaborationState(state);
+      if (state.shareUrl) {
+        await copyToClipboard(state.shareUrl);
+        setCollaborationCopied(true);
+        window.setTimeout(() => setCollaborationCopied(false), 1800);
+        setStatusMessage("Collaboration link copied");
+      } else {
+        setStatusMessage("Collaboration link ready");
+      }
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Could not create collaboration link",
+      );
+    } finally {
+      setCollaborationBusy(false);
+    }
+  };
+
   const createProject = async () => {
     try {
       const project = await window.latexdo.createProject();
@@ -3969,6 +4043,125 @@ ${macroEnd}
       setTemplateCreating(null);
     }
   };
+
+  useEffect(() => {
+    if (!projectId || hideProjectEntries) {
+      setCollaborationState({ enabled: false, users: [] });
+      return;
+    }
+
+    void refreshCollaborationState(projectId);
+  }, [hideProjectEntries, projectId, refreshCollaborationState]);
+
+  useEffect(() => {
+    if (
+      !projectId ||
+      !collaborationAvailable ||
+      !collaborationState.enabled ||
+      hideProjectEntries
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const sendPresence = async () => {
+      try {
+        const active = documentsRef.current.find(
+          (document) => document.path === activePathRef.current,
+        );
+        const state = await window.latexdo.updateCollaborationPresence(
+          projectId,
+          active?.relativePath ?? null,
+        );
+        if (!cancelled) {
+          setCollaborationState(state);
+        }
+      } catch {
+        // Presence is opportunistic; editing should keep working offline.
+      }
+    };
+
+    void sendPresence();
+    const interval = window.setInterval(() => void sendPresence(), 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [
+    activePath,
+    collaborationAvailable,
+    collaborationState.enabled,
+    hideProjectEntries,
+    projectId,
+  ]);
+
+  useEffect(() => {
+    if (
+      !projectId ||
+      !collaborationAvailable ||
+      !collaborationState.enabled ||
+      !activeDocument ||
+      hideProjectEntries
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const checkForRemoteDocument = async () => {
+      const current = documentsRef.current.find(
+        (document) => document.path === activePathRef.current,
+      );
+      if (!current) return;
+
+      try {
+        const remoteContent = await window.latexdo.readFile(
+          projectId,
+          current.relativePath,
+        );
+        if (cancelled || remoteContent === current.savedContent) {
+          return;
+        }
+
+        if (current.content === current.savedContent) {
+          setDocuments((openDocuments) => {
+            const nextDocuments = openDocuments.map((document) =>
+              document.path === current.path
+                ? {
+                    ...document,
+                    content: remoteContent,
+                    savedContent: remoteContent,
+                  }
+                : document,
+            );
+            documentsRef.current = nextDocuments;
+            return nextDocuments;
+          });
+          void refreshProject(projectId);
+          setStatusMessage(`Synced collaborator changes in ${current.relativePath}`);
+        } else {
+          setStatusMessage(
+            `Collaborator updated ${current.relativePath}; save or reopen to reconcile.`,
+          );
+        }
+      } catch {
+        // Polling should not interrupt editing when the network is unavailable.
+      }
+    };
+
+    const interval = window.setInterval(() => void checkForRemoteDocument(), 3500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [
+    activeDocument,
+    activePath,
+    collaborationAvailable,
+    collaborationState.enabled,
+    hideProjectEntries,
+    projectId,
+    refreshProject,
+  ]);
 
   const renderTemplateIcon = (template: WelcomeTemplate) => {
     switch (template.id) {
@@ -6347,6 +6540,33 @@ ${macroEnd}
                     </div>
                   </div>
 
+                  {collaborationAvailable ? (
+                    <div className="collaboration-control">
+                      <button
+                        type="button"
+                        className={`collaboration-button ${collaborationState.enabled ? "active" : ""}`}
+                        onClick={() => void createCollaborationLink()}
+                        disabled={collaborationBusy}
+                        title={
+                          collaborationState.enabled
+                            ? "Copy collaboration link"
+                            : "Create collaboration link"
+                        }
+                      >
+                        <Link size={14} />
+                        <span>
+                          {collaborationBusy
+                            ? "Sharing..."
+                            : collaborationCopied
+                              ? "Copied"
+                              : collaborationState.enabled
+                                ? `${Math.max(collaboratorCount, 1)} live`
+                                : "Share"}
+                        </span>
+                      </button>
+                    </div>
+                  ) : null}
+
                   {activeDocumentIsLatex ? (
                     <div
                       className="tex-format-toolbar"
@@ -7640,6 +7860,26 @@ ${macroEnd}
               <LoaderCircle size={13} className="spin" />
               {compileJobCount} compile job{compileJobCount === 1 ? "" : "s"}
             </span>
+          ) : null}
+          {collaborationState.enabled ? (
+            <button
+              type="button"
+              onClick={() => void createCollaborationLink()}
+              title={
+                activeCollaborators.length
+                  ? activeCollaborators
+                      .map((collaborator) =>
+                        collaborator.currentFile
+                          ? `${collaborator.name}: ${collaborator.currentFile}`
+                          : collaborator.name,
+                      )
+                      .join("\n")
+                  : "Collaboration link active"
+              }
+            >
+              <User size={13} />
+              {Math.max(collaboratorCount, 1)} live
+            </button>
           ) : null}
           <span className="status-message">{statusMessage}</span>
         </div>

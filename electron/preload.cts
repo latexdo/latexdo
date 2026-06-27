@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   CompileRequest,
   CompileResult,
+  CollaborationState,
   CreateProjectOptions,
   DocxImportResult,
   MarkdownImportResult,
@@ -55,6 +56,28 @@ const api = {
     ipcRenderer.invoke("entry:move", projectId, fromRelativePath, toRelativePath),
   getGitStatus: (projectId: string): Promise<GitStatusSummary> =>
     ipcRenderer.invoke("git:status", projectId),
+  getCollaborationState: async (_projectId: string): Promise<CollaborationState> => ({
+    enabled: false,
+    users: [],
+  }),
+  createCollaborationLink: async (_projectId: string): Promise<CollaborationState> => {
+    throw new Error("Collaboration links are available in the hosted editor.");
+  },
+  joinCollaboration: async (
+    _token: string,
+  ): Promise<{
+    project: OpenProject;
+    collaboration: CollaborationState;
+  }> => {
+    throw new Error("Open collaboration links in the hosted editor.");
+  },
+  updateCollaborationPresence: async (
+    _projectId: string,
+    _currentFile?: string | null,
+  ): Promise<CollaborationState> => ({
+    enabled: false,
+    users: [],
+  }),
   stageGitFile: (projectId: string, relativePath: string): Promise<void> =>
     ipcRenderer.invoke("git:stage", projectId, relativePath),
   unstageGitFile: (projectId: string, relativePath: string): Promise<void> =>
