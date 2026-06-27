@@ -168,6 +168,10 @@ export interface UpdateCheckResult {
   latestVersion: string | null;
   releaseUrl: string | null;
   updateAvailable: boolean;
+  publishedAt?: string | null;
+  channel?: string | null;
+  manifestUrl?: string | null;
+  checkedAt?: string | null;
   error?: string;
 }
 

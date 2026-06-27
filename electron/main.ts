@@ -58,8 +58,9 @@ const appIconPath = path.join(currentDirectory, "..", "build", "icon.png");
 const execFileAsync = promisify(execFile);
 const startupSmokeTest = process.argv.includes("--smoke-test");
 const startupSmokeTimeoutMs = 20_000;
-const downloadsPageUrl = "https://latexdo.github.io/downloads/";
-const downloadsManifestUrl = "https://latexdo.github.io/downloads/manifest.json";
+const downloadsPageUrl = "https://latexdo.org/downloads/";
+const downloadsManifestUrl = "https://latexdo.org/downloads/manifest.json";
+const updatesFeedUrl = "https://latexdo.org/updates/latest.json";
 const spellCheckerSettingsFile = "spellchecker-settings.json";
 const proofreadingSettingsFile = "proofreading-settings.json";
 const openSpellCheckerChannel = "tools:open-spellchecker";
@@ -90,6 +91,16 @@ Start writing here.
 `;
 
 const openProjects = new Map<string, OpenProject>();
+
+interface WebsiteUpdatePayload {
+  schemaVersion?: unknown;
+  product?: unknown;
+  channel?: unknown;
+  version?: unknown;
+  publishedAt?: unknown;
+  downloadsPage?: unknown;
+  manifestUrl?: unknown;
+}
 
 function registerProject(rootPath: string): OpenProject {
   const resolvedRoot = path.resolve(rootPath);
@@ -1437,55 +1448,78 @@ function buildApplicationMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+function payloadString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function updateResultFromWebsitePayload(
+  payload: WebsiteUpdatePayload,
+  currentVersion: string,
+): UpdateCheckResult {
+  if (payload.schemaVersion !== 1 || payload.product !== "LatexDo") {
+    throw new Error("Website update payload is not a LatexDo update feed.");
+  }
+
+  const latestVersion = payloadString(payload.version)?.replace(/^v/i, "") ?? null;
+  if (!latestVersion) {
+    throw new Error("No website update version found.");
+  }
+
+  const releaseUrl = payloadString(payload.downloadsPage) ?? downloadsPageUrl;
+  return {
+    currentVersion,
+    latestVersion,
+    releaseUrl,
+    updateAvailable: compareVersions(latestVersion, currentVersion) > 0,
+    publishedAt: payloadString(payload.publishedAt),
+    channel: payloadString(payload.channel),
+    manifestUrl: payloadString(payload.manifestUrl) ?? downloadsManifestUrl,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+async function fetchWebsiteUpdatePayload(
+  url: string,
+  currentVersion: string,
+  headers: Record<string, string>,
+): Promise<UpdateCheckResult> {
+  const response = await fetch(url, { headers });
+
+  if (!response.ok) {
+    throw new Error(`${url} returned ${response.status}`);
+  }
+
+  return updateResultFromWebsitePayload(
+    (await response.json()) as WebsiteUpdatePayload,
+    currentVersion,
+  );
+}
+
 async function checkForUpdates(): Promise<UpdateCheckResult> {
   const currentVersion = app.getVersion();
   const requestHeaders = {
     Accept: "application/json",
     "User-Agent": `latexdo/${currentVersion}`,
   };
+  const errors: string[] = [];
 
-  try {
-    const response = await fetch(downloadsManifestUrl, {
-      headers: requestHeaders,
-    });
-
-    if (!response.ok) {
-      throw new Error(`Update check failed (${response.status})`);
+  for (const url of [updatesFeedUrl, downloadsManifestUrl]) {
+    try {
+      return await fetchWebsiteUpdatePayload(url, currentVersion, requestHeaders);
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
     }
-
-    const payload = (await response.json()) as {
-      version?: string | null;
-      downloadsPage?: string | null;
-    };
-    const latestVersion =
-      typeof payload.version === "string" ? payload.version.replace(/^v/i, "") : null;
-
-    if (!latestVersion) {
-      return {
-        currentVersion,
-        latestVersion: null,
-        releaseUrl: downloadsPageUrl,
-        updateAvailable: false,
-        error: "No website download manifest version found.",
-      };
-    }
-
-    return {
-      currentVersion,
-      latestVersion,
-      releaseUrl: payload.downloadsPage ?? downloadsPageUrl,
-      updateAvailable:
-        latestVersion !== null && compareVersions(latestVersion, currentVersion) > 0,
-    };
-  } catch (error) {
-    return {
-      currentVersion,
-      latestVersion: null,
-      releaseUrl: downloadsPageUrl,
-      updateAvailable: false,
-      error: error instanceof Error ? error.message : "Update check failed",
-    };
   }
+
+  return {
+    currentVersion,
+    latestVersion: null,
+    releaseUrl: downloadsPageUrl,
+    updateAvailable: false,
+    manifestUrl: downloadsManifestUrl,
+    checkedAt: new Date().toISOString(),
+    error: errors.join(" ") || "Update check failed",
+  };
 }
 
 async function readGitStatus(projectPath: string): Promise<GitStatusSummary> {
