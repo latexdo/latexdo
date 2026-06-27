@@ -3,25 +3,35 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LatexDo Downloads - Direct macOS and Windows Installers</title>
     <meta
       name="description"
-      content="Download LatexDo desktop installers directly from the LatexDo website."
+      content="Download LatexDo desktop installers directly from the LatexDo website. Get macOS and Windows builds, update metadata, and SHA-256 checksums without a GitHub account."
     />
-    <title>LatexDo Downloads</title>
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://latexdo.org/downloads/" />
     <link rel="icon" type="image/svg+xml" href="../assets/icon.svg" />
+    <link rel="manifest" href="../site.webmanifest" />
     <link rel="stylesheet" href="../style.css" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="LatexDo Downloads" />
+    <meta property="og:description" content="Direct LatexDo desktop installers, update manifest, and checksums." />
+    <meta property="og:url" content="https://latexdo.org/downloads/" />
+    <meta property="og:image" content="https://latexdo.org/assets/social-preview.svg" />
   </head>
   <body>
     <header class="site-header">
       <nav class="nav-shell" aria-label="Primary navigation">
         <a class="brand" href="../">
-          <img src="../assets/icon.svg" alt="" width="34" height="34" />
+          <img src="../assets/icon.svg" alt="" width="36" height="36" />
           <span>LatexDo</span>
         </a>
         <div class="nav-links">
-          <a class="nav-editor-link" href="https://editor.latexdo.org"> Open editor </a>
-          <a href="../">Home</a>
+          <a href="../#editor">Editor</a>
+          <a href="../#features">Features</a>
           <a href="manifest.json">Manifest</a>
+          <a href="SHA256SUMS.txt">Checksums</a>
+          <a class="nav-editor-link" href="https://editor.latexdo.org">Open editor</a>
         </div>
       </nav>
     </header>
@@ -31,25 +41,33 @@
         <p class="eyebrow">Direct downloads</p>
         <h1>LatexDo Downloads</h1>
         <p>
-          The download page is ready. The next release workflow will publish the macOS
-          and Windows installers here with checksums and a machine-readable manifest.
+          Installers are published directly on the LatexDo website, with a public manifest and SHA-256 checksums for the application updater.
         </p>
       </section>
 
       <section class="downloads-empty">
         <h2>Installers are being prepared</h2>
         <p>
-          After the release workflow runs, this page will contain direct download links
-          for macOS Apple Silicon, macOS Intel, and Windows.
+          The next release workflow will publish direct macOS Apple Silicon, macOS Intel, and Windows installers here.
         </p>
+        <div class="hero-actions">
+          <a class="button primary" href="https://editor.latexdo.org">Open web editor</a>
+          <a class="button secondary" href="manifest.json">View manifest</a>
+        </div>
       </section>
     </main>
 
     <footer class="site-footer">
-      <span>LatexDo</span>
-      <a href="https://editor.latexdo.org">Editor</a>
-      <a href="../">Website</a>
-      <a href="manifest.json">Manifest</a>
+      <div>
+        <a class="brand" href="../"><img src="../assets/icon.svg" alt="" width="30" height="30" /><span>LatexDo</span></a>
+        <p>Modern LaTeX editing across web and desktop.</p>
+      </div>
+      <nav aria-label="Footer navigation">
+        <a href="https://editor.latexdo.org">Editor</a>
+        <a href="../">Website</a>
+        <a href="manifest.json">Manifest</a>
+      </nav>
+      <span>Downloads</span>
     </footer>
   </body>
 </html>

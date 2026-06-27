@@ -1,10 +1,12 @@
 {
   "schemaVersion": 1,
   "product": "LatexDo",
+  "channel": "stable",
   "version": null,
   "publishedAt": null,
   "commit": null,
   "repository": "latexdo/latexdo",
   "downloadsPage": "https://latexdo.org/downloads/",
+  "manifestUrl": "https://latexdo.org/downloads/manifest.json",
   "files": []
 }

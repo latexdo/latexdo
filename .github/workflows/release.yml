@@ -293,7 +293,7 @@ jobs:
 
       - name: Build downloads website
         env:
-          LATEXDO_DOWNLOAD_BASE_URL: https://latexdo.github.io
+          LATEXDO_DOWNLOAD_BASE_URL: https://latexdo.org
         run: node scripts/build-downloads-page.mjs artifacts public-downloads/downloads
 
       - name: Select deploy mode
@@ -332,4 +332,4 @@ jobs:
         env:
           LATEXDO_VERIFY_RETRIES: 24
           LATEXDO_VERIFY_DELAY_MS: 10000
-        run: node scripts/verify-deployed-downloads.mjs https://latexdo.github.io/downloads/
+        run: node scripts/verify-deployed-downloads.mjs https://latexdo.org/downloads/

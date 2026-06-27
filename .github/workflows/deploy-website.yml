@@ -26,12 +26,26 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Build TypeScript website
+        shell: bash
+        run: |
+          npm ci --prefix website
+          npm run build --prefix website
+
       - name: Prepare static website
         shell: bash
         run: |
           mkdir -p website/assets
           cp build/icon.svg website/assets/icon.svg
-          rm -rf website/downloads
+          rm -rf website/downloads website/updates
+          rm -rf website/node_modules website/src website/.github
+          rm -f website/package.json website/package-lock.json website/tsconfig.json website/.gitignore
 
       - name: Select deploy mode
         id: deploy_mode

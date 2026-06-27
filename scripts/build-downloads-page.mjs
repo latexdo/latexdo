@@ -7,10 +7,11 @@ const artifactsDir = path.resolve(root, process.argv[2] ?? "artifacts");
 const outputDir = path.resolve(root, process.argv[3] ?? "public-downloads/downloads");
 const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 
-const baseUrl = process.env.LATEXDO_DOWNLOAD_BASE_URL ?? "https://latexdo.github.io";
+const baseUrl = process.env.LATEXDO_DOWNLOAD_BASE_URL ?? "https://latexdo.org";
 const publishedAt = process.env.LATEXDO_RELEASE_DATE ?? new Date().toISOString();
 const commit = process.env.GITHUB_SHA ?? "";
 const repository = process.env.GITHUB_REPOSITORY ?? "latexdo/latexdo";
+const siteRootDir = path.dirname(outputDir);
 
 const downloads = [
   {
@@ -91,6 +92,19 @@ const manifest = {
   files,
 };
 
+const updateFeed = {
+  schemaVersion: 1,
+  product: "LatexDo",
+  channel: "stable",
+  version: packageJson.version,
+  publishedAt,
+  commit,
+  repository,
+  downloadsPage: manifest.downloadsPage,
+  manifestUrl: `${manifest.downloadsPage}manifest.json`,
+  files,
+};
+
 const checksums = files
   .map((file) => `${file.sha256}  files/${file.filename}`)
   .join("\n");
@@ -100,6 +114,12 @@ await writeFile(
   `${JSON.stringify(manifest, null, 2)}\n`,
 );
 await writeFile(path.join(outputDir, "SHA256SUMS.txt"), `${checksums}\n`);
+
+await mkdir(path.join(siteRootDir, "updates"), { recursive: true });
+await writeFile(
+  path.join(siteRootDir, "updates", "latest.json"),
+  `${JSON.stringify(updateFeed, null, 2)}\n`,
+);
 
 const cards = files
   .map(

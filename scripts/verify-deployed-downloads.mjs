@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-const downloadsUrl = new URL(process.argv[2] ?? "https://latexdo.github.io/downloads/");
+const downloadsUrl = new URL(process.argv[2] ?? "https://latexdo.org/downloads/");
 const retries = Number(process.env.LATEXDO_VERIFY_RETRIES ?? 24);
 const delayMs = Number(process.env.LATEXDO_VERIFY_DELAY_MS ?? 10_000);
 const expectedCommit = process.env.GITHUB_SHA ?? "";
@@ -78,12 +78,57 @@ function assertManifest(value) {
   return files;
 }
 
+function assertUpdateFeed(value, manifestFiles) {
+  if (!value || typeof value !== "object") {
+    throw new Error("Update feed is not an object.");
+  }
+  if (value.schemaVersion !== 1) {
+    throw new Error("Update feed schemaVersion must be 1.");
+  }
+  if (value.product !== "LatexDo") {
+    throw new Error("Update feed product must be LatexDo.");
+  }
+  if (value.channel !== "stable") {
+    throw new Error("Update feed channel must be stable.");
+  }
+  if (value.version !== expectedVersion) {
+    throw new Error(
+      `Update feed version ${value.version ?? "<missing>"} does not match ${expectedVersion}.`,
+    );
+  }
+  if (expectedCommit && value.commit !== expectedCommit) {
+    throw new Error(
+      `Update feed commit ${value.commit ?? "<missing>"} does not match ${expectedCommit}.`,
+    );
+  }
+  if (value.downloadsPage !== downloadsUrl.href) {
+    throw new Error("Update feed downloadsPage does not match the downloads URL.");
+  }
+  if (value.manifestUrl !== new URL("manifest.json", downloadsUrl).href) {
+    throw new Error("Update feed manifestUrl does not match the downloads manifest.");
+  }
+  if (!Array.isArray(value.files)) {
+    throw new Error("Update feed files must be an array.");
+  }
+
+  const updateIds = new Set(value.files.map((file) => file.id));
+  for (const file of manifestFiles) {
+    if (!updateIds.has(file.id)) {
+      throw new Error(`Update feed is missing ${file.id}.`);
+    }
+  }
+}
+
 async function verifyOnce() {
   await fetchOk(downloadsUrl);
 
   const manifestUrl = new URL("manifest.json", downloadsUrl);
   const manifestResponse = await fetchOk(manifestUrl);
   const files = assertManifest(await manifestResponse.json());
+
+  const updateFeedUrl = new URL("../updates/latest.json", downloadsUrl);
+  const updateFeedResponse = await fetchOk(updateFeedUrl);
+  assertUpdateFeed(await updateFeedResponse.json(), files);
 
   const checksumsUrl = new URL("SHA256SUMS.txt", downloadsUrl);
   const checksums = await (await fetchOk(checksumsUrl)).text();

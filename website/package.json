@@ -1,0 +1,14 @@
+{
+  "name": "latexdo.github.io",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Static TypeScript website for LatexDo.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

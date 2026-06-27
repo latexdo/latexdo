@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://latexdo.org/sitemap.xml

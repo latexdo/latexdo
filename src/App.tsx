@@ -1435,6 +1435,19 @@ function pruneHistorySnapshots(
   return kept;
 }
 
+const updateCheckIntervalMs = 6 * 60 * 60 * 1000;
+
+function formatUpdateDate(value?: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export default function App() {
   const [projectId, setProjectId] = useState("");
   const [projectPath, setProjectPath] = useState("");
@@ -1502,6 +1515,9 @@ export default function App() {
   const [documentHistory, setDocumentHistory] = useState<DocumentHistorySnapshot[]>([]);
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(
+    null,
+  );
   const [spellCheckerSettings, setSpellCheckerSettings] =
     useState<SpellCheckerSettings | null>(null);
   const [spellCheckerLoading, setSpellCheckerLoading] = useState(false);
@@ -4448,13 +4464,23 @@ ${macroEnd}
     }
   }, []);
 
-  const checkForUpdates = useCallback(async () => {
-    setCheckingUpdates(true);
+  const checkForUpdates = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setCheckingUpdates(true);
+    }
     try {
       const result = await window.latexdo.checkForUpdates();
       setUpdateInfo(result);
+      if (result.updateAvailable && result.latestVersion) {
+        setDismissedUpdateVersion((current) =>
+          current && current !== result.latestVersion ? null : current,
+        );
+        setStatusMessage(`LatexDo ${result.latestVersion} is available.`);
+      }
     } finally {
-      setCheckingUpdates(false);
+      if (!options?.silent) {
+        setCheckingUpdates(false);
+      }
     }
   }, []);
 
@@ -4655,7 +4681,11 @@ ${macroEnd}
   }, [activeSidebar, projectId, refreshGitStatus]);
 
   useEffect(() => {
-    void checkForUpdates();
+    void checkForUpdates({ silent: true });
+    const interval = window.setInterval(() => {
+      void checkForUpdates({ silent: true });
+    }, updateCheckIntervalMs);
+    return () => window.clearInterval(interval);
   }, [checkForUpdates]);
 
   useEffect(() => {
@@ -5577,6 +5607,14 @@ ${macroEnd}
       </div>
     );
   };
+
+  const availableUpdateVersion = updateInfo?.updateAvailable
+    ? updateInfo.latestVersion
+    : null;
+  const updateBannerVisible = Boolean(
+    availableUpdateVersion && availableUpdateVersion !== dismissedUpdateVersion,
+  );
+  const updatePublishedLabel = formatUpdateDate(updateInfo?.publishedAt);
 
   return (
     <div className="app-shell" data-theme={settings.colorTheme}>
@@ -7545,6 +7583,37 @@ ${macroEnd}
         </main>
       </div>
 
+      {updateBannerVisible && availableUpdateVersion ? (
+        <section className="update-banner" role="status" aria-live="polite">
+          <div className="update-banner-main">
+            <Download size={17} />
+            <span>
+              <strong>LatexDo {availableUpdateVersion} is available</strong>
+              <small>
+                {updatePublishedLabel
+                  ? `Published ${updatePublishedLabel}. Download it from latexdo.org.`
+                  : "Download it from latexdo.org."}
+              </small>
+            </span>
+          </div>
+          <div className="update-banner-actions">
+            <button type="button" onClick={() => void window.latexdo.openReleasesPage()}>
+              <ExternalLink size={13} />
+              Download update
+            </button>
+            <button
+              type="button"
+              className="icon-only"
+              onClick={() => setDismissedUpdateVersion(availableUpdateVersion)}
+              aria-label="Dismiss update notice"
+              title="Dismiss"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       <footer className="statusbar">
         <div>
           <span className="status-brand">
@@ -9074,7 +9143,7 @@ ${macroEnd}
                         className="dialog-submit"
                         onClick={() => void window.latexdo.openReleasesPage()}
                       >
-                        View releases
+                        Open downloads
                       </button>
                     </div>
                   </div>
