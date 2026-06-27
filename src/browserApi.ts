@@ -10,6 +10,7 @@ import type {
   ProofreadingSettings,
   SpellCheckerSettings,
 } from "./types";
+import { createCloudLatexDoApi } from "./cloudApi";
 
 type BrowserLatexDoApi = LatexDoApi & {
   runtime: "browser";
@@ -712,7 +713,10 @@ function createBrowserTerminalApi(): TerminalApi {
 
 export function installBrowserApis(): void {
   if (!window.latexdo) {
-    window.latexdo = createBrowserLatexDoApi();
+    window.latexdo =
+      import.meta.env.VITE_LATEXDO_RUNTIME === "cloud"
+        ? createCloudLatexDoApi()
+        : createBrowserLatexDoApi();
   }
   if (!window.terminalApi) {
     window.terminalApi = createBrowserTerminalApi();
