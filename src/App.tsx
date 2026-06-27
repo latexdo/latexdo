@@ -7597,7 +7597,10 @@ ${macroEnd}
             </span>
           </div>
           <div className="update-banner-actions">
-            <button type="button" onClick={() => void window.latexdo.openReleasesPage()}>
+            <button
+              type="button"
+              onClick={() => void window.latexdo.openReleasesPage()}
+            >
               <ExternalLink size={13} />
               Download update
             </button>

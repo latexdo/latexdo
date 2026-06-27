@@ -669,7 +669,10 @@ h3 {
 .workspace-grid {
   display: grid;
   min-height: 560px;
-  grid-template-columns: minmax(360px, 1.1fr) minmax(340px, 0.92fr) minmax(250px, 0.56fr);
+  grid-template-columns: minmax(360px, 1.1fr) minmax(340px, 0.92fr) minmax(
+      250px,
+      0.56fr
+    );
 }
 
 .source-panel,
