@@ -498,6 +498,28 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       return emptyGitStatus();
     },
 
+    async getCollaborationState() {
+      return {
+        enabled: false,
+        users: [],
+      };
+    },
+
+    async createCollaborationLink() {
+      throw browserUnavailable("Cloud collaboration");
+    },
+
+    async joinCollaboration() {
+      throw browserUnavailable("Cloud collaboration");
+    },
+
+    async updateCollaborationPresence() {
+      return {
+        enabled: false,
+        users: [],
+      };
+    },
+
     async stageGitFile() {
       throw browserUnavailable("Git staging");
     },
