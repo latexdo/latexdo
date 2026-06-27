@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: latexdo-release
@@ -261,7 +261,7 @@ jobs:
           retention-days: 1
 
   publish:
-    name: publish / rolling release
+    name: publish / website downloads
     needs: [build_macos, build_windows]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -291,64 +291,38 @@ jobs:
           test -f LatexDo-windows-x64.exe
           sha256sum *.dmg *.exe > SHA256SUMS.txt
 
-      - name: Delete old rolling release and tag
+      - name: Build downloads website
         env:
-          GH_TOKEN: ${{ github.token }}
+          LATEXDO_DOWNLOAD_BASE_URL: https://latexdo.github.io
+        run: node scripts/build-downloads-page.mjs artifacts public-downloads/downloads
+
+      - name: Select deploy mode
+        id: deploy_mode
+        env:
+          LATEXDO_WEBSITE_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
         shell: bash
         run: |
-          gh release delete rolling --cleanup-tag --yes 2>/dev/null || true
+          if [ -z "$LATEXDO_WEBSITE_TOKEN" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Downloads deploy skipped"
+              echo
+              echo "Set LATEXDO_WEBSITE_TOKEN with write access to latexdo/latexdo.github.io to publish installers to /downloads/."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
 
-      - name: Create rolling release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT_NAME: ${{ github.event_name }}
-          GIT_SHA: ${{ github.sha }}
-        shell: bash
-        run: |
-          case "$EVENT_NAME" in
-            push)
-              notes="Automated build from main at ${GIT_SHA}."
-              ;;
-            *)
-              notes="Manual rolling build from ${GIT_SHA}."
-              ;;
-          esac
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
 
-          notes="${notes}
-
-          macOS: Apple Silicon and Intel DMGs are Developer ID signed and notarized when Apple credentials are configured. Otherwise, the release uses ad-hoc signed DMGs that require approval in macOS Privacy & Security."
-
-          gh release create rolling \
-            --repo "${{ github.repository }}" \
-            --title "Latest build ($(date +'%Y-%m-%d %H:%M UTC'))" \
-            --notes "$notes" \
-            --latest
-
-      - name: Upload macOS artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          gh release upload rolling \
-            --repo "${{ github.repository }}" \
-            artifacts/LatexDo-macos-arm64.dmg \
-            artifacts/LatexDo-macos-x64.dmg \
-            --clobber
-
-      - name: Upload Windows artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          gh release upload rolling \
-            --repo "${{ github.repository }}" \
-            artifacts/LatexDo-windows-x64.exe --clobber
-
-      - name: Upload checksums
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          gh release upload rolling \
-            --repo "${{ github.repository }}" \
-            artifacts/SHA256SUMS.txt --clobber
+      - name: Deploy downloads to latexdo.github.io
+        if: ${{ steps.deploy_mode.outputs.enabled == 'true' }}
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          external_repository: latexdo/latexdo.github.io
+          publish_branch: main
+          publish_dir: ./public-downloads
+          keep_files: true
+          personal_token: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
+          user_name: github-actions[bot]
+          user_email: 41898282+github-actions[bot]@users.noreply.github.com
+          commit_message: Publish LatexDo downloads from latexdo@${{ github.sha }}

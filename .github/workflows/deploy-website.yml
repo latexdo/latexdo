@@ -31,6 +31,7 @@ jobs:
         run: |
           mkdir -p website/assets
           cp build/icon.svg website/assets/icon.svg
+          rm -rf website/downloads
 
       - name: Select deploy mode
         id: deploy_mode
@@ -57,6 +58,7 @@ jobs:
           external_repository: latexdo/latexdo.github.io
           publish_branch: main
           publish_dir: ./website
+          keep_files: true
           personal_token: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
           user_name: github-actions[bot]
           user_email: 41898282+github-actions[bot]@users.noreply.github.com
