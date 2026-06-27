@@ -137,6 +137,7 @@
           <a href="#editor">Editor</a>
           <a href="#workflow">Workflow</a>
           <a href="#features">Features</a>
+          <a href="#cli">CLI</a>
           <a href="downloads/">Downloads</a>
           <a href="#faq">FAQ</a>
           <a class="nav-editor-link" href="https://editor.latexdo.org">Open editor</a>
@@ -199,7 +200,7 @@ and review work together.
             <a class="button primary" href="https://editor.latexdo.org"
               >Open web editor</a
             >
-            <a class="button secondary" href="downloads/">Download desktop app</a>
+            <a class="button secondary" href="#cli">Install CLI</a>
           </div>
           <div class="hero-commands" aria-label="Product demo controls">
             <button type="button" data-hero-command="compile">Compile</button>
@@ -338,10 +339,10 @@ and review work together.
                 <div class="install-panel">
                   <strong>Use the real editor</strong>
                   <p>
-                    Open the hosted editor for browser writing, or install the desktop
-                    app for local builds and PDF export.
+                    Open the hosted editor, or run the CLI to launch LatexDo on
+                    localhost from your terminal.
                   </p>
-                  <a href="https://editor.latexdo.org">Open editor</a>
+                  <a href="#cli">Install CLI</a>
                 </div>
               </aside>
             </div>
@@ -376,10 +377,10 @@ and review work together.
             </article>
             <article class="workflow-card reveal">
               <span>02</span>
-              <h3>Compile on desktop</h3>
+              <h3>Launch locally with the CLI</h3>
               <p>
-                Move to the desktop app for local TeX builds, SyncTeX, PDFs, terminal
-                access, and project folders.
+                Install the <code>latexdo</code> command, then start the browser
+                editor on localhost from your terminal.
               </p>
             </article>
             <article class="workflow-card reveal">
@@ -445,6 +446,37 @@ and review work together.
                 app.
               </p>
             </article>
+          </div>
+        </div>
+      </section>
+
+      <section
+        id="cli"
+        class="section-band cli-band"
+        aria-labelledby="cli-title"
+      >
+        <div class="section-inner">
+          <div class="section-heading reveal">
+            <p class="eyebrow">Terminal install</p>
+            <h2 id="cli-title">Install the local LatexDo editor with one command.</h2>
+            <p>
+              The CLI keeps a cached copy of the LatexDo source, installs npm
+              dependencies when they change, starts the local web editor, and opens
+              the localhost URL in your browser.
+            </p>
+          </div>
+          <div class="cli-install reveal">
+            <div class="command-line" aria-label="LatexDo CLI install command">
+              <code>curl -fsSL https://latexdo.org/install.sh | bash</code>
+            </div>
+            <div class="cli-links">
+              <a class="button primary" href="install.sh">View install script</a>
+              <a
+                class="button secondary"
+                href="https://github.com/latexdo/latexdo-cli"
+                >CLI source</a
+              >
+            </div>
           </div>
         </div>
       </section>
@@ -519,6 +551,7 @@ and review work together.
       </div>
       <nav aria-label="Footer navigation">
         <a href="https://editor.latexdo.org">Editor</a>
+        <a href="https://github.com/latexdo/latexdo-cli">CLI</a>
         <a href="downloads/">Downloads</a>
         <a href="https://github.com/latexdo/latexdo">Source</a>
         <a href="sitemap.xml">Sitemap</a>

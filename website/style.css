@@ -997,6 +997,48 @@ h3 {
   font-weight: 720;
 }
 
+.cli-band {
+  background: #eef3f7;
+}
+
+.cli-install {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 18px;
+  box-shadow: 0 12px 34px rgb(17 19 24 / 7%);
+}
+
+.command-line {
+  min-width: 0;
+  overflow-x: auto;
+  border-radius: var(--radius);
+  background: var(--code);
+  color: #f6f8fb;
+  padding: 16px;
+}
+
+.command-line code {
+  white-space: nowrap;
+  font-family:
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace;
+  font-size: 14px;
+}
+
+.cli-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 .faq-list {
   display: grid;
   gap: 12px;
@@ -1261,6 +1303,14 @@ h3 {
   .download-grid,
   .downloads-meta dl {
     grid-template-columns: 1fr;
+  }
+
+  .cli-install {
+    grid-template-columns: 1fr;
+  }
+
+  .cli-links {
+    justify-content: flex-start;
   }
 
   .trust-strip div {
