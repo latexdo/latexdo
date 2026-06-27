@@ -580,11 +580,7 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
     },
 
     async openReleasesPage() {
-      window.open(
-        "https://latexdo.org/downloads/",
-        "_blank",
-        "noopener,noreferrer",
-      );
+      window.open("https://latexdo.org/downloads/", "_blank", "noopener,noreferrer");
     },
 
     async getSpellCheckerSettings() {

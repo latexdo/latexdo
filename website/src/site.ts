@@ -337,12 +337,17 @@ function initEditorDemo(): void {
       renderPreview(source);
       renderDiagnostics(diagnostics);
       setText("#word-count", String(wordsFromSource(source).length));
-      setText("#citation-count", String((source.match(/\\cite[t|p]?\{/g) ?? []).length));
+      setText(
+        "#citation-count",
+        String((source.match(/\\cite[t|p]?\{/g) ?? []).length),
+      );
       setText("#section-count", String(sectionsFromSource(source).length));
       compileButton.disabled = false;
       const hasError = diagnostics.some((item) => item.type === "error");
       setStatus(
-        hasError ? "Preview built with one fixable error." : "Preview built. Desktop compilation is available in the app.",
+        hasError
+          ? "Preview built with one fixable error."
+          : "Preview built. Desktop compilation is available in the app.",
         hasError ? "error" : "ok",
       );
     }, 280);
@@ -351,7 +356,8 @@ function initEditorDemo(): void {
   const insertAtCursor = (text: string) => {
     const start = sourceEditor.selectionStart;
     const end = sourceEditor.selectionEnd;
-    sourceEditor.value = sourceEditor.value.slice(0, start) + text + sourceEditor.value.slice(end);
+    sourceEditor.value =
+      sourceEditor.value.slice(0, start) + text + sourceEditor.value.slice(end);
     sourceEditor.focus();
     sourceEditor.setSelectionRange(start + text.length, start + text.length);
     updateLines();
@@ -364,7 +370,10 @@ function initEditorDemo(): void {
 
   fixErrorButton?.addEventListener("click", () => {
     if (sourceEditor.value.includes("\\badcommand")) {
-      sourceEditor.value = sourceEditor.value.replace("\\badcommand", "\\textbf{Ready for submission.}");
+      sourceEditor.value = sourceEditor.value.replace(
+        "\\badcommand",
+        "\\textbf{Ready for submission.}",
+      );
       selectToken("\\textbf{Ready for submission.}");
       compileDemo();
     } else {
@@ -390,7 +399,9 @@ function initEditorDemo(): void {
     });
   });
 
-  query(".pdf-equation")?.addEventListener("click", () => selectToken("\\begin{equation}"));
+  query(".pdf-equation")?.addEventListener("click", () =>
+    selectToken("\\begin{equation}"),
+  );
   updateLines();
   compileDemo();
 }
@@ -432,7 +443,9 @@ async function initDownloads(): Promise<void> {
       .map((file) => {
         const label = escapeHtml(file.label || file.id);
         const note = escapeHtml(file.note || `${file.platform} ${file.arch}`);
-        const meta = escapeHtml(`${file.sizeLabel ?? formatBytes(file.size)} · ${formatDate(manifest.publishedAt)}`);
+        const meta = escapeHtml(
+          `${file.sizeLabel ?? formatBytes(file.size)} · ${formatDate(manifest.publishedAt)}`,
+        );
         const url = escapeHtml(file.url || `downloads/files/${file.filename}`);
         return `<article class="download-card">
           <div>

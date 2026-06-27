@@ -38,7 +38,10 @@
       name="twitter:description"
       content="Write, review, compile, and ship LaTeX papers in a focused web and desktop editor."
     />
-    <meta name="twitter:image" content="https://latexdo.org/assets/social-preview.svg" />
+    <meta
+      name="twitter:image"
+      content="https://latexdo.org/assets/social-preview.svg"
+    />
 
     <script type="application/ld+json">
       {
@@ -120,7 +123,13 @@
           <img src="assets/icon.svg" alt="" width="36" height="36" />
           <span>LatexDo</span>
         </a>
-        <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-links" data-nav-toggle>
+        <button
+          class="nav-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="nav-links"
+          data-nav-toggle
+        >
           <span></span>
           <span></span>
         </button>
@@ -183,10 +192,13 @@ and review work together.
           <p class="eyebrow">LaTeX, rebuilt for focused paper work</p>
           <h1 id="hero-title">LatexDo</h1>
           <p class="hero-lede">
-            A modern LaTeX editor for writing, reviewing, compiling, and shipping serious papers across web and desktop.
+            A modern LaTeX editor for writing, reviewing, compiling, and shipping
+            serious papers across web and desktop.
           </p>
           <div class="hero-actions" aria-label="Primary actions">
-            <a class="button primary" href="https://editor.latexdo.org">Open web editor</a>
+            <a class="button primary" href="https://editor.latexdo.org"
+              >Open web editor</a
+            >
             <a class="button secondary" href="downloads/">Download desktop app</a>
           </div>
           <div class="hero-commands" aria-label="Product demo controls">
@@ -216,115 +228,223 @@ and review work together.
         </div>
       </section>
 
-      <section id="editor" class="section-band demo-section" aria-labelledby="demo-title">
+      <section
+        id="editor"
+        class="section-band demo-section"
+        aria-labelledby="demo-title"
+      >
         <div class="section-inner wide">
           <div class="section-heading reveal">
             <p class="eyebrow">Live product preview</p>
             <h2 id="demo-title">Edit source. Watch the paper respond.</h2>
             <p>
-              This frontend demo mirrors the LatexDo workflow: source editing, structured preview, diagnostics, and writing modes.
+              This frontend demo mirrors the LatexDo workflow: source editing,
+              structured preview, diagnostics, and writing modes.
             </p>
           </div>
 
-          <div class="demo-workspace reveal" aria-label="LatexDo interactive frontend demo">
+          <div
+            class="demo-workspace reveal"
+            aria-label="LatexDo interactive frontend demo"
+          >
             <div class="workspace-topbar">
-              <div class="traffic" aria-hidden="true"><span></span><span></span><span></span></div>
+              <div class="traffic" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </div>
               <div class="project-meta">
                 <strong>research-paper</strong>
                 <span id="build-state">Ready</span>
               </div>
               <div class="mode-switch" aria-label="Demo mode">
-                <button class="mode active" type="button" data-mode="author">Author</button>
+                <button class="mode active" type="button" data-mode="author">
+                  Author
+                </button>
                 <button class="mode" type="button" data-mode="review">Review</button>
-                <button class="mode" type="button" data-mode="rebuttal">Rebuttal</button>
+                <button class="mode" type="button" data-mode="rebuttal">
+                  Rebuttal
+                </button>
               </div>
               <div class="toolbar-actions">
-                <button id="insert-citation" class="icon-button" type="button">Cite</button>
+                <button id="insert-citation" class="icon-button" type="button">
+                  Cite
+                </button>
                 <button id="fix-error" class="icon-button" type="button">Fix</button>
                 <button id="sync-source" class="icon-button" type="button">Sync</button>
-                <button id="compile-demo" class="button compact" type="button">Compile</button>
+                <button id="compile-demo" class="button compact" type="button">
+                  Compile
+                </button>
               </div>
             </div>
 
             <div class="workspace-grid">
               <section class="source-panel" aria-labelledby="source-title">
-                <div class="panel-title"><span id="source-title">Source</span><span>main.tex</span></div>
+                <div class="panel-title">
+                  <span id="source-title">Source</span><span>main.tex</span>
+                </div>
                 <div class="editor-shell">
                   <ol id="editor-lines" class="line-numbers" aria-hidden="true"></ol>
-                  <textarea id="source-editor" spellcheck="false" aria-label="Editable LaTeX source demo"></textarea>
+                  <textarea
+                    id="source-editor"
+                    spellcheck="false"
+                    aria-label="Editable LaTeX source demo"
+                  ></textarea>
                 </div>
               </section>
 
               <section class="preview-panel" aria-labelledby="preview-title">
-                <div class="panel-title"><span id="preview-title">PDF preview</span><span>1 page</span></div>
-                <article id="pdf-page" class="pdf-page" aria-label="Simulated PDF output">
+                <div class="panel-title">
+                  <span id="preview-title">PDF preview</span><span>1 page</span>
+                </div>
+                <article
+                  id="pdf-page"
+                  class="pdf-page"
+                  aria-label="Simulated PDF output"
+                >
                   <p class="paper-label">LatexDo preview</p>
                   <h3 id="pdf-title">Reliable Paper Writing</h3>
-                  <p id="pdf-abstract" class="pdf-abstract">Compile the sample to generate a clean paper preview.</p>
+                  <p id="pdf-abstract" class="pdf-abstract">
+                    Compile the sample to generate a clean paper preview.
+                  </p>
                   <div id="pdf-sections" class="pdf-sections"></div>
-                  <div class="pdf-equation" data-token="\\begin{equation}">L(\theta) = \sum_i \log p(y_i | x_i, \theta)</div>
+                  <div class="pdf-equation" data-token="\\begin{equation}">
+                    L(\theta) = \sum_i \log p(y_i | x_i, \theta)
+                  </div>
                 </article>
               </section>
 
               <aside class="inspector-panel" aria-labelledby="inspector-title">
-                <div class="panel-title"><span id="inspector-title">Checks</span><span id="check-count">0 issues</span></div>
-                <div class="score-strip">
-                  <div><span class="metric" id="word-count">0</span><span>words</span></div>
-                  <div><span class="metric" id="citation-count">0</span><span>citations</span></div>
-                  <div><span class="metric" id="section-count">0</span><span>sections</span></div>
+                <div class="panel-title">
+                  <span id="inspector-title">Checks</span
+                  ><span id="check-count">0 issues</span>
                 </div>
-                <ul id="diagnostics" class="diagnostics" aria-label="Demo diagnostics"></ul>
+                <div class="score-strip">
+                  <div>
+                    <span class="metric" id="word-count">0</span><span>words</span>
+                  </div>
+                  <div>
+                    <span class="metric" id="citation-count">0</span
+                    ><span>citations</span>
+                  </div>
+                  <div>
+                    <span class="metric" id="section-count">0</span
+                    ><span>sections</span>
+                  </div>
+                </div>
+                <ul
+                  id="diagnostics"
+                  class="diagnostics"
+                  aria-label="Demo diagnostics"
+                ></ul>
                 <div class="install-panel">
                   <strong>Use the real editor</strong>
-                  <p>Open the hosted editor for browser writing, or install the desktop app for local builds and PDF export.</p>
+                  <p>
+                    Open the hosted editor for browser writing, or install the desktop
+                    app for local builds and PDF export.
+                  </p>
                   <a href="https://editor.latexdo.org">Open editor</a>
                 </div>
               </aside>
             </div>
-            <div class="workspace-status" role="status"><span id="status-dot" class="status-dot"></span><span id="status-text">Edit the source or press Compile.</span></div>
+            <div class="workspace-status" role="status">
+              <span id="status-dot" class="status-dot"></span
+              ><span id="status-text">Edit the source or press Compile.</span>
+            </div>
           </div>
         </div>
       </section>
 
-      <section id="workflow" class="section-band workflow-band" aria-labelledby="workflow-title">
+      <section
+        id="workflow"
+        class="section-band workflow-band"
+        aria-labelledby="workflow-title"
+      >
         <div class="section-inner">
           <div class="section-heading reveal">
             <p class="eyebrow">One ecosystem</p>
-            <h2 id="workflow-title">Start online. Finish locally. Ship from the website.</h2>
+            <h2 id="workflow-title">
+              Start online. Finish locally. Ship from the website.
+            </h2>
           </div>
           <div class="workflow-grid">
             <article class="workflow-card reveal">
               <span>01</span>
               <h3>Write in the web editor</h3>
-              <p>Open editor.latexdo.org and start shaping source without installing anything.</p>
+              <p>
+                Open editor.latexdo.org and start shaping source without installing
+                anything.
+              </p>
             </article>
             <article class="workflow-card reveal">
               <span>02</span>
               <h3>Compile on desktop</h3>
-              <p>Move to the desktop app for local TeX builds, SyncTeX, PDFs, terminal access, and project folders.</p>
+              <p>
+                Move to the desktop app for local TeX builds, SyncTeX, PDFs, terminal
+                access, and project folders.
+              </p>
             </article>
             <article class="workflow-card reveal">
               <span>03</span>
               <h3>Download from LatexDo</h3>
-              <p>Installers and update metadata live on the LatexDo website, so users do not need a GitHub account.</p>
+              <p>
+                Installers and update metadata live on the LatexDo website, so users do
+                not need a GitHub account.
+              </p>
             </article>
           </div>
         </div>
       </section>
 
-      <section id="features" class="section-band feature-band" aria-labelledby="features-title">
+      <section
+        id="features"
+        class="section-band feature-band"
+        aria-labelledby="features-title"
+      >
         <div class="section-inner">
           <div class="section-heading reveal">
             <p class="eyebrow">Built for serious documents</p>
-            <h2 id="features-title">Everything around the paper stays close to the source.</h2>
+            <h2 id="features-title">
+              Everything around the paper stays close to the source.
+            </h2>
           </div>
           <div class="feature-grid">
-            <article class="feature-card reveal"><h3>Source plus PDF</h3><p>Keep LaTeX source and rendered paper context visible while you work.</p></article>
-            <article class="feature-card reveal"><h3>Citation intelligence</h3><p>Inspect BibTeX entries, missing citations, duplicate keys, and unused references.</p></article>
-            <article class="feature-card reveal"><h3>Review mode</h3><p>Track reviewer comments and author responses beside the manuscript.</p></article>
-            <article class="feature-card reveal"><h3>Rebuttal workflow</h3><p>Generate response drafts and keep manuscript changes tied to reviewer feedback.</p></article>
-            <article class="feature-card reveal"><h3>Submission checks</h3><p>Surface structural, reproducibility, notation, and PDF compliance issues early.</p></article>
-            <article class="feature-card reveal"><h3>Local-first desktop</h3><p>Use your own TeX installation and files when the work needs a native app.</p></article>
+            <article class="feature-card reveal">
+              <h3>Source plus PDF</h3>
+              <p>
+                Keep LaTeX source and rendered paper context visible while you work.
+              </p>
+            </article>
+            <article class="feature-card reveal">
+              <h3>Citation intelligence</h3>
+              <p>
+                Inspect BibTeX entries, missing citations, duplicate keys, and unused
+                references.
+              </p>
+            </article>
+            <article class="feature-card reveal">
+              <h3>Review mode</h3>
+              <p>Track reviewer comments and author responses beside the manuscript.</p>
+            </article>
+            <article class="feature-card reveal">
+              <h3>Rebuttal workflow</h3>
+              <p>
+                Generate response drafts and keep manuscript changes tied to reviewer
+                feedback.
+              </p>
+            </article>
+            <article class="feature-card reveal">
+              <h3>Submission checks</h3>
+              <p>
+                Surface structural, reproducibility, notation, and PDF compliance issues
+                early.
+              </p>
+            </article>
+            <article class="feature-card reveal">
+              <h3>Local-first desktop</h3>
+              <p>
+                Use your own TeX installation and files when the work needs a native
+                app.
+              </p>
+            </article>
           </div>
         </div>
       </section>
@@ -333,11 +453,20 @@ and review work together.
         <div class="section-inner">
           <div class="section-heading reveal">
             <p class="eyebrow">Direct installers</p>
-            <h2 id="download-title">Downloads come from LatexDo, not GitHub Releases.</h2>
-            <p>Installers are published at <a href="downloads/">latexdo.org/downloads</a> with a manifest and checksums for the application updater.</p>
+            <h2 id="download-title">
+              Downloads come from LatexDo, not GitHub Releases.
+            </h2>
+            <p>
+              Installers are published at
+              <a href="downloads/">latexdo.org/downloads</a> with a manifest and
+              checksums for the application updater.
+            </p>
           </div>
           <div id="download-grid" class="download-grid" aria-live="polite">
-            <article class="download-card loading"><h3>Checking latest installers</h3><p>Reading the LatexDo downloads manifest.</p></article>
+            <article class="download-card loading">
+              <h3>Checking latest installers</h3>
+              <p>Reading the LatexDo downloads manifest.</p>
+            </article>
           </div>
         </div>
       </section>
@@ -351,15 +480,28 @@ and review work together.
           <div class="faq-list">
             <details class="reveal" open>
               <summary>Can people download LatexDo without a GitHub account?</summary>
-              <p>Yes. The public downloads page hosts installers, checksums, and the update manifest directly on the LatexDo website.</p>
+              <p>
+                Yes. The public downloads page hosts installers, checksums, and the
+                update manifest directly on the LatexDo website.
+              </p>
             </details>
             <details class="reveal">
-              <summary>Is the web editor the same ecosystem as the desktop app?</summary>
-              <p>Yes. The hosted editor is the fast entry point, while the desktop app handles local compilation, PDF export, terminal access, and project files.</p>
+              <summary>
+                Is the web editor the same ecosystem as the desktop app?
+              </summary>
+              <p>
+                Yes. The hosted editor is the fast entry point, while the desktop app
+                handles local compilation, PDF export, terminal access, and project
+                files.
+              </p>
             </details>
             <details class="reveal">
               <summary>Who is LatexDo for?</summary>
-              <p>Researchers, students, technical writers, reviewers, and anyone who wants a focused LaTeX workflow for source, PDFs, citations, and rebuttals.</p>
+              <p>
+                Researchers, students, technical writers, reviewers, and anyone who
+                wants a focused LaTeX workflow for source, PDFs, citations, and
+                rebuttals.
+              </p>
             </details>
           </div>
         </div>
@@ -368,7 +510,11 @@ and review work together.
 
     <footer class="site-footer">
       <div>
-        <a class="brand" href="/" aria-label="LatexDo home"><img src="assets/icon.svg" alt="" width="30" height="30" /><span>LatexDo</span></a>
+        <a class="brand" href="/" aria-label="LatexDo home"
+          ><img src="assets/icon.svg" alt="" width="30" height="30" /><span
+            >LatexDo</span
+          ></a
+        >
         <p>Modern LaTeX editing across web and desktop.</p>
       </div>
       <nav aria-label="Footer navigation">
