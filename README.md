@@ -1,81 +1,75 @@
-# LatexDo
+# latexdo
 
-LatexDo is a desktop LaTeX editor built with Electron, React, TypeScript, and
-Monaco. It compiles local projects with `latexmk` and displays the resulting PDF
-beside the source.
+LatexDo is the main desktop LaTeX editor and the source of truth for the shared editor experience used across the LatexDo projects. It combines Electron, React, TypeScript, Monaco, Vite, and local LaTeX tooling.
+
+## Repository Role
+
+- Runs the desktop app for local LaTeX projects.
+- Provides the browser editor used by the CLI and hosted editor builds.
+- Contains source copies for the CLI in `cli/` and public website in `website/`.
+- Syncs downstream repositories with `npm run sync:downstream`.
 
 ## Requirements
 
-- Node.js 20 or newer
-- A TeX distribution containing `latexmk`:
-  - macOS: MacTeX
-  - Windows: MiKTeX or TeX Live
-  - Linux: TeX Live
+- Node.js 20 or newer.
+- npm.
+- A TeX distribution with `latexmk` for PDF compilation:
+  - macOS: MacTeX.
+  - Linux: TeX Live.
+  - Windows: MiKTeX or TeX Live.
 
-## Development
+## Run Locally
 
-```bash
+Run the desktop app:
+
+```sh
 npm install
 npm run dev
 ```
 
-Use `Cmd/Ctrl + Enter` to compile and `Cmd/Ctrl + S` to save.
+Run only the browser editor:
 
-To run only the browser editor on localhost:
-
-```bash
+```sh
+npm install
 npm run web
 ```
 
-## CLI
+The browser editor defaults to `http://127.0.0.1:5173`. Use `Cmd/Ctrl + Enter` to compile and `Cmd/Ctrl + S` to save.
 
-The `latexdo` command is published from the sibling
-[`latexdo-cli`](https://github.com/latexdo/latexdo-cli) repo. Users install it
-with:
+## Common Commands
 
-```bash
-curl -fsSL https://latexdo.org/install.sh | bash
+```sh
+npm run dev              # Start Vite and Electron together.
+npm run web              # Start the browser-only editor.
+npm run build            # Build web and Electron output.
+npm run typecheck        # Run TypeScript checks.
+npm run lint             # Run ESLint.
+npm run test             # Run Vitest.
+npm run package          # Build unpacked desktop app.
+npm run dist             # Build distributable installers.
+npm run sync:downstream  # Refresh CLI, website, and hosted editor repos.
 ```
 
-The CLI caches this source repo under `~/.latexdo/app`, installs npm
-dependencies when they change, starts the local web editor, and opens the
-localhost URL in the browser.
+## Downstream Sync
 
-Source for the CLI lives in `cli/` here so the main app stays the source of
-truth. To refresh `../latexdo-cli`, `../latexdo.org`, and
-`../editor.latexdo.org` from this checkout:
+This repo owns the source for pieces published elsewhere. After changing shared editor behavior, CLI files, website files, or hosted frontend expectations, run:
 
-```bash
+```sh
 npm run sync:downstream
 ```
 
-## Production build
+That refreshes:
 
-```bash
+- `../latexdo-cli` from `cli/`.
+- `../latexdo.org` from `website/`.
+- `../editor.latexdo.org/dist` from the built editor frontend.
+
+## Release
+
+Build local installers with:
+
+```sh
 npm run dist
 ```
 
-## CI installers
-
-GitHub Actions runs on pull requests, pushes to `main`, and manual dispatches.
-After the `latexdo-ci` workflow succeeds, download the
-`latexdo-installers-<commit>` artifact from the workflow run. It contains:
-
-- `LatexDo-macos-arm64.dmg`
-- `LatexDo-windows-x64.exe`
-- `SHA256SUMS.txt`
-
-The CI macOS installer is an ad-hoc signed development build. Public macOS
-releases are built by `latexdo-release`. When configured, the release workflow
-uses Developer ID signing and notarization secrets:
-
-- `MACOS_CERTIFICATE_P12`
-- `MACOS_CERTIFICATE_PASSWORD`
-- `APPLE_API_KEY_P8` as base64-encoded `.p8` content
-- `APPLE_API_KEY_ID`
-- `APPLE_API_ISSUER`
-- `APPLE_TEAM_ID`
-
-When those secrets are missing, the release workflow still publishes ad-hoc
-signed macOS DMGs. macOS users may need to allow the app from Privacy &
-Security before opening it.
+CI also builds installers. Public macOS release signing and notarization depend on the Apple and certificate secrets configured in GitHub Actions. Without those secrets, CI can still produce ad-hoc signed development builds.

@@ -1,17 +1,27 @@
-# LatexDo CLI
+# latexdo-cli
 
-`latexdo-cli` installs the `latexdo` command. Running `latexdo` keeps a cached
-copy of `github.com/latexdo/latexdo`, installs npm dependencies when they
-change, starts the local web editor with Vite, and opens it in the browser.
+`latexdo-cli` installs the `latexdo` command. The command keeps a cached copy of the main LatexDo app, installs dependencies when they change, starts the local browser editor, and opens it in the default browser.
+
+## Repository Role
+
+- Publishes the `latexdo` command package.
+- Provides the shell installer used by `https://latexdo.org/install.sh`.
+- Launches the local browser editor from `github.com/latexdo/latexdo`.
+- Mirrors source files from `/Users/omar/Desktop/Github/latexdo/cli`.
+
+## Requirements
+
+- Git.
+- Node.js 20 or newer.
+- npm.
+- A browser.
+- Optional: a TeX distribution with `latexmk` for local PDF compilation.
 
 ## Install
 
 ```sh
 curl -fsSL https://latexdo.org/install.sh | bash
 ```
-
-The installer writes the command to `~/.local/bin/latexdo` by default, then
-bootstraps the app source and dependencies.
 
 Use a different binary directory:
 
@@ -25,31 +35,52 @@ Skip first-run bootstrap:
 LATEXDO_SKIP_BOOTSTRAP=1 curl -fsSL https://latexdo.org/install.sh | bash
 ```
 
-## Usage
+## Run Locally
+
+Run the CLI from this checkout against the local main app repo:
 
 ```sh
-latexdo              # start the local web editor and open localhost
-latexdo update       # update source and install npm dependencies
-latexdo doctor       # check local tools
-latexdo path         # print the cached app path
-latexdo reset        # remove the cached app checkout
+LATEXDO_APP_DIR=/Users/omar/Desktop/Github/latexdo LATEXDO_SKIP_UPDATE=1 ./bin/latexdo
 ```
 
-## Requirements
+Print the URL instead of opening a browser:
 
-- Git
-- Node.js 20 or newer
-- npm
-- A browser
+```sh
+LATEXDO_APP_DIR=/Users/omar/Desktop/Github/latexdo LATEXDO_SKIP_UPDATE=1 LATEXDO_NO_OPEN=1 ./bin/latexdo
+```
 
-The browser editor works without a TeX distribution. Local PDF compilation needs
-`latexmk` from MacTeX, TeX Live, or MiKTeX.
+Use a custom host or port:
+
+```sh
+./bin/latexdo --host 127.0.0.1 --port 5174
+```
+
+## Common Commands
+
+```sh
+latexdo              # Start the local browser editor.
+latexdo update       # Update the cached app and dependencies.
+latexdo doctor       # Check local tools.
+latexdo path         # Print the cached app path.
+latexdo reset        # Remove the cached app checkout.
+./bin/latexdo help   # Show local CLI help.
+```
 
 ## Development
 
-The source for this repo lives in `cli/` inside `github.com/latexdo/latexdo`.
-Run this from the main app repo to refresh the publish repos:
+Edit CLI source in `/Users/omar/Desktop/Github/latexdo/cli`, then refresh downstream repos from the main app repo:
 
 ```sh
 npm run sync:downstream
 ```
+
+The sync copies `cli/` into `latexdo-cli` and updates the installer files used by `latexdo.org`.
+
+## Related Repos
+
+- `/Users/omar/Desktop/Github/latexdo` - desktop app, shared editor UI, and downstream source.
+- `/Users/omar/Desktop/Github/latexdo.org` - public website, downloads, and installer endpoint.
+- `/Users/omar/Desktop/Github/editor.latexdo.org` - hosted Cloudflare editor and backend.
+- `/Users/omar/Desktop/Github/latexdo-cli` - published `latexdo` launcher package.
+- `/Users/omar/Desktop/Github/docs.latexdo.org` - public documentation site.
+- `/Users/omar/Desktop/Github/store.latexdo.org` - future store site.
