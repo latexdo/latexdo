@@ -52,6 +52,7 @@ const deployedVersionUpdateFeedUrl = new URL(
   `../updates/${expectedReleaseSlug}.json`,
   deployedDownloadsUrl,
 );
+const deployedReleaseIndexUrl = new URL("releases.json", deployedDownloadsUrl);
 const verifyRunId =
   process.env.GITHUB_RUN_ID ?? process.env.LATEXDO_VERIFY_RUN_ID ?? Date.now();
 
@@ -196,6 +197,32 @@ function assertUpdateFeed(value, manifestFiles) {
   }
 }
 
+function assertReleaseIndex(value) {
+  if (!value || typeof value !== "object") {
+    throw new Error("Release index is not an object.");
+  }
+  if (value.schemaVersion !== 1) {
+    throw new Error("Release index schemaVersion must be 1.");
+  }
+  if (value.product !== "LatexDo") {
+    throw new Error("Release index product must be LatexDo.");
+  }
+  if (!Array.isArray(value.releases)) {
+    throw new Error("Release index releases must be an array.");
+  }
+
+  const release = value.releases.find((item) => item?.tag === expectedReleaseSlug);
+  if (!release) {
+    throw new Error(`Release index is missing ${expectedReleaseSlug}.`);
+  }
+  if (release.downloadsPage !== expectedReleaseDownloadsUrl.href) {
+    throw new Error("Release index downloadsPage does not match the release URL.");
+  }
+  if (release.manifestUrl !== expectedReleaseManifestUrl.href) {
+    throw new Error("Release index manifestUrl does not match the release manifest.");
+  }
+}
+
 async function verifyOnce(attempt) {
   await fetchOk(cacheBustedUrl(deployedDownloadsIndexUrl, attempt));
 
@@ -218,6 +245,11 @@ async function verifyOnce(attempt) {
     cacheBustedUrl(deployedVersionUpdateFeedUrl, attempt),
   );
   assertUpdateFeed(await versionUpdateFeedResponse.json(), files);
+
+  const releaseIndexResponse = await fetchOk(
+    cacheBustedUrl(deployedReleaseIndexUrl, attempt),
+  );
+  assertReleaseIndex(await releaseIndexResponse.json());
 
   const checksumsUrl = new URL("SHA256SUMS.txt", deployedDownloadsUrl);
   const checksums = await (await fetchOk(cacheBustedUrl(checksumsUrl, attempt))).text();

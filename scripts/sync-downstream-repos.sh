@@ -62,6 +62,8 @@ sync_website_repo() {
     --exclude "README.md" \
     --exclude "LICENSE" \
     --exclude "wrangler.jsonc" \
+    --exclude "downloads/" \
+    --exclude "updates/" \
     "$SOURCE_DIR/website/" \
     "$WEBSITE_REPO/"
 }

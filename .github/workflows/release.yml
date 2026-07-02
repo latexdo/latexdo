@@ -396,9 +396,11 @@ jobs:
         if: ${{ steps.deploy_mode.outputs.enabled == 'true' }}
         shell: bash
         run: |
-          rm -rf latexdo-org-site/downloads latexdo-org-site/updates
-          cp -R public-downloads/downloads latexdo-org-site/downloads
-          cp -R public-downloads/updates latexdo-org-site/updates
+          mkdir -p latexdo-org-site/downloads latexdo-org-site/updates
+          cp -R public-downloads/downloads/. latexdo-org-site/downloads/
+          cp -R public-downloads/updates/. latexdo-org-site/updates/
+          LATEXDO_DOWNLOAD_BASE_URL=https://latexdo.org \
+            node scripts/build-downloads-release-index.mjs latexdo-org-site/downloads
 
           git -C latexdo-org-site config user.name "github-actions[bot]"
           git -C latexdo-org-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
