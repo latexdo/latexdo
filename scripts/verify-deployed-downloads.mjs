@@ -1,7 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-const downloadsUrl = new URL(process.argv[2] ?? "https://latexdo.org/downloads/");
+const deployedDownloadsUrl = new URL(
+  process.argv[2] ?? "https://latexdo.org/downloads/",
+);
+const publicDownloadsUrl = new URL(
+  process.env.LATEXDO_PUBLIC_DOWNLOADS_URL ?? deployedDownloadsUrl.href,
+);
 const retries = Number(process.env.LATEXDO_VERIFY_RETRIES ?? 24);
 const delayMs = Number(process.env.LATEXDO_VERIFY_DELAY_MS ?? 10_000);
 const expectedCommit = process.env.GITHUB_SHA ?? "";
@@ -10,7 +15,23 @@ const expectedVersion = JSON.parse(
   await readFile(path.join(process.cwd(), "package.json"), "utf8"),
 ).version;
 const expectedReleaseSlug = `v${expectedVersion.replace(/^v/i, "")}`;
-const expectedReleaseDownloadsUrl = new URL(`${expectedReleaseSlug}/`, downloadsUrl);
+const deployedReleaseDownloadsUrl = new URL(
+  `${expectedReleaseSlug}/`,
+  deployedDownloadsUrl,
+);
+const deployedDownloadsIndexUrl = new URL("index.html", deployedDownloadsUrl);
+const deployedReleaseDownloadsIndexUrl = new URL(
+  "index.html",
+  deployedReleaseDownloadsUrl,
+);
+const deployedReleaseManifestUrl = new URL(
+  "manifest.json",
+  deployedReleaseDownloadsUrl,
+);
+const expectedReleaseDownloadsUrl = new URL(
+  `${expectedReleaseSlug}/`,
+  publicDownloadsUrl,
+);
 const expectedReleaseManifestUrl = new URL(
   "manifest.json",
   expectedReleaseDownloadsUrl,
@@ -21,10 +42,13 @@ const expectedReleaseAssetBaseUrl = new URL(
     `https://github.com/${expectedRepository}/releases/download/${expectedReleaseSlug}`
   }/`.replace(/\/+$/, "/"),
 );
-const expectedLatestUpdateFeedUrl = new URL("../updates/latest.json", downloadsUrl);
-const expectedVersionUpdateFeedUrl = new URL(
+const deployedLatestUpdateFeedUrl = new URL(
+  "../updates/latest.json",
+  deployedDownloadsUrl,
+);
+const deployedVersionUpdateFeedUrl = new URL(
   `../updates/${expectedReleaseSlug}.json`,
-  downloadsUrl,
+  deployedDownloadsUrl,
 );
 const verifyRunId =
   process.env.GITHUB_RUN_ID ?? process.env.LATEXDO_VERIFY_RUN_ID ?? Date.now();
@@ -163,29 +187,29 @@ function assertUpdateFeed(value, manifestFiles) {
 }
 
 async function verifyOnce(attempt) {
-  await fetchOk(cacheBustedUrl(downloadsUrl, attempt));
+  await fetchOk(cacheBustedUrl(deployedDownloadsIndexUrl, attempt));
 
-  const manifestUrl = new URL("manifest.json", downloadsUrl);
+  const manifestUrl = new URL("manifest.json", deployedDownloadsUrl);
   const manifestResponse = await fetchOk(cacheBustedUrl(manifestUrl, attempt));
   const files = assertManifest(await manifestResponse.json());
 
-  await fetchOk(cacheBustedUrl(expectedReleaseDownloadsUrl, attempt));
+  await fetchOk(cacheBustedUrl(deployedReleaseDownloadsIndexUrl, attempt));
   const releaseManifestResponse = await fetchOk(
-    cacheBustedUrl(expectedReleaseManifestUrl, attempt),
+    cacheBustedUrl(deployedReleaseManifestUrl, attempt),
   );
   assertManifest(await releaseManifestResponse.json());
 
   const latestUpdateFeedResponse = await fetchOk(
-    cacheBustedUrl(expectedLatestUpdateFeedUrl, attempt),
+    cacheBustedUrl(deployedLatestUpdateFeedUrl, attempt),
   );
   assertUpdateFeed(await latestUpdateFeedResponse.json(), files);
 
   const versionUpdateFeedResponse = await fetchOk(
-    cacheBustedUrl(expectedVersionUpdateFeedUrl, attempt),
+    cacheBustedUrl(deployedVersionUpdateFeedUrl, attempt),
   );
   assertUpdateFeed(await versionUpdateFeedResponse.json(), files);
 
-  const checksumsUrl = new URL("SHA256SUMS.txt", downloadsUrl);
+  const checksumsUrl = new URL("SHA256SUMS.txt", deployedDownloadsUrl);
   const checksums = await (await fetchOk(cacheBustedUrl(checksumsUrl, attempt))).text();
   for (const file of files) {
     const checksumPath = file.filename;
@@ -194,7 +218,7 @@ async function verifyOnce(attempt) {
     }
   }
 
-  const releaseChecksumsUrl = new URL("SHA256SUMS.txt", expectedReleaseDownloadsUrl);
+  const releaseChecksumsUrl = new URL("SHA256SUMS.txt", deployedReleaseDownloadsUrl);
   const releaseChecksums = await (
     await fetchOk(cacheBustedUrl(releaseChecksumsUrl, attempt))
   ).text();
@@ -225,7 +249,7 @@ let lastError = null;
 for (let attempt = 1; attempt <= retries; attempt += 1) {
   try {
     await verifyOnce(attempt);
-    console.log(`Verified deployed downloads at ${downloadsUrl.href}`);
+    console.log(`Verified deployed downloads at ${deployedDownloadsUrl.href}`);
     process.exit(0);
   } catch (error) {
     lastError = error;

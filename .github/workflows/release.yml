@@ -384,5 +384,6 @@ jobs:
         env:
           LATEXDO_VERIFY_RETRIES: 60
           LATEXDO_VERIFY_DELAY_MS: 10000
+          LATEXDO_PUBLIC_DOWNLOADS_URL: https://latexdo.org/downloads/
           LATEXDO_RELEASE_ASSET_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.release_metadata.outputs.tag }}
-        run: node scripts/verify-deployed-downloads.mjs https://latexdo.org/downloads/
+        run: node scripts/verify-deployed-downloads.mjs https://raw.githubusercontent.com/latexdo/latexdo.org/main/downloads/
