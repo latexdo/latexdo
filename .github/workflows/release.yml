@@ -356,18 +356,18 @@ jobs:
             {
               echo "### Downloads deploy skipped"
               echo
-              echo "Set LATEXDO_WEBSITE_TOKEN with write access to latexdo/latexdo.github.io to publish installers to /downloads/."
+              echo "Set LATEXDO_WEBSITE_TOKEN with write access to latexdo/latexdo.org to publish installers to /downloads/."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy downloads to latexdo.github.io
+      - name: Deploy downloads to latexdo.org
         if: ${{ steps.deploy_mode.outputs.enabled == 'true' }}
         uses: peaceiris/actions-gh-pages@v4
         with:
-          external_repository: latexdo/latexdo.github.io
+          external_repository: latexdo/latexdo.org
           publish_branch: main
           publish_dir: ./public-downloads
           keep_files: true

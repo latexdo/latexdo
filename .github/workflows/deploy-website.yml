@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: deploy / latexdo.github.io
+    name: deploy / latexdo.org
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -60,18 +60,18 @@ jobs:
             {
               echo "### Website deploy skipped"
               echo
-              echo "Set the LATEXDO_WEBSITE_TOKEN repository secret with write access to latexdo/latexdo.github.io to publish automatically."
+              echo "Set the LATEXDO_WEBSITE_TOKEN repository secret with write access to latexdo/latexdo.org to publish automatically."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy to latexdo.github.io
+      - name: Deploy to latexdo.org
         if: ${{ steps.deploy_mode.outputs.enabled == 'true' }}
         uses: peaceiris/actions-gh-pages@v4
         with:
-          external_repository: latexdo/latexdo.github.io
+          external_repository: latexdo/latexdo.org
           publish_branch: main
           publish_dir: ./website
           keep_files: true
