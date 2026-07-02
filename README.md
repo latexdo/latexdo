@@ -78,7 +78,8 @@ tag such as `v<package version>-build.<run>.<attempt>.<sha>`, and publishes the
 website release index at `https://latexdo.org/downloads/<release tag>/`.
 `https://latexdo.org/updates/latest.json` points the desktop app at that
 versioned release manifest, whose download URLs point to the GitHub Release
-assets.
+assets. The downloads page also publishes an all-release tag index at
+`https://latexdo.org/downloads/` and `https://latexdo.org/downloads/releases.json`.
 
 Public macOS release signing and notarization depend on the Apple and certificate
 secrets configured in GitHub Actions. Without those secrets, CI can still
