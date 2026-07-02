@@ -4,13 +4,15 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: latexdo-release
+  group: latexdo-release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -291,9 +293,56 @@ jobs:
           test -f LatexDo-windows-x64.exe
           sha256sum *.dmg *.exe > SHA256SUMS.txt
 
+      - name: Resolve release metadata
+        id: release_metadata
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          version="${version#v}"
+          tag="v${version}"
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME}"
+            tag_version="${tag#v}"
+            if [ "$tag_version" != "$version" ]; then
+              echo "::error::Git tag $tag does not match package.json version $version."
+              exit 1
+            fi
+          fi
+
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release_metadata.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release_metadata.outputs.version }}
+        shell: bash
+        run: |
+          assets=(
+            artifacts/LatexDo-macos-arm64.dmg
+            artifacts/LatexDo-macos-x64.dmg
+            artifacts/LatexDo-windows-x64.exe
+            artifacts/SHA256SUMS.txt
+          )
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${assets[@]}" \
+              --target "$GITHUB_SHA" \
+              --title "LatexDo v${RELEASE_VERSION}" \
+              --notes "LatexDo v${RELEASE_VERSION} desktop installers."
+          fi
+
       - name: Build downloads website
         env:
           LATEXDO_DOWNLOAD_BASE_URL: https://latexdo.org
+          LATEXDO_RELEASE_VERSION: ${{ steps.release_metadata.outputs.version }}
+          LATEXDO_RELEASE_ASSET_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.release_metadata.outputs.tag }}
         run: node scripts/build-downloads-page.mjs artifacts public-downloads/downloads
 
       - name: Select deploy mode
@@ -332,4 +381,5 @@ jobs:
         env:
           LATEXDO_VERIFY_RETRIES: 24
           LATEXDO_VERIFY_DELAY_MS: 10000
+          LATEXDO_RELEASE_ASSET_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.release_metadata.outputs.tag }}
         run: node scripts/verify-deployed-downloads.mjs https://latexdo.org/downloads/

@@ -117,7 +117,8 @@ const api = {
     ipcRenderer.invoke("git:commit-file-diff", projectId, relativePath, hash),
   checkForUpdates: (): Promise<UpdateCheckResult> =>
     ipcRenderer.invoke("app:check-updates"),
-  openReleasesPage: (): Promise<void> => ipcRenderer.invoke("app:open-releases"),
+  openReleasesPage: (releaseUrl?: string): Promise<void> =>
+    ipcRenderer.invoke("app:open-releases", releaseUrl),
   getSpellCheckerSettings: (): Promise<SpellCheckerSettings> =>
     ipcRenderer.invoke("spellchecker:get-settings"),
   updateSpellCheckerSettings: (

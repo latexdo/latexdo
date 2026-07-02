@@ -10,6 +10,12 @@ const fallbackUrl = "https://latexdo.org/downloads/";
 const sha256 = "a".repeat(64);
 
 function manifest(version: string | null): DownloadManifest {
+  const releaseVersion = version?.replace(/^v/i, "") ?? null;
+  const downloadsPage = version ? `${fallbackUrl}v${releaseVersion}/` : fallbackUrl;
+  const assetBaseUrl = releaseVersion
+    ? `https://github.com/latexdo/latexdo/releases/download/v${releaseVersion}/`
+    : downloadsPage;
+
   return {
     schemaVersion: 1,
     product: "LatexDo",
@@ -17,7 +23,7 @@ function manifest(version: string | null): DownloadManifest {
     publishedAt: "2026-06-27T00:00:00.000Z",
     commit: "abc123",
     repository: "latexdo/latexdo",
-    downloadsPage: fallbackUrl,
+    downloadsPage,
     files: [
       {
         id: "macos-arm64",
@@ -25,7 +31,7 @@ function manifest(version: string | null): DownloadManifest {
         platform: "macos",
         arch: "arm64",
         filename: "LatexDo-macos-arm64.dmg",
-        url: `${fallbackUrl}files/LatexDo-macos-arm64.dmg`,
+        url: `${assetBaseUrl}LatexDo-macos-arm64.dmg`,
         sha256,
         size: 128,
       },
@@ -35,7 +41,7 @@ function manifest(version: string | null): DownloadManifest {
         platform: "macos",
         arch: "x64",
         filename: "LatexDo-macos-x64.dmg",
-        url: `${fallbackUrl}files/LatexDo-macos-x64.dmg`,
+        url: `${assetBaseUrl}LatexDo-macos-x64.dmg`,
         sha256,
         size: 128,
       },
@@ -45,7 +51,7 @@ function manifest(version: string | null): DownloadManifest {
         platform: "windows",
         arch: "x64",
         filename: "LatexDo-windows-x64.exe",
-        url: `${fallbackUrl}files/LatexDo-windows-x64.exe`,
+        url: `${assetBaseUrl}LatexDo-windows-x64.exe`,
         sha256,
         size: 128,
       },
@@ -76,6 +82,7 @@ describe("download manifest generated update matrix", () => {
     "case %# current=$currentVersion latest=$latestVersion update=$shouldUpdate",
     ({ currentVersion, latestVersion, shouldUpdate }) => {
       const validManifest = validateDownloadManifest(manifest(latestVersion));
+      const downloadsPage = manifest(latestVersion).downloadsPage;
       const result = updateCheckFromDownloadManifest(
         validManifest,
         currentVersion,
@@ -84,7 +91,7 @@ describe("download manifest generated update matrix", () => {
 
       expect(validManifest).not.toBeNull();
       expect(result.latestVersion).toBe(latestVersion);
-      expect(result.releaseUrl).toBe(fallbackUrl);
+      expect(result.releaseUrl).toBe(downloadsPage);
       expect(result.updateAvailable).toBe(shouldUpdate);
     },
   );

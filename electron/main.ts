@@ -98,6 +98,7 @@ interface WebsiteUpdatePayload {
   channel?: unknown;
   version?: unknown;
   publishedAt?: unknown;
+  releaseUrl?: unknown;
   downloadsPage?: unknown;
   manifestUrl?: unknown;
 }
@@ -1452,6 +1453,31 @@ function payloadString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function safeDownloadsUrl(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    value.length > maxSettingsStringLength
+  ) {
+    return downloadsPageUrl;
+  }
+
+  try {
+    const url = new URL(value.trim());
+    if (
+      url.protocol === "https:" &&
+      url.hostname === "latexdo.org" &&
+      url.pathname.startsWith("/downloads/")
+    ) {
+      return url.href;
+    }
+  } catch {
+    return downloadsPageUrl;
+  }
+
+  return downloadsPageUrl;
+}
+
 function updateResultFromWebsitePayload(
   payload: WebsiteUpdatePayload,
   currentVersion: string,
@@ -1465,7 +1491,10 @@ function updateResultFromWebsitePayload(
     throw new Error("No website update version found.");
   }
 
-  const releaseUrl = payloadString(payload.downloadsPage) ?? downloadsPageUrl;
+  const releaseUrl =
+    payloadString(payload.releaseUrl) ??
+    payloadString(payload.downloadsPage) ??
+    downloadsPageUrl;
   return {
     currentVersion,
     latestVersion,
@@ -2449,8 +2478,8 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("app:open-releases", async (_event, ...rawArgs: unknown[]) => {
     const channel = "app:open-releases";
-    expectIpcArgs(channel, rawArgs, 0);
-    await shell.openExternal(downloadsPageUrl);
+    const [rawReleaseUrl] = expectIpcArgRange(channel, rawArgs, 0, 1);
+    await shell.openExternal(safeDownloadsUrl(rawReleaseUrl));
   });
   ipcMain.handle("spellchecker:get-settings", async (event, ...rawArgs: unknown[]) => {
     const channel = "spellchecker:get-settings";

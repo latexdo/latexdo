@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const root = process.cwd();
@@ -12,6 +12,18 @@ const publishedAt = process.env.LATEXDO_RELEASE_DATE ?? new Date().toISOString()
 const commit = process.env.GITHUB_SHA ?? "";
 const repository = process.env.GITHUB_REPOSITORY ?? "latexdo/latexdo";
 const siteRootDir = path.dirname(outputDir);
+const baseUrlRoot = baseUrl.replace(/\/$/, "");
+const releaseVersion = normalizeReleaseVersion(
+  process.env.LATEXDO_RELEASE_VERSION ?? packageJson.version,
+);
+const releaseSlug = `v${releaseVersion}`;
+const latestDownloadsPageUrl = `${baseUrlRoot}/downloads/`;
+const releaseDownloadsPageUrl = `${baseUrlRoot}/downloads/${releaseSlug}/`;
+const releaseOutputDir = path.join(outputDir, releaseSlug);
+const releaseAssetBaseUrl = (
+  process.env.LATEXDO_RELEASE_ASSET_BASE_URL ??
+  `https://github.com/${repository}/releases/download/${releaseSlug}`
+).replace(/\/$/, "");
 
 const downloads = [
   {
@@ -40,8 +52,21 @@ const downloads = [
   },
 ];
 
+function normalizeReleaseVersion(value) {
+  const version = String(value).trim().replace(/^v/i, "");
+  if (
+    !version ||
+    version.includes("/") ||
+    version.includes("\\") ||
+    version.includes("..")
+  ) {
+    throw new Error(`Invalid release version: ${value}`);
+  }
+  return version;
+}
+
 function fileUrl(filename) {
-  return `${baseUrl.replace(/\/$/, "")}/downloads/files/${encodeURIComponent(filename)}`;
+  return `${releaseAssetBaseUrl}/${encodeURIComponent(filename)}`;
 }
 
 function formatBytes(bytes) {
@@ -64,14 +89,13 @@ function htmlEscape(value) {
     .replaceAll('"', "&quot;");
 }
 
-await mkdir(path.join(outputDir, "files"), { recursive: true });
+await mkdir(outputDir, { recursive: true });
+await mkdir(releaseOutputDir, { recursive: true });
 
 const files = [];
 for (const download of downloads) {
   const source = path.join(artifactsDir, download.filename);
-  const target = path.join(outputDir, "files", download.filename);
   const fileStat = await stat(source);
-  await copyFile(source, target);
   files.push({
     ...download,
     size: fileStat.size,
@@ -84,11 +108,11 @@ for (const download of downloads) {
 const manifest = {
   schemaVersion: 1,
   product: "LatexDo",
-  version: packageJson.version,
+  version: releaseVersion,
   publishedAt,
   commit,
   repository,
-  downloadsPage: `${baseUrl.replace(/\/$/, "")}/downloads/`,
+  downloadsPage: releaseDownloadsPageUrl,
   files,
 };
 
@@ -96,72 +120,108 @@ const updateFeed = {
   schemaVersion: 1,
   product: "LatexDo",
   channel: "stable",
-  version: packageJson.version,
+  version: releaseVersion,
   publishedAt,
   commit,
   repository,
+  release: releaseSlug,
+  releaseUrl: releaseDownloadsPageUrl,
   downloadsPage: manifest.downloadsPage,
   manifestUrl: `${manifest.downloadsPage}manifest.json`,
   files,
 };
 
-const checksums = files
-  .map((file) => `${file.sha256}  files/${file.filename}`)
+const releaseChecksums = files
+  .map((file) => `${file.sha256}  ${file.filename}`)
   .join("\n");
 
 await writeFile(
   path.join(outputDir, "manifest.json"),
   `${JSON.stringify(manifest, null, 2)}\n`,
 );
-await writeFile(path.join(outputDir, "SHA256SUMS.txt"), `${checksums}\n`);
+await writeFile(path.join(outputDir, "SHA256SUMS.txt"), `${releaseChecksums}\n`);
+await writeFile(
+  path.join(releaseOutputDir, "manifest.json"),
+  `${JSON.stringify(manifest, null, 2)}\n`,
+);
+await writeFile(path.join(releaseOutputDir, "SHA256SUMS.txt"), `${releaseChecksums}\n`);
 
 await mkdir(path.join(siteRootDir, "updates"), { recursive: true });
 await writeFile(
   path.join(siteRootDir, "updates", "latest.json"),
   `${JSON.stringify(updateFeed, null, 2)}\n`,
 );
+await writeFile(
+  path.join(siteRootDir, "updates", `${releaseSlug}.json`),
+  `${JSON.stringify(updateFeed, null, 2)}\n`,
+);
 
-const cards = files
-  .map(
-    (file) => `
+function renderCards(fileHref) {
+  return files
+    .map(
+      (file) => `
           <article class="download-card">
             <div>
               <h2>${htmlEscape(file.label)}</h2>
               <p>${htmlEscape(file.note)}</p>
-              <span>${htmlEscape(file.sizeLabel)} · SHA-256 available</span>
+              <span>${htmlEscape(file.sizeLabel)} - SHA-256 available</span>
             </div>
             <a class="button primary" href="${htmlEscape(
-              `files/${file.filename}`,
+              fileHref(file),
             )}" download>Download</a>
           </article>`,
-  )
-  .join("\n");
+    )
+    .join("\n");
+}
 
-const html = `<!doctype html>
+function renderDownloadsPage({
+  pageTitle,
+  description,
+  assetPrefix,
+  homeHref,
+  manifestHref,
+  checksumsHref,
+  cards,
+  canonicalUrl,
+  latestHref,
+}) {
+  const releaseLink = latestHref
+    ? `<p>
+          This is a permanent release page. The current release is also available at
+          <a href="${htmlEscape(latestHref)}">latest downloads</a>.
+        </p>`
+    : `<p>
+          Permanent downloads for this release are available at
+          <a href="${htmlEscape(`${releaseSlug}/`)}">${htmlEscape(releaseSlug)}</a>.
+        </p>`;
+
+  return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Download the latest LatexDo desktop installers directly from the LatexDo website."
+      content="${htmlEscape(description)}"
     />
-    <title>LatexDo Downloads</title>
-    <link rel="icon" type="image/svg+xml" href="../assets/icon.svg" />
-    <link rel="stylesheet" href="../style.css" />
+    <title>${htmlEscape(pageTitle)}</title>
+    <link rel="canonical" href="${htmlEscape(canonicalUrl)}" />
+    <link rel="icon" type="image/svg+xml" href="${assetPrefix}assets/icon.svg" />
+    <link rel="stylesheet" href="${assetPrefix}style.css" />
   </head>
   <body>
     <header class="site-header">
       <nav class="nav-shell" aria-label="Primary navigation">
-        <a class="brand" href="../">
-          <img src="../assets/icon.svg" alt="" width="34" height="34" />
+        <a class="brand" href="${homeHref}">
+          <img src="${assetPrefix}assets/icon.svg" alt="" width="34" height="34" />
           <span>LatexDo</span>
         </a>
         <div class="nav-links">
           <a class="nav-editor-link" href="https://editor.latexdo.org">Open editor</a>
-          <a href="../">Home</a>
-          <a href="manifest.json">Manifest</a>
-          <a href="SHA256SUMS.txt">Checksums</a>
+          <a href="${homeHref}">Home</a>
+          <a href="${assetPrefix}about/">About</a>
+          <a href="${manifestHref}">Manifest</a>
+          <a href="${checksumsHref}">Checksums</a>
         </div>
       </nav>
     </header>
@@ -169,11 +229,9 @@ const html = `<!doctype html>
     <main class="downloads-page">
       <section class="downloads-hero">
         <p class="eyebrow">Direct downloads</p>
-        <h1>LatexDo Downloads</h1>
-        <p>
-          Download the latest LatexDo desktop builds directly from this website.
-          The application also checks this page's manifest for update information.
-        </p>
+        <h1>${htmlEscape(pageTitle)}</h1>
+        <p>${htmlEscape(description)}</p>
+        ${releaseLink}
       </section>
 
       <section class="downloads-grid" aria-label="LatexDo installers">
@@ -185,7 +243,7 @@ ${cards}
         <dl>
           <div>
             <dt>Version</dt>
-            <dd>${htmlEscape(packageJson.version)}</dd>
+            <dd>${htmlEscape(releaseVersion)}</dd>
           </div>
           <div>
             <dt>Published</dt>
@@ -197,20 +255,51 @@ ${cards}
           </div>
         </dl>
         <p>
-          For automated checks, use <a href="manifest.json">manifest.json</a>.
-          For file verification, use <a href="SHA256SUMS.txt">SHA256SUMS.txt</a>.
+          For automated checks, use <a href="${manifestHref}">manifest.json</a>.
+          For file verification, use <a href="${checksumsHref}">SHA256SUMS.txt</a>.
         </p>
       </section>
     </main>
 
     <footer class="site-footer">
       <span>LatexDo</span>
+      <a href="${assetPrefix}about/">About</a>
       <a href="https://editor.latexdo.org">Editor</a>
-      <a href="../">Website</a>
-      <a href="manifest.json">Manifest</a>
+      <a href="${homeHref}">Website</a>
+      <a href="${manifestHref}">Manifest</a>
     </footer>
   </body>
 </html>
 `;
+}
 
-await writeFile(path.join(outputDir, "index.html"), html);
+const latestHtml = renderDownloadsPage({
+  pageTitle: "LatexDo Downloads",
+  description:
+    "Download the latest LatexDo desktop release from the LatexDo website. Installer files are stored in GitHub Releases and indexed here for updates.",
+  assetPrefix: "../",
+  homeHref: "../",
+  manifestHref: "manifest.json",
+  checksumsHref: "SHA256SUMS.txt",
+  cards: renderCards((file) => file.url),
+  canonicalUrl: latestDownloadsPageUrl,
+  latestHref: null,
+});
+
+const releaseHtml = renderDownloadsPage({
+  pageTitle: `LatexDo ${releaseSlug} Downloads`,
+  description:
+    "Download this exact LatexDo desktop release from the LatexDo website. Installer files are stored in GitHub Releases and indexed here for updates.",
+  assetPrefix: "../../",
+  homeHref: "../../",
+  manifestHref: "manifest.json",
+  checksumsHref: "SHA256SUMS.txt",
+  cards: renderCards((file) => file.url),
+  canonicalUrl: releaseDownloadsPageUrl,
+  latestHref: "../",
+});
+
+await writeFile(path.join(outputDir, "index.html"), latestHtml);
+await writeFile(path.join(releaseOutputDir, "index.html"), releaseHtml);
+
+console.log(`Built LatexDo ${releaseVersion} downloads at ${releaseDownloadsPageUrl}`);

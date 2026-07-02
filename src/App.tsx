@@ -7819,7 +7819,11 @@ ${macroEnd}
           <div className="update-banner-actions">
             <button
               type="button"
-              onClick={() => void window.latexdo.openReleasesPage()}
+              onClick={() =>
+                void window.latexdo.openReleasesPage(
+                  updateInfo?.releaseUrl ?? undefined,
+                )
+              }
             >
               <ExternalLink size={13} />
               Download update
@@ -9384,7 +9388,11 @@ ${macroEnd}
                       <button
                         type="button"
                         className="dialog-submit"
-                        onClick={() => void window.latexdo.openReleasesPage()}
+                        onClick={() =>
+                          void window.latexdo.openReleasesPage(
+                            updateInfo?.releaseUrl ?? undefined,
+                          )
+                        }
                       >
                         Open downloads
                       </button>
