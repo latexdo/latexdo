@@ -266,7 +266,10 @@ jobs:
     name: publish / website downloads
     needs: [build_macos, build_windows]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
+    concurrency:
+      group: latexdo-org-deploy
+      cancel-in-progress: false
 
     steps:
       - uses: actions/checkout@v6
@@ -379,7 +382,7 @@ jobs:
       - name: Verify deployed downloads
         if: ${{ steps.deploy_mode.outputs.enabled == 'true' }}
         env:
-          LATEXDO_VERIFY_RETRIES: 24
+          LATEXDO_VERIFY_RETRIES: 60
           LATEXDO_VERIFY_DELAY_MS: 10000
           LATEXDO_RELEASE_ASSET_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.release_metadata.outputs.tag }}
         run: node scripts/verify-deployed-downloads.mjs https://latexdo.org/downloads/
