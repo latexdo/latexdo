@@ -5,9 +5,27 @@ const downloadsUrl = new URL(process.argv[2] ?? "https://latexdo.org/downloads/"
 const retries = Number(process.env.LATEXDO_VERIFY_RETRIES ?? 24);
 const delayMs = Number(process.env.LATEXDO_VERIFY_DELAY_MS ?? 10_000);
 const expectedCommit = process.env.GITHUB_SHA ?? "";
+const expectedRepository = process.env.GITHUB_REPOSITORY ?? "latexdo/latexdo";
 const expectedVersion = JSON.parse(
   await readFile(path.join(process.cwd(), "package.json"), "utf8"),
 ).version;
+const expectedReleaseSlug = `v${expectedVersion.replace(/^v/i, "")}`;
+const expectedReleaseDownloadsUrl = new URL(`${expectedReleaseSlug}/`, downloadsUrl);
+const expectedReleaseManifestUrl = new URL(
+  "manifest.json",
+  expectedReleaseDownloadsUrl,
+);
+const expectedReleaseAssetBaseUrl = new URL(
+  `${
+    process.env.LATEXDO_RELEASE_ASSET_BASE_URL ??
+    `https://github.com/${expectedRepository}/releases/download/${expectedReleaseSlug}`
+  }/`.replace(/\/+$/, "/"),
+);
+const expectedLatestUpdateFeedUrl = new URL("../updates/latest.json", downloadsUrl);
+const expectedVersionUpdateFeedUrl = new URL(
+  `../updates/${expectedReleaseSlug}.json`,
+  downloadsUrl,
+);
 
 const requiredIds = new Set(["macos-arm64", "macos-x64", "windows-x64"]);
 const sha256Pattern = /^[a-f0-9]{64}$/;
@@ -54,6 +72,11 @@ function assertManifest(value) {
   if (!Array.isArray(value.files)) {
     throw new Error("Manifest files must be an array.");
   }
+  if (value.downloadsPage !== expectedReleaseDownloadsUrl.href) {
+    throw new Error(
+      `Manifest downloadsPage must point to ${expectedReleaseDownloadsUrl.href}.`,
+    );
+  }
 
   const files = value.files;
   const ids = new Set(files.map((file) => file.id));
@@ -64,7 +87,10 @@ function assertManifest(value) {
   }
 
   for (const file of files) {
-    if (typeof file.url !== "string" || !file.url.startsWith("https://")) {
+    if (
+      typeof file.url !== "string" ||
+      !file.url.startsWith(expectedReleaseAssetBaseUrl.href)
+    ) {
       throw new Error(`Invalid URL for ${file.id}.`);
     }
     if (typeof file.size !== "number" || file.size <= 0) {
@@ -91,6 +117,9 @@ function assertUpdateFeed(value, manifestFiles) {
   if (value.channel !== "stable") {
     throw new Error("Update feed channel must be stable.");
   }
+  if (value.release !== expectedReleaseSlug) {
+    throw new Error("Update feed release does not match the expected version.");
+  }
   if (value.version !== expectedVersion) {
     throw new Error(
       `Update feed version ${value.version ?? "<missing>"} does not match ${expectedVersion}.`,
@@ -101,11 +130,14 @@ function assertUpdateFeed(value, manifestFiles) {
       `Update feed commit ${value.commit ?? "<missing>"} does not match ${expectedCommit}.`,
     );
   }
-  if (value.downloadsPage !== downloadsUrl.href) {
-    throw new Error("Update feed downloadsPage does not match the downloads URL.");
+  if (value.releaseUrl !== expectedReleaseDownloadsUrl.href) {
+    throw new Error("Update feed releaseUrl does not match the release URL.");
   }
-  if (value.manifestUrl !== new URL("manifest.json", downloadsUrl).href) {
-    throw new Error("Update feed manifestUrl does not match the downloads manifest.");
+  if (value.downloadsPage !== expectedReleaseDownloadsUrl.href) {
+    throw new Error("Update feed downloadsPage does not match the release URL.");
+  }
+  if (value.manifestUrl !== expectedReleaseManifestUrl.href) {
+    throw new Error("Update feed manifestUrl does not match the release manifest.");
   }
   if (!Array.isArray(value.files)) {
     throw new Error("Update feed files must be an array.");
@@ -126,15 +158,34 @@ async function verifyOnce() {
   const manifestResponse = await fetchOk(manifestUrl);
   const files = assertManifest(await manifestResponse.json());
 
-  const updateFeedUrl = new URL("../updates/latest.json", downloadsUrl);
-  const updateFeedResponse = await fetchOk(updateFeedUrl);
-  assertUpdateFeed(await updateFeedResponse.json(), files);
+  await fetchOk(expectedReleaseDownloadsUrl);
+  const releaseManifestResponse = await fetchOk(expectedReleaseManifestUrl);
+  assertManifest(await releaseManifestResponse.json());
+
+  const latestUpdateFeedResponse = await fetchOk(expectedLatestUpdateFeedUrl);
+  assertUpdateFeed(await latestUpdateFeedResponse.json(), files);
+
+  const versionUpdateFeedResponse = await fetchOk(expectedVersionUpdateFeedUrl);
+  assertUpdateFeed(await versionUpdateFeedResponse.json(), files);
 
   const checksumsUrl = new URL("SHA256SUMS.txt", downloadsUrl);
   const checksums = await (await fetchOk(checksumsUrl)).text();
   for (const file of files) {
-    if (!checksums.includes(file.sha256) || !checksums.includes(file.filename)) {
-      throw new Error(`Checksums file does not include ${file.filename}.`);
+    const checksumPath = file.filename;
+    if (!checksums.includes(file.sha256) || !checksums.includes(checksumPath)) {
+      throw new Error(`Latest checksums file does not include ${checksumPath}.`);
+    }
+  }
+
+  const releaseChecksumsUrl = new URL("SHA256SUMS.txt", expectedReleaseDownloadsUrl);
+  const releaseChecksums = await (await fetchOk(releaseChecksumsUrl)).text();
+  for (const file of files) {
+    const checksumPath = file.filename;
+    if (
+      !releaseChecksums.includes(file.sha256) ||
+      !releaseChecksums.includes(checksumPath)
+    ) {
+      throw new Error(`Release checksums file does not include ${checksumPath}.`);
     }
   }
 

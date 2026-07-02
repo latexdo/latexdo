@@ -43,6 +43,8 @@ jobs:
         run: |
           mkdir -p website/assets
           cp build/icon.svg website/assets/icon.svg
+          # Downloads and update feeds are owned by latexdo-release. Leaving them
+          # out of publish_dir lets keep_files preserve every versioned release.
           rm -rf website/downloads website/updates
           rm -rf website/node_modules website/src website/.github
           rm -f website/package.json website/package-lock.json website/tsconfig.json website/.gitignore

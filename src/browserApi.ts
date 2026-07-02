@@ -601,8 +601,12 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       };
     },
 
-    async openReleasesPage() {
-      window.open("https://latexdo.org/downloads/", "_blank", "noopener,noreferrer");
+    async openReleasesPage(releaseUrl) {
+      window.open(
+        releaseUrl || "https://latexdo.org/downloads/",
+        "_blank",
+        "noopener,noreferrer",
+      );
     },
 
     async getSpellCheckerSettings() {
