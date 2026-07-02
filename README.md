@@ -73,8 +73,9 @@ npm run dist
 ```
 
 CI also builds installers. The release workflow uploads macOS and Windows
-installers to the GitHub Release for `v<package version>` and publishes the
-website release index at `https://latexdo.org/downloads/v<package version>/`.
+installers to a new immutable GitHub Release for each main-branch run, using a
+tag such as `v<package version>-build.<run>.<attempt>.<sha>`, and publishes the
+website release index at `https://latexdo.org/downloads/<release tag>/`.
 `https://latexdo.org/updates/latest.json` points the desktop app at that
 versioned release manifest, whose download URLs point to the GitHub Release
 assets.
