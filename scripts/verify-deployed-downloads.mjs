@@ -26,6 +26,8 @@ const expectedVersionUpdateFeedUrl = new URL(
   `../updates/${expectedReleaseSlug}.json`,
   downloadsUrl,
 );
+const verifyRunId =
+  process.env.GITHUB_RUN_ID ?? process.env.LATEXDO_VERIFY_RUN_ID ?? Date.now();
 
 const requiredIds = new Set(["macos-arm64", "macos-x64", "windows-x64"]);
 const sha256Pattern = /^[a-f0-9]{64}$/;
@@ -47,6 +49,15 @@ async function fetchOk(url, options = {}) {
     throw new Error(`${url} returned ${response.status}`);
   }
   return response;
+}
+
+function cacheBustedUrl(url, attempt) {
+  const value = new URL(url.href);
+  const tokenParts = [expectedCommit || expectedVersion, verifyRunId, attempt].filter(
+    Boolean,
+  );
+  value.searchParams.set("deploy_verify", tokenParts.join("-"));
+  return value;
 }
 
 function assertManifest(value) {
@@ -151,25 +162,31 @@ function assertUpdateFeed(value, manifestFiles) {
   }
 }
 
-async function verifyOnce() {
-  await fetchOk(downloadsUrl);
+async function verifyOnce(attempt) {
+  await fetchOk(cacheBustedUrl(downloadsUrl, attempt));
 
   const manifestUrl = new URL("manifest.json", downloadsUrl);
-  const manifestResponse = await fetchOk(manifestUrl);
+  const manifestResponse = await fetchOk(cacheBustedUrl(manifestUrl, attempt));
   const files = assertManifest(await manifestResponse.json());
 
-  await fetchOk(expectedReleaseDownloadsUrl);
-  const releaseManifestResponse = await fetchOk(expectedReleaseManifestUrl);
+  await fetchOk(cacheBustedUrl(expectedReleaseDownloadsUrl, attempt));
+  const releaseManifestResponse = await fetchOk(
+    cacheBustedUrl(expectedReleaseManifestUrl, attempt),
+  );
   assertManifest(await releaseManifestResponse.json());
 
-  const latestUpdateFeedResponse = await fetchOk(expectedLatestUpdateFeedUrl);
+  const latestUpdateFeedResponse = await fetchOk(
+    cacheBustedUrl(expectedLatestUpdateFeedUrl, attempt),
+  );
   assertUpdateFeed(await latestUpdateFeedResponse.json(), files);
 
-  const versionUpdateFeedResponse = await fetchOk(expectedVersionUpdateFeedUrl);
+  const versionUpdateFeedResponse = await fetchOk(
+    cacheBustedUrl(expectedVersionUpdateFeedUrl, attempt),
+  );
   assertUpdateFeed(await versionUpdateFeedResponse.json(), files);
 
   const checksumsUrl = new URL("SHA256SUMS.txt", downloadsUrl);
-  const checksums = await (await fetchOk(checksumsUrl)).text();
+  const checksums = await (await fetchOk(cacheBustedUrl(checksumsUrl, attempt))).text();
   for (const file of files) {
     const checksumPath = file.filename;
     if (!checksums.includes(file.sha256) || !checksums.includes(checksumPath)) {
@@ -178,7 +195,9 @@ async function verifyOnce() {
   }
 
   const releaseChecksumsUrl = new URL("SHA256SUMS.txt", expectedReleaseDownloadsUrl);
-  const releaseChecksums = await (await fetchOk(releaseChecksumsUrl)).text();
+  const releaseChecksums = await (
+    await fetchOk(cacheBustedUrl(releaseChecksumsUrl, attempt))
+  ).text();
   for (const file of files) {
     const checksumPath = file.filename;
     if (
@@ -205,7 +224,7 @@ async function verifyOnce() {
 let lastError = null;
 for (let attempt = 1; attempt <= retries; attempt += 1) {
   try {
-    await verifyOnce();
+    await verifyOnce(attempt);
     console.log(`Verified deployed downloads at ${downloadsUrl.href}`);
     process.exit(0);
   } catch (error) {
