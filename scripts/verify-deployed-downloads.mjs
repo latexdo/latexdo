@@ -14,7 +14,9 @@ const expectedRepository = process.env.GITHUB_REPOSITORY ?? "latexdo/latexdo";
 const expectedVersion = JSON.parse(
   await readFile(path.join(process.cwd(), "package.json"), "utf8"),
 ).version;
-const expectedReleaseSlug = `v${expectedVersion.replace(/^v/i, "")}`;
+const expectedReleaseSlug = normalizeReleaseSlug(
+  process.env.LATEXDO_RELEASE_SLUG ?? `v${expectedVersion.replace(/^v/i, "")}`,
+);
 const deployedReleaseDownloadsUrl = new URL(
   `${expectedReleaseSlug}/`,
   deployedDownloadsUrl,
@@ -55,6 +57,14 @@ const verifyRunId =
 
 const requiredIds = new Set(["macos-arm64", "macos-x64", "windows-x64"]);
 const sha256Pattern = /^[a-f0-9]{64}$/;
+
+function normalizeReleaseSlug(value) {
+  const slug = String(value).trim();
+  if (!slug || slug.includes("/") || slug.includes("\\") || slug.includes("..")) {
+    throw new Error(`Invalid release slug: ${value}`);
+  }
+  return slug;
+}
 
 function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));

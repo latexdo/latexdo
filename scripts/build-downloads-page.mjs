@@ -16,7 +16,9 @@ const baseUrlRoot = baseUrl.replace(/\/$/, "");
 const releaseVersion = normalizeReleaseVersion(
   process.env.LATEXDO_RELEASE_VERSION ?? packageJson.version,
 );
-const releaseSlug = `v${releaseVersion}`;
+const releaseSlug = normalizeReleaseSlug(
+  process.env.LATEXDO_RELEASE_SLUG ?? `v${releaseVersion}`,
+);
 const latestDownloadsPageUrl = `${baseUrlRoot}/downloads/`;
 const releaseDownloadsPageUrl = `${baseUrlRoot}/downloads/${releaseSlug}/`;
 const releaseOutputDir = path.join(outputDir, releaseSlug);
@@ -63,6 +65,14 @@ function normalizeReleaseVersion(value) {
     throw new Error(`Invalid release version: ${value}`);
   }
   return version;
+}
+
+function normalizeReleaseSlug(value) {
+  const slug = String(value).trim();
+  if (!slug || slug.includes("/") || slug.includes("\\") || slug.includes("..")) {
+    throw new Error(`Invalid release slug: ${value}`);
+  }
+  return slug;
 }
 
 function fileUrl(filename) {

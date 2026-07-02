@@ -55,30 +55,62 @@ jobs:
       - name: Select deploy mode
         id: deploy_mode
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           LATEXDO_WEBSITE_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
         shell: bash
         run: |
+          missing=()
           if [ -z "$LATEXDO_WEBSITE_TOKEN" ]; then
+            missing+=("LATEXDO_WEBSITE_TOKEN")
+          fi
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            missing+=("CLOUDFLARE_API_TOKEN")
+          fi
+
+          if [ "${#missing[@]}" -gt 0 ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             {
               echo "### Website deploy skipped"
               echo
-              echo "Set the LATEXDO_WEBSITE_TOKEN repository secret with write access to latexdo/latexdo.org to publish automatically."
+              echo "Missing required secrets: ${missing[*]}."
+              echo "Set LATEXDO_WEBSITE_TOKEN for latexdo/latexdo.org updates and CLOUDFLARE_API_TOKEN for the Cloudflare Workers assets deploy."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy to latexdo.org
+      - name: Checkout latexdo.org
         if: ${{ steps.deploy_mode.outputs.enabled == 'true' }}
-        uses: peaceiris/actions-gh-pages@v4
+        uses: actions/checkout@v6
         with:
-          external_repository: latexdo/latexdo.org
-          publish_branch: main
-          publish_dir: ./website
-          keep_files: true
-          personal_token: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
-          user_name: github-actions[bot]
-          user_email: 41898282+github-actions[bot]@users.noreply.github.com
-          commit_message: Deploy website from latexdo@${{ github.sha }}
+          repository: latexdo/latexdo.org
+          ref: main
+          path: latexdo-org-site
+          token: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
+
+      - name: Update latexdo.org website
+        if: ${{ steps.deploy_mode.outputs.enabled == 'true' }}
+        shell: bash
+        run: |
+          rsync -a website/ latexdo-org-site/
+
+          git -C latexdo-org-site config user.name "github-actions[bot]"
+          git -C latexdo-org-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C latexdo-org-site add -A
+
+          if git -C latexdo-org-site diff --cached --quiet; then
+            echo "No latexdo.org website changes to commit."
+          else
+            git -C latexdo-org-site commit \
+              -m "Deploy website from latexdo@${GITHUB_SHA} [skip ci] [skip actions]" \
+              -m "skip-checks:true"
+            git -C latexdo-org-site push origin HEAD:main
+          fi
+
+      - name: Deploy website to Cloudflare
+        if: ${{ steps.deploy_mode.outputs.enabled == 'true' }}
+        working-directory: latexdo-org-site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx --yes wrangler@latest deploy
