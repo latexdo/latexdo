@@ -137,6 +137,44 @@ function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
+function platformKey(
+  file: Pick<DownloadFile, "platform" | "label"> | { platform?: string; label?: string },
+): "macos" | "windows" | "linux" | "desktop" {
+  const value = `${file.platform ?? ""} ${file.label ?? ""}`.toLowerCase();
+  if (value.includes("mac") || value.includes("apple")) return "macos";
+  if (value.includes("win")) return "windows";
+  if (value.includes("linux")) return "linux";
+  return "desktop";
+}
+
+function platformIcon(platform: ReturnType<typeof platformKey>): string {
+  if (platform === "macos") {
+    return `<svg class="platform-logo" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M16.64 12.08c-.03-2.32 1.9-3.45 1.99-3.5-1.09-1.6-2.79-1.82-3.37-1.84-1.42-.15-2.8.85-3.52.85-.74 0-1.86-.83-3.06-.8-1.56.02-3.02.93-3.82 2.35-1.65 2.86-.42 7.06 1.16 9.37.79 1.13 1.71 2.39 2.92 2.35 1.18-.05 1.62-.75 3.04-.75 1.41 0 1.82.75 3.06.72 1.27-.02 2.06-1.14 2.82-2.28.91-1.3 1.27-2.58 1.29-2.65-.03-.01-2.49-.96-2.52-3.82ZM14.34 5.24c.64-.79 1.07-1.86.95-2.94-.92.04-2.07.63-2.74 1.39-.59.67-1.12 1.78-.98 2.81 1.04.08 2.1-.52 2.77-1.26Z" />
+    </svg>`;
+  }
+  if (platform === "windows") {
+    return `<svg class="platform-logo" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 5.15 10.8 4v7.38H3V5.15Z" />
+      <path d="M12.15 3.82 21 2.5v8.88h-8.85V3.82Z" />
+      <path d="M3 12.62h7.8V20L3 18.85v-6.23Z" />
+      <path d="M12.15 12.62H21v8.88l-8.85-1.32v-7.56Z" />
+    </svg>`;
+  }
+  if (platform === "linux") {
+    return `<svg class="platform-logo linux-logo" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 5.5h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z" />
+      <path d="m7 10 3 2-3 2" />
+      <path d="M12.5 15h4.5" />
+    </svg>`;
+  }
+  return `<svg class="platform-logo linux-logo" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M4 5.5h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z" />
+    <path d="m7 10 3 2-3 2" />
+    <path d="M12.5 15h4.5" />
+  </svg>`;
+}
+
 function initNavigation(): void {
   const toggle = query<HTMLButtonElement>("[data-nav-toggle]");
   const links = query<HTMLElement>("[data-nav-links]");
@@ -409,19 +447,34 @@ function initEditorDemo(): void {
 function renderDownloadFallback(container: HTMLElement): void {
   container.innerHTML = `
     <article class="download-card">
-      <h3>Downloads page</h3>
-      <p>Open the direct downloads page for macOS and Windows installers.</p>
+      <div class="download-card-header">
+        <span class="platform-logo-shell">${platformIcon("macos")}</span>
+        <div>
+          <h3>macOS downloads</h3>
+          <p>Apple Silicon and Intel DMG builds appear on the downloads page.</p>
+        </div>
+      </div>
       <a class="button primary" href="downloads/">View downloads</a>
     </article>
     <article class="download-card">
-      <h3>Update manifest</h3>
-      <p>The desktop app checks the public manifest for update information.</p>
-      <a class="button secondary" href="downloads/manifest.json">View manifest</a>
+      <div class="download-card-header">
+        <span class="platform-logo-shell">${platformIcon("windows")}</span>
+        <div>
+          <h3>Windows installer</h3>
+          <p>The 64-bit Windows installer is published with each desktop release.</p>
+        </div>
+      </div>
+      <a class="button secondary" href="downloads/">View downloads</a>
     </article>
     <article class="download-card">
-      <h3>Checksums</h3>
-      <p>Verify installer integrity with SHA-256 checksums from the website.</p>
-      <a class="button secondary" href="downloads/SHA256SUMS.txt">View checksums</a>
+      <div class="download-card-header">
+        <span class="platform-logo-shell">${platformIcon("linux")}</span>
+        <div>
+          <h3>Linux coming soon</h3>
+          <p>Linux packaging is planned after macOS and Windows releases stabilize.</p>
+        </div>
+      </div>
+      <a class="button secondary" href="downloads/manifest.json">View manifest</a>
     </article>`;
 }
 
@@ -441,6 +494,7 @@ async function initDownloads(): Promise<void> {
 
     container.innerHTML = files
       .map((file) => {
+        const platform = platformKey(file);
         const label = escapeHtml(file.label || file.id);
         const note = escapeHtml(file.note || `${file.platform} ${file.arch}`);
         const meta = escapeHtml(
@@ -448,10 +502,13 @@ async function initDownloads(): Promise<void> {
         );
         const url = escapeHtml(file.url || `downloads/files/${file.filename}`);
         return `<article class="download-card">
-          <div>
-            <h3>${label}</h3>
-            <p>${note}</p>
-            <small>${meta}</small>
+          <div class="download-card-header">
+            <span class="platform-logo-shell">${platformIcon(platform)}</span>
+            <div>
+              <h3>${label}</h3>
+              <p>${note}</p>
+              <small>${meta}</small>
+            </div>
           </div>
           <a class="button primary" href="${url}">Download</a>
         </article>`;

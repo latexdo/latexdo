@@ -18,6 +18,37 @@ die() {
   exit 1
 }
 
+confirm_privacy_consent() {
+  if [ "${LATEXDO_ACCEPT_PRIVACY:-0}" = "1" ]; then
+    return
+  fi
+
+  if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
+    die "Installation requires privacy consent. Set LATEXDO_ACCEPT_PRIVACY=1 to accept non-interactively."
+  fi
+
+  cat >/dev/tty <<'NOTICE'
+LatexDo privacy and consent
+
+LatexDo stores app settings, trusted folder choices, editor preferences, and install state on this device.
+LatexDo reads and writes files in folders you create, open, or trust. Update checks, extension catalog access, external links, and optional proofreading can contact LatexDo services or the provider you configure.
+
+Privacy information: https://latexdo.org/about/
+NOTICE
+
+  printf '%s' 'Type "yes" to accept and continue installing LatexDo: ' >/dev/tty
+  if ! IFS= read -r answer </dev/tty; then
+    die "Could not read consent from the terminal."
+  fi
+
+  case "$answer" in
+    yes | YES | Yes | y | Y) ;;
+    *)
+      die "Installation canceled. Set LATEXDO_ACCEPT_PRIVACY=1 to accept non-interactively."
+      ;;
+  esac
+}
+
 command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
@@ -46,6 +77,8 @@ make_temp_file() {
     printf '%s\n' "${TMPDIR:-/tmp}/latexdo.$$"
   fi
 }
+
+confirm_privacy_consent
 
 mkdir -p "$INSTALL_DIR"
 tmp_file="$(make_temp_file)"

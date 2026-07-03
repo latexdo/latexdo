@@ -18,6 +18,7 @@ import {
   open,
   readFile,
   readdir,
+  realpath,
   rename,
   stat,
   unlink,
@@ -62,6 +63,7 @@ const downloadsPageUrl = "https://latexdo.org/downloads/";
 const downloadsManifestUrl = "https://latexdo.org/downloads/manifest.json";
 const updatesFeedUrl = "https://latexdo.org/updates/latest.json";
 const extensionStoreUrl = "https://store.latexdo.org/";
+const privacyInfoUrl = "https://latexdo.org/about/";
 const externalUrlHosts = new Set([
   "github.com",
   "latexdo.org",
@@ -70,6 +72,10 @@ const externalUrlHosts = new Set([
 ]);
 const spellCheckerSettingsFile = "spellchecker-settings.json";
 const proofreadingSettingsFile = "proofreading-settings.json";
+const privacyConsentFile = "privacy-consent.json";
+const trustedWorkspacesFile = "trusted-workspaces.json";
+const privacyConsentSchemaVersion = 1;
+const trustedWorkspacesSchemaVersion = 1;
 const openSpellCheckerChannel = "tools:open-spellchecker";
 const openProjectChannel = "file:open-project";
 const createFileChannel = "file:create-dialog";
@@ -108,6 +114,18 @@ interface WebsiteUpdatePayload {
   releaseUrl?: unknown;
   downloadsPage?: unknown;
   manifestUrl?: unknown;
+}
+
+interface StoredPrivacyConsent {
+  schemaVersion?: unknown;
+  acceptedAt?: unknown;
+  appVersion?: unknown;
+  privacyInfoUrl?: unknown;
+}
+
+interface StoredTrustedWorkspaces {
+  schemaVersion?: unknown;
+  trustedPaths?: unknown;
 }
 
 function registerProject(rootPath: string): OpenProject {
@@ -243,6 +261,209 @@ async function atomicWriteUtf8(
     await removeIfPresent(tempPath);
     throw error;
   }
+}
+
+function userDataFilePath(fileName: string): string {
+  return path.join(app.getPath("userData"), fileName);
+}
+
+async function readUserDataJson<T>(fileName: string): Promise<T | null> {
+  try {
+    const content = await readFile(userDataFilePath(fileName), "utf8");
+    return JSON.parse(content) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function hasStoredPrivacyConsent(): Promise<boolean> {
+  const stored = await readUserDataJson<StoredPrivacyConsent>(privacyConsentFile);
+  return (
+    isRecord(stored) &&
+    stored.schemaVersion === privacyConsentSchemaVersion &&
+    typeof stored.acceptedAt === "string"
+  );
+}
+
+async function writePrivacyConsent(): Promise<void> {
+  await atomicWriteUtf8(
+    userDataFilePath(privacyConsentFile),
+    JSON.stringify(
+      {
+        schemaVersion: privacyConsentSchemaVersion,
+        acceptedAt: new Date().toISOString(),
+        appVersion: app.getVersion(),
+        privacyInfoUrl,
+      },
+      null,
+      2,
+    ),
+    { backup: true },
+  );
+}
+
+async function ensurePrivacyConsent(
+  targetWindow: BrowserWindow | null,
+): Promise<boolean> {
+  if (await hasStoredPrivacyConsent()) {
+    return true;
+  }
+
+  const options = {
+    type: "question" as const,
+    buttons: ["Agree and Continue", "View Privacy Info", "Quit"],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true,
+    title: "LatexDo Privacy and Consent",
+    message: "Review LatexDo privacy and consent",
+    detail:
+      "LatexDo stores app settings, trusted folder choices, editor preferences, spell checker settings, proofreading settings, and extension choices on this device.\n\n" +
+      "LatexDo reads and writes files only in folders you create, open, or trust. Update checks, the extension catalog, external links, and optional proofreading can contact LatexDo services or the provider you configure.\n\n" +
+      "Choose Agree and Continue to consent to this use.",
+  } satisfies Electron.MessageBoxOptions;
+
+  while (true) {
+    const result = targetWindow
+      ? await dialog.showMessageBox(targetWindow, options)
+      : await dialog.showMessageBox(options);
+
+    if (result.response === 0) {
+      await writePrivacyConsent();
+      return true;
+    }
+
+    if (result.response === 1) {
+      await shell.openExternal(privacyInfoUrl);
+      continue;
+    }
+
+    return false;
+  }
+}
+
+function normalizePathForTrust(value: string): string {
+  const resolved = path.resolve(value);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+function pathIsTrustedBy(trustedPath: string, targetPath: string): boolean {
+  const normalizedTrustedPath = normalizePathForTrust(trustedPath);
+  const normalizedTargetPath = normalizePathForTrust(targetPath);
+  const relativePath = path.relative(normalizedTrustedPath, normalizedTargetPath);
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+  );
+}
+
+async function canonicalWorkspacePath(rootPath: string): Promise<string> {
+  const resolvedRoot = path.resolve(rootPath);
+  try {
+    return await realpath(resolvedRoot);
+  } catch {
+    return resolvedRoot;
+  }
+}
+
+async function readTrustedWorkspacePaths(): Promise<string[]> {
+  const stored = await readUserDataJson<StoredTrustedWorkspaces>(trustedWorkspacesFile);
+  if (!isRecord(stored) || !Array.isArray(stored.trustedPaths)) {
+    return [];
+  }
+
+  const trustedPaths = stored.trustedPaths.filter(
+    (value): value is string =>
+      typeof value === "string" && value.trim() !== "" && !value.includes("\0"),
+  );
+  const canonicalPaths = await Promise.all(
+    trustedPaths.map((trustedPath) => canonicalWorkspacePath(trustedPath)),
+  );
+  return [...new Set(canonicalPaths)];
+}
+
+async function writeTrustedWorkspacePaths(trustedPaths: string[]): Promise<void> {
+  await atomicWriteUtf8(
+    userDataFilePath(trustedWorkspacesFile),
+    JSON.stringify(
+      {
+        schemaVersion: trustedWorkspacesSchemaVersion,
+        trustedPaths,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    ),
+    { backup: true },
+  );
+}
+
+async function isWorkspaceTrusted(rootPath: string): Promise<boolean> {
+  const canonicalRoot = await canonicalWorkspacePath(rootPath);
+  const trustedPaths = await readTrustedWorkspacePaths();
+  return trustedPaths.some((trustedPath) =>
+    pathIsTrustedBy(trustedPath, canonicalRoot),
+  );
+}
+
+async function trustWorkspace(rootPath: string): Promise<void> {
+  const canonicalRoot = await canonicalWorkspacePath(rootPath);
+  const trustedPaths = await readTrustedWorkspacePaths();
+  if (
+    trustedPaths.some((trustedPath) => pathIsTrustedBy(trustedPath, canonicalRoot))
+  ) {
+    return;
+  }
+  await writeTrustedWorkspacePaths([...trustedPaths, canonicalRoot]);
+}
+
+async function ensureWorkspaceTrust(
+  targetWindow: BrowserWindow | null,
+  rootPath: string,
+): Promise<boolean> {
+  const canonicalRoot = await canonicalWorkspacePath(rootPath);
+  if (await isWorkspaceTrusted(canonicalRoot)) {
+    return true;
+  }
+
+  const options = {
+    type: "warning" as const,
+    buttons: ["Trust and Open", "Cancel"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+    title: "Trust This Folder?",
+    message: "Do you trust the authors of the files in this folder?",
+    detail:
+      `Folder:\n${canonicalRoot}\n\n` +
+      "Trusting this folder lets LatexDo read and write files, compile LaTeX, use Git, and start integrated terminals for this workspace. Only trust folders whose contents and authors you trust.",
+    checkboxLabel: "Remember trust for this folder",
+    checkboxChecked: true,
+  } satisfies Electron.MessageBoxOptions;
+
+  const result = targetWindow
+    ? await dialog.showMessageBox(targetWindow, options)
+    : await dialog.showMessageBox(options);
+
+  if (result.response !== 0) {
+    return false;
+  }
+
+  if (result.checkboxChecked !== false) {
+    await trustWorkspace(canonicalRoot);
+  }
+
+  return true;
+}
+
+async function registerProjectIfTrusted(
+  targetWindow: BrowserWindow | null,
+  rootPath: string,
+): Promise<OpenProject | null> {
+  if (!(await ensureWorkspaceTrust(targetWindow, rootPath))) {
+    return null;
+  }
+  return registerProject(rootPath);
 }
 
 const maxProjectIdLength = 128;
@@ -2132,7 +2353,7 @@ async function runStartupSmokeTest(window: BrowserWindow): Promise<void> {
   console.log("[latexdo] packaged startup smoke test passed", result);
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   console.log("[latexdo] app:ready");
   if (process.platform === "darwin") {
     app.dock.setIcon(appIconPath);
@@ -2141,14 +2362,18 @@ app.whenReady().then(() => {
   console.log("[latexdo] app:terminal-registered");
   buildApplicationMenu();
   console.log("[latexdo] app:menu-built");
-  ipcMain.handle("project:open", async (_event, ...rawArgs: unknown[]) => {
+  ipcMain.handle("project:open", async (event, ...rawArgs: unknown[]) => {
     const channel = "project:open";
     expectIpcArgs(channel, rawArgs, 0);
+    const window = BrowserWindow.fromWebContents(event.sender);
     const result = await dialog.showOpenDialog({
       properties: ["openDirectory", "createDirectory"],
       title: "Open LaTeX project",
     });
-    return result.canceled ? null : registerProject(result.filePaths[0]);
+    if (result.canceled || !result.filePaths[0]) {
+      return null;
+    }
+    return registerProjectIfTrusted(window, result.filePaths[0]);
   });
   ipcMain.handle("project:create", async (_event, ...rawArgs: unknown[]) => {
     const channel = "project:create";
@@ -2182,6 +2407,7 @@ app.whenReady().then(() => {
       }
       throw error;
     }
+    await trustWorkspace(projectPath);
     return registerProject(projectPath);
   });
   ipcMain.handle("project:list", async (_event, ...rawArgs: unknown[]) => {
@@ -2275,7 +2501,15 @@ app.whenReady().then(() => {
         return null;
       }
 
-      project ??= registerProject(path.dirname(result.filePaths[0]));
+      if (!project) {
+        project = await registerProjectIfTrusted(
+          window ?? null,
+          path.dirname(result.filePaths[0]),
+        );
+        if (!project) {
+          return null;
+        }
+      }
       const imported = await importDocxIntoProject(
         project.rootPath,
         result.filePaths[0],
@@ -2318,7 +2552,15 @@ app.whenReady().then(() => {
         return null;
       }
 
-      project ??= registerProject(path.dirname(result.filePaths[0]));
+      if (!project) {
+        project = await registerProjectIfTrusted(
+          window ?? null,
+          path.dirname(result.filePaths[0]),
+        );
+        if (!project) {
+          return null;
+        }
+      }
       const imported = await importMarkdown(project.rootPath, result.filePaths[0]);
       return {
         ...imported,
@@ -2626,6 +2868,10 @@ app.whenReady().then(() => {
 
   const window = createWindow();
   console.log("[latexdo] app:window-opened");
+  if (!startupSmokeTest && !(await ensurePrivacyConsent(window))) {
+    app.quit();
+    return;
+  }
   if (startupSmokeTest) {
     void runStartupSmokeTest(window)
       .then(() => app.exit(0))
