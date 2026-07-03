@@ -362,29 +362,31 @@ jobs:
           LATEXDO_WEBSITE_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
         shell: bash
         run: |
-          missing=()
           if [ -z "$LATEXDO_WEBSITE_TOKEN" ]; then
-            missing+=("LATEXDO_WEBSITE_TOKEN")
+            echo "website_enabled=false" >> "$GITHUB_OUTPUT"
+            website_message="latexdo.org downloads update skipped: missing LATEXDO_WEBSITE_TOKEN with contents write and actions write access."
+          else
+            echo "website_enabled=true" >> "$GITHUB_OUTPUT"
+            website_message="latexdo.org downloads update enabled."
           fi
+
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            missing+=("CLOUDFLARE_API_TOKEN")
+            echo "cloudflare_enabled=false" >> "$GITHUB_OUTPUT"
+            cloudflare_message="Cloudflare deploy skipped: missing CLOUDFLARE_API_TOKEN."
+          else
+            echo "cloudflare_enabled=true" >> "$GITHUB_OUTPUT"
+            cloudflare_message="Cloudflare deploy enabled."
           fi
 
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            {
-              echo "### Downloads deploy skipped"
-              echo
-              echo "Missing required secrets: ${missing[*]}."
-              echo "Set LATEXDO_WEBSITE_TOKEN with latexdo/latexdo.org contents write and actions write access, plus CLOUDFLARE_API_TOKEN for the Cloudflare Workers assets deploy."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Downloads deploy mode"
+            echo
+            echo "- ${website_message}"
+            echo "- ${cloudflare_message}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Checkout latexdo.org
-        if: ${{ steps.deploy_mode.outputs.enabled == 'true' }}
+        if: ${{ steps.deploy_mode.outputs.website_enabled == 'true' }}
         uses: actions/checkout@v6
         with:
           repository: latexdo/latexdo.org
@@ -394,7 +396,7 @@ jobs:
 
       - name: Update latexdo.org downloads
         id: update_latexdo_org_downloads
-        if: ${{ steps.deploy_mode.outputs.enabled == 'true' }}
+        if: ${{ steps.deploy_mode.outputs.website_enabled == 'true' }}
         shell: bash
         run: |
           echo "updated=false" >> "$GITHUB_OUTPUT"
@@ -424,14 +426,14 @@ jobs:
         run: gh workflow run pages.yml --repo latexdo/latexdo.org --ref main
 
       - name: Deploy downloads to Cloudflare
-        if: ${{ steps.deploy_mode.outputs.enabled == 'true' }}
+        if: ${{ steps.deploy_mode.outputs.website_enabled == 'true' && steps.deploy_mode.outputs.cloudflare_enabled == 'true' }}
         working-directory: latexdo-org-site
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: npx --yes wrangler@latest deploy
 
       - name: Verify deployed downloads
-        if: ${{ steps.deploy_mode.outputs.enabled == 'true' }}
+        if: ${{ steps.deploy_mode.outputs.website_enabled == 'true' && steps.deploy_mode.outputs.cloudflare_enabled == 'true' }}
         env:
           LATEXDO_RELEASE_SLUG: ${{ steps.release_metadata.outputs.tag }}
           LATEXDO_VERIFY_RETRIES: 12
