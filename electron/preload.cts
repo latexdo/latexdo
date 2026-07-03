@@ -119,6 +119,8 @@ const api = {
     ipcRenderer.invoke("app:check-updates"),
   openReleasesPage: (releaseUrl?: string): Promise<void> =>
     ipcRenderer.invoke("app:open-releases", releaseUrl),
+  openExternalUrl: (url: string): Promise<void> =>
+    ipcRenderer.invoke("app:open-external", url),
   getSpellCheckerSettings: (): Promise<SpellCheckerSettings> =>
     ipcRenderer.invoke("spellchecker:get-settings"),
   updateSpellCheckerSettings: (

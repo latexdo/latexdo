@@ -43,6 +43,7 @@ import {
   Pencil,
   Play,
   Plus,
+  Puzzle,
   RefreshCw,
   Search,
   Settings,
@@ -131,6 +132,18 @@ import {
   type ProjectSearchFile,
   type ProjectSearchMatch,
 } from "./search/projectSearch";
+import {
+  categoryLabel,
+  contributionSummary,
+  extensionCategories,
+  extensionStoreSiteUrl,
+  fallbackExtensionCatalog,
+  fetchExtensionCatalog,
+  type ExtensionCategory,
+  type LatexDoExtensionManifest,
+  type LatexDoExtensionSnippet,
+  type LatexDoExtensionTemplate,
+} from "./extensions";
 
 type PanelKind =
   | "problems"
@@ -172,10 +185,8 @@ function AppIcon({ className }: { className?: string }) {
 
 type ColorTheme = "graphite" | "midnight" | "forest" | "sepia" | "studio" | "paper";
 
-type WelcomeTemplateId = "article" | "research" | "notes" | "response";
-
 interface WelcomeTemplate {
-  id: WelcomeTemplateId;
+  id: string;
   name: string;
   summary: string;
   files: string;
@@ -551,6 +562,7 @@ interface AppSettings {
 }
 
 const settingsStorageKey = "latexdo.settings";
+const installedExtensionsStorageKey = "latexdo.extensions.installed.v1";
 const defaultSettings: AppSettings = {
   colorTheme: "graphite",
   defaultEngine: "pdflatex",
@@ -647,6 +659,62 @@ const defaultSettings: AppSettings = {
   rebuttalColorPrimary: "1E1E1E",
   rebuttalColorAccent: "D9D9D9",
 };
+
+function loadInstalledExtensionIds(): string[] {
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(installedExtensionsStorageKey) ?? "[]",
+    ) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return [
+      ...new Set(
+        parsed.filter(
+          (value): value is string =>
+            typeof value === "string" && /^[a-z0-9][a-z0-9.-]{2,80}$/.test(value),
+        ),
+      ),
+    ];
+  } catch {
+    return [];
+  }
+}
+
+function matchesExtensionQuery(
+  extension: LatexDoExtensionManifest,
+  query: string,
+): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  return [
+    extension.name,
+    extension.description,
+    extension.author,
+    categoryLabel(extension.category),
+    ...extension.tags,
+  ]
+    .join(" ")
+    .toLowerCase()
+    .includes(normalizedQuery);
+}
+
+function extensionTemplateToWelcomeTemplate(
+  extension: LatexDoExtensionManifest,
+  template: LatexDoExtensionTemplate,
+): WelcomeTemplate {
+  return {
+    id: `${extension.id}:${template.id}`,
+    name: template.name,
+    summary: template.summary,
+    files: template.files,
+    mainTex: template.mainTex,
+    bibTex: template.bibTex,
+  };
+}
 
 function buildAutoCompileSignature(
   documents: OpenDocument[],
@@ -1463,12 +1531,23 @@ export default function App() {
   const [creating, setCreating] = useState(false);
   const [docxImporting, setDocxImporting] = useState(false);
   const [markdownImporting, setMarkdownImporting] = useState(false);
-  const [templateCreating, setTemplateCreating] = useState<WelcomeTemplateId | null>(
-    null,
-  );
+  const [templateCreating, setTemplateCreating] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState("editor");
+  const [extensionCatalog, setExtensionCatalog] = useState(fallbackExtensionCatalog);
+  const [extensionCatalogSource, setExtensionCatalogSource] = useState<
+    "remote" | "fallback"
+  >("fallback");
+  const [extensionCatalogLoading, setExtensionCatalogLoading] = useState(false);
+  const [extensionCatalogError, setExtensionCatalogError] = useState("");
+  const [extensionQuery, setExtensionQuery] = useState("");
+  const [extensionCategoryFilter, setExtensionCategoryFilter] = useState<
+    ExtensionCategory | "all"
+  >("all");
+  const [installedExtensionIds, setInstalledExtensionIds] = useState<string[]>(
+    loadInstalledExtensionIds,
+  );
   const [activeSidebar, setActiveSidebar] = useState<SidebarView>("explorer");
   const editorPreviewRef = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<Engine>(settings.defaultEngine);
@@ -1580,6 +1659,7 @@ export default function App() {
   const historySaveTimerRef = useRef<number | null>(null);
   const historyAutoCaptureTimerRef = useRef<number | null>(null);
   const browserAutoOpenRef = useRef(false);
+  const installedExtensionSnippetsRef = useRef<LatexDoExtensionSnippet[]>([]);
   const runtime = (window.latexdo as typeof window.latexdo & { runtime?: string })
     .runtime;
   const collaborationAvailable = runtime === "cloud";
@@ -1680,10 +1760,89 @@ export default function App() {
     () => buildAutoCompileSignature(documents, projectId, rootFile, engine),
     [documents, engine, projectId, rootFile],
   );
+  const installedExtensionIdSet = useMemo(
+    () => new Set(installedExtensionIds),
+    [installedExtensionIds],
+  );
+  const installedExtensions = useMemo(
+    () =>
+      extensionCatalog.extensions.filter((extension) =>
+        installedExtensionIdSet.has(extension.id),
+      ),
+    [extensionCatalog.extensions, installedExtensionIdSet],
+  );
+  const installedExtensionSnippets = useMemo(
+    () =>
+      installedExtensions.flatMap(
+        (extension) => extension.contributes.snippets ?? [],
+      ),
+    [installedExtensions],
+  );
+  const installedExtensionTemplates = useMemo(
+    () =>
+      installedExtensions.flatMap((extension) =>
+        (extension.contributes.templates ?? []).map((template) =>
+          extensionTemplateToWelcomeTemplate(extension, template),
+        ),
+      ),
+    [installedExtensions],
+  );
+  const availableWelcomeTemplates = useMemo(
+    () => [...welcomeTemplates, ...installedExtensionTemplates],
+    [installedExtensionTemplates],
+  );
+  const filteredExtensions = useMemo(
+    () =>
+      extensionCatalog.extensions.filter(
+        (extension) =>
+          (extensionCategoryFilter === "all" ||
+            extension.category === extensionCategoryFilter) &&
+          matchesExtensionQuery(extension, extensionQuery),
+      ),
+    [extensionCatalog.extensions, extensionCategoryFilter, extensionQuery],
+  );
+  const refreshExtensionCatalog = useCallback(async () => {
+    setExtensionCatalogLoading(true);
+    try {
+      const result = await fetchExtensionCatalog();
+      setExtensionCatalog(result.catalog);
+      setExtensionCatalogSource(result.source);
+      setExtensionCatalogError(result.error ?? "");
+    } finally {
+      setExtensionCatalogLoading(false);
+    }
+  }, []);
+  const installExtension = useCallback((extension: LatexDoExtensionManifest) => {
+    setInstalledExtensionIds((current) =>
+      current.includes(extension.id) ? current : [...current, extension.id],
+    );
+
+    if (extension.contributes.featureFlags) {
+      setSettings(
+        (current) =>
+          ({
+            ...current,
+            ...extension.contributes.featureFlags,
+          }) as AppSettings,
+      );
+    }
+
+    setStatusMessage(`Installed ${extension.name}`);
+  }, []);
+  const uninstallExtension = useCallback((extension: LatexDoExtensionManifest) => {
+    setInstalledExtensionIds((current) =>
+      current.filter((extensionId) => extensionId !== extension.id),
+    );
+    setStatusMessage(`Uninstalled ${extension.name}`);
+  }, []);
 
   useEffect(() => {
     documentsRef.current = documents;
   }, [documents]);
+
+  useEffect(() => {
+    installedExtensionSnippetsRef.current = installedExtensionSnippets;
+  }, [installedExtensionSnippets]);
 
   useEffect(() => {
     documentHistoryRef.current = documentHistory;
@@ -1720,6 +1879,17 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
   }, [settings]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      installedExtensionsStorageKey,
+      JSON.stringify(installedExtensionIds),
+    );
+  }, [installedExtensionIds]);
+
+  useEffect(() => {
+    void refreshExtensionCatalog();
+  }, [refreshExtensionCatalog]);
 
   useEffect(() => {
     if (!projectId || hideProjectEntries) {
@@ -3716,8 +3886,8 @@ ${macroEnd}
           textBeforePointer.endsWith("\\" + word.word) ||
           textBeforePointer.endsWith("\\")
         ) {
-          return {
-            suggestions: latexSuggestions.map(([label, insertText]) => ({
+          const builtInSuggestions: monaco.languages.CompletionItem[] =
+            latexSuggestions.map(([label, insertText]) => ({
               label: `\\${label}`,
               kind: instance.languages.CompletionItemKind.Snippet,
               insertText,
@@ -3725,7 +3895,21 @@ ${macroEnd}
                 instance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
               range,
               detail: "LaTeX snippet",
-            })),
+            }));
+          const extensionSuggestions: monaco.languages.CompletionItem[] =
+            installedExtensionSnippetsRef.current.map((snippet) => ({
+              label: `\\${snippet.label}`,
+              kind: instance.languages.CompletionItemKind.Snippet,
+              insertText: snippet.insertText,
+              insertTextRules:
+                instance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              range,
+              detail: snippet.detail ?? "Extension snippet",
+              documentation: snippet.documentation,
+            }));
+
+          return {
+            suggestions: [...builtInSuggestions, ...extensionSuggestions],
           };
         }
 
@@ -5960,6 +6144,18 @@ ${macroEnd}
             >
               <BookOpenText size={21} />
             </button>
+            <button
+              className={`activity-button ${
+                settingsOpen && settingsTab === "extensions" ? "active" : ""
+              }`}
+              onClick={() => {
+                setSettingsTab("extensions");
+                setSettingsOpen(true);
+              }}
+              title="Extension Store"
+            >
+              <Puzzle size={21} />
+            </button>
           </div>
           <div>
             <button
@@ -6776,7 +6972,7 @@ ${macroEnd}
                     <section className="welcome-section welcome-template-section">
                       <h2>Template gallery</h2>
                       <div className="welcome-template-grid">
-                        {welcomeTemplates.map((template) => (
+                        {availableWelcomeTemplates.map((template) => (
                           <button
                             key={template.id}
                             type="button"
@@ -7994,6 +8190,12 @@ ${macroEnd}
                 Editor
               </button>
               <button
+                className={`settings-tab ${settingsTab === "extensions" ? "active" : ""}`}
+                onClick={() => setSettingsTab("extensions")}
+              >
+                Extensions
+              </button>
+              <button
                 className={`settings-tab ${settingsTab === "language" ? "active" : ""}`}
                 onClick={() => setSettingsTab("language")}
               >
@@ -8206,6 +8408,172 @@ ${macroEnd}
                       }
                     />
                   </label>
+                </>
+              ) : null}
+
+              {settingsTab === "extensions" ? (
+                <>
+                  <div className="settings-section-heading">
+                    <strong>Extension Store</strong>
+                    <span>
+                      Browse installable LatexDo packs from store.latexdo.org.
+                    </span>
+                  </div>
+
+                  <div className="extension-store-toolbar">
+                    <label className="extension-store-search">
+                      <Search size={14} />
+                      <input
+                        type="search"
+                        value={extensionQuery}
+                        onChange={(event) => setExtensionQuery(event.target.value)}
+                        placeholder="Search extensions"
+                        spellCheck={false}
+                      />
+                    </label>
+                    <select
+                      value={extensionCategoryFilter}
+                      onChange={(event) =>
+                        setExtensionCategoryFilter(
+                          event.target.value as ExtensionCategory | "all",
+                        )
+                      }
+                      aria-label="Filter extensions by category"
+                    >
+                      <option value="all">All categories</option>
+                      {extensionCategories.map((category) => (
+                        <option key={category} value={category}>
+                          {categoryLabel(category)}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="extension-store-actions">
+                      <button
+                        type="button"
+                        className="dialog-cancel"
+                        onClick={() => void refreshExtensionCatalog()}
+                        disabled={extensionCatalogLoading}
+                      >
+                        <RefreshCw
+                          size={13}
+                          className={extensionCatalogLoading ? "spin" : ""}
+                        />
+                        {extensionCatalogLoading ? "Refreshing" : "Refresh"}
+                      </button>
+                      <button
+                        type="button"
+                        className="dialog-submit"
+                        onClick={() =>
+                          void window.latexdo.openExternalUrl(extensionStoreSiteUrl)
+                        }
+                      >
+                        <ExternalLink size={13} />
+                        Open store
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="extension-store-status">
+                    <span>
+                      <strong>{installedExtensions.length}</strong> installed
+                    </span>
+                    <span>
+                      <strong>{extensionCatalog.extensions.length}</strong> available
+                    </span>
+                    <span>
+                      {extensionCatalogSource === "remote"
+                        ? "Live catalog"
+                        : "Bundled catalog"}
+                    </span>
+                    <span>
+                      Updated{" "}
+                      {new Date(extensionCatalog.updatedAt).toLocaleDateString(
+                        undefined,
+                        {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        },
+                      )}
+                    </span>
+                  </div>
+
+                  {extensionCatalogError ? (
+                    <div className="extension-store-alert">
+                      <AlertCircle size={14} />
+                      <span>{extensionCatalogError}</span>
+                    </div>
+                  ) : null}
+
+                  <div className="extension-store-grid">
+                    {filteredExtensions.length ? (
+                      filteredExtensions.map((extension) => {
+                        const installed = installedExtensionIdSet.has(extension.id);
+                        const summary = contributionSummary(extension);
+                        return (
+                          <article
+                            key={extension.id}
+                            className={`extension-card ${installed ? "installed" : ""}`}
+                          >
+                            <div className="extension-card-top">
+                              <div className="extension-icon">
+                                <Puzzle size={18} />
+                              </div>
+                              <div>
+                                <strong>{extension.name}</strong>
+                                <small>
+                                  {extension.author} · v{extension.version}
+                                </small>
+                              </div>
+                              <span>{categoryLabel(extension.category)}</span>
+                            </div>
+                            <p>{extension.description}</p>
+                            <div className="extension-tags">
+                              {extension.tags.map((tag) => (
+                                <span key={`${extension.id}:${tag}`}>{tag}</span>
+                              ))}
+                            </div>
+                            <div className="extension-summary">
+                              {summary.length ? summary.join(" · ") : "Manifest pack"}
+                            </div>
+                            <div className="extension-card-actions">
+                              {extension.homepage ? (
+                                <button
+                                  type="button"
+                                  className="dialog-cancel"
+                                  onClick={() =>
+                                    void window.latexdo.openExternalUrl(
+                                      extension.homepage!,
+                                    )
+                                  }
+                                >
+                                  <ExternalLink size={13} />
+                                  Details
+                                </button>
+                              ) : null}
+                              <button
+                                type="button"
+                                className={installed ? "dialog-cancel" : "dialog-submit"}
+                                onClick={() =>
+                                  installed
+                                    ? uninstallExtension(extension)
+                                    : installExtension(extension)
+                                }
+                              >
+                                {installed ? <X size={13} /> : <Download size={13} />}
+                                {installed ? "Uninstall" : "Install"}
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })
+                    ) : (
+                      <div className="extension-store-empty">
+                        <Puzzle size={18} />
+                        <span>No extensions match the current filter.</span>
+                      </div>
+                    )}
+                  </div>
                 </>
               ) : null}
 
