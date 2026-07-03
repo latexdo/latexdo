@@ -146,7 +146,10 @@ function renderCards(files) {
 
   const macFiles = files.filter((file) => file.platform === "macos");
   const windowsFiles = files.filter((file) => file.platform === "windows");
-  const option = (file, label) => `<a class="download-option" href="${htmlEscape(file.url)}" download>
+  const option = (
+    file,
+    label,
+  ) => `<a class="download-option" href="${htmlEscape(file.url)}" download>
               <strong>${htmlEscape(label)}</strong>
               <span>${htmlEscape(path.extname(file.filename).replace(".", "").toUpperCase() || "Installer")} installer</span>
               <em>${htmlEscape(file.sizeLabel ?? `${file.size ?? ""} bytes`)} - SHA-256</em>

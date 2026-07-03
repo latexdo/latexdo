@@ -409,9 +409,7 @@ async function isWorkspaceTrusted(rootPath: string): Promise<boolean> {
 async function trustWorkspace(rootPath: string): Promise<void> {
   const canonicalRoot = await canonicalWorkspacePath(rootPath);
   const trustedPaths = await readTrustedWorkspacePaths();
-  if (
-    trustedPaths.some((trustedPath) => pathIsTrustedBy(trustedPath, canonicalRoot))
-  ) {
+  if (trustedPaths.some((trustedPath) => pathIsTrustedBy(trustedPath, canonicalRoot))) {
     return;
   }
   await writeTrustedWorkspacePaths([...trustedPaths, canonicalRoot]);
