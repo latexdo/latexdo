@@ -138,7 +138,9 @@ function escapeHtml(value: string): string {
 }
 
 function platformKey(
-  file: Pick<DownloadFile, "platform" | "label"> | { platform?: string; label?: string },
+  file:
+    | Pick<DownloadFile, "platform" | "label">
+    | { platform?: string; label?: string },
 ): "macos" | "windows" | "linux" | "desktop" {
   const value = `${file.platform ?? ""} ${file.label ?? ""}`.toLowerCase();
   if (value.includes("mac") || value.includes("apple")) return "macos";
