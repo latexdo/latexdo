@@ -99,6 +99,27 @@ function htmlEscape(value) {
     .replaceAll('"', "&quot;");
 }
 
+function platformIcon(platform) {
+  if (platform === "macos") {
+    return `<svg class="platform-logo" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M16.64 12.08c-.03-2.32 1.9-3.45 1.99-3.5-1.09-1.6-2.79-1.82-3.37-1.84-1.42-.15-2.8.85-3.52.85-.74 0-1.86-.83-3.06-.8-1.56.02-3.02.93-3.82 2.35-1.65 2.86-.42 7.06 1.16 9.37.79 1.13 1.71 2.39 2.92 2.35 1.18-.05 1.62-.75 3.04-.75 1.41 0 1.82.75 3.06.72 1.27-.02 2.06-1.14 2.82-2.28.91-1.3 1.27-2.58 1.29-2.65-.03-.01-2.49-.96-2.52-3.82ZM14.34 5.24c.64-.79 1.07-1.86.95-2.94-.92.04-2.07.63-2.74 1.39-.59.67-1.12 1.78-.98 2.81 1.04.08 2.1-.52 2.77-1.26Z" />
+    </svg>`;
+  }
+  if (platform === "windows") {
+    return `<svg class="platform-logo" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 5.15 10.8 4v7.38H3V5.15Z" />
+      <path d="M12.15 3.82 21 2.5v8.88h-8.85V3.82Z" />
+      <path d="M3 12.62h7.8V20L3 18.85v-6.23Z" />
+      <path d="M12.15 12.62H21v8.88l-8.85-1.32v-7.56Z" />
+    </svg>`;
+  }
+  return `<svg class="platform-logo linux-logo" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M4 5.5h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z" />
+    <path d="m7 10 3 2-3 2" />
+    <path d="M12.5 15h4.5" />
+  </svg>`;
+}
+
 await mkdir(outputDir, { recursive: true });
 await mkdir(releaseOutputDir, { recursive: true });
 
@@ -166,22 +187,69 @@ await writeFile(
   `${JSON.stringify(updateFeed, null, 2)}\n`,
 );
 
+function macBuildName(file) {
+  const value = `${file.id} ${file.label} ${file.arch}`.toLowerCase();
+  if (value.includes("arm64") || value.includes("silicon")) return "Apple Silicon";
+  if (value.includes("x64") || value.includes("intel")) return "Intel";
+  return file.label;
+}
+
+function installerKind(file) {
+  const extension = path.extname(file.filename).replace(".", "").toUpperCase();
+  return extension ? `${extension} installer` : "Installer";
+}
+
+function renderDownloadOption(file, fileHref, label = file.label) {
+  return `<a class="download-option" href="${htmlEscape(fileHref(file))}" download>
+              <strong>${htmlEscape(label)}</strong>
+              <span>${htmlEscape(installerKind(file))}</span>
+              <em>${htmlEscape(file.sizeLabel)} - SHA-256</em>
+            </a>`;
+}
+
 function renderCards(fileHref) {
-  return files
-    .map(
-      (file) => `
-          <article class="download-card">
-            <div>
-              <h2>${htmlEscape(file.label)}</h2>
-              <p>${htmlEscape(file.note)}</p>
-              <span>${htmlEscape(file.sizeLabel)} - SHA-256 available</span>
+  const macFiles = files.filter((file) => file.platform === "macos");
+  const windowsFiles = files.filter((file) => file.platform === "windows");
+
+  return `
+          <article class="platform-download-card macos">
+            <div class="platform-card-top">
+              <span class="platform-logo-shell">${platformIcon("macos")}</span>
+              <div>
+                <p class="eyebrow">macOS</p>
+                <h2>Apple Mac</h2>
+              </div>
             </div>
-            <a class="button primary" href="${htmlEscape(
-              fileHref(file),
-            )}" download>Download</a>
-          </article>`,
-    )
-    .join("\n");
+            <p>Choose the DMG for your Mac. Apple Silicon covers M-series Macs; Intel covers older Intel-based Macs.</p>
+            <div class="download-variant-row" aria-label="macOS build choices">
+${macFiles.map((file) => renderDownloadOption(file, fileHref, macBuildName(file))).join("\n")}
+            </div>
+          </article>
+          <article class="platform-download-card windows">
+            <div class="platform-card-top">
+              <span class="platform-logo-shell">${platformIcon("windows")}</span>
+              <div>
+                <p class="eyebrow">Windows</p>
+                <h2>Windows PC</h2>
+              </div>
+            </div>
+            <p>Install LatexDo on a 64-bit Windows PC with the packaged desktop installer.</p>
+            <div class="download-variant-row" aria-label="Windows build choices">
+${windowsFiles.map((file) => renderDownloadOption(file, fileHref, "Windows x64")).join("\n")}
+            </div>
+          </article>
+          <article class="platform-download-card linux coming-soon">
+            <div class="platform-card-top">
+              <span class="platform-logo-shell">${platformIcon("linux")}</span>
+              <div>
+                <p class="eyebrow">Linux</p>
+                <h2>Coming soon</h2>
+              </div>
+            </div>
+            <p>A Linux desktop package is planned after the macOS and Windows release flow is stable.</p>
+            <span class="coming-soon-pill">Linux support is on the roadmap</span>
+            <a class="button secondary" href="https://editor.latexdo.org">Use web editor</a>
+          </article>`;
 }
 
 function renderDownloadsPage({
@@ -244,7 +312,7 @@ function renderDownloadsPage({
         ${releaseLink}
       </section>
 
-      <section class="downloads-grid" aria-label="LatexDo installers">
+      <section class="download-platform-grid" aria-label="LatexDo installers">
 ${cards}
       </section>
 

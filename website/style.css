@@ -1250,12 +1250,165 @@ h3 {
   gap: 14px;
 }
 
+.download-platform-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.platform-download-card {
+  display: grid;
+  min-height: 360px;
+  align-content: start;
+  gap: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 24px;
+  box-shadow: 0 14px 40px rgb(17 19 24 / 8%);
+}
+
+.platform-download-card.macos {
+  grid-row: span 2;
+}
+
+.platform-card-top,
+.download-card-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.platform-logo-shell {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  background: #f8fafc;
+  color: var(--ink);
+}
+
+.platform-download-card.windows .platform-logo-shell {
+  color: var(--blue-strong);
+}
+
+.platform-download-card.linux .platform-logo-shell {
+  color: var(--green);
+}
+
+.platform-logo {
+  width: 32px;
+  height: 32px;
+}
+
+.platform-logo path {
+  fill: currentColor;
+}
+
+.platform-download-card.linux .platform-logo path,
+.linux-logo path {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.platform-download-card h2 {
+  margin: 2px 0 0;
+  font-size: 30px;
+}
+
+.platform-download-card p {
+  max-width: 58ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 16px;
+}
+
+.download-variant-row {
+  display: flex;
+  gap: 12px;
+  margin: 2px -4px 0;
+  overflow-x: auto;
+  padding: 4px;
+  scroll-snap-type: x proximity;
+}
+
+.download-option {
+  display: grid;
+  min-width: 190px;
+  flex: 1 0 190px;
+  gap: 4px;
+  scroll-snap-align: start;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #f8fbff;
+  padding: 14px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.download-option:hover {
+  border-color: rgb(15 111 255 / 46%);
+}
+
+.download-option strong {
+  font-size: 15px;
+}
+
+.download-option span,
+.download-option em {
+  color: var(--muted);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 720;
+}
+
+.download-option.pending {
+  background: #f8f9fb;
+  color: #4a5567;
+}
+
+.coming-soon-pill {
+  width: fit-content;
+  border: 1px solid rgb(20 128 94 / 22%);
+  border-radius: 999px;
+  background: rgb(20 128 94 / 9%);
+  color: var(--green);
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 820;
+}
+
+.download-meta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
 .downloads-grid .download-card {
   display: flex;
   min-height: 0;
   align-items: center;
   justify-content: space-between;
   gap: 22px;
+}
+
+.downloads-grid .download-card-header .platform-logo-shell {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+}
+
+.downloads-grid .download-card-header .platform-logo {
+  width: 25px;
+  height: 25px;
 }
 
 .downloads-meta,
@@ -1472,6 +1625,7 @@ h3 {
   .workflow-grid,
   .feature-grid,
   .download-grid,
+  .download-platform-grid,
   .about-hero,
   .about-grid,
   .about-split,
@@ -1537,6 +1691,16 @@ h3 {
   .downloads-grid .download-card {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .platform-download-card,
+  .platform-download-card.macos {
+    grid-row: auto;
+    min-height: 0;
+  }
+
+  .platform-download-card h2 {
+    font-size: 24px;
   }
 
   .release-heading,
