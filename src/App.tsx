@@ -1773,9 +1773,7 @@ export default function App() {
   );
   const installedExtensionSnippets = useMemo(
     () =>
-      installedExtensions.flatMap(
-        (extension) => extension.contributes.snippets ?? [],
-      ),
+      installedExtensions.flatMap((extension) => extension.contributes.snippets ?? []),
     [installedExtensions],
   );
   const installedExtensionTemplates = useMemo(
@@ -8553,7 +8551,9 @@ ${macroEnd}
                               ) : null}
                               <button
                                 type="button"
-                                className={installed ? "dialog-cancel" : "dialog-submit"}
+                                className={
+                                  installed ? "dialog-cancel" : "dialog-submit"
+                                }
                                 onClick={() =>
                                   installed
                                     ? uninstallExtension(extension)

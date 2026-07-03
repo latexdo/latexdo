@@ -445,7 +445,9 @@ export function contributionSummary(extension: LatexDoExtensionManifest): string
   const snippetCount = extension.contributes.snippets?.length ?? 0;
   const templateCount = extension.contributes.templates?.length ?? 0;
   return [
-    featureCount ? `${featureCount} feature toggle${featureCount === 1 ? "" : "s"}` : "",
+    featureCount
+      ? `${featureCount} feature toggle${featureCount === 1 ? "" : "s"}`
+      : "",
     snippetCount ? `${snippetCount} snippet${snippetCount === 1 ? "" : "s"}` : "",
     templateCount ? `${templateCount} template${templateCount === 1 ? "" : "s"}` : "",
   ].filter(Boolean);
@@ -528,7 +530,9 @@ export async function fetchExtensionCatalog(
   }
 }
 
-function mergeCatalogs(remoteCatalog: LatexDoExtensionCatalog): LatexDoExtensionCatalog {
+function mergeCatalogs(
+  remoteCatalog: LatexDoExtensionCatalog,
+): LatexDoExtensionCatalog {
   const extensionsById = new Map<string, LatexDoExtensionManifest>();
 
   for (const extension of fallbackExtensionCatalog.extensions) {
@@ -546,9 +550,7 @@ function mergeCatalogs(remoteCatalog: LatexDoExtensionCatalog): LatexDoExtension
   };
 }
 
-function normalizeExtensionManifest(
-  value: unknown,
-): LatexDoExtensionManifest | null {
+function normalizeExtensionManifest(value: unknown): LatexDoExtensionManifest | null {
   if (!isRecord(value)) {
     return null;
   }

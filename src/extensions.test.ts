@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  fallbackExtensionCatalog,
-  validateExtensionCatalog,
-} from "./extensions";
+import { fallbackExtensionCatalog, validateExtensionCatalog } from "./extensions";
 
 describe("extension catalog validation", () => {
   it("accepts the bundled catalog", () => {
