@@ -645,7 +645,6 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     if (keptDrawnShape && drawnShapeId) {
       pushHistory(next);
       setSelected(drawnShapeId);
-      setTool("select");
     } else {
       setSelected(null);
     }
@@ -1634,7 +1633,6 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
                     ]);
                     setTextPrompt(null);
                     setSelected(null);
-                    setTool("select");
                   }
                 }
                 if (e.key === "Escape") {
