@@ -97,6 +97,7 @@ jobs:
         shell: bash
         run: |
           echo "updated=false" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=" >> "$GITHUB_OUTPUT"
           rsync -a website/ latexdo-org-site/
 
           git -C latexdo-org-site config user.name "github-actions[bot]"
@@ -109,14 +110,41 @@ jobs:
             git -C latexdo-org-site commit \
               -m "Deploy website from latexdo@${GITHUB_SHA}"
             git -C latexdo-org-site push origin HEAD:main
+            commit_sha="$(git -C latexdo-org-site rev-parse HEAD)"
             echo "updated=true" >> "$GITHUB_OUTPUT"
+            echo "commit_sha=${commit_sha}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Trigger latexdo.org Pages workflow
+      - name: Verify latexdo.org Pages workflow started
         if: ${{ steps.update_latexdo_org_website.outputs.updated == 'true' }}
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
-        run: gh workflow run pages.yml --repo latexdo/latexdo.org --ref main
+          LATEXDO_ORG_COMMIT: ${{ steps.update_latexdo_org_website.outputs.commit_sha }}
+        run: |
+          api_url="https://api.github.com/repos/latexdo/latexdo.org/actions/workflows/pages.yml/runs?branch=main&per_page=20"
+
+          for attempt in {1..12}; do
+            run_url="$(
+              curl -fsSL "$api_url" |
+                node -e '
+                  const fs = require("node:fs");
+                  const commit = process.env.LATEXDO_ORG_COMMIT;
+                  const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+                  const run = (payload.workflow_runs || []).find((item) => item.head_sha === commit);
+                  process.stdout.write(run ? run.html_url : "");
+                '
+            )"
+
+            if [ -n "$run_url" ]; then
+              echo "latexdo.org Pages workflow started for ${LATEXDO_ORG_COMMIT}: ${run_url}"
+              exit 0
+            fi
+
+            sleep 5
+          done
+
+          echo "::error::No latexdo.org Pages workflow run appeared for ${LATEXDO_ORG_COMMIT}."
+          exit 1
 
       - name: Deploy website to Cloudflare
         if: ${{ steps.deploy_mode.outputs.website_enabled == 'true' && steps.deploy_mode.outputs.cloudflare_enabled == 'true' }}
