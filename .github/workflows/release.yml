@@ -376,7 +376,7 @@ jobs:
               echo "### Downloads deploy skipped"
               echo
               echo "Missing required secrets: ${missing[*]}."
-              echo "Set LATEXDO_WEBSITE_TOKEN for latexdo/latexdo.org updates and CLOUDFLARE_API_TOKEN for the Cloudflare Workers assets deploy."
+              echo "Set LATEXDO_WEBSITE_TOKEN with latexdo/latexdo.org contents write and actions write access, plus CLOUDFLARE_API_TOKEN for the Cloudflare Workers assets deploy."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -393,9 +393,11 @@ jobs:
           token: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
 
       - name: Update latexdo.org downloads
+        id: update_latexdo_org_downloads
         if: ${{ steps.deploy_mode.outputs.enabled == 'true' }}
         shell: bash
         run: |
+          echo "updated=false" >> "$GITHUB_OUTPUT"
           mkdir -p latexdo-org-site/downloads latexdo-org-site/updates
           cp -R public-downloads/downloads/. latexdo-org-site/downloads/
           cp -R public-downloads/updates/. latexdo-org-site/updates/
@@ -410,10 +412,16 @@ jobs:
             echo "No latexdo.org download changes to commit."
           else
             git -C latexdo-org-site commit \
-              -m "Publish LatexDo downloads from latexdo@${GITHUB_SHA} [skip ci] [skip actions]" \
-              -m "skip-checks:true"
+              -m "Publish LatexDo downloads from latexdo@${GITHUB_SHA}"
             git -C latexdo-org-site push origin HEAD:main
+            echo "updated=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Trigger latexdo.org Pages workflow
+        if: ${{ steps.update_latexdo_org_downloads.outputs.updated == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
+        run: gh workflow run pages.yml --repo latexdo/latexdo.org --ref main
 
       - name: Deploy downloads to Cloudflare
         if: ${{ steps.deploy_mode.outputs.enabled == 'true' }}
