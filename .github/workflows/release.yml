@@ -422,36 +422,20 @@ jobs:
             echo "commit_sha=${commit_sha}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Verify latexdo.org Pages workflow started
+      - name: Verify latexdo.org update
         if: ${{ steps.update_latexdo_org_downloads.outputs.updated == 'true' }}
         shell: bash
         env:
           LATEXDO_ORG_COMMIT: ${{ steps.update_latexdo_org_downloads.outputs.commit_sha }}
         run: |
-          api_url="https://api.github.com/repos/latexdo/latexdo.org/actions/workflows/pages.yml/runs?branch=main&per_page=20"
+          remote_sha="$(git -C latexdo-org-site ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [ "$remote_sha" != "$LATEXDO_ORG_COMMIT" ]; then
+            echo "::error::latexdo.org main is ${remote_sha}, expected ${LATEXDO_ORG_COMMIT}."
+            exit 1
+          fi
 
-          for attempt in {1..12}; do
-            run_url="$(
-              curl -fsSL "$api_url" |
-                node -e '
-                  const fs = require("node:fs");
-                  const commit = process.env.LATEXDO_ORG_COMMIT;
-                  const payload = JSON.parse(fs.readFileSync(0, "utf8"));
-                  const run = (payload.workflow_runs || []).find((item) => item.head_sha === commit);
-                  process.stdout.write(run ? run.html_url : "");
-                '
-            )"
-
-            if [ -n "$run_url" ]; then
-              echo "latexdo.org Pages workflow started for ${LATEXDO_ORG_COMMIT}: ${run_url}"
-              exit 0
-            fi
-
-            sleep 5
-          done
-
-          echo "::error::No latexdo.org Pages workflow run appeared for ${LATEXDO_ORG_COMMIT}."
-          exit 1
+          echo "latexdo.org updated at ${LATEXDO_ORG_COMMIT}."
+          echo "Cloudflare Workers Builds will deploy the pushed release metadata, or the next step will deploy with Wrangler when CLOUDFLARE_API_TOKEN is configured."
 
       - name: Deploy downloads to Cloudflare
         if: ${{ steps.deploy_mode.outputs.website_enabled == 'true' && steps.deploy_mode.outputs.cloudflare_enabled == 'true' }}
