@@ -61,6 +61,13 @@ const startupSmokeTimeoutMs = 20_000;
 const downloadsPageUrl = "https://latexdo.org/downloads/";
 const downloadsManifestUrl = "https://latexdo.org/downloads/manifest.json";
 const updatesFeedUrl = "https://latexdo.org/updates/latest.json";
+const extensionStoreUrl = "https://store.latexdo.org/";
+const externalUrlHosts = new Set([
+  "github.com",
+  "latexdo.org",
+  "store.latexdo.org",
+  "www.latexdo.org",
+]);
 const spellCheckerSettingsFile = "spellchecker-settings.json";
 const proofreadingSettingsFile = "proofreading-settings.json";
 const openSpellCheckerChannel = "tools:open-spellchecker";
@@ -1442,6 +1449,12 @@ function buildApplicationMenu(): void {
             void shell.openExternal(downloadsPageUrl);
           },
         },
+        {
+          label: "LatexDo Store",
+          click: () => {
+            void shell.openExternal(extensionStoreUrl);
+          },
+        },
       ],
     },
   );
@@ -1476,6 +1489,27 @@ function safeDownloadsUrl(value: unknown): string {
   }
 
   return downloadsPageUrl;
+}
+
+function safeExternalUrl(value: unknown): string | null {
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    value.length > maxSettingsStringLength
+  ) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol === "https:" && externalUrlHosts.has(url.hostname)) {
+      return url.href;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 function updateResultFromWebsitePayload(
@@ -2480,6 +2514,15 @@ app.whenReady().then(() => {
     const channel = "app:open-releases";
     const [rawReleaseUrl] = expectIpcArgRange(channel, rawArgs, 0, 1);
     await shell.openExternal(safeDownloadsUrl(rawReleaseUrl));
+  });
+  ipcMain.handle("app:open-external", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "app:open-external";
+    const [rawUrl] = expectIpcArgs(channel, rawArgs, 1);
+    const url = safeExternalUrl(rawUrl);
+    if (!url) {
+      throw new Error("Unsupported external URL.");
+    }
+    await shell.openExternal(url);
   });
   ipcMain.handle("spellchecker:get-settings", async (event, ...rawArgs: unknown[]) => {
     const channel = "spellchecker:get-settings";

@@ -609,6 +609,10 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       );
     },
 
+    async openExternalUrl(url) {
+      window.open(url, "_blank", "noopener,noreferrer");
+    },
+
     async getSpellCheckerSettings() {
       return readStore().spellCheckerSettings ?? defaultSpellCheckerSettings;
     },

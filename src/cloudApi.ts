@@ -418,6 +418,10 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       );
     },
 
+    async openExternalUrl(url) {
+      window.open(url, "_blank", "noopener,noreferrer");
+    },
+
     async getSpellCheckerSettings() {
       return readLocalSetting(
         cloudSpellCheckerSettingsKey,
