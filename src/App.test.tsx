@@ -8,6 +8,7 @@ import type {
   ProofreadingSettings,
   SpellCheckerSettings,
   UpdateCheckResult,
+  UpdateInstallResult,
 } from "./types";
 
 vi.mock("@monaco-editor/react", async () => {
@@ -125,7 +126,17 @@ const defaultUpdateResult: UpdateCheckResult = {
 function installLatexDoMock(options?: {
   gitStatus?: GitStatusSummary;
   proofreadingSettings?: ProofreadingSettings;
+  updateResult?: UpdateCheckResult;
+  updateNowResult?: UpdateInstallResult;
 }) {
+  const updateResult = options?.updateResult ?? defaultUpdateResult;
+  const updateNowResult =
+    options?.updateNowResult ??
+    ({
+      ...updateResult,
+      installerPath: null,
+      opened: false,
+    } satisfies UpdateInstallResult);
   const api = {
     openProject: vi.fn().mockResolvedValue(project),
     createProject: vi.fn().mockResolvedValue(project),
@@ -177,7 +188,8 @@ function installLatexDoMock(options?: {
       original: "old",
       modified: "new",
     }),
-    checkForUpdates: vi.fn().mockResolvedValue(defaultUpdateResult),
+    checkForUpdates: vi.fn().mockResolvedValue(updateResult),
+    updateNow: vi.fn().mockResolvedValue(updateNowResult),
     openReleasesPage: vi.fn().mockResolvedValue(undefined),
     getSpellCheckerSettings: vi.fn().mockResolvedValue(defaultSpellCheckerSettings),
     updateSpellCheckerSettings: vi.fn(
@@ -285,6 +297,34 @@ describe("App critical UI controls", () => {
 
     await waitFor(() => {
       expect(api.importDocx).toHaveBeenCalledWith(undefined);
+    });
+  });
+
+  it("starts the updater from the available update banner", async () => {
+    const updateResult: UpdateCheckResult = {
+      currentVersion: "0.1.0",
+      latestVersion: "0.2.0",
+      releaseUrl: "https://latexdo.org/downloads/v0.2.0/",
+      updateAvailable: true,
+    };
+    const api = installLatexDoMock({
+      updateResult,
+      updateNowResult: {
+        ...updateResult,
+        installerPath: "/Users/omar/Downloads/LatexDo-macos-arm64.dmg",
+        opened: true,
+      },
+    });
+
+    render(<App />);
+
+    const updateButton = await screen.findByRole("button", {
+      name: /update now/i,
+    });
+    fireEvent.click(updateButton);
+
+    await waitFor(() => {
+      expect(api.updateNow).toHaveBeenCalledTimes(1);
     });
   });
 

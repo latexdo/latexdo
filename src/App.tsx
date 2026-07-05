@@ -1595,6 +1595,7 @@ export default function App() {
   const [documentHistory, setDocumentHistory] = useState<DocumentHistorySnapshot[]>([]);
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [updatingNow, setUpdatingNow] = useState(false);
   const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(
     null,
   );
@@ -4859,6 +4860,31 @@ ${macroEnd}
     }
   }, []);
 
+  const updateNow = useCallback(async () => {
+    setUpdatingNow(true);
+    try {
+      const result = await window.latexdo.updateNow();
+      setUpdateInfo(result);
+
+      if (!result.updateAvailable) {
+        setStatusMessage(`LatexDo ${result.currentVersion} is up to date.`);
+        return;
+      }
+
+      if (result.opened && result.latestVersion) {
+        setStatusMessage(`Opened LatexDo ${result.latestVersion} installer.`);
+      } else if (result.latestVersion) {
+        setStatusMessage(`LatexDo ${result.latestVersion} update is ready.`);
+      }
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Could not start the update.",
+      );
+    } finally {
+      setUpdatingNow(false);
+    }
+  }, []);
+
   const stageGitEntry = useCallback(
     async (relativePath: string) => {
       const currentProject = projectIdRef.current;
@@ -8005,22 +8031,23 @@ ${macroEnd}
               <strong>LatexDo {availableUpdateVersion} is available</strong>
               <small>
                 {updatePublishedLabel
-                  ? `Published ${updatePublishedLabel}. Download it from latexdo.org.`
-                  : "Download it from latexdo.org."}
+                  ? `Published ${updatePublishedLabel}. Update now or open downloads from Settings.`
+                  : "Update now or open downloads from Settings."}
               </small>
             </span>
           </div>
           <div className="update-banner-actions">
             <button
               type="button"
-              onClick={() =>
-                void window.latexdo.openReleasesPage(
-                  updateInfo?.releaseUrl ?? undefined,
-                )
-              }
+              onClick={() => void updateNow()}
+              disabled={updatingNow}
             >
-              <ExternalLink size={13} />
-              Download update
+              {updatingNow ? (
+                <LoaderCircle size={13} className="spin" />
+              ) : (
+                <Download size={13} />
+              )}
+              {updatingNow ? "Updating…" : "Update now"}
             </button>
             <button
               type="button"
@@ -8042,9 +8069,13 @@ ${macroEnd}
             LatexDo
           </span>
           {updateInfo?.updateAvailable ? (
-            <button onClick={() => setSettingsOpen(true)}>
-              <ExternalLink size={13} />
-              Update {updateInfo.latestVersion}
+            <button onClick={() => void updateNow()} disabled={updatingNow}>
+              {updatingNow ? (
+                <LoaderCircle size={13} className="spin" />
+              ) : (
+                <Download size={13} />
+              )}
+              {updatingNow ? "Updating" : `Update ${updateInfo.latestVersion}`}
             </button>
           ) : null}
           <button onClick={() => openPanel("problems")}>
@@ -9753,9 +9784,23 @@ ${macroEnd}
                       >
                         {checkingUpdates ? "Checking…" : "Check now"}
                       </button>
+                      {updateInfo?.updateAvailable ? (
+                        <button
+                          type="button"
+                          className="dialog-submit"
+                          onClick={() => void updateNow()}
+                          disabled={updatingNow}
+                        >
+                          {updatingNow ? "Updating…" : "Update now"}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
-                        className="dialog-submit"
+                        className={
+                          updateInfo?.updateAvailable
+                            ? "dialog-cancel"
+                            : "dialog-submit"
+                        }
                         onClick={() =>
                           void window.latexdo.openReleasesPage(
                             updateInfo?.releaseUrl ?? undefined,
