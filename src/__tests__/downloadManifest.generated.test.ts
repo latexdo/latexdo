@@ -55,6 +55,16 @@ function manifest(version: string | null): DownloadManifest {
         sha256,
         size: 128,
       },
+      {
+        id: "linux-x64",
+        label: "Linux",
+        platform: "linux",
+        arch: "x64",
+        filename: "LatexDo-linux-x64.AppImage",
+        url: `${assetBaseUrl}LatexDo-linux-x64.AppImage`,
+        sha256,
+        size: 128,
+      },
     ],
   };
 }
@@ -98,7 +108,7 @@ describe("download manifest generated update matrix", () => {
 
   it("rejects a manifest without every required installer", () => {
     const incomplete = manifest("2.0.0");
-    incomplete.files = incomplete.files.filter((file) => file.id !== "windows-x64");
+    incomplete.files = incomplete.files.filter((file) => file.id !== "linux-x64");
 
     expect(validateDownloadManifest(incomplete)).toBeNull();
   });

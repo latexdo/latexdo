@@ -56,7 +56,7 @@ const deployedReleaseIndexUrl = new URL("releases.json", deployedDownloadsUrl);
 const verifyRunId =
   process.env.GITHUB_RUN_ID ?? process.env.LATEXDO_VERIFY_RUN_ID ?? Date.now();
 
-const requiredIds = new Set(["macos-arm64", "macos-x64", "windows-x64"]);
+const requiredIds = new Set(["macos-arm64", "macos-x64", "windows-x64", "linux-x64"]);
 const sha256Pattern = /^[a-f0-9]{64}$/;
 
 function normalizeReleaseSlug(value) {

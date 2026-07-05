@@ -130,22 +130,25 @@ function renderCards(files) {
             </div>
             <a class="button secondary" href="SHA256SUMS.txt">View checksums</a>
           </article>
-          <article class="platform-download-card linux coming-soon">
+          <article class="platform-download-card linux">
             <div class="platform-card-top">
               <span class="platform-logo-shell">${platformIcon("linux")}</span>
               <div>
                 <p class="eyebrow">Linux</p>
-                <h2>Coming soon</h2>
+                <h2>Linux desktop</h2>
               </div>
             </div>
-            <p>A Linux desktop package is planned after the macOS and Windows release flow is stable.</p>
-            <span class="coming-soon-pill">Linux support is on the roadmap</span>
-            <a class="button secondary" href="https://editor.latexdo.org">Use web editor</a>
+            <p>The Linux x64 AppImage will appear here when release assets are available.</p>
+            <div class="download-variant-row" aria-label="Linux build choices">
+              <span class="download-option pending"><strong>Linux x64</strong><span>AppImage package</span><em>Release pending</em></span>
+            </div>
+            <a class="button secondary" href="SHA256SUMS.txt">View checksums</a>
           </article>`;
   }
 
   const macFiles = files.filter((file) => file.platform === "macos");
   const windowsFiles = files.filter((file) => file.platform === "windows");
+  const linuxFiles = files.filter((file) => file.platform === "linux");
   const option = (
     file,
     label,
@@ -182,17 +185,24 @@ ${macFiles.map((file) => option(file, file.arch === "arm64" ? "Apple Silicon" : 
 ${windowsFiles.map((file) => option(file, "Windows x64")).join("\n")}
             </div>
           </article>
-          <article class="platform-download-card linux coming-soon">
+          <article class="platform-download-card linux${linuxFiles.length ? "" : " coming-soon"}">
             <div class="platform-card-top">
               <span class="platform-logo-shell">${platformIcon("linux")}</span>
               <div>
                 <p class="eyebrow">Linux</p>
-                <h2>Coming soon</h2>
+                <h2>${linuxFiles.length ? "Linux desktop" : "Coming soon"}</h2>
               </div>
             </div>
-            <p>A Linux desktop package is planned after the macOS and Windows release flow is stable.</p>
-            <span class="coming-soon-pill">Linux support is on the roadmap</span>
-            <a class="button secondary" href="https://editor.latexdo.org">Use web editor</a>
+            ${
+              linuxFiles.length
+                ? `<p>Run LatexDo on 64-bit Linux distributions with the packaged AppImage.</p>
+            <div class="download-variant-row" aria-label="Linux build choices">
+${linuxFiles.map((file) => option(file, "Linux x64")).join("\n")}
+            </div>`
+                : `<p>A Linux AppImage is available starting with releases that include the Linux asset.</p>
+            <span class="coming-soon-pill">Older release has no Linux asset</span>
+            <a class="button secondary" href="https://editor.latexdo.org">Use web editor</a>`
+            }
           </article>`;
 }
 
@@ -251,7 +261,7 @@ function renderReleaseItem(release) {
 function renderDownloadsPage(latestManifest, releases) {
   const latestRelease = releases[0];
   const description = latestRelease
-    ? `Download the latest LatexDo desktop installers from ${latestRelease.tag}, or inspect every release tag published for macOS and Windows.`
+    ? `Download the latest LatexDo desktop installers from ${latestRelease.tag}, or inspect every release tag published for macOS, Windows, and Linux.`
     : "Download LatexDo desktop installers and inspect release metadata.";
 
   return `<!doctype html>
@@ -339,7 +349,7 @@ ${renderReleaseList(releases)}
 }
 
 const releases = await loadReleases();
-let latestManifest = {};
+let latestManifest;
 try {
   latestManifest = await readJson(path.join(downloadsDir, "manifest.json"));
 } catch {

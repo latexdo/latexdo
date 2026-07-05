@@ -472,11 +472,11 @@ function renderDownloadFallback(container: HTMLElement): void {
       <div class="download-card-header">
         <span class="platform-logo-shell">${platformIcon("linux")}</span>
         <div>
-          <h3>Linux coming soon</h3>
-          <p>Linux packaging is planned after macOS and Windows releases stabilize.</p>
+          <h3>Linux AppImage</h3>
+          <p>The Linux x64 AppImage is published with desktop releases that include Linux packaging.</p>
         </div>
       </div>
-      <a class="button secondary" href="downloads/manifest.json">View manifest</a>
+      <a class="button secondary" href="downloads/">View downloads</a>
     </article>`;
 }
 

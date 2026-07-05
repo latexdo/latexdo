@@ -52,6 +52,14 @@ const downloads = [
     filename: "LatexDo-windows-x64.exe",
     note: "For 64-bit Windows PCs.",
   },
+  {
+    id: "linux-x64",
+    label: "Linux",
+    platform: "linux",
+    arch: "x64",
+    filename: "LatexDo-linux-x64.AppImage",
+    note: "For 64-bit Linux distributions that support AppImage.",
+  },
 ];
 
 function normalizeReleaseVersion(value) {
@@ -210,6 +218,7 @@ function renderDownloadOption(file, fileHref, label = file.label) {
 function renderCards(fileHref) {
   const macFiles = files.filter((file) => file.platform === "macos");
   const windowsFiles = files.filter((file) => file.platform === "windows");
+  const linuxFiles = files.filter((file) => file.platform === "linux");
 
   return `
           <article class="platform-download-card macos">
@@ -238,17 +247,18 @@ ${macFiles.map((file) => renderDownloadOption(file, fileHref, macBuildName(file)
 ${windowsFiles.map((file) => renderDownloadOption(file, fileHref, "Windows x64")).join("\n")}
             </div>
           </article>
-          <article class="platform-download-card linux coming-soon">
+          <article class="platform-download-card linux">
             <div class="platform-card-top">
               <span class="platform-logo-shell">${platformIcon("linux")}</span>
               <div>
                 <p class="eyebrow">Linux</p>
-                <h2>Coming soon</h2>
+                <h2>Linux desktop</h2>
               </div>
             </div>
-            <p>A Linux desktop package is planned after the macOS and Windows release flow is stable.</p>
-            <span class="coming-soon-pill">Linux support is on the roadmap</span>
-            <a class="button secondary" href="https://editor.latexdo.org">Use web editor</a>
+            <p>Run LatexDo on 64-bit Linux distributions with the packaged AppImage.</p>
+            <div class="download-variant-row" aria-label="Linux build choices">
+${linuxFiles.map((file) => renderDownloadOption(file, fileHref, "Linux x64")).join("\n")}
+            </div>
           </article>`;
 }
 
