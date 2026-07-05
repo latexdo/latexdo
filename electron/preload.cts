@@ -34,6 +34,8 @@ const api = {
     ipcRenderer.invoke("project:list", projectId),
   readFile: (projectId: string, relativePath: string): Promise<string> =>
     ipcRenderer.invoke("file:read", projectId, relativePath),
+  readAsset: (projectId: string, relativePath: string): Promise<Uint8Array> =>
+    ipcRenderer.invoke("asset:read", projectId, relativePath),
   writeFile: (
     projectId: string,
     relativePath: string,

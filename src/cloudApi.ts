@@ -504,6 +504,21 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       return new Uint8Array(await response.arrayBuffer());
     },
 
+    async readAsset(projectId, relativePath) {
+      const response = await fetch(
+        apiUrl(`/api/projects/${projectId}/asset?${filePathQuery(relativePath)}`),
+        {
+          headers: {
+            ...collaborationHeaders(shareTokenForProject(projectId)),
+          },
+        },
+      );
+      if (!response.ok) {
+        throw new Error(`${response.status} ${response.statusText}`);
+      }
+      return new Uint8Array(await response.arrayBuffer());
+    },
+
     forwardSyncTex: async () => null,
     backwardSyncTex: async () => null,
     onOpenSpellCheckerSettings: () => () => {},

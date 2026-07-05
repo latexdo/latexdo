@@ -411,6 +411,17 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       return content;
     },
 
+    async readAsset(projectId, relativePath) {
+      const store = readStore();
+      const project = findProject(store, projectId);
+      const filePath = normalizeRelativePath(relativePath);
+      const content = project.files[filePath];
+      if (content === undefined) {
+        throw new Error(`"${filePath}" does not exist in this browser workspace.`);
+      }
+      return new TextEncoder().encode(content);
+    },
+
     async writeFile(projectId, relativePath, content) {
       updateProject(projectId, (project) => {
         const filePath = normalizeRelativePath(relativePath);
