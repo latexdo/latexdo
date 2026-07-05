@@ -299,17 +299,26 @@ export default function PdfPreview({
 }: PdfPreviewProps) {
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState("");
+  const pdfDocumentRef = useRef<PDFDocumentProxy | null>(null);
 
   useEffect(() => {
     const loadingTask = getDocument({ data: data.slice() });
     let active = true;
-    setPdfDocument(null);
+    let loadedDocument: PDFDocumentProxy | null = null;
     setError("");
 
     void loadingTask.promise
       .then((document) => {
+        loadedDocument = document;
         if (active) {
+          const previousDocument = pdfDocumentRef.current;
+          if (previousDocument && previousDocument !== document) {
+            void previousDocument.destroy();
+          }
+          pdfDocumentRef.current = document;
           setPdfDocument(document);
+        } else {
+          void document.destroy();
         }
       })
       .catch((loadError: unknown) => {
@@ -322,9 +331,22 @@ export default function PdfPreview({
 
     return () => {
       active = false;
-      void loadingTask.destroy();
+      if (!loadedDocument) {
+        void loadingTask.destroy();
+      }
     };
   }, [data]);
+
+  useEffect(
+    () => () => {
+      const currentDocument = pdfDocumentRef.current;
+      pdfDocumentRef.current = null;
+      if (currentDocument) {
+        void currentDocument.destroy();
+      }
+    },
+    [],
+  );
 
   if (error) {
     return <div className="pdf-error">{error}</div>;
