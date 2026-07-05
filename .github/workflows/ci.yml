@@ -219,11 +219,113 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  package_linux:
+    name: package / Linux AppImage
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Python for native modules
+        id: setup-python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Configure node-gyp Python
+        shell: bash
+        run: |
+          echo "PYTHON=${{ steps.setup-python.outputs.python-path }}" >> "$GITHUB_ENV"
+          echo "NODE_GYP_FORCE_PYTHON=${{ steps.setup-python.outputs.python-path }}" >> "$GITHUB_ENV"
+
+      - name: Install Linux runtime dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          if apt-cache show libasound2t64 >/dev/null 2>&1; then
+            alsa_package=libasound2t64
+          else
+            alsa_package=libasound2
+          fi
+
+          sudo apt-get install -y \
+            "$alsa_package" \
+            libgbm1 \
+            libgtk-3-0 \
+            libnss3 \
+            libxss1 \
+            xvfb
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Package Linux unpacked app
+        run: >
+          npx electron-builder
+          --linux dir
+          --x64
+          --publish never
+          --config.directories.output=release/linux-dir
+
+      - name: Test packaged Linux application
+        shell: bash
+        env:
+          ELECTRON_DISABLE_SANDBOX: "1"
+        run: |
+          executable="$(find release/linux-dir -type f \( -name LatexDo -o -name latexdo \) -perm -111 -print -quit)"
+          if [ -z "$executable" ]; then
+            echo "The packaged Linux executable was not found."
+            exit 1
+          fi
+
+          xvfb-run -a "$executable" --smoke-test
+
+      - name: Package Linux AppImage
+        run: >
+          npx electron-builder
+          --linux AppImage
+          --x64
+          --publish never
+          --config.directories.output=release/linux-appimage
+
+      - name: Prepare Linux artifact
+        shell: bash
+        run: |
+          package_path="$(find release/linux-appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          if [ -z "$package_path" ]; then
+            echo "No Linux AppImage was produced."
+            exit 1
+          fi
+
+          mkdir -p artifacts
+          cp "$package_path" artifacts/LatexDo-linux-x64.AppImage
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: latexdo-linux-x64
+          path: artifacts/LatexDo-linux-x64.AppImage
+          if-no-files-found: error
+          retention-days: 14
+
   installers:
     name: verify / installers
     needs:
       - package_macos
       - package_windows
+      - package_linux
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -240,9 +342,11 @@ jobs:
         run: |
           test -f installers/LatexDo-macos-arm64.dmg
           test -f installers/LatexDo-windows-x64.exe
+          test -f installers/LatexDo-linux-x64.AppImage
           sha256sum \
             installers/LatexDo-macos-arm64.dmg \
             installers/LatexDo-windows-x64.exe \
+            installers/LatexDo-linux-x64.AppImage \
             > installers/SHA256SUMS.txt
 
       - name: Upload installer bundle
@@ -252,3 +356,63 @@ jobs:
           path: installers/*
           if-no-files-found: error
           retention-days: 14
+
+  ci_summary:
+    name: summary / CI tree
+    needs:
+      - quality
+      - package_macos
+      - package_windows
+      - package_linux
+      - installers
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Write CI tree summary
+        shell: bash
+        run: |
+          {
+            echo "### CI architecture"
+            echo
+            echo '```mermaid'
+            echo "flowchart TD"
+            echo "  trigger[\"pull_request / push / workflow_dispatch\"] --> quality[\"typecheck / build\"]"
+            echo "  quality --> macos[\"package / macOS DMG\"]"
+            echo "  quality --> windows[\"package / Windows EXE\"]"
+            echo "  quality --> linux[\"package / Linux AppImage\"]"
+            echo "  macos --> installers[\"verify / installers\"]"
+            echo "  windows --> installers"
+            echo "  linux --> installers"
+            echo "  installers --> bundle[\"installer bundle artifact\"]"
+            echo '```'
+            echo
+            echo '```text'
+            echo "latexdo-ci"
+            echo "+-- typecheck / build"
+            echo "|   +-- format"
+            echo "|   +-- lint"
+            echo "|   +-- typecheck"
+            echo "|   +-- tests"
+            echo "|   +-- coverage"
+            echo "|   +-- production build"
+            echo "+-- package"
+            echo "|   +-- macOS DMG"
+            echo "|   +-- Windows EXE"
+            echo "|   +-- Linux AppImage"
+            echo "+-- verify"
+            echo "|   +-- installer bundle"
+            echo "|   +-- SHA-256 checksums"
+            echo "+-- summary"
+            echo "    +-- CI tree"
+            echo '```'
+            echo
+            echo "| Job | Result |"
+            echo "| --- | --- |"
+            echo "| typecheck / build | ${{ needs.quality.result }} |"
+            echo "| package / macOS DMG | ${{ needs.package_macos.result }} |"
+            echo "| package / Windows EXE | ${{ needs.package_windows.result }} |"
+            echo "| package / Linux AppImage | ${{ needs.package_linux.result }} |"
+            echo "| verify / installers | ${{ needs.installers.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
