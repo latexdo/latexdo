@@ -23,7 +23,12 @@ export interface DownloadManifest {
 }
 
 const sha256Pattern = /^[a-f0-9]{64}$/;
-const requiredDownloadIds = ["macos-arm64", "macos-x64", "windows-x64"] as const;
+const requiredDownloadIds = [
+  "macos-arm64",
+  "macos-x64",
+  "windows-x64",
+  "linux-x64",
+] as const;
 
 export function compareVersionStrings(left: string, right: string): number {
   const leftParts = left.trim().replace(/^v/i, "").split(/[.-]/).filter(Boolean);

@@ -262,9 +262,99 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  build_linux:
+    name: build / Linux AppImage
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Python for native modules
+        id: setup-python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Configure node-gyp Python
+        shell: bash
+        run: |
+          echo "PYTHON=${{ steps.setup-python.outputs.python-path }}" >> "$GITHUB_ENV"
+          echo "NODE_GYP_FORCE_PYTHON=${{ steps.setup-python.outputs.python-path }}" >> "$GITHUB_ENV"
+
+      - name: Install Linux runtime dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          if apt-cache show libasound2t64 >/dev/null 2>&1; then
+            alsa_package=libasound2t64
+          else
+            alsa_package=libasound2
+          fi
+
+          sudo apt-get install -y \
+            "$alsa_package" \
+            libgbm1 \
+            libgtk-3-0 \
+            libnss3 \
+            libxss1 \
+            xvfb
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Package Linux unpacked app
+        run: >
+          npx electron-builder
+          --linux dir
+          --x64
+          --publish never
+          --config.directories.output=release/linux-dir
+
+      - name: Test packaged Linux application
+        shell: bash
+        env:
+          ELECTRON_DISABLE_SANDBOX: "1"
+        run: |
+          executable="$(find release/linux-dir -type f \( -name LatexDo -o -name latexdo \) -perm -111 -print -quit)"
+          if [ -z "$executable" ]; then
+            echo "The packaged Linux executable was not found."
+            exit 1
+          fi
+
+          xvfb-run -a "$executable" --smoke-test
+
+      - name: Package Linux AppImage
+        run: >
+          npx electron-builder
+          --linux AppImage
+          --x64
+          --publish never
+          --config.directories.output=release/linux-appimage
+
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          pkg="$(find release/linux-appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          [ -n "$pkg" ] || { echo "No AppImage produced"; exit 1; }
+          mkdir -p artifacts
+          cp "$pkg" artifacts/LatexDo-linux-x64.AppImage
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: latexdo-linux-x64
+          path: artifacts/LatexDo-linux-x64.AppImage
+          if-no-files-found: error
+          retention-days: 1
+
   publish:
     name: publish / website downloads
-    needs: [build_macos, build_windows]
+    needs: [build_macos, build_windows, build_linux]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
@@ -294,7 +384,8 @@ jobs:
           test -f LatexDo-macos-arm64.dmg
           test -f LatexDo-macos-x64.dmg
           test -f LatexDo-windows-x64.exe
-          sha256sum *.dmg *.exe > SHA256SUMS.txt
+          test -f LatexDo-linux-x64.AppImage
+          sha256sum *.dmg *.exe *.AppImage > SHA256SUMS.txt
 
       - name: Resolve release metadata
         id: release_metadata
@@ -334,6 +425,7 @@ jobs:
             artifacts/LatexDo-macos-arm64.dmg
             artifacts/LatexDo-macos-x64.dmg
             artifacts/LatexDo-windows-x64.exe
+            artifacts/LatexDo-linux-x64.AppImage
             artifacts/SHA256SUMS.txt
           )
 
