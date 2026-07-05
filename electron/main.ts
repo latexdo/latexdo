@@ -14,6 +14,7 @@ import { createReadStream, createWriteStream } from "node:fs";
 import {
   access,
   copyFile,
+  cp,
   link,
   mkdir,
   open,
@@ -47,6 +48,7 @@ import type {
   GitHistorySummary,
   GitStatusEntry,
   GitStatusSummary,
+  ImportedProjectEntry,
   OpenProject,
   ProofreadingResult,
   ProofreadingSettings,
@@ -742,6 +744,31 @@ function parseTextContent(
     trim: false,
     rejectNullByte: true,
   });
+}
+
+function parseOptionalImportDestination(channel: string, value: unknown): string {
+  if (value === undefined || value === null || value === "") {
+    return "";
+  }
+  return parseRelativePath(channel, value);
+}
+
+function parseExternalSourcePaths(channel: string, value: unknown): string[] {
+  const sourcePaths = parseStringArray(channel, value, {
+    maxItems: 64,
+    maxItemLength: 4096,
+  });
+
+  for (const sourcePath of sourcePaths) {
+    if (
+      (!path.isAbsolute(sourcePath) && !path.win32.isAbsolute(sourcePath)) ||
+      sourcePath.includes("\0")
+    ) {
+      invalidIpcInput(channel);
+    }
+  }
+
+  return [...new Set(sourcePaths.map((sourcePath) => path.resolve(sourcePath)))];
 }
 
 function parseStringArray(
@@ -2056,6 +2083,90 @@ async function updateNow(): Promise<UpdateInstallResult> {
   throw new Error(errors.join(" ") || "Update failed.");
 }
 
+async function availableImportRelativePath(
+  channel: string,
+  projectPath: string,
+  destinationDirectory: string,
+  sourceName: string,
+): Promise<string> {
+  const parsed = path.posix.parse(sourceName.replaceAll("\\", "/"));
+
+  for (let index = 0; index < 100; index += 1) {
+    const candidateName =
+      index === 0 ? sourceName : `${parsed.name} ${index + 1}${parsed.ext}`;
+    const candidateRelativePath = destinationDirectory
+      ? path.posix.join(destinationDirectory, candidateName)
+      : candidateName;
+    const validatedRelativePath = parseRelativePath(channel, candidateRelativePath);
+    const candidatePath = resolveProjectPath(projectPath, validatedRelativePath);
+
+    try {
+      await stat(candidatePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return validatedRelativePath;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error(`Could not choose an available path for "${sourceName}".`);
+}
+
+async function importExternalFilesIntoProject(
+  channel: string,
+  projectPath: string,
+  destinationDirectory: string,
+  sourcePaths: string[],
+): Promise<ImportedProjectEntry[]> {
+  const destinationRoot = destinationDirectory
+    ? resolveProjectPath(projectPath, destinationDirectory)
+    : projectPath;
+  const destinationStats = await stat(destinationRoot).catch(() => null);
+  if (!destinationStats?.isDirectory()) {
+    throw new Error("Drop files onto an existing project folder.");
+  }
+
+  const imported: ImportedProjectEntry[] = [];
+  for (const sourcePath of sourcePaths) {
+    const sourceStats = await stat(sourcePath).catch(() => null);
+    if (!sourceStats || (!sourceStats.isFile() && !sourceStats.isDirectory())) {
+      continue;
+    }
+
+    const sourceName = path.basename(sourcePath);
+    const relativePath = await availableImportRelativePath(
+      channel,
+      projectPath,
+      destinationDirectory,
+      sourceName,
+    );
+    const targetPath = resolveProjectPath(projectPath, relativePath);
+
+    if (sourceStats.isDirectory()) {
+      if (isInside(sourcePath, targetPath)) {
+        throw new Error("Cannot import a folder into itself.");
+      }
+      await cp(sourcePath, targetPath, {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+        dereference: true,
+      });
+    } else {
+      await copyFile(sourcePath, targetPath);
+    }
+
+    imported.push({
+      sourcePath,
+      relativePath: relativeProjectPath(projectPath, targetPath),
+      type: sourceStats.isDirectory() ? "directory" : "file",
+    });
+  }
+
+  return imported;
+}
+
 async function readGitStatus(projectPath: string): Promise<GitStatusSummary> {
   try {
     const { stdout } = await execFileAsync("git", [
@@ -2837,6 +2948,27 @@ app.whenReady().then(async () => {
       throw error;
     }
     return relativeProjectPath(projectPath, folderPath);
+  });
+  ipcMain.handle("file:import-external", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "file:import-external";
+    const [rawProjectId, rawDestinationDirectory, rawSourcePaths] = expectIpcArgs(
+      channel,
+      rawArgs,
+      3,
+    );
+    const projectId = parseProjectId(channel, rawProjectId);
+    const destinationDirectory = parseOptionalImportDestination(
+      channel,
+      rawDestinationDirectory,
+    );
+    const sourcePaths = parseExternalSourcePaths(channel, rawSourcePaths);
+    const projectPath = getProjectRoot(projectId);
+    return importExternalFilesIntoProject(
+      channel,
+      projectPath,
+      destinationDirectory,
+      sourcePaths,
+    );
   });
   ipcMain.handle("entry:move", async (_event, ...rawArgs: unknown[]) => {
     const channel = "entry:move";

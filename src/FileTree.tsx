@@ -8,7 +8,7 @@ import {
   FolderOpen,
   MoreHorizontal,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import type { ProjectEntry } from "./types";
 
 interface FileTreeProps {
@@ -19,8 +19,12 @@ interface FileTreeProps {
   onCompileFile?: (entry: ProjectEntry) => void;
   onSetRootFile?: (entry: ProjectEntry) => void;
   onMoveEntry?: (sourcePath: string, destination: ProjectEntry | null) => void;
+  onImportExternalFiles?: (files: File[], destination: ProjectEntry | null) => void;
+  onChooseImportFilesInDirectory?: (entry: ProjectEntry | null) => void;
   onCreateFileInDirectory?: (entry: ProjectEntry) => void;
   onCreateFolderInDirectory?: (entry: ProjectEntry) => void;
+  onCopyRelativePath?: (entry: ProjectEntry) => void;
+  onInsertFileReference?: (entry: ProjectEntry) => void;
   menuPath?: string | null;
   onToggleMenu?: (path: string | null) => void;
   draggedPath?: string | null;
@@ -106,8 +110,12 @@ function TreeRow({
   onCompileFile,
   onSetRootFile,
   onMoveEntry,
+  onImportExternalFiles,
+  onChooseImportFilesInDirectory,
   onCreateFileInDirectory,
   onCreateFolderInDirectory,
+  onCopyRelativePath,
+  onInsertFileReference,
   menuPath,
   onToggleMenu,
   draggedPath,
@@ -120,6 +128,16 @@ function TreeRow({
   const menuOpen = menuPath === entry.path;
   const isDropTarget =
     entry.type === "directory" && canDropIntoDirectory(draggedPath, entry.path);
+  const isImageFile =
+    entry.type === "file" &&
+    ["png", "jpg", "jpeg", "pdf", "svg"].includes(
+      entry.name.split(".").pop()?.toLowerCase() ?? "",
+    );
+
+  const droppedFiles = (event: DragEvent<HTMLElement>): File[] =>
+    Array.from(event.dataTransfer.files ?? []);
+  const hasExternalFiles = (event: DragEvent<HTMLElement>): boolean =>
+    Array.from(event.dataTransfer.types).includes("Files");
 
   const clearExpandTimer = () => {
     if (expandTimerRef.current !== null) {
@@ -171,6 +189,19 @@ function TreeRow({
             onDragStartPath?.(null);
           }}
           onDragOver={(event) => {
+            if (hasExternalFiles(event) && onImportExternalFiles) {
+              event.preventDefault();
+              event.stopPropagation();
+              event.dataTransfer.dropEffect = "copy";
+              setDropActive(true);
+              if (!expanded && expandTimerRef.current === null) {
+                expandTimerRef.current = window.setTimeout(() => {
+                  setExpanded(true);
+                  expandTimerRef.current = null;
+                }, 450);
+              }
+              return;
+            }
             if (draggedPath) {
               event.stopPropagation();
             }
@@ -195,6 +226,15 @@ function TreeRow({
             setDropActive(false);
           }}
           onDrop={(event) => {
+            const files = droppedFiles(event);
+            if (files.length > 0 && onImportExternalFiles) {
+              event.preventDefault();
+              event.stopPropagation();
+              clearExpandTimer();
+              setDropActive(false);
+              onImportExternalFiles(files, entry);
+              return;
+            }
             if (draggedPath) {
               event.stopPropagation();
             }
@@ -258,6 +298,15 @@ function TreeRow({
               >
                 New folder
               </button>
+              <button
+                className="tree-row-menu-item"
+                onClick={() => {
+                  toggleMenu(null);
+                  onChooseImportFilesInDirectory?.(entry);
+                }}
+              >
+                Import files here
+              </button>
             </div>
           ) : null}
         </div>
@@ -270,8 +319,12 @@ function TreeRow({
             onCompileFile={onCompileFile}
             onSetRootFile={onSetRootFile}
             onMoveEntry={onMoveEntry}
+            onImportExternalFiles={onImportExternalFiles}
+            onChooseImportFilesInDirectory={onChooseImportFilesInDirectory}
             onCreateFileInDirectory={onCreateFileInDirectory}
             onCreateFolderInDirectory={onCreateFolderInDirectory}
+            onCopyRelativePath={onCopyRelativePath}
+            onInsertFileReference={onInsertFileReference}
             menuPath={menuPath}
             onToggleMenu={onToggleMenu}
             draggedPath={draggedPath}
@@ -345,6 +398,26 @@ function TreeRow({
                 </button>
               </>
             ) : null}
+            {isImageFile ? (
+              <button
+                className="tree-row-menu-item"
+                onClick={() => {
+                  toggleMenu(null);
+                  onInsertFileReference?.(entry);
+                }}
+              >
+                Insert image code
+              </button>
+            ) : null}
+            <button
+              className="tree-row-menu-item"
+              onClick={() => {
+                toggleMenu(null);
+                onCopyRelativePath?.(entry);
+              }}
+            >
+              Copy relative path
+            </button>
           </div>
         ) : null}
       </div>
@@ -360,8 +433,12 @@ export default function FileTree({
   onCompileFile,
   onSetRootFile,
   onMoveEntry,
+  onImportExternalFiles,
+  onChooseImportFilesInDirectory,
   onCreateFileInDirectory,
   onCreateFolderInDirectory,
+  onCopyRelativePath,
+  onInsertFileReference,
   menuPath: controlledMenuPath,
   onToggleMenu: controlledToggleMenu,
   draggedPath: controlledDraggedPath,
@@ -404,8 +481,12 @@ export default function FileTree({
           onCompileFile={onCompileFile}
           onSetRootFile={onSetRootFile}
           onMoveEntry={onMoveEntry}
+          onImportExternalFiles={onImportExternalFiles}
+          onChooseImportFilesInDirectory={onChooseImportFilesInDirectory}
           onCreateFileInDirectory={onCreateFileInDirectory}
           onCreateFolderInDirectory={onCreateFolderInDirectory}
+          onCopyRelativePath={onCopyRelativePath}
+          onInsertFileReference={onInsertFileReference}
           menuPath={menuPath}
           onToggleMenu={toggleMenu}
           draggedPath={draggedPath}
@@ -427,6 +508,15 @@ export default function FileTree({
         rootDropActive ? "root-drop-target" : ""
       }`}
       onDragOver={(event) => {
+        if (
+          Array.from(event.dataTransfer.types).includes("Files") &&
+          onImportExternalFiles
+        ) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+          setRootDropActive(true);
+          return;
+        }
         if (!canDropAtRoot) {
           return;
         }
@@ -441,6 +531,12 @@ export default function FileTree({
       }}
       onDrop={(event) => {
         setRootDropActive(false);
+        const files = Array.from(event.dataTransfer.files ?? []);
+        if (files.length > 0 && onImportExternalFiles) {
+          event.preventDefault();
+          onImportExternalFiles(files, null);
+          return;
+        }
         if (!onMoveEntry || !canDropAtRoot) {
           return;
         }
@@ -457,6 +553,10 @@ export default function FileTree({
       {draggedPath && canDropAtRoot ? (
         <div className="file-tree-root-hint">
           Drop in this space to move to the project root
+        </div>
+      ) : rootDropActive ? (
+        <div className="file-tree-root-hint">
+          Drop files here to import into the project root
         </div>
       ) : null}
     </div>

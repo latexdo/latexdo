@@ -150,6 +150,8 @@ function installLatexDoMock(options?: {
     fileExists: vi.fn().mockResolvedValue(false),
     createFile: vi.fn().mockResolvedValue("chapter.tex"),
     createFolder: vi.fn().mockResolvedValue("chapters"),
+    getDroppedFilePaths: vi.fn().mockReturnValue([]),
+    importExternalFiles: vi.fn().mockResolvedValue([]),
     importDocx: vi.fn().mockResolvedValue(null),
     importMarkdown: vi.fn().mockResolvedValue(null),
     moveEntry: vi.fn().mockResolvedValue("main.tex"),

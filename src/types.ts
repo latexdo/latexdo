@@ -164,6 +164,12 @@ export interface GitCommitDetails {
   body: string;
 }
 
+export interface ImportedProjectEntry {
+  sourcePath: string;
+  relativePath: string;
+  type: "file" | "directory";
+}
+
 export interface UpdateCheckResult {
   currentVersion: string;
   latestVersion: string | null;
