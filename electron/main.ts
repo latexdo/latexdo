@@ -70,7 +70,7 @@ const downloadsPageUrl = "https://latexdo.org/downloads/";
 const downloadsManifestUrl = "https://latexdo.org/downloads/manifest.json";
 const updatesFeedUrl = "https://latexdo.org/updates/latest.json";
 const extensionStoreUrl = "https://store.latexdo.org/";
-const privacyInfoUrl = "https://latexdo.org/about/";
+const privacyInfoUrl = "https://latexdo.org/privacy.html";
 const externalUrlHosts = new Set([
   "github.com",
   "latexdo.org",
@@ -337,8 +337,9 @@ async function ensurePrivacyConsent(
     title: "LatexDo Privacy and Consent",
     message: "Review LatexDo privacy and consent",
     detail:
-      "LatexDo stores app settings, trusted folder choices, editor preferences, spell checker settings, proofreading settings, and extension choices on this device.\n\n" +
-      "LatexDo reads and writes files only in folders you create, open, or trust. Update checks, the extension catalog, external links, and optional proofreading can contact LatexDo services or the provider you configure.\n\n" +
+      "LatexDo does not currently collect personal analytics, sell user data, or track your documents.\n\n" +
+      "LatexDo stores app settings, trusted folder choices, editor preferences, spell checker settings, proofreading settings, and extension choices on this device. Project files and PDFs stay on your device unless you choose a feature or external service that sends a request.\n\n" +
+      "LatexDo reads and writes files only in folders you create, open, or trust. Update checks, the extension catalog, external links, downloads, and optional proofreading can contact LatexDo services or the provider you configure.\n\n" +
       "Choose Agree and Continue to consent to this use.",
   } satisfies Electron.MessageBoxOptions;
 
