@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NotationManager } from "./NotationManager";
+import { SYMBOL_PALETTE } from "./mathSymbolPalette";
 
 function installClipboardMock() {
   const writeText = vi.fn().mockResolvedValue(undefined);
@@ -58,6 +59,10 @@ describe("NotationManager", () => {
       expect(writeText).toHaveBeenCalledWith("\\beta");
     });
     expect(screen.getByText("Copied \\beta")).toBeVisible();
+  });
+
+  it("exposes at least 1000 math symbols", () => {
+    expect(SYMBOL_PALETTE.length).toBeGreaterThanOrEqual(1000);
   });
 
   it("adds custom notation and copies a reusable definition", () => {

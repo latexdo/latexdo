@@ -5001,6 +5001,20 @@ button {
   accent-color: #6d96e8;
 }
 
+.tikz-toolbar-selected {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+}
+
+.tikz-toolbar-selected-props {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
 .tikz-checkbox-group {
   gap: 3px;
 }
@@ -5125,6 +5139,11 @@ button {
   font-size: 12px !important;
   padding: 2px 6px !important;
   line-height: 1;
+}
+
+.tikz-zorder-btn:disabled {
+  cursor: default;
+  opacity: 0.35;
 }
 
 .tikz-selected-props-row {

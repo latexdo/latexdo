@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { Copy, Plus, Search } from "lucide-react";
 import type { NotedSymbol } from "../types";
 import { analyzeNotation } from "../checks/notationManager";
+import { SYMBOL_PALETTE } from "./mathSymbolPalette";
 
 interface NotationManagerProps {
   content: string;
@@ -215,103 +216,6 @@ const EQUATION_TEMPLATES: EquationTemplate[] = [
   },
 ];
 
-const SYMBOL_PALETTE = [
-  { latex: "\\alpha", display: "α" },
-  { latex: "\\beta", display: "β" },
-  { latex: "\\gamma", display: "γ" },
-  { latex: "\\delta", display: "δ" },
-  { latex: "\\epsilon", display: "ε" },
-  { latex: "\\varepsilon", display: "ε" },
-  { latex: "\\zeta", display: "ζ" },
-  { latex: "\\eta", display: "η" },
-  { latex: "\\theta", display: "θ" },
-  { latex: "\\vartheta", display: "ϑ" },
-  { latex: "\\iota", display: "ι" },
-  { latex: "\\kappa", display: "κ" },
-  { latex: "\\lambda", display: "λ" },
-  { latex: "\\mu", display: "μ" },
-  { latex: "\\nu", display: "ν" },
-  { latex: "\\xi", display: "ξ" },
-  { latex: "\\pi", display: "π" },
-  { latex: "\\varpi", display: "ϖ" },
-  { latex: "\\rho", display: "ρ" },
-  { latex: "\\sigma", display: "σ" },
-  { latex: "\\tau", display: "τ" },
-  { latex: "\\upsilon", display: "υ" },
-  { latex: "\\phi", display: "φ" },
-  { latex: "\\varphi", display: "φ" },
-  { latex: "\\chi", display: "χ" },
-  { latex: "\\psi", display: "ψ" },
-  { latex: "\\omega", display: "ω" },
-  { latex: "\\Gamma", display: "Γ" },
-  { latex: "\\Delta", display: "Δ" },
-  { latex: "\\Theta", display: "Θ" },
-  { latex: "\\Lambda", display: "Λ" },
-  { latex: "\\Xi", display: "Ξ" },
-  { latex: "\\Pi", display: "Π" },
-  { latex: "\\Sigma", display: "Σ" },
-  { latex: "\\Phi", display: "Φ" },
-  { latex: "\\Psi", display: "Ψ" },
-  { latex: "\\Omega", display: "Ω" },
-  { latex: "\\mathcal{A}", display: "𝒜" },
-  { latex: "\\mathcal{B}", display: "ℬ" },
-  { latex: "\\mathcal{C}", display: "𝒞" },
-  { latex: "\\mathcal{D}", display: "𝒟" },
-  { latex: "\\mathcal{L}", display: "ℒ" },
-  { latex: "\\mathcal{M}", display: "ℳ" },
-  { latex: "\\mathcal{N}", display: "𝒩" },
-  { latex: "\\mathcal{R}", display: "ℛ" },
-  { latex: "\\mathbb{R}", display: "ℝ" },
-  { latex: "\\mathbb{N}", display: "ℕ" },
-  { latex: "\\mathbb{Z}", display: "ℤ" },
-  { latex: "\\mathbb{Q}", display: "ℚ" },
-  { latex: "\\mathbb{C}", display: "ℂ" },
-  { latex: "\\mathbf{x}", display: "𝐱" },
-  { latex: "\\mathbf{w}", display: "𝐰" },
-  { latex: "\\mathbf{y}", display: "𝐲" },
-  { latex: "\\infty", display: "∞" },
-  { latex: "\\partial", display: "∂" },
-  { latex: "\\nabla", display: "∇" },
-  { latex: "\\sum", display: "∑" },
-  { latex: "\\prod", display: "∏" },
-  { latex: "\\int", display: "∫" },
-  { latex: "\\iint", display: "∬" },
-  { latex: "\\iiint", display: "∭" },
-  { latex: "\\oint", display: "∮" },
-  { latex: "\\to", display: "→" },
-  { latex: "\\mapsto", display: "↦" },
-  { latex: "\\rightarrow", display: "→" },
-  { latex: "\\leftarrow", display: "←" },
-  { latex: "\\Rightarrow", display: "⇒" },
-  { latex: "\\Leftarrow", display: "⇐" },
-  { latex: "\\approx", display: "≈" },
-  { latex: "\\sim", display: "∼" },
-  { latex: "\\simeq", display: "≃" },
-  { latex: "\\cong", display: "≅" },
-  { latex: "\\equiv", display: "≡" },
-  { latex: "\\propto", display: "∝" },
-  { latex: "\\subset", display: "⊂" },
-  { latex: "\\supset", display: "⊃" },
-  { latex: "\\subseteq", display: "⊆" },
-  { latex: "\\supseteq", display: "⊇" },
-  { latex: "\\in", display: "∈" },
-  { latex: "\\notin", display: "∉" },
-  { latex: "\\forall", display: "∀" },
-  { latex: "\\exists", display: "∃" },
-  { latex: "\\neg", display: "¬" },
-  { latex: "\\emptyset", display: "∅" },
-  { latex: "\\varnothing", display: "∅" },
-  { latex: "\\cup", display: "∪" },
-  { latex: "\\cap", display: "∩" },
-  { latex: "\\oplus", display: "⊕" },
-  { latex: "\\otimes", display: "⊗" },
-  { latex: "\\pm", display: "±" },
-  { latex: "\\times", display: "×" },
-  { latex: "\\div", display: "÷" },
-  { latex: "\\cdot", display: "·" },
-  { latex: "\\circ", display: "∘" },
-];
-
 export function NotationManager({ content, onInsertCode }: NotationManagerProps) {
   const [customEntries, setCustomEntries] = useState<NotationEntry[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -334,7 +238,10 @@ export function NotationManager({ content, onInsertCode }: NotationManagerProps)
     if (!searchQuery) return SYMBOL_PALETTE;
     const q = searchQuery.toLowerCase();
     return SYMBOL_PALETTE.filter(
-      (s) => s.latex.toLowerCase().includes(q) || s.display.toLowerCase().includes(q),
+      (s) =>
+        s.search.includes(q) ||
+        s.latex.toLowerCase().includes(q) ||
+        s.display.toLowerCase().includes(q),
     );
   }, [searchQuery]);
 
