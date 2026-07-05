@@ -698,6 +698,28 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       };
     },
 
+    async compileAsymptote(request) {
+      return {
+        ok: false,
+        durationMs: 0,
+        output:
+          "The web editor stores and edits Asymptote source in your browser. Install the desktop app to run the local Asymptote compiler and render PDFs.",
+        diagnostics: [
+          {
+            file: request.relativePath,
+            line: 1,
+            column: 1,
+            severity: "warning",
+            message: "Local Asymptote compilation is available in the desktop app.",
+            detail:
+              "You can keep editing .asy files in the web editor, then use the desktop app for one-click Asymptote PDF compilation.",
+            source: "latex",
+          },
+        ],
+        error: "Desktop app required for local Asymptote compilation.",
+      };
+    },
+
     async readPdf() {
       return new Uint8Array();
     },

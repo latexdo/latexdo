@@ -489,6 +489,27 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
         shareTokenForProject(request.projectId),
       ),
 
+    async compileAsymptote(request) {
+      return {
+        ok: false,
+        durationMs: 0,
+        output: "Asymptote compilation is available in the desktop app.",
+        diagnostics: [
+          {
+            file: request.relativePath,
+            line: 1,
+            column: 1,
+            severity: "warning",
+            message: "Asymptote compilation is not enabled in the hosted editor.",
+            detail:
+              "Open this project in the desktop app to compile .asy files with the local Asymptote executable.",
+            source: "latex",
+          },
+        ],
+        error: "Desktop app required for Asymptote compilation.",
+      };
+    },
+
     async readPdf(projectId, pdfRelativePath) {
       const response = await fetch(
         apiUrl(`/api/projects/${projectId}/pdf?${filePathQuery(pdfRelativePath)}`),

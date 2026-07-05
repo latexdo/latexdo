@@ -11,13 +11,40 @@ type CompileLatexRequest = {
   engine: "pdflatex" | "xelatex" | "lualatex";
 };
 
+type CompileAsymptoteRequest = {
+  projectPath: string;
+  relativePath: string;
+};
+
 const executableCandidates =
   process.platform === "darwin"
     ? ["/Library/TeX/texbin/latexmk", "/usr/local/bin/latexmk", "latexmk"]
     : ["latexmk"];
 
+const asymptoteExecutableCandidates =
+  process.platform === "darwin"
+    ? ["/Library/TeX/texbin/asy", "/usr/local/bin/asy", "asy"]
+    : ["asy"];
+
 async function findLatexmk(): Promise<string | null> {
   for (const candidate of executableCandidates) {
+    if (!path.isAbsolute(candidate)) {
+      return candidate;
+    }
+
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
+      // Try the next known TeX installation path.
+    }
+  }
+
+  return null;
+}
+
+async function findAsymptote(): Promise<string | null> {
+  for (const candidate of asymptoteExecutableCandidates) {
     if (!path.isAbsolute(candidate)) {
       return candidate;
     }
@@ -402,6 +429,119 @@ export async function compileLatex(
           error:
             code === 0 ? undefined : `LaTeX exited with code ${code ?? "unknown"}.`,
         });
+      });
+    });
+  });
+}
+
+function parseAsymptoteDiagnostics(output: string, relativePath: string): Diagnostic[] {
+  if (!output.trim()) {
+    return [];
+  }
+
+  const lineMatch =
+    output.match(/(?:line|:)\s*(\d+)(?:[.:,]\s*(\d+))?/i) ??
+    output.match(
+      new RegExp(
+        `${relativePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:(\\d+)(?::(\\d+))?`,
+      ),
+    );
+  const line = lineMatch ? Math.max(1, Number(lineMatch[1])) : 1;
+  const column = lineMatch?.[2] ? Math.max(1, Number(lineMatch[2])) : 1;
+  const firstLine = output
+    .split(/\r?\n/)
+    .map((lineText) => lineText.trim())
+    .find(Boolean);
+
+  return [
+    {
+      file: relativePath,
+      line,
+      column,
+      severity: "error",
+      message: firstLine ?? "Asymptote compilation failed.",
+      detail: output.trim().slice(0, 1200),
+      source: "latex",
+      locationAccuracy: lineMatch ? "line" : "inferred",
+    },
+  ];
+}
+
+export async function compileAsymptote(
+  request: CompileAsymptoteRequest,
+): Promise<CompileResult> {
+  const startedAt = performance.now();
+  const asymptote = await findAsymptote();
+
+  if (!asymptote) {
+    return {
+      ok: false,
+      durationMs: 0,
+      output: "",
+      diagnostics: [],
+      error:
+        "Asymptote was not found. Install Asymptote from TeX Live, MacTeX, or MiKTeX and restart LatexDo.",
+    };
+  }
+
+  const buildDirectory = path.join(
+    request.projectPath,
+    ".latexdo",
+    "build",
+    `asy-${randomUUID()}`,
+  );
+  await mkdir(buildDirectory, { recursive: true });
+
+  const outputBase = path.join(
+    buildDirectory,
+    path.basename(request.relativePath, path.extname(request.relativePath)),
+  );
+  const outputPdf = `${outputBase}.pdf`;
+  const args = ["-f", "pdf", "-o", outputBase, request.relativePath];
+
+  return new Promise((resolve) => {
+    const child = spawn(asymptote, args, {
+      cwd: request.projectPath,
+      env: {
+        ...process.env,
+        PATH: `/Library/TeX/texbin:${process.env.PATH ?? ""}`,
+      },
+      windowsHide: true,
+    });
+
+    let output = "";
+    child.stdout.on("data", (data: Buffer) => {
+      output += data.toString();
+    });
+    child.stderr.on("data", (data: Buffer) => {
+      output += data.toString();
+    });
+    child.on("error", (error) => {
+      const cleanedOutput = sanitizeCompileOutput(output);
+      resolve({
+        ok: false,
+        durationMs: Math.round(performance.now() - startedAt),
+        output: cleanedOutput,
+        diagnostics: parseAsymptoteDiagnostics(
+          cleanedOutput || error.message,
+          request.relativePath,
+        ),
+        error: error.message,
+      });
+    });
+    child.on("close", (code) => {
+      const cleanedOutput = sanitizeCompileOutput(output);
+      resolve({
+        ok: code === 0,
+        pdfPath: code === 0 ? outputPdf : undefined,
+        durationMs: Math.round(performance.now() - startedAt),
+        output: cleanedOutput,
+        diagnostics:
+          code === 0
+            ? []
+            : parseAsymptoteDiagnostics(cleanedOutput, request.relativePath),
+        error:
+          code === 0 ? undefined : `Asymptote exited with code ${code ?? "unknown"}.`,
       });
     });
   });

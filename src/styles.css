@@ -2818,6 +2818,21 @@ button {
   animation: source-sync-flash 1.8s ease-out;
 }
 
+.monaco-editor .latexdo-bookmark-line {
+  background: rgb(245 197 66 / 10%);
+}
+
+.monaco-editor .latexdo-bookmark-glyph::before {
+  display: block;
+  width: 8px;
+  height: 14px;
+  margin: 3px auto 0;
+  border-radius: 2px 2px 1px 1px;
+  background: linear-gradient(180deg, #f5c542 0%, #d99a20 100%);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
+  content: "";
+}
+
 .latexdo-figure-hover {
   display: flex;
   flex-direction: column;
@@ -7429,6 +7444,10 @@ button {
 .source-toolbar > .root-control:first-child {
   flex: 0 1 260px;
   min-width: 130px;
+}
+.source-toolbar > .outline-control {
+  flex: 0 1 220px;
+  min-width: 120px;
 }
 .source-toolbar > .tex-format-toolbar {
   flex: 1 1 240px;

@@ -130,6 +130,7 @@ describe("project search", () => {
 
   it("rejects ignored and binary-like paths", () => {
     expect(isProjectSearchablePath("paper.tex")).toBe(true);
+    expect(isProjectSearchablePath("figures/diagram.asy")).toBe(true);
     expect(isProjectSearchablePath("figure.pdf")).toBe(false);
     expect(isProjectSearchablePath("node_modules/pkg/file.ts")).toBe(false);
   });
