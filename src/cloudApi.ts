@@ -271,6 +271,12 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
         shareTokenForProject(projectId),
       ).then((body) => body.relativePath),
 
+    getDroppedFilePaths: () => [],
+
+    importExternalFiles: async () => {
+      throw cloudUnavailable("File drop import");
+    },
+
     importDocx: async () => {
       throw cloudUnavailable("DOCX import");
     },

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
   CompileRequest,
   CompileResult,
@@ -12,6 +12,7 @@ import type {
   GitDiffPreview,
   GitHistorySummary,
   GitStatusSummary,
+  ImportedProjectEntry,
   OpenProject,
   ProofreadingResult,
   ProofreadingSettings,
@@ -45,6 +46,19 @@ const api = {
     ipcRenderer.invoke("file:create", projectId, relativePath),
   createFolder: (projectId: string, relativePath: string): Promise<string> =>
     ipcRenderer.invoke("folder:create", projectId, relativePath),
+  getDroppedFilePaths: (files: File[]): string[] =>
+    files.map((file) => webUtils.getPathForFile(file)).filter(Boolean),
+  importExternalFiles: (
+    projectId: string,
+    destinationDirectory: string,
+    filePaths: string[],
+  ): Promise<ImportedProjectEntry[]> =>
+    ipcRenderer.invoke(
+      "file:import-external",
+      projectId,
+      destinationDirectory,
+      filePaths,
+    ),
   importDocx: (projectId?: string): Promise<DocxImportResult | null> =>
     ipcRenderer.invoke("docx:import", projectId ?? ""),
   importMarkdown: (projectId?: string): Promise<MarkdownImportResult | null> =>

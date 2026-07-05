@@ -100,6 +100,7 @@ import type {
   GitHistorySummary,
   GitStatusEntry,
   GitStatusSummary,
+  ImportedProjectEntry,
   OpenProject,
   OpenDocument,
   ProofreadingResult,
@@ -1240,6 +1241,39 @@ function createPathInDirectory(directory: string, name: string): string {
   return normalizedDirectory ? joinRelativePath(normalizedDirectory, name) : name;
 }
 
+const imageFileExtensions = new Set(["png", "jpg", "jpeg", "pdf", "svg"]);
+
+function isImagePath(filePath: string): boolean {
+  const extension = filePath.split(".").pop()?.toLowerCase();
+  return Boolean(extension && imageFileExtensions.has(extension));
+}
+
+function latexSafeImagePath(filePath: string): string {
+  return normalizeRelativePath(filePath).replace(/^\/+/, "");
+}
+
+function latexFigureLabel(filePath: string): string {
+  const baseName = fileName(filePath)
+    .replace(/\.[^.]+$/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return baseName || "image";
+}
+
+function latexFigureCode(filePath: string): string {
+  const imagePath = latexSafeImagePath(filePath);
+  const label = latexFigureLabel(filePath);
+  return [
+    "\\begin{figure}[ht]",
+    "\\centering",
+    `\\includegraphics[width=0.8\\textwidth]{${imagePath}}`,
+    "\\caption{}",
+    `\\label{fig:${label}}`,
+    "\\end{figure}",
+  ].join("\n");
+}
+
 function uniqueWords(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
@@ -1635,6 +1669,8 @@ export default function App() {
   const [rebuttalItems, setRebuttalItems] = useState<RebuttalItem[]>([]);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const editorMouseDisposableRef = useRef<monaco.IDisposable | null>(null);
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingImportDestinationRef = useRef<ProjectEntry | null>(null);
   const documentsRef = useRef<OpenDocument[]>([]);
   const documentHistoryRef = useRef<DocumentHistorySnapshot[]>([]);
   const projectEntriesRef = useRef<ProjectEntry[]>([]);
@@ -4109,6 +4145,45 @@ ${macroEnd}
     });
   }, []);
 
+  const insertLatexBlockAtEditorPosition = useCallback(
+    (text: string, position?: monaco.IPosition | null): boolean => {
+      const editor = editorRef.current;
+      const model = editor?.getModel();
+      if (!editor || !model) {
+        return false;
+      }
+
+      const target = position ??
+        editor.getPosition() ?? {
+          lineNumber: model.getLineCount(),
+          column: model.getLineMaxColumn(model.getLineCount()),
+        };
+      const lineBefore = model
+        .getLineContent(target.lineNumber)
+        .slice(0, target.column - 1);
+      const textToInsert = `${lineBefore.trim() ? "\n" : ""}${text}\n`;
+      const startOffset = model.getOffsetAt(target);
+      const range = new monaco.Range(
+        target.lineNumber,
+        target.column,
+        target.lineNumber,
+        target.column,
+      );
+
+      editor.executeEdits("latexdo-insert-block", [
+        {
+          range,
+          text: textToInsert,
+          forceMoveMarkers: true,
+        },
+      ]);
+      editor.setPosition(model.getPositionAt(startOffset + textToInsert.length));
+      editor.focus();
+      return true;
+    },
+    [],
+  );
+
   const editorTheme = monacoThemeFor(settings.colorTheme);
 
   useEffect(
@@ -4447,6 +4522,163 @@ ${macroEnd}
       setCreating(false);
     }
   };
+
+  const importExternalFilePaths = useCallback(
+    async (
+      sourcePaths: string[],
+      destinationDirectory: string,
+    ): Promise<ImportedProjectEntry[]> => {
+      const currentProject = projectIdRef.current;
+      const uniquePaths = [...new Set(sourcePaths.filter(Boolean))];
+      if (!currentProject) {
+        setStatusMessage("Open a project before importing files.");
+        return [];
+      }
+      if (uniquePaths.length === 0) {
+        setStatusMessage("File drop import is available in the desktop app.");
+        return [];
+      }
+
+      try {
+        const imported = await window.latexdo.importExternalFiles(
+          currentProject,
+          destinationDirectory,
+          uniquePaths,
+        );
+        await refreshProject(currentProject);
+        setStatusMessage(
+          imported.length === 1
+            ? `Imported ${imported[0].relativePath}`
+            : `Imported ${imported.length} items`,
+        );
+        return imported;
+      } catch (error) {
+        setStatusMessage(
+          error instanceof Error ? error.message : "Could not import dropped files.",
+        );
+        return [];
+      }
+    },
+    [refreshProject],
+  );
+
+  const importExternalFiles = useCallback(
+    async (files: File[], destination: ProjectEntry | null) => {
+      const sourcePaths = window.latexdo.getDroppedFilePaths(files);
+      const destinationDirectory = normalizeRelativePath(
+        destination?.relativePath ?? "",
+      ).replace(/\/+$/, "");
+      await importExternalFilePaths(sourcePaths, destinationDirectory);
+    },
+    [importExternalFilePaths],
+  );
+
+  const chooseImportFiles = useCallback((destination: ProjectEntry | null) => {
+    pendingImportDestinationRef.current = destination;
+    if (importFileInputRef.current) {
+      importFileInputRef.current.value = "";
+      importFileInputRef.current.click();
+    }
+  }, []);
+
+  const handleImportFileInputChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.currentTarget.files ?? []);
+      const destination = pendingImportDestinationRef.current;
+      pendingImportDestinationRef.current = null;
+      event.currentTarget.value = "";
+      if (files.length > 0) {
+        void importExternalFiles(files, destination);
+      }
+    },
+    [importExternalFiles],
+  );
+
+  const insertImageReference = useCallback(
+    (entry: ProjectEntry) => {
+      if (!activeDocumentIsLatex) {
+        setStatusMessage("Open a LaTeX file before inserting image code.");
+        return;
+      }
+      if (!isImagePath(entry.relativePath)) {
+        setStatusMessage("Choose an image file to insert LaTeX image code.");
+        return;
+      }
+      const inserted = insertLatexBlockAtEditorPosition(
+        latexFigureCode(entry.relativePath),
+      );
+      if (inserted) {
+        setStatusMessage(`Inserted image code for ${entry.relativePath}`);
+      }
+    },
+    [activeDocumentIsLatex, insertLatexBlockAtEditorPosition],
+  );
+
+  const copyRelativePath = useCallback(async (entry: ProjectEntry) => {
+    try {
+      await navigator.clipboard.writeText(entry.relativePath);
+      setStatusMessage(`Copied ${entry.relativePath}`);
+    } catch {
+      setStatusMessage("Could not copy the relative path.");
+    }
+  }, []);
+
+  const handleEditorFileDrop = useCallback(
+    async (event: React.DragEvent<HTMLDivElement>) => {
+      const files = Array.from(event.dataTransfer.files ?? []);
+      if (files.length === 0) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (!activeDocumentIsLatex) {
+        setStatusMessage("Drop images into a LaTeX file to insert image code.");
+        return;
+      }
+
+      const sourcePaths = window.latexdo.getDroppedFilePaths(files).filter(isImagePath);
+      if (sourcePaths.length === 0) {
+        setStatusMessage("Drop PNG, JPG, SVG, or PDF images into the LaTeX editor.");
+        return;
+      }
+
+      const currentProject = projectIdRef.current;
+      if (!currentProject) {
+        setStatusMessage("Open a project before importing images.");
+        return;
+      }
+
+      await window.latexdo.createFolder(currentProject, "figures").catch(() => {
+        // Existing folder or unavailable folder creation is handled by the import step.
+      });
+      const imported = await importExternalFilePaths(sourcePaths, "figures");
+      const importedImages = imported.filter(
+        (entry) => entry.type === "file" && isImagePath(entry.relativePath),
+      );
+      if (importedImages.length === 0) {
+        return;
+      }
+
+      const editor = editorRef.current;
+      const dropPosition =
+        editor?.getTargetAtClientPoint(event.clientX, event.clientY)?.position ??
+        editor?.getPosition() ??
+        null;
+      const code = importedImages
+        .map((entry) => latexFigureCode(entry.relativePath))
+        .join("\n\n");
+      if (insertLatexBlockAtEditorPosition(code, dropPosition)) {
+        setStatusMessage(
+          importedImages.length === 1
+            ? `Inserted image code for ${importedImages[0].relativePath}`
+            : `Inserted ${importedImages.length} image figures`,
+        );
+      }
+    },
+    [activeDocumentIsLatex, importExternalFilePaths, insertLatexBlockAtEditorPosition],
+  );
 
   const importDocx = useCallback(async () => {
     if (typeof window.latexdo.importDocx !== "function") {
@@ -6041,6 +6273,14 @@ ${macroEnd}
 
   return (
     <div className="app-shell" data-theme={settings.colorTheme}>
+      <input
+        ref={importFileInputRef}
+        type="file"
+        multiple
+        className="visually-hidden-file-input"
+        tabIndex={-1}
+        onChange={handleImportFileInputChange}
+      />
       <header className="titlebar">
         <div className="titlebar-drag">
           <AppIcon className="app-mark" />
@@ -6336,12 +6576,18 @@ ${macroEnd}
                       onMoveEntry={(sourcePath, destination) =>
                         void moveEntry(sourcePath, destination)
                       }
+                      onImportExternalFiles={(files, destination) =>
+                        void importExternalFiles(files, destination)
+                      }
+                      onChooseImportFilesInDirectory={chooseImportFiles}
                       onCreateFileInDirectory={(entry) =>
                         openCreateDialogInDirectory("file", entry)
                       }
                       onCreateFolderInDirectory={(entry) =>
                         openCreateDialogInDirectory("folder", entry)
                       }
+                      onCopyRelativePath={(entry) => void copyRelativePath(entry)}
+                      onInsertFileReference={insertImageReference}
                     />
                   ) : mode === "reviewer" ? (
                     <ReviewSidebar
@@ -7052,37 +7298,48 @@ ${macroEnd}
                   </div>
                 </div>
               ) : activeDocument ? (
-                <Editor
-                  key={activeDocument.path}
-                  path={activeDocument.path}
-                  value={activeDocument.content}
-                  language={languageFor(activeDocument.name)}
-                  theme={editorTheme}
-                  beforeMount={configureMonaco}
-                  onMount={handleEditorMount}
-                  onChange={handleEditorChange}
-                  options={{
-                    fontFamily:
-                      "'SFMono-Regular', 'Cascadia Code', 'Fira Code', Menlo, monospace",
-                    fontSize: settings.editorFontSize,
-                    lineHeight: 22,
-                    minimap: { enabled: settings.minimap, scale: 0.75 },
-                    padding: { top: 16, bottom: 24 },
-                    renderWhitespace: "selection",
-                    smoothScrolling: true,
-                    cursorSmoothCaretAnimation: "on",
-                    bracketPairColorization: { enabled: true },
-                    guides: { bracketPairs: true, indentation: true },
-                    wordWrap: settings.wordWrap ? "on" : "off",
-                    glyphMargin: true,
-                    scrollBeyondLastLine: false,
-                    automaticLayout: true,
-                    fixedOverflowWidgets: true,
-                    acceptSuggestionOnCommitCharacter: false,
-                    acceptSuggestionOnEnter: "off",
-                    suggest: { showSnippets: true },
+                <div
+                  className="editor-drop-zone"
+                  onDragOver={(event) => {
+                    if (Array.from(event.dataTransfer.types).includes("Files")) {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "copy";
+                    }
                   }}
-                />
+                  onDropCapture={(event) => void handleEditorFileDrop(event)}
+                >
+                  <Editor
+                    key={activeDocument.path}
+                    path={activeDocument.path}
+                    value={activeDocument.content}
+                    language={languageFor(activeDocument.name)}
+                    theme={editorTheme}
+                    beforeMount={configureMonaco}
+                    onMount={handleEditorMount}
+                    onChange={handleEditorChange}
+                    options={{
+                      fontFamily:
+                        "'SFMono-Regular', 'Cascadia Code', 'Fira Code', Menlo, monospace",
+                      fontSize: settings.editorFontSize,
+                      lineHeight: 22,
+                      minimap: { enabled: settings.minimap, scale: 0.75 },
+                      padding: { top: 16, bottom: 24 },
+                      renderWhitespace: "selection",
+                      smoothScrolling: true,
+                      cursorSmoothCaretAnimation: "on",
+                      bracketPairColorization: { enabled: true },
+                      guides: { bracketPairs: true, indentation: true },
+                      wordWrap: settings.wordWrap ? "on" : "off",
+                      glyphMargin: true,
+                      scrollBeyondLastLine: false,
+                      automaticLayout: true,
+                      fixedOverflowWidgets: true,
+                      acceptSuggestionOnCommitCharacter: false,
+                      acceptSuggestionOnEnter: "off",
+                      suggest: { showSnippets: true },
+                    }}
+                  />
+                </div>
               ) : gitDiffSession ? (
                 <DiffEditor
                   key={gitDiffSession.path}

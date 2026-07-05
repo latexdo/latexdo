@@ -2459,6 +2459,27 @@ button {
   min-height: 0;
 }
 
+.visually-hidden-file-input {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.editor-drop-zone {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.editor-drop-zone > * {
+  min-width: 0;
+  min-height: 0;
+}
+
 .source-pane .monaco-editor,
 .source-pane .monaco-editor .overflow-guard,
 .source-pane .monaco-editor-background {

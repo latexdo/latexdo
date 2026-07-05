@@ -450,6 +450,14 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       return folderPath;
     },
 
+    getDroppedFilePaths() {
+      return [];
+    },
+
+    async importExternalFiles() {
+      throw browserUnavailable("File drop import");
+    },
+
     async importDocx() {
       throw browserUnavailable("DOCX import");
     },
