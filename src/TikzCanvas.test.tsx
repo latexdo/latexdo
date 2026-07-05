@@ -26,8 +26,14 @@ describe("TikzCanvas interactions", () => {
     fireEvent.mouseUp(svg);
 
     expect(screen.getByText("Selected: rect")).toBeInTheDocument();
+    expect(container.querySelector(".tikz-selected-props")).toBeNull();
     expect(screen.getByTitle("Rectangle (R)")).toHaveClass("active");
     expect(generatedCode(container)).toContain("(2,14) rectangle (4,12)");
+
+    fireEvent.click(screen.getAllByTitle("#ef4444")[0]);
+    expect(generatedCode(container)).toContain(
+      "draw={rgb,255:red,239;green,68;blue,68}",
+    );
 
     fireEvent.click(screen.getByTitle("Select (V)"));
     fireEvent.mouseDown(svg, { button: 0, clientX: 150, clientY: 150 });
@@ -35,6 +41,9 @@ describe("TikzCanvas interactions", () => {
     fireEvent.mouseUp(svg);
 
     expect(generatedCode(container)).toContain("(3,12.5) rectangle (5,10.5)");
+    expect(generatedCode(container)).toContain(
+      "draw={rgb,255:red,239;green,68;blue,68}",
+    );
   });
 
   it("keeps freehand selected after each stroke", () => {

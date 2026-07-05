@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   ArrowRight,
   Circle,
   Cloud,
@@ -1398,11 +1399,87 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
   // -- selected shape for property editing --
   const selectedShape = shapes.find((s) => s.id === selected);
 
-  const updateSelected = (updates: Partial<DrawShape>) => {
-    if (!selected) return;
-    const next = shapes.map((s) => (s.id === selected ? { ...s, ...updates } : s));
-    setShapes(next);
-    pushHistory(next);
+  const updateSelected = useCallback(
+    (updates: Partial<DrawShape>) => {
+      if (!selected) return;
+      const next = shapesRef.current.map((s) =>
+        s.id === selected ? { ...s, ...updates } : s,
+      );
+      setShapes(next);
+      pushHistory(next);
+    },
+    [pushHistory, selected, setShapes],
+  );
+
+  const moveSelectedLayer = useCallback(
+    (offset: -1 | 1) => {
+      if (!selected) return;
+      const currentShapes = shapesRef.current;
+      const idx = currentShapes.findIndex((s) => s.id === selected);
+      const nextIdx = idx + offset;
+      if (idx < 0 || nextIdx < 0 || nextIdx >= currentShapes.length) return;
+      const next = [...currentShapes];
+      [next[idx], next[nextIdx]] = [next[nextIdx], next[idx]];
+      setShapes(next);
+      pushHistory(next);
+    },
+    [pushHistory, selected, setShapes],
+  );
+
+  const lineLikeSelected =
+    selectedShape?.kind === "line" ||
+    selectedShape?.kind === "arrow" ||
+    selectedShape?.kind === "freehand";
+  const canEditSelectedPosition = Boolean(selectedShape && !lineLikeSelected);
+  const canEditSelectedSize = Boolean(
+    selectedShape && !lineLikeSelected && selectedShape.kind !== "text",
+  );
+  const canEditSelectedLabel = Boolean(
+    selectedShape &&
+    (selectedShape.kind === "text" ||
+      (!lineLikeSelected &&
+        selectedShape.kind !== "grid" &&
+        selectedShape.kind !== "axes")),
+  );
+  const selectedIndex = selected
+    ? shapes.findIndex((shape) => shape.id === selected)
+    : -1;
+
+  const activeStroke = selectedShape?.stroke ?? stroke;
+  const activeFill = selectedShape?.fill ?? fill;
+  const activeStrokeWidth = selectedShape?.strokeWidth ?? strokeWidth;
+  const activeDashed = selectedShape?.dashed ?? dashed;
+
+  const applyStroke = (value: string) => {
+    if (selectedShape) {
+      updateSelected({ stroke: value });
+      return;
+    }
+    setStroke(value);
+  };
+
+  const applyFill = (value: string) => {
+    if (selectedShape) {
+      updateSelected({ fill: value });
+      return;
+    }
+    setFill(value);
+  };
+
+  const applyStrokeWidth = (value: number) => {
+    if (selectedShape) {
+      updateSelected({ strokeWidth: value });
+      return;
+    }
+    setStrokeWidth(value);
+  };
+
+  const applyDashed = (value: boolean) => {
+    if (selectedShape) {
+      updateSelected({ dashed: value });
+      return;
+    }
+    setDashed(value);
   };
 
   return (
@@ -1424,6 +1501,33 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
             ))}
           </div>
 
+          {selectedShape && (
+            <>
+              <div className="tikz-toolbar-divider" />
+              <div className="tikz-toolbar-selected">
+                <span className="tikz-prop-label">Selected: {selectedShape.kind}</span>
+                <div className="tikz-zorder-controls">
+                  <button
+                    className="tikz-tool-btn tikz-zorder-btn"
+                    onClick={() => moveSelectedLayer(-1)}
+                    disabled={selectedIndex <= 0}
+                    title="Send backward"
+                  >
+                    <ArrowLeft size={12} />
+                  </button>
+                  <button
+                    className="tikz-tool-btn tikz-zorder-btn"
+                    onClick={() => moveSelectedLayer(1)}
+                    disabled={selectedIndex < 0 || selectedIndex >= shapes.length - 1}
+                    title="Bring forward"
+                  >
+                    <ArrowRight size={12} />
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
           <div className="tikz-toolbar-divider" />
 
           {/* Colors */}
@@ -1433,9 +1537,9 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
               {COLORS.map((c) => (
                 <button
                   key={`s-${c}`}
-                  className={`tikz-color-swatch ${stroke === c ? "active" : ""}`}
+                  className={`tikz-color-swatch ${activeStroke === c ? "active" : ""}`}
                   style={{ background: c }}
-                  onClick={() => setStroke(c)}
+                  onClick={() => applyStroke(c)}
                   title={c}
                 />
               ))}
@@ -1446,8 +1550,8 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
             <span className="tikz-prop-label">Fill</span>
             <div className="tikz-color-row">
               <button
-                className={`tikz-color-swatch tikz-no-fill ${fill === "none" ? "active" : ""}`}
-                onClick={() => setFill("none")}
+                className={`tikz-color-swatch tikz-no-fill ${activeFill === "none" ? "active" : ""}`}
+                onClick={() => applyFill("none")}
                 title="No fill"
               >
                 <Eraser size={10} />
@@ -1455,9 +1559,9 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
               {COLORS.map((c) => (
                 <button
                   key={`f-${c}`}
-                  className={`tikz-color-swatch ${fill === c ? "active" : ""}`}
+                  className={`tikz-color-swatch ${activeFill === c ? "active" : ""}`}
                   style={{ background: c }}
-                  onClick={() => setFill(c)}
+                  onClick={() => applyFill(c)}
                   title={c}
                 />
               ))}
@@ -1474,19 +1578,47 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
                 min="0.5"
                 max="5"
                 step="0.5"
-                value={strokeWidth}
-                onChange={(e) => setStrokeWidth(Number(e.target.value))}
+                value={activeStrokeWidth}
+                onChange={(e) => applyStrokeWidth(Number(e.target.value))}
               />
-              <span className="tikz-prop-value">{strokeWidth}px</span>
+              <span className="tikz-prop-value">{activeStrokeWidth}px</span>
             </label>
             <label className="tikz-prop-group tikz-checkbox-group">
               <input
                 type="checkbox"
-                checked={dashed}
-                onChange={(e) => setDashed(e.target.checked)}
+                checked={activeDashed}
+                onChange={(e) => applyDashed(e.target.checked)}
               />
               <span className="tikz-prop-label">Dashed</span>
             </label>
+            {selectedShape?.kind === "text" && (
+              <label className="tikz-prop-group">
+                <span className="tikz-prop-label">Font</span>
+                <input
+                  type="range"
+                  min="8"
+                  max="48"
+                  step="1"
+                  value={selectedShape.fontSize}
+                  onChange={(e) => updateSelected({ fontSize: Number(e.target.value) })}
+                />
+                <span className="tikz-prop-value">{selectedShape.fontSize}px</span>
+              </label>
+            )}
+            {selectedShape && (
+              <label className="tikz-prop-group">
+                <span className="tikz-prop-label">Rotate</span>
+                <input
+                  type="range"
+                  min="-180"
+                  max="180"
+                  step="5"
+                  value={selectedShape.rotation}
+                  onChange={(e) => updateSelected({ rotation: Number(e.target.value) })}
+                />
+                <span className="tikz-prop-value">{selectedShape.rotation}deg</span>
+              </label>
+            )}
             <label className="tikz-prop-group tikz-checkbox-group">
               <input
                 type="checkbox"
@@ -1504,6 +1636,76 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
               <span className="tikz-prop-label">Grid</span>
             </label>
           </div>
+
+          {selectedShape &&
+            (canEditSelectedPosition ||
+              canEditSelectedSize ||
+              canEditSelectedLabel) && (
+              <>
+                <div className="tikz-toolbar-divider" />
+                <div className="tikz-toolbar-selected-props">
+                  {canEditSelectedPosition && (
+                    <>
+                      <label className="tikz-mini-prop">
+                        <span>X</span>
+                        <input
+                          type="number"
+                          value={Math.round(selectedShape.x)}
+                          onChange={(e) =>
+                            updateSelected({ x: Number(e.target.value) })
+                          }
+                        />
+                      </label>
+                      <label className="tikz-mini-prop">
+                        <span>Y</span>
+                        <input
+                          type="number"
+                          value={Math.round(selectedShape.y)}
+                          onChange={(e) =>
+                            updateSelected({ y: Number(e.target.value) })
+                          }
+                        />
+                      </label>
+                    </>
+                  )}
+                  {canEditSelectedSize && (
+                    <>
+                      <label className="tikz-mini-prop">
+                        <span>W</span>
+                        <input
+                          type="number"
+                          value={Math.round(selectedShape.w)}
+                          onChange={(e) =>
+                            updateSelected({ w: Number(e.target.value) })
+                          }
+                        />
+                      </label>
+                      <label className="tikz-mini-prop">
+                        <span>H</span>
+                        <input
+                          type="number"
+                          value={Math.round(selectedShape.h)}
+                          onChange={(e) =>
+                            updateSelected({ h: Number(e.target.value) })
+                          }
+                        />
+                      </label>
+                    </>
+                  )}
+                  {canEditSelectedLabel && (
+                    <label className="tikz-mini-prop tikz-mini-prop-wide">
+                      <span>Label</span>
+                      <input
+                        type="text"
+                        value={selectedShape.label}
+                        onChange={(e) => updateSelected({ label: e.target.value })}
+                        placeholder="Text..."
+                      />
+                    </label>
+                  )}
+                </div>
+              </>
+            )}
 
           <div className="tikz-toolbar-divider" />
 
@@ -1641,211 +1843,6 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
               }}
               onBlur={() => setTextPrompt(null)}
             />
-          </div>
-        )}
-
-        {/* Selected shape properties */}
-        {selectedShape && (
-          <div className="tikz-selected-props">
-            <div className="tikz-selected-props-header">
-              <span className="tikz-prop-label">Selected: {selectedShape.kind}</span>
-              <div className="tikz-zorder-controls">
-                <button
-                  className="tikz-tool-btn tikz-zorder-btn"
-                  onClick={() => {
-                    const idx = shapes.findIndex((s) => s.id === selected);
-                    if (idx > 0) {
-                      const next = [...shapes];
-                      [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
-                      setShapes(next);
-                      pushHistory(next);
-                    }
-                  }}
-                  title="Send backward"
-                >
-                  &#8592;
-                </button>
-                <button
-                  className="tikz-tool-btn tikz-zorder-btn"
-                  onClick={() => {
-                    const idx = shapes.findIndex((s) => s.id === selected);
-                    if (idx < shapes.length - 1) {
-                      const next = [...shapes];
-                      [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
-                      setShapes(next);
-                      pushHistory(next);
-                    }
-                  }}
-                  title="Bring forward"
-                >
-                  &#8594;
-                </button>
-              </div>
-            </div>
-            <div className="tikz-selected-props-row">
-              {selectedShape.kind !== "line" &&
-                selectedShape.kind !== "arrow" &&
-                selectedShape.kind !== "freehand" && (
-                  <>
-                    <label className="tikz-mini-prop">
-                      <span>X</span>
-                      <input
-                        type="number"
-                        value={Math.round(selectedShape.x)}
-                        onChange={(e) => updateSelected({ x: Number(e.target.value) })}
-                      />
-                    </label>
-                    <label className="tikz-mini-prop">
-                      <span>Y</span>
-                      <input
-                        type="number"
-                        value={Math.round(selectedShape.y)}
-                        onChange={(e) => updateSelected({ y: Number(e.target.value) })}
-                      />
-                    </label>
-                  </>
-                )}
-              {selectedShape.kind !== "text" &&
-                selectedShape.kind !== "line" &&
-                selectedShape.kind !== "arrow" &&
-                selectedShape.kind !== "freehand" && (
-                  <>
-                    <label className="tikz-mini-prop">
-                      <span>W</span>
-                      <input
-                        type="number"
-                        value={Math.round(selectedShape.w)}
-                        onChange={(e) => updateSelected({ w: Number(e.target.value) })}
-                      />
-                    </label>
-                    <label className="tikz-mini-prop">
-                      <span>H</span>
-                      <input
-                        type="number"
-                        value={Math.round(selectedShape.h)}
-                        onChange={(e) => updateSelected({ h: Number(e.target.value) })}
-                      />
-                    </label>
-                  </>
-                )}
-            </div>
-            <div className="tikz-selected-props-row tikz-selected-style-row">
-              {/* Stroke color */}
-              <div className="tikz-mini-prop-group">
-                <span className="tikz-prop-label">Stroke</span>
-                <div className="tikz-color-row tikz-color-row-small">
-                  {COLORS.map((c) => (
-                    <button
-                      key={`ss-${c}`}
-                      className={`tikz-color-swatch tikz-color-swatch-sm ${
-                        selectedShape.stroke === c ? "active" : ""
-                      }`}
-                      style={{ background: c }}
-                      onClick={() => updateSelected({ stroke: c })}
-                      title={c}
-                    />
-                  ))}
-                </div>
-              </div>
-              {/* Fill color */}
-              <div className="tikz-mini-prop-group">
-                <span className="tikz-prop-label">Fill</span>
-                <div className="tikz-color-row tikz-color-row-small">
-                  <button
-                    className={`tikz-color-swatch tikz-color-swatch-sm tikz-no-fill ${
-                      selectedShape.fill === "none" ? "active" : ""
-                    }`}
-                    onClick={() => updateSelected({ fill: "none" })}
-                    title="No fill"
-                  >
-                    <Eraser size={8} />
-                  </button>
-                  {COLORS.map((c) => (
-                    <button
-                      key={`sf-${c}`}
-                      className={`tikz-color-swatch tikz-color-swatch-sm ${
-                        selectedShape.fill === c ? "active" : ""
-                      }`}
-                      style={{ background: c }}
-                      onClick={() => updateSelected({ fill: c })}
-                      title={c}
-                    />
-                  ))}
-                </div>
-              </div>
-              {/* Stroke width */}
-              <label className="tikz-mini-prop-group tikz-mini-prop-slider">
-                <span className="tikz-prop-label">Width</span>
-                <input
-                  type="range"
-                  min="0.5"
-                  max="5"
-                  step="0.5"
-                  value={selectedShape.strokeWidth}
-                  onChange={(e) =>
-                    updateSelected({ strokeWidth: Number(e.target.value) })
-                  }
-                />
-                <span className="tikz-prop-value">{selectedShape.strokeWidth}px</span>
-              </label>
-              {/* Dashed */}
-              <label className="tikz-mini-prop-group tikz-checkbox-group">
-                <input
-                  type="checkbox"
-                  checked={selectedShape.dashed}
-                  onChange={(e) => updateSelected({ dashed: e.target.checked })}
-                />
-                <span className="tikz-prop-label">Dashed</span>
-              </label>
-              {/* Font size (text shapes) */}
-              {selectedShape.kind === "text" && (
-                <label className="tikz-mini-prop-group tikz-mini-prop-slider">
-                  <span className="tikz-prop-label">Font</span>
-                  <input
-                    type="range"
-                    min="8"
-                    max="48"
-                    step="1"
-                    value={selectedShape.fontSize}
-                    onChange={(e) =>
-                      updateSelected({ fontSize: Number(e.target.value) })
-                    }
-                  />
-                  <span className="tikz-prop-value">{selectedShape.fontSize}px</span>
-                </label>
-              )}
-              {/* Rotation */}
-              <label className="tikz-mini-prop-group tikz-mini-prop-slider">
-                <span className="tikz-prop-label">Rotate</span>
-                <input
-                  type="range"
-                  min="-180"
-                  max="180"
-                  step="5"
-                  value={selectedShape.rotation}
-                  onChange={(e) => updateSelected({ rotation: Number(e.target.value) })}
-                />
-                <span className="tikz-prop-value">{selectedShape.rotation}deg</span>
-              </label>
-            </div>
-            {(selectedShape.kind === "text" ||
-              (selectedShape.kind !== "line" &&
-                selectedShape.kind !== "arrow" &&
-                selectedShape.kind !== "freehand" &&
-                selectedShape.kind !== "grid" &&
-                selectedShape.kind !== "axes")) && (
-              <div className="tikz-selected-props-row">
-                <label className="tikz-mini-prop tikz-mini-prop-wide">
-                  <span>Label</span>
-                  <input
-                    type="text"
-                    value={selectedShape.label}
-                    onChange={(e) => updateSelected({ label: e.target.value })}
-                    placeholder="Text…"
-                  />
-                </label>
-              </div>
-            )}
           </div>
         )}
       </div>
