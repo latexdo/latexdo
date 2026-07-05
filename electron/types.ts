@@ -104,6 +104,11 @@ export interface CompileRequest {
   engine: "pdflatex" | "xelatex" | "lualatex";
 }
 
+export interface AsymptoteCompileRequest {
+  projectId: ProjectId;
+  relativePath: string;
+}
+
 export interface CompileResult {
   ok: boolean;
   pdfPath?: string;

@@ -7,6 +7,7 @@ import {
   AlertCircle,
   ArrowLeftToLine,
   ArrowRightToLine,
+  Bookmark,
   BookOpenText,
   Box,
   Bold,
@@ -47,9 +48,11 @@ import {
   Plus,
   Puzzle,
   RefreshCw,
+  RotateCw,
   Search,
   Settings,
   Sigma,
+  Table2,
   TerminalSquare,
   Underline,
   User,
@@ -158,6 +161,15 @@ import {
   getLatexCommandCompletionRange,
   getLatexCompletionContext,
 } from "./latex/completionContext";
+import { SYMBOL_PALETTE } from "./components/mathSymbolPalette";
+import {
+  buildLatexFoldingRanges,
+  extractLatexOutline,
+  findLatexDocumentLinkAtOffset,
+  findLatexDocumentLinks,
+  formatLatexTableAtOffset,
+  latexCommandSnippets,
+} from "./latex/editorFeatureSupport";
 
 type PanelKind =
   | "problems"
@@ -179,7 +191,8 @@ type LatexToolbarCommand =
   | "enumerate"
   | "cite"
   | "ref"
-  | "href";
+  | "href"
+  | "formatTable";
 
 interface GitDiffSession extends GitDiffEditorInput {
   label: string;
@@ -198,6 +211,7 @@ function AppIcon({ className }: { className?: string }) {
 }
 
 type ColorTheme = "graphite" | "midnight" | "forest" | "sepia" | "studio" | "paper";
+type BookmarkStore = Record<string, number[]>;
 
 interface WelcomeTemplate {
   id: string;
@@ -406,6 +420,80 @@ Work through a concrete example.
   \item Add the first exercise.
   \item Add a follow-up exercise.
 \end{enumerate}
+
+\end{document}
+`,
+  },
+  {
+    id: "beamer",
+    name: "Beamer Presentation",
+    summary: "A presentation with title slide, outline, theorem, and closing slide.",
+    files: "main.tex",
+    mainTex: String.raw`\documentclass{beamer}
+
+\usetheme{Madrid}
+\usepackage{amsmath}
+\usepackage{graphicx}
+
+\title{Presentation Title}
+\author{Your Name}
+\date{\today}
+
+\begin{document}
+
+\frame{\titlepage}
+
+\begin{frame}{Outline}
+\tableofcontents
+\end{frame}
+
+\section{Motivation}
+
+\begin{frame}{Motivation}
+\begin{itemize}
+  \item State the problem.
+  \item Explain why it matters.
+  \item Preview the contribution.
+\end{itemize}
+\end{frame}
+
+\section{Result}
+
+\begin{frame}{Main Result}
+\begin{theorem}
+State the main result here.
+\end{theorem}
+\end{frame}
+
+\begin{frame}{Conclusion}
+Summarize the takeaway and next steps.
+\end{frame}
+
+\end{document}
+`,
+  },
+  {
+    id: "letter",
+    name: "Letter",
+    summary: "A formal letter template with address, opening, and closing.",
+    files: "main.tex",
+    mainTex: String.raw`\documentclass{letter}
+
+\signature{Your Name}
+\address{Your Address \\ City, Country}
+\date{\today}
+
+\begin{document}
+
+\begin{letter}{Recipient Name \\ Recipient Address}
+
+\opening{Dear Recipient,}
+
+Write the body of the letter here.
+
+\closing{Sincerely,}
+
+\end{letter}
 
 \end{document}
 `,
@@ -673,6 +761,41 @@ const defaultSettings: AppSettings = {
   rebuttalColorPrimary: "1E1E1E",
   rebuttalColorAccent: "D9D9D9",
 };
+
+function normalizeBookmarkLines(lines: unknown): number[] {
+  if (!Array.isArray(lines)) {
+    return [];
+  }
+  return [
+    ...new Set(
+      lines
+        .filter((line): line is number => Number.isInteger(line) && line > 0)
+        .sort((left, right) => left - right),
+    ),
+  ];
+}
+
+function loadBookmarkStore(): BookmarkStore {
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(bookmarksStorageKey) ?? "{}",
+    ) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .map(([key, lines]) => [key, normalizeBookmarkLines(lines)] as const)
+        .filter(([, lines]) => lines.length > 0),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function bookmarkKey(projectKey: string, relativePath: string): string {
+  return `${projectKey || "workspace"}:${normalizeRelativePath(relativePath)}`;
+}
 
 function loadInstalledExtensionIds(): string[] {
   try {
@@ -1096,43 +1219,19 @@ function loadSettings(): AppSettings {
   }
 }
 
-const supportedExtensions = new Set(["tex", "bib", "sty", "cls", "txt", "md", "json"]);
-
-const latexSuggestions = [
-  ["section", "\\section{${1:title}}"],
-  ["subsection", "\\subsection{${1:title}}"],
-  ["begin", "\\begin{${1:environment}}\n\t${0}\n\\end{${1:environment}}"],
-  [
-    "figure",
-    "\\begin{figure}[ht]\n\t\\centering\n\t\\includegraphics[width=${1:0.8}\\textwidth]{${2:file}}\n\t\\caption{${3:caption}}\n\t\\label{fig:${4:label}}\n\\end{figure}",
-  ],
-  [
-    "table",
-    "\\begin{table}[ht]\n\t\\centering\n\t\\begin{tabular}{${1:cc}}\n\t\t${0}\n\t\\end{tabular}\n\t\\caption{${2:caption}}\n\\end{table}",
-  ],
-  ["equation", "\\begin{equation}\n\t${0}\n\\end{equation}"],
-  ["align", "\\begin{align}\n\t${1:a} &= ${2:b} \\\\\n\t&= ${0:c}\n\\end{align}"],
-  [
-    "cases",
-    "\\begin{equation}\n\t${1:f(x)} = \\begin{cases}\n\t\t${2:0}, & ${3:x < 0} \\\\\n\t\t${4:1}, & ${0:x \\ge 0}\n\t\\end{cases}\n\\end{equation}",
-  ],
-  [
-    "matrix",
-    "\\begin{bmatrix}\n\t${1:a} & ${2:b} \\\\\n\t${3:c} & ${0:d}\n\\end{bmatrix}",
-  ],
-  ["frac", "\\frac{${1:numerator}}{${0:denominator}}"],
-  ["sqrt", "\\sqrt{${0:x}}"],
-  ["sum", "\\sum_{${1:i=1}}^{${2:n}} ${0:x_i}"],
-  ["int", "\\int_{${1:a}}^{${2:b}} ${0:f(x)}\\,dx"],
-  ["itemize", "\\begin{itemize}\n\t\\item ${0}\n\\end{itemize}"],
-  ["enumerate", "\\begin{enumerate}\n\t\\item ${0}\n\\end{enumerate}"],
-  ["cite", "\\cite{${1:key}}"],
-  ["ref", "\\ref{${1:label}}"],
-  ["label", "\\label{${1:label}}"],
-  ["includegraphics", "\\includegraphics[width=${1:\\textwidth}]{${2:file}}"],
-] as const;
+const supportedExtensions = new Set([
+  "tex",
+  "bib",
+  "sty",
+  "cls",
+  "asy",
+  "txt",
+  "md",
+  "json",
+]);
 
 const historyStorageRelativePath = ".latexdo/history.json";
+const bookmarksStorageKey = "latexdo.bookmarks.v1";
 const legacyReviewPlaceholderText = "Add your comment here...";
 const maxHistorySnapshotsPerFile = 80;
 const historyAutoCaptureDelayMs = 5000;
@@ -1211,6 +1310,9 @@ function languageFor(name: string): string {
   const extension = name.split(".").pop()?.toLowerCase();
   if (extension === "tex" || extension === "sty" || extension === "cls") {
     return "latex";
+  }
+  if (extension === "asy") {
+    return "asymptote";
   }
   if (extension === "bib") {
     return "bibtex";
@@ -1690,12 +1792,15 @@ export default function App() {
   const [pdfTarget, setPdfTarget] = useState<SyncTexPdfLocation | null>(null);
   const [lastPdfLocation, setLastPdfLocation] = useState<PdfClickLocation | null>(null);
   const [pdfScale, setPdfScale] = useState(100);
+  const [pdfRotation, setPdfRotation] = useState(0);
+  const [bookmarkStore, setBookmarkStore] = useState<BookmarkStore>(loadBookmarkStore);
   const [splitPercent, setSplitPercent] = useState(52);
   const [mode, setMode] = useState<EditorMode>("author");
   const [reviewChats, setReviewChats] = useState<ReviewChat[]>([]);
   const [rebuttalItems, setRebuttalItems] = useState<RebuttalItem[]>([]);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const editorMouseDisposableRef = useRef<monaco.IDisposable | null>(null);
+  const editorActionDisposablesRef = useRef<monaco.IDisposable[]>([]);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingImportDestinationRef = useRef<ProjectEntry | null>(null);
   const documentsRef = useRef<OpenDocument[]>([]);
@@ -1721,6 +1826,7 @@ export default function App() {
   } | null>(null);
   const sourceSyncDecorationsRef = useRef<string[]>([]);
   const sourceSyncClearTimerRef = useRef<number | null>(null);
+  const bookmarkDecorationsRef = useRef<string[]>([]);
   const backwardSyncRunIdRef = useRef(0);
   const lastAutoCompileSignatureRef = useRef("");
   const compileRunIdRef = useRef(0);
@@ -1737,6 +1843,24 @@ export default function App() {
   const activeDocumentIsLatex = activeDocument
     ? languageFor(activeDocument.name) === "latex"
     : false;
+  const activeDocumentIsAsymptote = activeDocument
+    ? languageFor(activeDocument.name) === "asymptote"
+    : false;
+  const activeBookmarkKey = activeDocument
+    ? bookmarkKey(projectPath || projectId, activeDocument.relativePath)
+    : "";
+  const activeBookmarkLines = useMemo(
+    () =>
+      normalizeBookmarkLines(activeBookmarkKey ? bookmarkStore[activeBookmarkKey] : []),
+    [activeBookmarkKey, bookmarkStore],
+  );
+  const documentOutline = useMemo(
+    () =>
+      activeDocument && activeDocumentIsLatex
+        ? extractLatexOutline(activeDocument.content)
+        : [],
+    [activeDocument, activeDocumentIsLatex],
+  );
   const hasVisibleProject = Boolean(projectId) && !hideProjectEntries;
   const showWelcome = welcomeOpen && !activePath;
   const showBlankWorkspace = hideProjectEntries && !welcomeOpen && !activePath;
@@ -1959,6 +2083,10 @@ export default function App() {
       JSON.stringify(installedExtensionIds),
     );
   }, [installedExtensionIds]);
+
+  useEffect(() => {
+    window.localStorage.setItem(bookmarksStorageKey, JSON.stringify(bookmarkStore));
+  }, [bookmarkStore]);
 
   useEffect(() => {
     void refreshExtensionCatalog();
@@ -2697,6 +2825,13 @@ ${macroEnd}
 
     const compileRunId = compileRunIdRef.current + 1;
     compileRunIdRef.current = compileRunId;
+    const activeCompileDocument = documentsRef.current.find(
+      (document) => document.path === activePathRef.current,
+    );
+    const asymptoteDocument =
+      activeCompileDocument && activeCompileDocument.name.endsWith(".asy")
+        ? activeCompileDocument
+        : null;
     lastAutoCompileSignatureRef.current = buildAutoCompileSignature(
       documentsRef.current,
       currentProject,
@@ -2704,18 +2839,47 @@ ${macroEnd}
       engineRef.current,
     );
     setCompileJobCount((count) => count + 1);
-    setStatusMessage(`Compiling ${rootFileRef.current} in the background…`);
+    setStatusMessage(
+      asymptoteDocument
+        ? `Compiling ${asymptoteDocument.relativePath} with Asymptote...`
+        : `Compiling ${rootFileRef.current} in the background...`,
+    );
     try {
-      const dirtyDocuments = documentsRef.current.filter(
-        (document) => document.content !== document.savedContent,
-      );
-      await saveDocumentsForCompile(currentProject, dirtyDocuments);
+      const result = asymptoteDocument
+        ? await (async () => {
+            if (asymptoteDocument.content !== asymptoteDocument.savedContent) {
+              await window.latexdo.writeFile(
+                currentProject,
+                asymptoteDocument.relativePath,
+                asymptoteDocument.content,
+              );
+              setDocuments((current) => {
+                const nextDocuments = current.map((document) =>
+                  document.path === asymptoteDocument.path
+                    ? { ...document, savedContent: document.content }
+                    : document,
+                );
+                documentsRef.current = nextDocuments;
+                return nextDocuments;
+              });
+            }
+            return window.latexdo.compileAsymptote({
+              projectId: currentProject,
+              relativePath: asymptoteDocument.relativePath,
+            });
+          })()
+        : await (async () => {
+            const dirtyDocuments = documentsRef.current.filter(
+              (document) => document.content !== document.savedContent,
+            );
+            await saveDocumentsForCompile(currentProject, dirtyDocuments);
 
-      const result = await window.latexdo.compile({
-        projectId: currentProject,
-        rootFile: rootFileRef.current,
-        engine: engineRef.current,
-      });
+            return window.latexdo.compile({
+              projectId: currentProject,
+              rootFile: rootFileRef.current,
+              engine: engineRef.current,
+            });
+          })();
 
       const isLatestCompile = compileRunId === compileRunIdRef.current;
       if (isLatestCompile) {
@@ -2731,7 +2895,11 @@ ${macroEnd}
           setLastPdfLocation(null);
           setPreviewVisible(true);
           setStatusMessage(
-            `Built successfully in ${formatDuration(result.durationMs)}`,
+            asymptoteDocument
+              ? `Built ${asymptoteDocument.relativePath} in ${formatDuration(
+                  result.durationMs,
+                )}`
+              : `Built successfully in ${formatDuration(result.durationMs)}`,
           );
         }
       } else {
@@ -2772,7 +2940,11 @@ ${macroEnd}
 
   const downloadPdf = useCallback(async () => {
     const currentProject = projectIdRef.current;
-    if (!currentProject || !rootFileExists) {
+    const activeDownloadDocument = documentsRef.current.find(
+      (document) => document.path === activePathRef.current,
+    );
+    const downloadingAsymptote = Boolean(activeDownloadDocument?.name.endsWith(".asy"));
+    if (!currentProject || (!rootFileExists && !downloadingAsymptote)) {
       return;
     }
 
@@ -2794,7 +2966,12 @@ ${macroEnd}
       const bytes = await window.latexdo.readPdf(currentProject, pdfPath);
       const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
       const link = document.createElement("a");
-      const downloadName = fileName(rootFileRef.current).replace(/\.tex$/i, ".pdf");
+      const downloadName = downloadingAsymptote
+        ? fileName(activeDownloadDocument?.relativePath ?? "figure.asy").replace(
+            /\.asy$/i,
+            ".pdf",
+          )
+        : fileName(rootFileRef.current).replace(/\.tex$/i, ".pdf");
 
       link.href = url;
       link.download = downloadName;
@@ -3740,6 +3917,169 @@ ${macroEnd}
     );
   }, [activeDocument, diagnostics]);
 
+  const applyBookmarkDecorations = useCallback(
+    (editor: monaco.editor.IStandaloneCodeEditor, lines: number[]) => {
+      const model = editor.getModel();
+      if (!model) {
+        bookmarkDecorationsRef.current = [];
+        return;
+      }
+      const lineCount = model.getLineCount();
+      const decorations = normalizeBookmarkLines(lines)
+        .filter((line) => line <= lineCount)
+        .map((line) => ({
+          range: new monaco.Range(line, 1, line, 1),
+          options: {
+            isWholeLine: true,
+            className: "latexdo-bookmark-line",
+            glyphMarginClassName: "latexdo-bookmark-glyph",
+            glyphMarginHoverMessage: { value: "Bookmark" },
+            overviewRuler: {
+              color: "#f5c542",
+              position: monaco.editor.OverviewRulerLane.Center,
+            },
+            stickiness:
+              monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+          },
+        }));
+
+      bookmarkDecorationsRef.current = editor.deltaDecorations(
+        bookmarkDecorationsRef.current,
+        decorations,
+      );
+    },
+    [],
+  );
+
+  const activeBookmarkLinesFromEditor = useCallback(() => {
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    if (!editor || !model || bookmarkDecorationsRef.current.length === 0) {
+      return activeBookmarkLines;
+    }
+
+    const lines = bookmarkDecorationsRef.current
+      .map((decorationId) => model.getDecorationRange(decorationId)?.startLineNumber)
+      .filter((line): line is number => typeof line === "number");
+    return normalizeBookmarkLines(lines.length ? lines : activeBookmarkLines);
+  }, [activeBookmarkLines]);
+
+  const writeActiveBookmarkLines = useCallback(
+    (lines: number[]) => {
+      if (!activeBookmarkKey) {
+        return;
+      }
+      const normalized = normalizeBookmarkLines(lines);
+      setBookmarkStore((current) => {
+        const next = { ...current };
+        if (normalized.length) {
+          next[activeBookmarkKey] = normalized;
+        } else {
+          delete next[activeBookmarkKey];
+        }
+        return next;
+      });
+    },
+    [activeBookmarkKey],
+  );
+
+  const toggleBookmarkAtCurrentLine = useCallback(() => {
+    const editor = editorRef.current;
+    const position = editor?.getPosition();
+    if (!editor || !position || !activeDocument) {
+      setStatusMessage("Open a document before adding bookmarks.");
+      return;
+    }
+
+    const currentLines = activeBookmarkLinesFromEditor();
+    const exists = currentLines.includes(position.lineNumber);
+    const nextLines = exists
+      ? currentLines.filter((line) => line !== position.lineNumber)
+      : [...currentLines, position.lineNumber];
+    writeActiveBookmarkLines(nextLines);
+    setStatusMessage(
+      exists
+        ? `Removed bookmark at line ${position.lineNumber}`
+        : `Bookmarked line ${position.lineNumber}`,
+    );
+    editor.focus();
+  }, [activeBookmarkLinesFromEditor, activeDocument, writeActiveBookmarkLines]);
+
+  const jumpToBookmark = useCallback(
+    (direction: "next" | "previous") => {
+      const editor = editorRef.current;
+      const model = editor?.getModel();
+      if (!editor || !model) {
+        setStatusMessage("Open a document before using bookmarks.");
+        return;
+      }
+
+      const lines = activeBookmarkLinesFromEditor().filter(
+        (line) => line <= model.getLineCount(),
+      );
+      if (!lines.length) {
+        setStatusMessage("No bookmarks in this file.");
+        return;
+      }
+
+      const currentLine = editor.getPosition()?.lineNumber ?? 1;
+      const targetLine =
+        direction === "next"
+          ? (lines.find((line) => line > currentLine) ?? lines[0])
+          : ([...lines].reverse().find((line) => line < currentLine) ??
+            lines[lines.length - 1]);
+
+      editor.setPosition({ lineNumber: targetLine, column: 1 });
+      editor.revealLineInCenter(targetLine, monaco.editor.ScrollType.Smooth);
+      editor.focus();
+      setStatusMessage(`Opened bookmark at line ${targetLine}`);
+    },
+    [activeBookmarkLinesFromEditor],
+  );
+
+  const openLinkAtCursor = useCallback(async () => {
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    const position = editor?.getPosition();
+    if (!editor || !model || !position) {
+      setStatusMessage("Place the cursor on a link first.");
+      return;
+    }
+
+    const link = findLatexDocumentLinkAtOffset(
+      model.getValue(),
+      model.getOffsetAt(position),
+    );
+    if (!link) {
+      setStatusMessage("No LaTeX link at the cursor.");
+      return;
+    }
+
+    await window.latexdo.openExternalUrl(link.url);
+    setStatusMessage(`Opened ${link.url}`);
+  }, []);
+
+  const revealOutlineLine = useCallback((line: number, column: number) => {
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    if (!editor || !model) {
+      return;
+    }
+    const safeLine = Math.min(Math.max(1, line), model.getLineCount());
+    const safeColumn = Math.min(Math.max(1, column), model.getLineMaxColumn(safeLine));
+    editor.setPosition({ lineNumber: safeLine, column: safeColumn });
+    editor.revealLineInCenter(safeLine, monaco.editor.ScrollType.Smooth);
+    editor.focus();
+  }, []);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !activeDocument) {
+      return;
+    }
+    applyBookmarkDecorations(editor, activeBookmarkLines);
+  }, [activeBookmarkLines, activeDocument, applyBookmarkDecorations]);
+
   const reviewDecorationsRef = useRef<string[]>([]);
 
   useEffect(() => {
@@ -3880,6 +4220,9 @@ ${macroEnd}
     if (!instance.languages.getLanguages().some(({ id }) => id === "bibtex")) {
       instance.languages.register({ id: "bibtex", extensions: [".bib"] });
     }
+    if (!instance.languages.getLanguages().some(({ id }) => id === "asymptote")) {
+      instance.languages.register({ id: "asymptote", extensions: [".asy"] });
+    }
 
     instance.languages.setMonarchTokensProvider("latex", {
       tokenizer: {
@@ -3911,6 +4254,101 @@ ${macroEnd}
         { open: "[", close: "]" },
         { open: "$", close: "$" },
       ],
+    });
+    instance.languages.registerFoldingRangeProvider("latex", {
+      provideFoldingRanges: (model) =>
+        buildLatexFoldingRanges(model.getValue()).map((range) => ({
+          start: range.start,
+          end: range.end,
+          kind:
+            range.kind === "comment"
+              ? instance.languages.FoldingRangeKind.Comment
+              : instance.languages.FoldingRangeKind.Region,
+        })),
+    });
+    instance.languages.registerLinkProvider("latex", {
+      provideLinks: (model) => ({
+        links: findLatexDocumentLinks(model.getValue()).map((link) => ({
+          range: new instance.Range(
+            link.startLine,
+            link.startColumn,
+            link.endLine,
+            link.endColumn,
+          ),
+          url: link.url,
+          tooltip: `Open ${link.url}`,
+        })),
+      }),
+    });
+    instance.languages.setMonarchTokensProvider("asymptote", {
+      tokenizer: {
+        root: [
+          [/\/\/.*$/, "comment"],
+          [/\/\*/, "comment", "@comment"],
+          [
+            /\b(?:access|defaultpen|draw|fill|filldraw|label|pair|path|pen|real|size|string|surface|triple|unitsize)\b/,
+            "keyword",
+          ],
+          [/"([^"\\]|\\.)*$/, "string.invalid"],
+          [/"/, "string", "@string"],
+          [/[{}[\]();,]/, "delimiter"],
+          [/\b\d+(?:\.\d+)?\b/, "number"],
+        ],
+        comment: [
+          [/[^/*]+/, "comment"],
+          [/\*\//, "comment", "@pop"],
+          [/[/*]/, "comment"],
+        ],
+        string: [
+          [/[^\\"]+/, "string"],
+          [/\\./, "string.escape"],
+          [/"/, "string", "@pop"],
+        ],
+      },
+    });
+    instance.languages.setLanguageConfiguration("asymptote", {
+      comments: { lineComment: "//", blockComment: ["/*", "*/"] },
+      brackets: [
+        ["{", "}"],
+        ["[", "]"],
+        ["(", ")"],
+      ],
+      autoClosingPairs: [
+        { open: "{", close: "}" },
+        { open: "[", close: "]" },
+        { open: "(", close: ")" },
+        { open: '"', close: '"' },
+      ],
+    });
+    instance.languages.registerCompletionItemProvider("asymptote", {
+      triggerCharacters: ["(", "."],
+      provideCompletionItems: (model, position) => {
+        const word = model.getWordUntilPosition(position);
+        const range = {
+          startLineNumber: position.lineNumber,
+          endLineNumber: position.lineNumber,
+          startColumn: word.startColumn,
+          endColumn: word.endColumn,
+        };
+        return {
+          suggestions: [
+            ["size", "size(${1:6cm});"],
+            ["draw", "draw((${1:0,0})--(${2:1,1}), ${3:blue});"],
+            ["fill", "fill(${1:unitcircle}, ${2:lightgray});"],
+            ["label", 'label("${1:text}", (${2:0,0}), ${3:N});'],
+            ["pair", "pair ${1:p} = (${2:0}, ${3:0});"],
+            ["path", "path ${1:p} = (${2:0,0})--(${3:1,1});"],
+          ].map(([label, insertText]) => ({
+            label,
+            kind: instance.languages.CompletionItemKind.Snippet,
+            insertText,
+            insertTextRules:
+              instance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            range,
+            detail: "Asymptote snippet",
+          })),
+        };
+      },
     });
     instance.languages.registerCompletionItemProvider("latex", {
       triggerCharacters: ["\\", "{", ","],
@@ -4029,15 +4467,26 @@ ${macroEnd}
         if (commandCompletion) {
           const range = completionRange(commandCompletion);
           const builtInSuggestions: monaco.languages.CompletionItem[] =
-            latexSuggestions.map(([label, insertText]) => ({
-              label: `\\${label}`,
+            latexCommandSnippets.map((snippet) => ({
+              label: `\\${snippet.label}`,
               kind: instance.languages.CompletionItemKind.Snippet,
-              insertText,
+              insertText: snippet.insertText,
               insertTextRules:
                 instance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
               range,
-              detail: "LaTeX snippet",
+              detail: snippet.detail,
+              documentation: snippet.documentation,
             }));
+          const mathSuggestions: monaco.languages.CompletionItem[] = SYMBOL_PALETTE.map(
+            (symbol) => ({
+              label: symbol.latex,
+              kind: instance.languages.CompletionItemKind.Operator,
+              insertText: symbol.latex,
+              range,
+              detail: `${symbol.display} math symbol`,
+              documentation: symbol.search,
+            }),
+          );
           const extensionSuggestions: monaco.languages.CompletionItem[] =
             installedExtensionSnippetsRef.current.map((snippet) => ({
               label: `\\${snippet.label}`,
@@ -4051,7 +4500,11 @@ ${macroEnd}
             }));
 
           return {
-            suggestions: [...builtInSuggestions, ...extensionSuggestions],
+            suggestions: [
+              ...builtInSuggestions,
+              ...mathSuggestions,
+              ...extensionSuggestions,
+            ],
           };
         }
 
@@ -4325,6 +4778,50 @@ ${macroEnd}
   const handleEditorMount: OnMount = (editor) => {
     editorRef.current = editor;
     editorMouseDisposableRef.current?.dispose();
+    for (const disposable of editorActionDisposablesRef.current) {
+      disposable.dispose();
+    }
+    editorActionDisposablesRef.current = [
+      editor.addAction({
+        id: "latexdo.toggleBookmark",
+        label: "Toggle Bookmark",
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.F2],
+        contextMenuGroupId: "navigation",
+        contextMenuOrder: 1,
+        run: () => toggleBookmarkAtCurrentLine(),
+      }),
+      editor.addAction({
+        id: "latexdo.nextBookmark",
+        label: "Go to Next Bookmark",
+        keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.F2],
+        contextMenuGroupId: "navigation",
+        contextMenuOrder: 2,
+        run: () => jumpToBookmark("next"),
+      }),
+      editor.addAction({
+        id: "latexdo.previousBookmark",
+        label: "Go to Previous Bookmark",
+        keybindings: [monaco.KeyMod.Alt | monaco.KeyMod.Shift | monaco.KeyCode.F2],
+        contextMenuGroupId: "navigation",
+        contextMenuOrder: 3,
+        run: () => jumpToBookmark("previous"),
+      }),
+      editor.addAction({
+        id: "latexdo.openLinkAtCursor",
+        label: "Open Link at Cursor",
+        contextMenuGroupId: "navigation",
+        contextMenuOrder: 4,
+        run: () => openLinkAtCursor(),
+      }),
+      editor.addAction({
+        id: "latexdo.formatLatexTable",
+        label: "Format LaTeX Table",
+        contextMenuGroupId: "1_modification",
+        contextMenuOrder: 1,
+        run: () => applyLatexToolbarCommand("formatTable"),
+      }),
+    ];
+    applyBookmarkDecorations(editor, activeBookmarkLines);
     editorMouseDisposableRef.current = editor.onMouseDown((event) => {
       if (event.event.detail === 2 && event.target.position) {
         void forwardSyncRef.current?.(event.target.position);
@@ -4396,6 +4893,10 @@ ${macroEnd}
   useEffect(
     () => () => {
       editorMouseDisposableRef.current?.dispose();
+      for (const disposable of editorActionDisposablesRef.current) {
+        disposable.dispose();
+      }
+      editorActionDisposablesRef.current = [];
       if (sourceSyncClearTimerRef.current !== null) {
         window.clearTimeout(sourceSyncClearTimerRef.current);
         sourceSyncClearTimerRef.current = null;
@@ -4404,6 +4905,10 @@ ${macroEnd}
       if (editor) {
         sourceSyncDecorationsRef.current = editor.deltaDecorations(
           sourceSyncDecorationsRef.current,
+          [],
+        );
+        bookmarkDecorationsRef.current = editor.deltaDecorations(
+          bookmarkDecorationsRef.current,
           [],
         );
       }
@@ -4652,6 +5157,10 @@ ${macroEnd}
 
   const renderTemplateIcon = (template: WelcomeTemplate) => {
     switch (template.id) {
+      case "beamer":
+        return <Play size={17} />;
+      case "letter":
+        return <MessageCircle size={17} />;
       case "research":
         return <BookOpenText size={17} />;
       case "notes":
@@ -5710,6 +6219,39 @@ ${macroEnd}
 
     const selection = editor.getSelection();
     if (!selection) return;
+
+    if (command === "formatTable") {
+      const position = editor.getPosition() ?? selection.getStartPosition();
+      const result = formatLatexTableAtOffset(
+        model.getValue(),
+        model.getOffsetAt(position),
+      );
+      if (!result) {
+        setStatusMessage("Place the cursor inside a tabular, array, or longtable.");
+        return;
+      }
+
+      const start = model.getPositionAt(result.startOffset);
+      const end = model.getPositionAt(result.endOffset);
+      const range = new monaco.Range(
+        start.lineNumber,
+        start.column,
+        end.lineNumber,
+        end.column,
+      );
+      editor.executeEdits("latex-table-format", [
+        {
+          range,
+          text: result.text,
+          forceMoveMarkers: true,
+        },
+      ]);
+      editor.setSelection(range);
+      editor.revealRangeInCenter(range, monaco.editor.ScrollType.Smooth);
+      editor.focus();
+      setStatusMessage("Formatted LaTeX table columns.");
+      return;
+    }
 
     const selectedText = model.getValueInRange(selection);
     const hasSelection = !selection.isEmpty() && selectedText.length > 0;
@@ -7223,6 +7765,35 @@ ${macroEnd}
                     </div>
                   </div>
 
+                  {activeDocumentIsLatex && documentOutline.length ? (
+                    <div className="root-control outline-control">
+                      <span className="control-label">NAV</span>
+                      <div className="select-wrap">
+                        <select
+                          value=""
+                          aria-label="Document outline"
+                          onChange={(event) => {
+                            const item = documentOutline.find(
+                              (outlineItem) => outlineItem.id === event.target.value,
+                            );
+                            event.currentTarget.value = "";
+                            if (item) {
+                              revealOutlineLine(item.line, item.column);
+                            }
+                          }}
+                        >
+                          <option value="">Outline</option>
+                          {documentOutline.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {`${"  ".repeat(Math.max(0, item.level - 2))}${item.detail} ${item.label}`}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown size={13} />
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className="root-control">
                     <span className="control-label">MODE</span>
                     <div className="mode-selector-toolbar">
@@ -7400,14 +7971,47 @@ ${macroEnd}
                       >
                         <Link size={14} />
                       </button>
+                      <button
+                        type="button"
+                        className="tex-format-button icon-only"
+                        onClick={() => void openLinkAtCursor()}
+                        title="Open link at cursor"
+                        aria-label="Open link at cursor"
+                      >
+                        <ExternalLink size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="tex-format-button icon-only"
+                        onClick={() => applyLatexToolbarCommand("formatTable")}
+                        title="Format LaTeX table columns"
+                        aria-label="Format table"
+                      >
+                        <Table2 size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="tex-format-button icon-only"
+                        onClick={toggleBookmarkAtCurrentLine}
+                        title="Toggle bookmark"
+                        aria-label="Toggle bookmark"
+                      >
+                        <Bookmark size={14} />
+                      </button>
                     </div>
                   ) : null}
 
                   <button
                     className={`compile-button ${compiling ? "compiling" : ""}`}
                     onClick={() => void compile()}
-                    disabled={!rootFile}
-                    title={compiling ? "Start another background compile" : "Compile"}
+                    disabled={!rootFile && !activeDocumentIsAsymptote}
+                    title={
+                      compiling
+                        ? "Start another background compile"
+                        : activeDocumentIsAsymptote
+                          ? "Compile Asymptote"
+                          : "Compile"
+                    }
                   >
                     {compiling ? (
                       <LoaderCircle size={15} className="spin" />
@@ -7556,11 +8160,20 @@ ${macroEnd}
                       guides: { bracketPairs: true, indentation: true },
                       wordWrap: settings.wordWrap ? "on" : "off",
                       glyphMargin: true,
+                      folding: true,
+                      foldingStrategy: "auto",
+                      showFoldingControls: "mouseover",
+                      links: true,
+                      multiCursorModifier: "alt",
+                      multiCursorPaste: "spread",
+                      columnSelection: true,
                       scrollBeyondLastLine: false,
                       automaticLayout: true,
                       fixedOverflowWidgets: true,
                       acceptSuggestionOnCommitCharacter: false,
                       acceptSuggestionOnEnter: "off",
+                      quickSuggestions: { other: true, comments: false, strings: true },
+                      snippetSuggestions: "top",
                       suggest: { showSnippets: true },
                     }}
                   />
@@ -7651,6 +8264,15 @@ ${macroEnd}
                       >
                         <ZoomIn size={15} />
                       </button>
+                      <button
+                        onClick={() =>
+                          setPdfRotation((rotation) => (rotation + 90) % 360)
+                        }
+                        title={`Rotate PDF (${pdfRotation} deg)`}
+                        aria-label="Rotate PDF"
+                      >
+                        <RotateCw size={15} />
+                      </button>
                       <button onClick={() => void downloadPdf()} title="Download PDF">
                         <Download size={14} />
                       </button>
@@ -7671,6 +8293,7 @@ ${macroEnd}
                       <PdfPreview
                         data={pdfData}
                         scale={pdfScale}
+                        rotation={pdfRotation}
                         target={pdfTarget}
                         onNavigate={(location) => {
                           setPdfTarget(null);
@@ -8626,10 +9249,45 @@ ${macroEnd}
               {Math.max(collaboratorCount, 1)} live
             </button>
           ) : null}
+          {activeDocument ? (
+            <>
+              <button
+                type="button"
+                onClick={toggleBookmarkAtCurrentLine}
+                title="Toggle bookmark at cursor"
+              >
+                <Bookmark size={13} /> {activeBookmarkLines.length}
+              </button>
+              <button
+                type="button"
+                onClick={() => jumpToBookmark("previous")}
+                disabled={!activeBookmarkLines.length}
+                title="Previous bookmark"
+              >
+                <ArrowLeftToLine size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={() => jumpToBookmark("next")}
+                disabled={!activeBookmarkLines.length}
+                title="Next bookmark"
+              >
+                <ArrowRightToLine size={13} />
+              </button>
+            </>
+          ) : null}
           <span className="status-message">{statusMessage}</span>
         </div>
         <div>
-          <span>{activeDocument ? "LaTeX" : "Plain Text"}</span>
+          <span>
+            {activeDocument
+              ? activeDocumentIsAsymptote
+                ? "Asymptote"
+                : activeDocumentIsLatex
+                  ? "LaTeX"
+                  : "Plain Text"
+              : "Plain Text"}
+          </span>
           <span>UTF-8</span>
           <span>Spaces: 2</span>
         </div>

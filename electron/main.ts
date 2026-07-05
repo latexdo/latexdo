@@ -31,7 +31,7 @@ import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
-import { compileLatex } from "./compiler.js";
+import { compileAsymptote, compileLatex } from "./compiler.js";
 import { importDocxIntoProject } from "./docxImport.js";
 import { importMarkdown } from "./markdownImport.js";
 import { backwardSyncTex, forwardSyncTex } from "./synctex.js";
@@ -42,6 +42,7 @@ import type {
   GitCommitDetails,
   GitCommitEntry,
   CompileRequest,
+  AsymptoteCompileRequest,
   GitDiscardResult,
   GitDiffEditorInput,
   GitDiffPreview,
@@ -896,6 +897,22 @@ function parseCompileRequestInput(channel: string, value: unknown): CompileReque
       extensions: [".tex"],
     }),
     engine,
+  };
+}
+
+function parseAsymptoteCompileRequestInput(
+  channel: string,
+  value: unknown,
+): AsymptoteCompileRequest {
+  if (!isRecord(value)) {
+    invalidIpcInput(channel);
+  }
+
+  return {
+    projectId: parseProjectId(channel, value.projectId),
+    relativePath: parseRelativePath(channel, value.relativePath, {
+      extensions: [".asy"],
+    }),
   };
 }
 
@@ -3209,6 +3226,23 @@ app.whenReady().then(async () => {
       projectPath,
       rootFile: request.rootFile,
       engine: request.engine,
+    });
+    return {
+      ...result,
+      pdfPath: result.pdfPath
+        ? relativeProjectPath(projectPath, result.pdfPath)
+        : undefined,
+    };
+  });
+  ipcMain.handle("asymptote:compile", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "asymptote:compile";
+    const [rawRequest] = expectIpcArgs(channel, rawArgs, 1);
+    const request = parseAsymptoteCompileRequestInput(channel, rawRequest);
+    const projectPath = getProjectRoot(request.projectId);
+    resolveProjectPath(projectPath, request.relativePath);
+    const result = await compileAsymptote({
+      projectPath,
+      relativePath: request.relativePath,
     });
     return {
       ...result,

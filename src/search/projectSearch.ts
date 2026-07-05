@@ -57,6 +57,7 @@ const defaultSearchableExtensions = new Set([
   "bib",
   "sty",
   "cls",
+  "asy",
   "txt",
   "md",
   "json",

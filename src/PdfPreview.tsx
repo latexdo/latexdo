@@ -21,6 +21,7 @@ export interface PdfClickLocation {
 interface PdfPreviewProps {
   data: Uint8Array;
   scale: number;
+  rotation?: number;
   target: SyncTexPdfLocation | null;
   onNavigate: (location: PdfClickLocation) => void;
 }
@@ -29,6 +30,7 @@ interface PdfPageProps {
   document: PDFDocumentProxy;
   pageNumber: number;
   scale: number;
+  rotation: number;
   target: SyncTexPdfLocation | null;
   onNavigate: (location: PdfClickLocation) => void;
 }
@@ -143,6 +145,7 @@ function PdfPage({
   document: pdfDocument,
   pageNumber,
   scale,
+  rotation,
   target,
   onNavigate,
 }: PdfPageProps) {
@@ -175,7 +178,7 @@ function PdfPage({
           return;
         }
 
-        const viewport = page.getViewport({ scale: cssScale });
+        const viewport = page.getViewport({ scale: cssScale, rotation });
         const outputScale = window.devicePixelRatio || 1;
         pageElement.style.width = `${viewport.width}px`;
         pageElement.style.height = `${viewport.height}px`;
@@ -221,7 +224,7 @@ function PdfPage({
       renderTask?.cancel();
       textLayer?.cancel();
     };
-  }, [cssScale, pageNumber, pdfDocument]);
+  }, [cssScale, pageNumber, pdfDocument, rotation]);
 
   useEffect(() => {
     if (!rendered || target?.page !== pageNumber || !pageRef.current) {
@@ -294,6 +297,7 @@ function PdfPage({
 export default function PdfPreview({
   data,
   scale,
+  rotation = 0,
   target,
   onNavigate,
 }: PdfPreviewProps) {
@@ -363,6 +367,7 @@ export default function PdfPreview({
           document={pdfDocument}
           pageNumber={index + 1}
           scale={scale}
+          rotation={rotation}
           target={target}
           onNavigate={onNavigate}
         />

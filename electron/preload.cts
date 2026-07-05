@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
+  AsymptoteCompileRequest,
   CompileRequest,
   CompileResult,
   CollaborationState,
@@ -158,6 +159,8 @@ const api = {
     ipcRenderer.invoke("proofread:check", relativePath, content),
   compile: (request: CompileRequest): Promise<CompileResult> =>
     ipcRenderer.invoke("latex:compile", request),
+  compileAsymptote: (request: AsymptoteCompileRequest): Promise<CompileResult> =>
+    ipcRenderer.invoke("asymptote:compile", request),
   readPdf: (projectId: string, pdfRelativePath: string): Promise<Uint8Array> =>
     ipcRenderer.invoke("pdf:read", projectId, pdfRelativePath),
   forwardSyncTex: (

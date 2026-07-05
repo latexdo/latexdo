@@ -4,7 +4,10 @@ import PdfPreview from "./PdfPreview";
 
 const pdfjsMock = vi.hoisted(() => {
   type MockPdfPage = {
-    getViewport: () => { width: number; height: number };
+    getViewport: (options: { scale: number; rotation?: number }) => {
+      width: number;
+      height: number;
+    };
     render: () => { promise: Promise<void>; cancel: ReturnType<typeof vi.fn> };
     getTextContent: () => Promise<{ items: unknown[] }>;
   };
@@ -26,15 +29,25 @@ const pdfjsMock = vi.hoisted(() => {
 
   return {
     tasks,
-    createDocument: (_label: string, pages = 1): MockPdfDocument => ({
-      numPages: pages,
-      destroy: vi.fn(() => Promise.resolve()),
-      getPage: vi.fn(async () => ({
-        getViewport: () => ({ width: 100, height: 200 }),
-        render: () => ({ promise: Promise.resolve(), cancel: vi.fn() }),
-        getTextContent: async () => ({ items: [] }),
-      })),
-    }),
+    createDocument: (_label: string, pages = 1): MockPdfDocument => {
+      const pageMap = new Map<number, MockPdfPage>();
+      return {
+        numPages: pages,
+        destroy: vi.fn(() => Promise.resolve()),
+        getPage: vi.fn(async (pageNumber) => {
+          let page = pageMap.get(pageNumber);
+          if (!page) {
+            page = {
+              getViewport: vi.fn(() => ({ width: 100, height: 200 })),
+              render: () => ({ promise: Promise.resolve(), cancel: vi.fn() }),
+              getTextContent: async () => ({ items: [] }),
+            };
+            pageMap.set(pageNumber, page);
+          }
+          return page;
+        }),
+      };
+    },
     getDocument: vi.fn(() => {
       let resolveTask: LoadingTask["resolve"] = () => {};
       let rejectTask: LoadingTask["reject"] = () => {};
@@ -107,5 +120,24 @@ describe("PdfPreview", () => {
     pdfjsMock.tasks[1].resolve(secondDocument);
 
     await waitFor(() => expect(firstDocument.destroy).toHaveBeenCalledTimes(1));
+  });
+
+  it("passes rotation into pdf.js viewports", async () => {
+    render(
+      <PdfPreview
+        data={new Uint8Array([1])}
+        scale={125}
+        rotation={90}
+        target={null}
+        onNavigate={vi.fn()}
+      />,
+    );
+
+    const document = pdfjsMock.createDocument("rotated");
+    pdfjsMock.tasks[0].resolve(document);
+
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
+    const page = await document.getPage(1);
+    expect(page.getViewport).toHaveBeenCalledWith({ scale: 1.25, rotation: 90 });
   });
 });
