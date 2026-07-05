@@ -30,6 +30,20 @@ describe("NotationManager", () => {
     );
   });
 
+  it("shows rendered-style output previews for equation templates", () => {
+    render(<NotationManager content="" />);
+
+    const equationPreview = screen.getByLabelText("Equation output preview");
+    expect(within(equationPreview).getByText("x = y")).toBeVisible();
+    expect(within(equationPreview).getByText("(1)")).toBeVisible();
+    expect(equationPreview).toHaveClass("notation-manager-template-preview");
+
+    const casesPreview = screen.getByLabelText("Cases output preview");
+    expect(within(casesPreview).getByText("f(x) =")).toBeVisible();
+    expect(within(casesPreview).getByText("0")).toBeVisible();
+    expect(within(casesPreview).getByText("x < 0")).toBeVisible();
+  });
+
   it("filters and copies symbols from the palette", async () => {
     const { writeText } = installClipboardMock();
     render(<NotationManager content="" />);
@@ -78,14 +92,23 @@ describe("NotationManager", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Detected" }));
-
-    expect(screen.getByText("Detected Symbols")).toBeVisible();
+    expect(screen.getByText("Detected Notation")).toBeVisible();
     expect(screen.getAllByText("Undefined").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getAllByRole("button", { name: "Define" })[0]);
     expect(onInsertCode).toHaveBeenCalledWith(
       expect.stringMatching(/^\\newcommand\{\\(?:theta|x)\}/),
     );
+  });
+
+  it("keeps detected notation visible while using notation tools", () => {
+    render(<NotationManager content={"We optimize $\\theta + x$."} />);
+
+    expect(screen.getByText("Detected Notation")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Symbols" }));
+
+    expect(screen.getByText("Detected Notation")).toBeVisible();
+    expect(screen.getAllByText("\\theta").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByPlaceholderText(/search symbols/i)).toBeVisible();
   });
 });

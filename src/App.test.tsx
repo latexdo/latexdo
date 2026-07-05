@@ -465,4 +465,17 @@ describe("App critical UI controls", () => {
     expect(screen.getByText("HISTORY")).toBeVisible();
     expect(screen.getByText(/No local history yet/i)).toBeVisible();
   });
+
+  it("opens a dedicated notation workspace without a duplicate title", async () => {
+    installLatexDoMock();
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    fireEvent.click(screen.getByTitle("Notation Manager"));
+
+    expect(screen.getAllByText("Notation Manager")).toHaveLength(1);
+    expect(screen.getByText("Detected Notation")).toBeVisible();
+    expect(screen.getByRole("region", { name: "Detected notation" })).toBeVisible();
+  });
 });
