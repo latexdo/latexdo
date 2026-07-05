@@ -410,6 +410,19 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       updateAvailable: false,
     }),
 
+    updateNow: async () => {
+      window.open("https://latexdo.org/downloads/", "_blank", "noopener,noreferrer");
+      return {
+        currentVersion: "0.1.0",
+        latestVersion: null,
+        releaseUrl: "https://latexdo.org/downloads/",
+        updateAvailable: false,
+        installerPath: null,
+        opened: false,
+        error: "Install updates from the desktop app.",
+      };
+    },
+
     async openReleasesPage(releaseUrl) {
       window.open(
         releaseUrl || "https://latexdo.org/downloads/",

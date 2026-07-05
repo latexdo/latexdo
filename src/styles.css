@@ -3755,6 +3755,11 @@ button {
   opacity: 0.65;
 }
 
+.dialog-cancel:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
 .panel-resize-handle {
   position: absolute;
   top: -4px;
@@ -4502,6 +4507,11 @@ button {
   color: var(--text-primary);
 }
 
+.update-banner-actions button:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
 .update-banner-actions .icon-only {
   width: 28px;
   justify-content: center;
@@ -4545,6 +4555,11 @@ button {
 
 .statusbar button:hover {
   background: rgb(255 255 255 / 11%);
+}
+
+.statusbar button:disabled {
+  cursor: default;
+  opacity: 0.65;
 }
 
 .status-brand {

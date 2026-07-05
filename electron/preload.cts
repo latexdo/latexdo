@@ -20,6 +20,7 @@ import type {
   SyncTexPdfLocation,
   SyncTexSourceLocation,
   UpdateCheckResult,
+  UpdateInstallResult,
 } from "./types.js" with { "resolution-mode": "import" };
 
 const api = {
@@ -117,6 +118,7 @@ const api = {
     ipcRenderer.invoke("git:commit-file-diff", projectId, relativePath, hash),
   checkForUpdates: (): Promise<UpdateCheckResult> =>
     ipcRenderer.invoke("app:check-updates"),
+  updateNow: (): Promise<UpdateInstallResult> => ipcRenderer.invoke("app:update-now"),
   openReleasesPage: (releaseUrl?: string): Promise<void> =>
     ipcRenderer.invoke("app:open-releases", releaseUrl),
   openExternalUrl: (url: string): Promise<void> =>

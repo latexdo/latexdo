@@ -176,6 +176,11 @@ export interface UpdateCheckResult {
   error?: string;
 }
 
+export interface UpdateInstallResult extends UpdateCheckResult {
+  installerPath: string | null;
+  opened: boolean;
+}
+
 export interface SpellCheckerSettings {
   enabled: boolean;
   languages: string[];

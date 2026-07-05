@@ -9,7 +9,8 @@ import {
   type MenuItemConstructorOptions,
 } from "electron";
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createReadStream, createWriteStream } from "node:fs";
 import {
   access,
   copyFile,
@@ -23,6 +24,9 @@ import {
   stat,
   unlink,
 } from "node:fs/promises";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -49,6 +53,7 @@ import type {
   ProjectEntry,
   SpellCheckerSettings,
   UpdateCheckResult,
+  UpdateInstallResult,
   CreateProjectOptions,
 } from "./types.js";
 import { registerTerminalIpc } from "./terminal.js";
@@ -70,6 +75,7 @@ const externalUrlHosts = new Set([
   "store.latexdo.org",
   "www.latexdo.org",
 ]);
+const updateDownloadHosts = new Set(["github.com", "latexdo.org", "www.latexdo.org"]);
 const spellCheckerSettingsFile = "spellchecker-settings.json";
 const proofreadingSettingsFile = "proofreading-settings.json";
 const privacyConsentFile = "privacy-consent.json";
@@ -114,6 +120,17 @@ interface WebsiteUpdatePayload {
   releaseUrl?: unknown;
   downloadsPage?: unknown;
   manifestUrl?: unknown;
+  files?: unknown;
+}
+
+interface WebsiteUpdateFile {
+  id: string;
+  label: string;
+  platform: string;
+  arch: string;
+  filename: string;
+  url: string;
+  sha256: string | null;
 }
 
 interface StoredPrivacyConsent {
@@ -1731,6 +1748,111 @@ function safeExternalUrl(value: unknown): string | null {
   return null;
 }
 
+function safeUpdateDownloadUrl(value: unknown): string | null {
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    value.length > maxSettingsStringLength
+  ) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol === "https:" && updateDownloadHosts.has(url.hostname)) {
+      return url.href;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function safeUpdateFilename(value: unknown): string | null {
+  const filename = payloadString(value);
+  if (
+    !filename ||
+    filename.length > 180 ||
+    filename.includes("/") ||
+    filename.includes("\\") ||
+    filename
+      .split("")
+      .some(
+        (character) => character.charCodeAt(0) < 32 || '<>:"|?*'.includes(character),
+      ) ||
+    filename.startsWith(".")
+  ) {
+    return null;
+  }
+
+  return filename;
+}
+
+function updateFileFromPayload(value: unknown): WebsiteUpdateFile | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = payloadString(record.id);
+  const label = payloadString(record.label);
+  const platform = payloadString(record.platform);
+  const arch = payloadString(record.arch);
+  const filename = safeUpdateFilename(record.filename);
+  const url = safeUpdateDownloadUrl(record.url);
+  const sha256 = payloadString(record.sha256);
+
+  if (!id || !label || !platform || !arch || !filename || !url) {
+    return null;
+  }
+
+  return {
+    id,
+    label,
+    platform,
+    arch,
+    filename,
+    url,
+    sha256: sha256 && /^[a-f0-9]{64}$/i.test(sha256) ? sha256.toLowerCase() : null,
+  };
+}
+
+function updateFilesFromPayload(value: unknown): WebsiteUpdateFile[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((file) => updateFileFromPayload(file))
+    .filter((file): file is WebsiteUpdateFile => file !== null);
+}
+
+function currentUpdatePlatform(): string {
+  if (process.platform === "darwin") return "macos";
+  if (process.platform === "win32") return "windows";
+  return process.platform;
+}
+
+function currentUpdateArch(): string {
+  if (process.arch === "x64" || process.arch === "arm64") {
+    return process.arch;
+  }
+
+  return process.arch;
+}
+
+function selectUpdateFile(files: WebsiteUpdateFile[]): WebsiteUpdateFile | null {
+  const platform = currentUpdatePlatform();
+  const arch = currentUpdateArch();
+
+  return (
+    files.find((file) => file.platform === platform && file.arch === arch) ??
+    files.find((file) => file.platform === platform) ??
+    null
+  );
+}
+
 function updateResultFromWebsitePayload(
   payload: WebsiteUpdatePayload,
   currentVersion: string,
@@ -1760,19 +1882,26 @@ function updateResultFromWebsitePayload(
   };
 }
 
-async function fetchWebsiteUpdatePayload(
+async function fetchWebsiteUpdateJson(
   url: string,
-  currentVersion: string,
   headers: Record<string, string>,
-): Promise<UpdateCheckResult> {
+): Promise<WebsiteUpdatePayload> {
   const response = await fetch(url, { headers });
 
   if (!response.ok) {
     throw new Error(`${url} returned ${response.status}`);
   }
 
+  return (await response.json()) as WebsiteUpdatePayload;
+}
+
+async function fetchWebsiteUpdatePayload(
+  url: string,
+  currentVersion: string,
+  headers: Record<string, string>,
+): Promise<UpdateCheckResult> {
   return updateResultFromWebsitePayload(
-    (await response.json()) as WebsiteUpdatePayload,
+    await fetchWebsiteUpdateJson(url, headers),
     currentVersion,
   );
 }
@@ -1802,6 +1931,129 @@ async function checkForUpdates(): Promise<UpdateCheckResult> {
     checkedAt: new Date().toISOString(),
     error: errors.join(" ") || "Update check failed",
   };
+}
+
+async function sha256File(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(filePath);
+
+    stream.on("error", reject);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+  });
+}
+
+async function uniqueDownloadPath(filename: string): Promise<string> {
+  const downloadsDirectory = app.getPath("downloads");
+  const parsed = path.parse(filename);
+
+  for (let index = 0; index < 100; index += 1) {
+    const candidateName =
+      index === 0 ? filename : `${parsed.name} (${index.toString()})${parsed.ext}`;
+    const candidate = path.join(downloadsDirectory, candidateName);
+
+    try {
+      await access(candidate);
+    } catch {
+      return candidate;
+    }
+  }
+
+  throw new Error("Could not choose a download path for the update installer.");
+}
+
+async function downloadUpdateInstaller(
+  file: WebsiteUpdateFile,
+  currentVersion: string,
+): Promise<string> {
+  const response = await fetch(file.url, {
+    headers: {
+      "User-Agent": `latexdo/${currentVersion}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Update installer download returned ${response.status}.`);
+  }
+  if (!response.body) {
+    throw new Error("Update installer download did not include a response body.");
+  }
+
+  const temporaryPath = path.join(
+    app.getPath("temp"),
+    `latexdo-update-${randomUUID()}-${file.filename}.download`,
+  );
+
+  try {
+    await pipeline(
+      Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>),
+      createWriteStream(temporaryPath, { flags: "wx" }),
+    );
+
+    if (file.sha256) {
+      const actualSha256 = await sha256File(temporaryPath);
+      if (actualSha256 !== file.sha256) {
+        throw new Error("Downloaded update installer failed checksum verification.");
+      }
+    }
+
+    const installerPath = await uniqueDownloadPath(file.filename);
+    await rename(temporaryPath, installerPath);
+    return installerPath;
+  } catch (error) {
+    await unlink(temporaryPath).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function updateNow(): Promise<UpdateInstallResult> {
+  const currentVersion = app.getVersion();
+  const requestHeaders = {
+    Accept: "application/json",
+    "User-Agent": `latexdo/${currentVersion}`,
+  };
+  const errors: string[] = [];
+
+  for (const url of [updatesFeedUrl, downloadsManifestUrl]) {
+    try {
+      const payload = await fetchWebsiteUpdateJson(url, requestHeaders);
+      const result = updateResultFromWebsitePayload(payload, currentVersion);
+
+      if (!result.updateAvailable) {
+        return {
+          ...result,
+          installerPath: null,
+          opened: false,
+        };
+      }
+
+      const updateFile = selectUpdateFile(updateFilesFromPayload(payload.files));
+      if (!updateFile) {
+        throw new Error(
+          `No LatexDo ${result.latestVersion ?? "update"} installer is available for ${currentUpdatePlatform()} ${currentUpdateArch()}.`,
+        );
+      }
+
+      const installerPath = await downloadUpdateInstaller(updateFile, currentVersion);
+      const openError = await shell.openPath(installerPath);
+      if (openError) {
+        throw new Error(
+          `Downloaded update installer but could not open it: ${openError}`,
+        );
+      }
+
+      return {
+        ...result,
+        installerPath,
+        opened: true,
+      };
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  throw new Error(errors.join(" ") || "Update failed.");
 }
 
 async function readGitStatus(projectPath: string): Promise<GitStatusSummary> {
@@ -2749,6 +3001,11 @@ app.whenReady().then(async () => {
     const channel = "app:check-updates";
     expectIpcArgs(channel, rawArgs, 0);
     return checkForUpdates();
+  });
+  ipcMain.handle("app:update-now", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "app:update-now";
+    expectIpcArgs(channel, rawArgs, 0);
+    return updateNow();
   });
   ipcMain.handle("app:open-releases", async (_event, ...rawArgs: unknown[]) => {
     const channel = "app:open-releases";
