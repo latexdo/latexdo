@@ -30,10 +30,11 @@ confirm_privacy_consent() {
   cat >/dev/tty <<'NOTICE'
 LatexDo privacy and consent
 
+LatexDo does not currently collect personal analytics, sell user data, or track your documents.
 LatexDo stores app settings, trusted folder choices, editor preferences, and install state on this device.
-LatexDo reads and writes files in folders you create, open, or trust. Update checks, extension catalog access, external links, and optional proofreading can contact LatexDo services or the provider you configure.
+LatexDo reads and writes files in folders you create, open, or trust. Update checks, downloads, extension catalog access, external links, and optional proofreading can contact LatexDo services or the provider you configure.
 
-Privacy information: https://latexdo.org/about/
+Privacy information: https://latexdo.org/privacy.html
 NOTICE
 
   printf '%s' 'Type "yes" to accept and continue installing LatexDo: ' >/dev/tty
