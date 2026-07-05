@@ -144,6 +144,10 @@ import {
   type LatexDoExtensionSnippet,
   type LatexDoExtensionTemplate,
 } from "./extensions";
+import {
+  getLatexCommandCompletionRange,
+  getLatexCompletionContext,
+} from "./latex/completionContext";
 
 type PanelKind =
   | "problems"
@@ -3772,24 +3776,30 @@ ${macroEnd}
       ],
     });
     instance.languages.registerCompletionItemProvider("latex", {
-      triggerCharacters: ["\\", "{"],
+      triggerCharacters: ["\\", "{", ","],
       provideCompletionItems: async (model, position) => {
-        const word = model.getWordUntilPosition(position);
         const lineContent = model.getLineContent(position.lineNumber);
-        const textBeforePointer = lineContent.substring(0, position.column - 1);
-
-        const range = {
+        const argumentCompletion = getLatexCompletionContext(
+          lineContent,
+          position.column,
+        );
+        const commandCompletion = getLatexCommandCompletionRange(
+          lineContent,
+          position.column,
+        );
+        const completionRange = (completion: {
+          rangeStartColumn: number;
+          rangeEndColumn: number;
+        }) => ({
           startLineNumber: position.lineNumber,
           endLineNumber: position.lineNumber,
-          startColumn: word.startColumn,
-          endColumn: word.endColumn,
-        };
+          startColumn: completion.rangeStartColumn,
+          endColumn: completion.rangeEndColumn,
+        });
 
         // Check if we are inside \cite{...}
-        const citeMatch = textBeforePointer.match(
-          /\\(?:cite|citep|citet|parencite|textcite)[a-zA-Z]*\*?(?:\[[^\]]*\])*{([^}]*)$/,
-        );
-        if (citeMatch) {
+        if (argumentCompletion?.type === "citation") {
+          const range = completionRange(argumentCompletion);
           const suggestions: monaco.languages.CompletionItem[] = [];
           const allEntries = flattenEntries(projectEntriesRef.current);
           const bibFiles = allEntries.filter((e) => e.name.endsWith(".bib"));
@@ -3837,10 +3847,8 @@ ${macroEnd}
         }
 
         // Check if we are inside \ref{...}
-        const refMatch = textBeforePointer.match(
-          /\\(?:ref|cref|Cref|autoref|pageref|eqref)[a-zA-Z]*\*?{([^}]*)$/,
-        );
-        if (refMatch) {
+        if (argumentCompletion?.type === "reference") {
+          const range = completionRange(argumentCompletion);
           const suggestions: monaco.languages.CompletionItem[] = [];
           const allEntries = flattenEntries(projectEntriesRef.current);
           const texFiles = allEntries.filter((e) => e.name.endsWith(".tex"));
@@ -3881,10 +3889,8 @@ ${macroEnd}
         }
 
         // Default snippet completion (triggered by \)
-        if (
-          textBeforePointer.endsWith("\\" + word.word) ||
-          textBeforePointer.endsWith("\\")
-        ) {
+        if (commandCompletion) {
+          const range = completionRange(commandCompletion);
           const builtInSuggestions: monaco.languages.CompletionItem[] =
             latexSuggestions.map(([label, insertText]) => ({
               label: `\\${label}`,
@@ -4086,6 +4092,22 @@ ${macroEnd}
     });
     editor.focus();
   };
+
+  const handleEditorChange = useCallback((value?: string) => {
+    const nextContent = value ?? "";
+    const currentPath = activePathRef.current;
+    if (!currentPath) return;
+
+    setDocuments((current) => {
+      const nextDocuments = current.map((document) =>
+        document.path === currentPath
+          ? { ...document, content: nextContent }
+          : document,
+      );
+      documentsRef.current = nextDocuments;
+      return nextDocuments;
+    });
+  }, []);
 
   const editorTheme = monacoThemeFor(settings.colorTheme);
 
@@ -7038,15 +7060,7 @@ ${macroEnd}
                   theme={editorTheme}
                   beforeMount={configureMonaco}
                   onMount={handleEditorMount}
-                  onChange={(value) =>
-                    setDocuments((current) =>
-                      current.map((document) =>
-                        document.path === activeDocument.path
-                          ? { ...document, content: value ?? "" }
-                          : document,
-                      ),
-                    )
-                  }
+                  onChange={handleEditorChange}
                   options={{
                     fontFamily:
                       "'SFMono-Regular', 'Cascadia Code', 'Fira Code', Menlo, monospace",
@@ -7064,6 +7078,8 @@ ${macroEnd}
                     scrollBeyondLastLine: false,
                     automaticLayout: true,
                     fixedOverflowWidgets: true,
+                    acceptSuggestionOnCommitCharacter: false,
+                    acceptSuggestionOnEnter: "off",
                     suggest: { showSnippets: true },
                   }}
                 />
