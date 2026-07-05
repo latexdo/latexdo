@@ -4,6 +4,8 @@ import type { DocumentHistorySnapshot } from "../types";
 
 interface HistorySidebarProps {
   activeFilePath?: string;
+  activeFileSnapshotCount?: number;
+  totalSnapshotCount?: number;
   snapshots: DocumentHistorySnapshot[];
   onCaptureSnapshot: () => void;
   onRestoreSnapshot: (snapshot: DocumentHistorySnapshot) => void;
@@ -37,6 +39,8 @@ function previewText(content: string): string {
 
 export const HistorySidebar: React.FC<HistorySidebarProps> = ({
   activeFilePath,
+  activeFileSnapshotCount,
+  totalSnapshotCount,
   snapshots,
   onCaptureSnapshot,
   onRestoreSnapshot,
@@ -50,9 +54,22 @@ export const HistorySidebar: React.FC<HistorySidebarProps> = ({
     ? sortedSnapshots.filter((snapshot) => snapshot.filePath === activeFilePath)
     : [];
   const projectSnapshots = sortedSnapshots.slice(0, 12);
+  const activeCount = activeFileSnapshotCount ?? activeSnapshots.length;
+  const totalCount = totalSnapshotCount ?? snapshots.length;
 
   return (
     <div className="history-sidebar">
+      <div className="history-summary">
+        <div>
+          <strong>{activeCount}</strong>
+          <span>Current file</span>
+        </div>
+        <div>
+          <strong>{totalCount}</strong>
+          <span>Total states</span>
+        </div>
+      </div>
+
       <div className="history-current-card">
         <div>
           <span className="sidebar-section-label">Current File</span>

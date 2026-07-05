@@ -500,6 +500,55 @@ button {
   -webkit-app-region: no-drag;
 }
 
+.title-history-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  max-width: 118px;
+  padding: 0 8px;
+  border: 1px solid var(--border-card);
+  border-radius: 5px;
+  background: var(--bg-button-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.title-history-button > span:not(.title-history-count) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title-history-button:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-row-hover);
+  color: var(--text-primary);
+}
+
+.title-history-button.active {
+  border-color: color-mix(in srgb, var(--accent) 54%, var(--border-hover));
+  background: var(--accent-bg);
+  color: var(--text-on-accent);
+}
+
+.title-history-count {
+  flex: 0 0 auto;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg-badge);
+  color: var(--text-on-accent);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
 .icon-button,
 .small-icon {
   display: grid;
@@ -1426,6 +1475,38 @@ button {
   min-height: 0;
   flex: 1;
   flex-direction: column;
+}
+
+.history-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 8px 0;
+}
+
+.history-summary > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  background: var(--bg-card);
+}
+
+.history-summary strong {
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.history-summary span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .history-current-card {

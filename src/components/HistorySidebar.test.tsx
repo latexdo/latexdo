@@ -31,6 +31,7 @@ describe("HistorySidebar", () => {
 
     expect(screen.getByRole("button", { name: /capture state/i })).toBeDisabled();
     expect(screen.getByText("No file open")).toBeVisible();
+    expect(screen.getAllByText("0")).toHaveLength(2);
     expect(screen.getByText(/No local history yet/i)).toBeVisible();
   });
 
@@ -68,6 +69,8 @@ describe("HistorySidebar", () => {
     );
 
     expect(screen.getByRole("button", { name: /capture state/i })).toBeEnabled();
+    expect(screen.getByText("2")).toBeVisible();
+    expect(screen.getByText("3")).toBeVisible();
     expect(screen.getByText("Newer main")).toBeVisible();
     expect(screen.getByText("Older main")).toBeVisible();
     expect(screen.queryByText("Appendix state")).not.toBeInTheDocument();

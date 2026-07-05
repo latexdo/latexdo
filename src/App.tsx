@@ -1721,6 +1721,11 @@ export default function App() {
   const projectName = hasVisibleProject
     ? fileName(projectPath) || "Project"
     : "No Folder";
+  const activeDocumentHistoryCount = activeDocument
+    ? documentHistory.filter(
+        (snapshot) => snapshot.filePath === activeDocument.relativePath,
+      ).length
+    : 0;
   const activeCollaborators = collaborationState.users;
   const collaboratorCount = activeCollaborators.length;
   const diagnostics = useMemo(
@@ -6331,6 +6336,22 @@ ${macroEnd}
         <div className="title-actions">
           <button
             type="button"
+            className={`title-history-button ${
+              sidebarVisible && activeSidebar === "history" ? "active" : ""
+            }`}
+            onClick={() => openSidebar("history")}
+            title="Open history"
+            aria-label="Open history"
+            aria-pressed={sidebarVisible && activeSidebar === "history"}
+          >
+            <History size={15} />
+            <span>History</span>
+            {documentHistory.length ? (
+              <span className="title-history-count">{documentHistory.length}</span>
+            ) : null}
+          </button>
+          <button
+            type="button"
             className={`icon-button ${sidebarVisible ? "active" : ""}`}
             onClick={toggleSidebar}
             title="Toggle sidebar (Cmd/Ctrl+B)"
@@ -6933,6 +6954,8 @@ ${macroEnd}
               <div className="sidebar-panel history-panel">
                 <HistorySidebar
                   activeFilePath={activeDocument?.relativePath}
+                  activeFileSnapshotCount={activeDocumentHistoryCount}
+                  totalSnapshotCount={documentHistory.length}
                   snapshots={documentHistory}
                   onCaptureSnapshot={() => captureActiveHistorySnapshot("manual")}
                   onRestoreSnapshot={handleRestoreHistorySnapshot}

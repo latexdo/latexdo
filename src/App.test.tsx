@@ -452,4 +452,16 @@ describe("App critical UI controls", () => {
     });
     expect(await screen.findByText("Opened main.tex:3 from PDF")).toBeVisible();
   });
+
+  it("opens local document history from the titlebar history button", async () => {
+    installLatexDoMock();
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    fireEvent.click(screen.getByRole("button", { name: /open history/i }));
+
+    expect(screen.getByText("HISTORY")).toBeVisible();
+    expect(screen.getByText(/No local history yet/i)).toBeVisible();
+  });
 });
