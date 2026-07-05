@@ -15,6 +15,12 @@ export type LatexCompletionContext =
     }
   | null;
 
+export interface LatexCommandCompletionRange {
+  currentText: string;
+  rangeStartColumn: number;
+  rangeEndColumn: number;
+}
+
 const citationCommands = [
   "cite",
   "citep",
@@ -27,25 +33,45 @@ const citationCommands = [
 ];
 const referenceCommands = ["ref", "eqref", "autoref", "cref", "Cref", "pageref"];
 
+export function getLatexCommandCompletionRange(
+  lineText: string,
+  cursorColumn: number,
+): LatexCommandCompletionRange | null {
+  const beforeCursor = lineText.slice(0, cursorColumn - 1);
+  const match = beforeCursor.match(/\\[A-Za-z]*$/);
+  if (!match) return null;
+
+  return {
+    currentText: match[0].slice(1),
+    rangeStartColumn: beforeCursor.length - match[0].length + 1,
+    rangeEndColumn: cursorColumn,
+  };
+}
+
 export function getLatexCompletionContext(
   lineText: string,
   cursorColumn: number,
 ): LatexCompletionContext {
   const beforeCursor = lineText.slice(0, cursorColumn - 1);
-  const commandPattern = /\\([A-Za-z]+)\{([^{}]*)$/;
+  const commandPattern = /\\([A-Za-z]+)\*?(?:\[[^\]]*\])*\{([^{}]*)$/;
   const match = beforeCursor.match(commandPattern);
   if (!match) return null;
   const command = match[1];
-  const currentText = match[2] ?? "";
-  const commandStartIndex = beforeCursor.lastIndexOf(`\\${command}{`);
-  const rangeStartColumn = commandStartIndex + command.length + 3;
+  const argumentText = match[2] ?? "";
+  const argumentStartColumn = cursorColumn - argumentText.length;
   const rangeEndColumn = cursorColumn;
   if (citationCommands.includes(command)) {
+    const delimiterIndex = argumentText.lastIndexOf(",");
+    let tokenStartIndex = delimiterIndex + 1;
+    while (argumentText[tokenStartIndex] === " ") {
+      tokenStartIndex += 1;
+    }
+
     return {
       type: "citation",
       command,
-      currentText,
-      rangeStartColumn,
+      currentText: argumentText.slice(tokenStartIndex),
+      rangeStartColumn: argumentStartColumn + tokenStartIndex,
       rangeEndColumn,
     };
   }
@@ -53,8 +79,8 @@ export function getLatexCompletionContext(
     return {
       type: "reference",
       command,
-      currentText,
-      rangeStartColumn,
+      currentText: argumentText,
+      rangeStartColumn: argumentStartColumn,
       rangeEndColumn,
     };
   }

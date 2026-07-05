@@ -1,6 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
-import { getLatexCompletionContext } from "../completionContext";
-import type { LatexCompletionContext } from "../completionContext";
+import { describe, it, expect } from "vitest";
+import {
+  getLatexCommandCompletionRange,
+  getLatexCompletionContext,
+} from "../completionContext";
 
 // ── Citation command variants ────────────────────────────────────────────
 const citeCommands = [
@@ -94,9 +96,9 @@ const nullCases = [
   { desc: "unknown command with brace", line: "\\foo{bar}", col: 7 },
   { desc: "cursor before brace", line: "\\cite{ref1}", col: 5 },
   {
-    desc: "nested braces",
-    line: "\\cite[see][p.5]{ref1}",
-    col: `\\cite[see][p.5]{re`.length + 1,
+    desc: "unclosed optional argument",
+    line: "\\cite[see",
+    col: "\\cite[see".length + 1,
   },
 ];
 describe("Null (no match) — parameterized", () => {
@@ -140,6 +142,60 @@ describe("Range calculation — parameterized", () => {
       expect(result.rangeEndColumn).toBe(col);
       expect(result.currentText).toBe(arg);
     }
+  });
+});
+
+describe("Command completion range", () => {
+  it("replaces the whole LaTeX command prefix including the backslash", () => {
+    const result = getLatexCommandCompletionRange("\\sec", "\\sec".length + 1);
+
+    expect(result).toEqual({
+      currentText: "sec",
+      rangeStartColumn: 1,
+      rangeEndColumn: 5,
+    });
+  });
+
+  it("supports an empty command after a backslash", () => {
+    const result = getLatexCommandCompletionRange("Text \\", "Text \\".length + 1);
+
+    expect(result).toEqual({
+      currentText: "",
+      rangeStartColumn: 6,
+      rangeEndColumn: 7,
+    });
+  });
+
+  it("does not match a command when the cursor has moved into an argument", () => {
+    expect(
+      getLatexCommandCompletionRange("\\cite{sm", "\\cite{sm".length + 1),
+    ).toBeNull();
+  });
+});
+
+describe("Argument completion range", () => {
+  it("replaces only the current citation key after a comma", () => {
+    const line = "\\cite{known, Sm";
+    const result = getLatexCompletionContext(line, line.length + 1);
+
+    expect(result).toMatchObject({
+      type: "citation",
+      currentText: "Sm",
+      rangeStartColumn: "\\cite{known, ".length + 1,
+      rangeEndColumn: line.length + 1,
+    });
+  });
+
+  it("supports citation commands with optional arguments", () => {
+    const line = "\\cite[see][p. 5]{Sm";
+    const result = getLatexCompletionContext(line, line.length + 1);
+
+    expect(result).toMatchObject({
+      type: "citation",
+      currentText: "Sm",
+      rangeStartColumn: "\\cite[see][p. 5]{".length + 1,
+      rangeEndColumn: line.length + 1,
+    });
   });
 });
 
