@@ -215,6 +215,7 @@ function installLatexDoMock(options?: {
       output: "",
       diagnostics: [],
     }),
+    readAsset: vi.fn().mockResolvedValue(new Uint8Array()),
     readPdf: vi.fn().mockResolvedValue(new Uint8Array()),
     forwardSyncTex: vi.fn().mockResolvedValue(null),
     backwardSyncTex: vi.fn().mockResolvedValue(null),

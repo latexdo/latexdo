@@ -136,6 +136,13 @@ import {
   type ProjectSearchMatch,
 } from "./search/projectSearch";
 import {
+  figureBytesToDataUrl,
+  figureCanRenderInline,
+  figurePreviewCandidatePaths,
+  figurePreviewMimeType,
+  parseIncludeGraphicsAtPosition,
+} from "./figurePreview";
+import {
   categoryLabel,
   contributionSummary,
   extensionCategories,
@@ -1234,6 +1241,23 @@ function normalizeRelativePath(filePath: string): string {
   return filePath.replaceAll("\\", "/").replace(/(^|\/)\.\//g, "$1");
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => {
+    switch (character) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      default:
+        return "&#39;";
+    }
+  });
+}
+
 function joinRelativePath(directory: string, name: string): string {
   return normalizeRelativePath(`${directory}/${name}`).replace(/^\/+/, "");
 }
@@ -1664,9 +1688,7 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState("Welcome to LatexDo");
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
   const [pdfTarget, setPdfTarget] = useState<SyncTexPdfLocation | null>(null);
-  const [lastPdfLocation, setLastPdfLocation] = useState<PdfClickLocation | null>(
-    null,
-  );
+  const [lastPdfLocation, setLastPdfLocation] = useState<PdfClickLocation | null>(null);
   const [pdfScale, setPdfScale] = useState(100);
   const [splitPercent, setSplitPercent] = useState(52);
   const [mode, setMode] = useState<EditorMode>("author");
@@ -1702,6 +1724,7 @@ export default function App() {
   const backwardSyncRunIdRef = useRef(0);
   const lastAutoCompileSignatureRef = useRef("");
   const compileRunIdRef = useRef(0);
+  const figurePreviewCacheRef = useRef<Map<string, string>>(new Map());
   const historySaveTimerRef = useRef<number | null>(null);
   const historyAutoCaptureTimerRef = useRef<number | null>(null);
   const browserAutoOpenRef = useRef(false);
@@ -1903,6 +1926,7 @@ export default function App() {
 
   useEffect(() => {
     projectIdRef.current = projectId;
+    figurePreviewCacheRef.current.clear();
   }, [projectId]);
 
   useEffect(() => {
@@ -4032,6 +4056,112 @@ ${macroEnd}
         }
 
         return { suggestions: [] };
+      },
+    });
+    instance.languages.registerHoverProvider("latex", {
+      provideHover: async (model, position) => {
+        const includeTarget = parseIncludeGraphicsAtPosition(
+          model.getLineContent(position.lineNumber),
+          position.column,
+        );
+        if (!includeTarget) {
+          return null;
+        }
+
+        const currentProject = projectIdRef.current;
+        const document = documentsRef.current.find(
+          (item) => item.path === activePathRef.current,
+        );
+        if (!currentProject || !document) {
+          return null;
+        }
+
+        const candidates = figurePreviewCandidatePaths(
+          includeTarget.path,
+          document.relativePath,
+        );
+        const range = new instance.Range(
+          position.lineNumber,
+          includeTarget.startColumn,
+          position.lineNumber,
+          includeTarget.endColumn,
+        );
+
+        if (!candidates.length) {
+          return {
+            range,
+            contents: [
+              {
+                value: `**Figure preview**\n\nCannot resolve \`${includeTarget.rawPath.trim()}\`.`,
+              },
+            ],
+          };
+        }
+
+        for (const candidate of candidates) {
+          if (!figureCanRenderInline(candidate)) {
+            if (figurePreviewMimeType(candidate) === "application/pdf") {
+              try {
+                if (await window.latexdo.fileExists(currentProject, candidate)) {
+                  return {
+                    range,
+                    contents: [
+                      {
+                        value: `**Figure**\n\n\`${candidate}\`\n\nPDF figures preview in the compiled PDF.`,
+                      },
+                    ],
+                  };
+                }
+              } catch {
+                // Try the next candidate.
+              }
+            }
+            continue;
+          }
+
+          const mimeType = figurePreviewMimeType(candidate);
+          if (!mimeType) {
+            continue;
+          }
+
+          try {
+            const cacheKey = `${currentProject}:${candidate}`;
+            let dataUrl = figurePreviewCacheRef.current.get(cacheKey);
+            if (!dataUrl) {
+              const bytes = await window.latexdo.readAsset(currentProject, candidate);
+              dataUrl = figureBytesToDataUrl(bytes, mimeType);
+              figurePreviewCacheRef.current.set(cacheKey, dataUrl);
+            }
+
+            return {
+              range,
+              contents: [
+                {
+                  supportHtml: true,
+                  value: [
+                    '<div class="latexdo-figure-hover">',
+                    `<strong>${escapeHtml(candidate)}</strong>`,
+                    `<img src="${dataUrl}" alt="${escapeHtml(fileName(candidate))}" />`,
+                    "</div>",
+                  ].join(""),
+                },
+              ],
+            };
+          } catch {
+            // Try the next candidate.
+          }
+        }
+
+        return {
+          range,
+          contents: [
+            {
+              value: `**Figure not found**\n\nTried: ${candidates
+                .map((candidate) => `\`${candidate}\``)
+                .join(", ")}`,
+            },
+          ],
+        };
       },
     });
     const sharedRules = [

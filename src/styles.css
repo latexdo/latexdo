@@ -2818,6 +2818,31 @@ button {
   animation: source-sync-flash 1.8s ease-out;
 }
 
+.latexdo-figure-hover {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 320px;
+}
+
+.latexdo-figure-hover strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.latexdo-figure-hover img {
+  display: block;
+  max-width: 300px;
+  max-height: 220px;
+  border: 1px solid var(--border-card);
+  border-radius: 5px;
+  background: #fff;
+  object-fit: contain;
+}
+
 @keyframes source-sync-flash {
   from {
     background: rgb(88 166 255 / 42%);

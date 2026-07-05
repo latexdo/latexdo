@@ -2801,6 +2801,17 @@ app.whenReady().then(async () => {
     const resolvedPath = resolveProjectPath(projectPath, filePath);
     return readFile(resolvedPath, "utf8");
   });
+  ipcMain.handle("asset:read", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "asset:read";
+    const [rawProjectId, rawFilePath] = expectIpcArgs(channel, rawArgs, 2);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const filePath = parseRelativePath(channel, rawFilePath, {
+      extensions: [".png", ".jpg", ".jpeg", ".svg", ".pdf"],
+    });
+    const projectPath = getProjectRoot(projectId);
+    const resolvedPath = resolveProjectPath(projectPath, filePath);
+    return readFile(resolvedPath);
+  });
   ipcMain.handle("file:write", async (_event, ...rawArgs: unknown[]) => {
     const channel = "file:write";
     const [rawProjectId, rawFilePath, rawContent] = expectIpcArgs(channel, rawArgs, 3);
