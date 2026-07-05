@@ -5,6 +5,8 @@ import Editor, {
 } from "@monaco-editor/react";
 import {
   AlertCircle,
+  ArrowLeftToLine,
+  ArrowRightToLine,
   BookOpenText,
   Box,
   Bold,
@@ -1662,6 +1664,9 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState("Welcome to LatexDo");
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
   const [pdfTarget, setPdfTarget] = useState<SyncTexPdfLocation | null>(null);
+  const [lastPdfLocation, setLastPdfLocation] = useState<PdfClickLocation | null>(
+    null,
+  );
   const [pdfScale, setPdfScale] = useState(100);
   const [splitPercent, setSplitPercent] = useState(52);
   const [mode, setMode] = useState<EditorMode>("author");
@@ -2583,6 +2588,7 @@ ${macroEnd}
       setCompileResult(null);
       setPdfData(null);
       setPdfTarget(null);
+      setLastPdfLocation(null);
       pdfPathRef.current = "";
       lastAutoCompileSignatureRef.current = "";
 
@@ -2693,6 +2699,7 @@ ${macroEnd}
           pdfPathRef.current = result.pdfPath;
           setPdfData(new Uint8Array(bytes));
           setPdfTarget(null);
+          setLastPdfLocation(null);
           setPreviewVisible(true);
           setStatusMessage(
             `Built successfully in ${formatDuration(result.durationMs)}`,
@@ -2702,6 +2709,7 @@ ${macroEnd}
         if (isLatestCompile) {
           pdfPathRef.current = "";
           setPdfTarget(null);
+          setLastPdfLocation(null);
           setPanelVisible(true);
           setActivePanel(result.diagnostics.length ? "problems" : "output");
           setStatusMessage(result.error ?? "Compilation failed");
@@ -2712,6 +2720,7 @@ ${macroEnd}
       if (compileRunId === compileRunIdRef.current) {
         pdfPathRef.current = "";
         setPdfTarget(null);
+        setLastPdfLocation(null);
         setPanelVisible(true);
         setActivePanel("output");
         setStatusMessage(error instanceof Error ? error.message : "Compilation failed");
@@ -3135,6 +3144,7 @@ ${macroEnd}
         setCompileResult(null);
         setPdfData(null);
         setPdfTarget(null);
+        setLastPdfLocation(null);
         pdfPathRef.current = "";
         await refreshProject(currentProject);
         setStatusMessage(
@@ -3278,6 +3288,24 @@ ${macroEnd}
   );
   forwardSyncRef.current = handleForwardSync;
 
+  const handleEditorCursorToPdf = useCallback(async () => {
+    const editor = editorRef.current;
+    const position = editor?.getPosition();
+    if (!position) {
+      setStatusMessage("Place the cursor in a TeX file before synchronizing the PDF");
+      return;
+    }
+    const document = documentsRef.current.find(
+      (item) => item.path === activePathRef.current,
+    );
+    if (!document || !document.name.endsWith(".tex")) {
+      setStatusMessage("Place the cursor in a TeX file before synchronizing the PDF");
+      return;
+    }
+
+    await handleForwardSync(position);
+  }, [handleForwardSync]);
+
   const handleBackwardSync = useCallback(
     async (pdfLocation: PdfClickLocation) => {
       const pdfPath = pdfPathRef.current;
@@ -3350,6 +3378,18 @@ ${macroEnd}
     },
     [openDocument, projectEntries, revealPendingSource],
   );
+
+  const handlePdfPointToSource = useCallback(async () => {
+    const location = pdfTarget ?? lastPdfLocation;
+    if (!location) {
+      setStatusMessage(
+        "Show the editor cursor in the PDF or double-click a PDF point first",
+      );
+      return;
+    }
+
+    await handleBackwardSync(location);
+  }, [handleBackwardSync, lastPdfLocation, pdfTarget]);
 
   const handleOpenProjectSearchMatch = useCallback(
     async (match: ProjectSearchMatch) => {
@@ -7396,6 +7436,22 @@ ${macroEnd}
                     </div>
                     <div className="preview-actions">
                       <button
+                        onClick={() => void handlePdfPointToSource()}
+                        disabled={!pdfData || !(pdfTarget ?? lastPdfLocation)}
+                        title="Show PDF point in source"
+                        aria-label="Show PDF point in source"
+                      >
+                        <ArrowLeftToLine size={15} />
+                      </button>
+                      <button
+                        onClick={() => void handleEditorCursorToPdf()}
+                        title="Show editor cursor in PDF"
+                        aria-label="Show editor cursor in PDF"
+                      >
+                        <ArrowRightToLine size={15} />
+                      </button>
+                      <div className="preview-action-divider" aria-hidden="true" />
+                      <button
                         onClick={() => setPdfScale((scale) => Math.max(60, scale - 10))}
                         title="Zoom out"
                       >
@@ -7432,6 +7488,8 @@ ${macroEnd}
                         scale={pdfScale}
                         target={pdfTarget}
                         onNavigate={(location) => {
+                          setPdfTarget(null);
+                          setLastPdfLocation(location);
                           void handleBackwardSync(location);
                         }}
                       />
