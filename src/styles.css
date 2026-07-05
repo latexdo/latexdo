@@ -2577,9 +2577,22 @@ button {
   cursor: pointer;
 }
 
-.preview-actions button:hover {
+.preview-actions button:hover:not(:disabled) {
   background: #2b3038;
   color: #e2e5ea;
+}
+
+.preview-actions button:disabled {
+  color: #565d68;
+  cursor: default;
+  opacity: 0.7;
+}
+
+.preview-action-divider {
+  width: 1px;
+  height: 15px;
+  margin: 0 2px;
+  background: #363b45;
 }
 
 .preview-actions span {
