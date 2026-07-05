@@ -3648,39 +3648,71 @@ ${macroEnd}
         fileName(diagnostic.file) === activeDocument.name,
     );
     const model = editorRef.current.getModel()!;
+    const lineCount = model.getLineCount();
     monaco.editor.setModelMarkers(
       model,
       "latexdo",
-      relevantDiagnostics.map((diagnostic) => ({
-        startLineNumber: diagnostic.line,
-        startColumn: diagnostic.column,
-        endLineNumber: diagnostic.endLine ?? diagnostic.line,
-        endColumn: diagnostic.endColumn ?? diagnostic.column + 1,
-        message: diagnosticMarkerMessage(diagnostic),
-        source:
-          diagnostic.locationAccuracy === "exact"
-            ? "LatexDo analysis"
-            : "LaTeX compiler",
-        code: diagnostic.code,
-        relatedInformation:
-          diagnostic.reportedLine && diagnostic.reportedLine !== diagnostic.line
-            ? [
-                {
-                  resource: model.uri,
-                  startLineNumber: diagnostic.reportedLine,
-                  startColumn: diagnostic.reportedColumn ?? 1,
-                  endLineNumber: diagnostic.reportedLine,
-                  endColumn: (diagnostic.reportedColumn ?? 1) + 1,
-                  message:
-                    "LaTeX stopped here after the earlier root-cause token left the document structure invalid.",
-                },
-              ]
-            : undefined,
-        severity:
-          diagnostic.severity === "error"
-            ? monaco.MarkerSeverity.Error
-            : monaco.MarkerSeverity.Warning,
-      })),
+      relevantDiagnostics.map((diagnostic) => {
+        const startLineNumber = Math.min(Math.max(1, diagnostic.line), lineCount);
+        const endLineNumber = Math.min(
+          Math.max(startLineNumber, diagnostic.endLine ?? startLineNumber),
+          lineCount,
+        );
+        const startLineMaxColumn = model.getLineMaxColumn(startLineNumber);
+        const endLineMaxColumn = model.getLineMaxColumn(endLineNumber);
+        const startColumn = Math.min(
+          Math.max(1, diagnostic.column),
+          startLineMaxColumn,
+        );
+        const rawEndColumn = diagnostic.endColumn ?? startColumn + 1;
+        const endColumn =
+          endLineNumber === startLineNumber
+            ? Math.min(
+                Math.max(startColumn + 1, rawEndColumn),
+                Math.max(startColumn + 1, startLineMaxColumn),
+              )
+            : Math.min(Math.max(1, rawEndColumn), endLineMaxColumn);
+        const reportedLineNumber = diagnostic.reportedLine
+          ? Math.min(Math.max(1, diagnostic.reportedLine), lineCount)
+          : undefined;
+        const reportedColumn = reportedLineNumber
+          ? Math.min(
+              Math.max(1, diagnostic.reportedColumn ?? 1),
+              model.getLineMaxColumn(reportedLineNumber),
+            )
+          : undefined;
+
+        return {
+          startLineNumber,
+          startColumn,
+          endLineNumber,
+          endColumn,
+          message: diagnosticMarkerMessage(diagnostic),
+          source:
+            diagnostic.locationAccuracy === "exact"
+              ? "LatexDo analysis"
+              : "LaTeX compiler",
+          code: diagnostic.code,
+          relatedInformation:
+            reportedLineNumber && diagnostic.reportedLine !== diagnostic.line
+              ? [
+                  {
+                    resource: model.uri,
+                    startLineNumber: reportedLineNumber,
+                    startColumn: reportedColumn ?? 1,
+                    endLineNumber: reportedLineNumber,
+                    endColumn: (reportedColumn ?? 1) + 1,
+                    message:
+                      "LaTeX stopped here after the earlier root-cause token left the document structure invalid.",
+                  },
+                ]
+              : undefined,
+          severity:
+            diagnostic.severity === "error"
+              ? monaco.MarkerSeverity.Error
+              : monaco.MarkerSeverity.Warning,
+        };
+      }),
     );
   }, [activeDocument, diagnostics]);
 

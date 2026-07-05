@@ -145,7 +145,48 @@ async function enrichDiagnostics(
   return rankLatexDiagnostics(enriched);
 }
 
-function parseDiagnostics(
+function warningLineRange(message: string): {
+  line: number;
+  endLine?: number;
+} {
+  const inputLineMatch = message.match(/\bon input line\s+(\d+)/i);
+  if (inputLineMatch) {
+    return { line: Number(inputLineMatch[1]) };
+  }
+
+  const lineRangeMatch = message.match(/\bat lines?\s+(\d+)(?:--(\d+))?/i);
+  if (lineRangeMatch) {
+    return {
+      line: Number(lineRangeMatch[1]),
+      endLine: lineRangeMatch[2] ? Number(lineRangeMatch[2]) : undefined,
+    };
+  }
+
+  return { line: 1 };
+}
+
+function cleanWarningMessage(message: string): string {
+  return message
+    .replace(/^\([^)]+\)\s*/gm, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s*\.$/, "")
+    .trim();
+}
+
+function warningContinuationText(line: string): string | null {
+  const packageContinuation = line.match(/^\([^)]+\)\s*(.*)$/);
+  if (packageContinuation) {
+    return packageContinuation[1].trim();
+  }
+
+  if (/^\s{2,}\S/.test(line)) {
+    return line.trim();
+  }
+
+  return null;
+}
+
+export function parseDiagnostics(
   output: string,
   projectPath: string,
   rootFile: string,
@@ -153,8 +194,10 @@ function parseDiagnostics(
   const diagnostics: Diagnostic[] = [];
   const seen = new Set<string>();
   const fileLinePattern = /^(.*?\.(?:tex|sty|cls|bib)):(\d+):(?:(\d+):)?\s*(.*)$/gm;
-  const warningPattern =
-    /^(?:LaTeX|Package [^:]+) Warning:\s*(.+?)(?:\s+on input line (\d+))?\.?$/gm;
+  const warningStartPattern =
+    /^(?:LaTeX|Package\s+[^:]+|Class\s+[^:]+)\s+Warning:\s*(.*)$/;
+  const boxWarningPattern =
+    /^(?:(?:Over|Under)full \\[hv]box\b.*?)(?:\bat lines?\s+\d+(?:--\d+)?)?.*$/;
 
   const addDiagnostic = (diagnostic: Diagnostic) => {
     const key = `${diagnostic.file}:${diagnostic.line}:${diagnostic.message}`;
@@ -179,6 +222,62 @@ function parseDiagnostics(
   }
 
   const outputLines = output.split(/\r?\n/);
+  for (let index = 0; index < outputLines.length; index += 1) {
+    const warningMatch = outputLines[index].match(warningStartPattern);
+    if (warningMatch) {
+      const warningParts = [warningMatch[1]];
+      for (
+        let continuationIndex = index + 1;
+        continuationIndex < Math.min(outputLines.length, index + 8);
+        continuationIndex += 1
+      ) {
+        const continuationLine = outputLines[continuationIndex];
+        fileLinePattern.lastIndex = 0;
+        if (
+          warningStartPattern.test(continuationLine) ||
+          fileLinePattern.test(continuationLine) ||
+          /^!\s*/.test(continuationLine)
+        ) {
+          break;
+        }
+
+        const continuation = warningContinuationText(continuationLine);
+        if (!continuation) {
+          break;
+        }
+        warningParts.push(continuation);
+      }
+
+      const message = cleanWarningMessage(warningParts.join(" "));
+      const { line, endLine } = warningLineRange(message);
+      addDiagnostic({
+        file: normalizeDiagnosticFile(projectPath, rootFile),
+        line,
+        endLine,
+        column: 1,
+        severity: "warning",
+        message,
+        source: "latex",
+      });
+      continue;
+    }
+
+    const boxWarningMatch = outputLines[index].match(boxWarningPattern);
+    if (boxWarningMatch) {
+      const message = cleanWarningMessage(boxWarningMatch[0]);
+      const { line, endLine } = warningLineRange(message);
+      addDiagnostic({
+        file: normalizeDiagnosticFile(projectPath, rootFile),
+        line,
+        endLine,
+        column: 1,
+        severity: "warning",
+        message,
+        source: "latex",
+      });
+    }
+  }
+
   for (let index = 0; index < outputLines.length; index += 1) {
     const errorMatch = outputLines[index].match(/^!\s*(.+)$/);
     if (!errorMatch) {
@@ -205,19 +304,6 @@ function parseDiagnostics(
       });
       break;
     }
-  }
-
-  for (const match of output.matchAll(warningPattern)) {
-    const message = match[1].replace(/\s+/g, " ").trim();
-    const line = Number(match[2] ?? 1);
-    addDiagnostic({
-      file: normalizeDiagnosticFile(projectPath, rootFile),
-      line,
-      column: 1,
-      severity: "warning",
-      message,
-      source: "latex",
-    });
   }
 
   return diagnostics.slice(0, 100);
