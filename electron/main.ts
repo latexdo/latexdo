@@ -8,9 +8,8 @@ import {
   shell,
   type MenuItemConstructorOptions,
 } from "electron";
-import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream, watch, type FSWatcher } from "node:fs";
 import {
   access,
   copyFile,
@@ -29,7 +28,6 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import path from "node:path";
-import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { compileAsymptote, compileLatex } from "./compiler.js";
 import { importDocxIntoProject } from "./docxImport.js";
@@ -39,16 +37,10 @@ import type {
   Diagnostic,
   DocxImportResult,
   MarkdownImportResult,
-  GitCommitDetails,
-  GitCommitEntry,
   CompileRequest,
   AsymptoteCompileRequest,
   GitDiscardResult,
-  GitDiffEditorInput,
-  GitDiffPreview,
-  GitHistorySummary,
-  GitStatusEntry,
-  GitStatusSummary,
+  GitRevisionRef,
   ImportedProjectEntry,
   OpenProject,
   ProofreadingResult,
@@ -59,12 +51,23 @@ import type {
   UpdateInstallResult,
   CreateProjectOptions,
 } from "./types.js";
+import {
+  getGitRepositoryContext,
+  readCommitDiffSession,
+  readGitBlame,
+  readGitDiffPreview,
+  readStructuredGitCommitDetails,
+  readStructuredGitHistory,
+  readStructuredGitStatus,
+  readWorkingTreeDiffSession,
+  repoPathForProjectPath,
+  runGitText,
+} from "./git.js";
 import { registerTerminalIpc } from "./terminal.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
 const appIconPath = path.join(currentDirectory, "..", "build", "icon.png");
-const execFileAsync = promisify(execFile);
 const startupSmokeTest = process.argv.includes("--smoke-test");
 const startupSmokeTimeoutMs = 20_000;
 const extensionCatalogFetchTimeoutMs = 4_500;
@@ -115,6 +118,153 @@ Start writing here.
 `;
 
 const openProjects = new Map<string, OpenProject>();
+
+interface GitWatchState {
+  watchers: FSWatcher[];
+  timer: NodeJS.Timeout | null;
+  pendingReason: "repository" | "working-tree";
+}
+
+const gitWatchStates = new Map<string, GitWatchState>();
+
+function closeGitWatchers(projectId: string): void {
+  const state = gitWatchStates.get(projectId);
+  if (!state) return;
+  if (state.timer) clearTimeout(state.timer);
+  for (const watcher of state.watchers) watcher.close();
+  gitWatchStates.delete(projectId);
+}
+
+function emitGitChanged(
+  projectId: string,
+  reason: "repository" | "working-tree",
+): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send("git:changed", { projectId, reason });
+    }
+  }
+}
+
+function scheduleGitChanged(
+  projectId: string,
+  reason: "repository" | "working-tree",
+): void {
+  const state = gitWatchStates.get(projectId);
+  if (!state) return;
+  if (reason === "repository") state.pendingReason = "repository";
+  if (state.timer) clearTimeout(state.timer);
+  state.timer = setTimeout(() => {
+    state.timer = null;
+    emitGitChanged(projectId, state.pendingReason);
+    state.pendingReason = "working-tree";
+  }, 150);
+}
+
+function addGitWatcher(
+  state: GitWatchState,
+  projectId: string,
+  targetPath: string,
+  recursive: boolean,
+  classify: (filename: string) => "repository" | "working-tree",
+): boolean {
+  try {
+    const watcher = watch(targetPath, { recursive }, (_eventType, filename) => {
+      scheduleGitChanged(projectId, classify(filename?.toString() ?? ""));
+    });
+    watcher.on("error", () => watcher.close());
+    state.watchers.push(watcher);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function addGitDirectoryTreeWatchers(
+  state: GitWatchState,
+  projectId: string,
+  directory: string,
+  classify: (filename: string) => "repository" | "working-tree",
+  excludedDirectoryNames: ReadonlySet<string> = new Set(),
+): Promise<void> {
+  if (addGitWatcher(state, projectId, directory, true, classify)) return;
+  if (!addGitWatcher(state, projectId, directory, false, classify)) return;
+  const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+  await Promise.all(
+    entries
+      .filter(
+        (entry) =>
+          entry.isDirectory() &&
+          !entry.isSymbolicLink() &&
+          !excludedDirectoryNames.has(entry.name),
+      )
+      .map((entry) =>
+        addGitDirectoryTreeWatchers(
+          state,
+          projectId,
+          path.join(directory, entry.name),
+          classify,
+          excludedDirectoryNames,
+        ),
+      ),
+  );
+}
+
+async function ensureGitWatchers(
+  projectId: string,
+  projectPath: string,
+): Promise<void> {
+  if (gitWatchStates.has(projectId)) return;
+  let context;
+  try {
+    context = await getGitRepositoryContext(projectPath);
+  } catch {
+    return;
+  }
+  const state: GitWatchState = {
+    watchers: [],
+    timer: null,
+    pendingReason: "working-tree",
+  };
+  gitWatchStates.set(projectId, state);
+
+  const worktreeClassify = (filename: string) =>
+    /(^|[/\\])\.git([/\\]|$)/.test(filename) ? "repository" : "working-tree";
+  await addGitDirectoryTreeWatchers(
+    state,
+    projectId,
+    projectPath,
+    worktreeClassify,
+    new Set([".git", "node_modules", "dist"]),
+  );
+
+  const watchedMetadataDirectories = new Set<string>();
+  for (const directory of [context.gitDirectory, context.commonGitDirectory]) {
+    if (watchedMetadataDirectories.has(directory)) continue;
+    watchedMetadataDirectories.add(directory);
+    await addGitDirectoryTreeWatchers(state, projectId, directory, () => "repository");
+    addGitWatcher(
+      state,
+      projectId,
+      path.join(directory, "index"),
+      false,
+      () => "repository",
+    );
+    addGitWatcher(
+      state,
+      projectId,
+      path.join(directory, "HEAD"),
+      false,
+      () => "repository",
+    );
+    await addGitDirectoryTreeWatchers(
+      state,
+      projectId,
+      path.join(directory, "refs"),
+      () => "repository",
+    );
+  }
+}
 
 interface WebsiteUpdatePayload {
   schemaVersion?: unknown;
@@ -924,6 +1074,27 @@ function parseGitHash(channel: string, value: unknown): string {
     rejectControlChars: true,
     pattern: gitHashPattern,
   });
+}
+
+function parseOptionalGitHash(channel: string, value: unknown): string | undefined {
+  return value === undefined ? undefined : parseGitHash(channel, value);
+}
+
+function parseGitRevisionRef(channel: string, value: unknown): GitRevisionRef {
+  if (!isRecord(value) || typeof value.kind !== "string") {
+    invalidIpcInput(channel);
+  }
+  if (value.kind === "commit") {
+    return { kind: "commit", hash: parseGitHash(channel, value.hash) };
+  }
+  if (
+    value.kind === "working-tree" ||
+    value.kind === "index" ||
+    value.kind === "empty"
+  ) {
+    return { kind: value.kind };
+  }
+  invalidIpcInput(channel);
 }
 
 function starterContent(relativePath: string): string {
@@ -2210,85 +2381,6 @@ async function importExternalFilesIntoProject(
   return imported;
 }
 
-async function readGitStatus(projectPath: string): Promise<GitStatusSummary> {
-  try {
-    const { stdout } = await execFileAsync("git", [
-      "-C",
-      projectPath,
-      "status",
-      "--short",
-      "--branch",
-    ]);
-    const lines = stdout.split(/\r?\n/).filter(Boolean);
-    const header = lines[0]?.startsWith("## ") ? lines[0].slice(3) : "";
-    const branch = header ? header.split("...")[0] || header : null;
-    const entries: GitStatusEntry[] = lines.slice(1).map((line) => ({
-      indexStatus: line[0] === " " ? "" : (line[0] ?? ""),
-      workingTreeStatus: line[1] === " " ? "" : (line[1] ?? ""),
-      path: line.slice(3).trim(),
-    }));
-
-    return {
-      isRepo: true,
-      branch,
-      entries,
-    };
-  } catch (error) {
-    const message = normalizeGitError(error, "Git status failed");
-    if (
-      message === "Not a Git repository" ||
-      message.includes("unknown option") ||
-      message.includes("No such file or directory")
-    ) {
-      return {
-        isRepo: false,
-        branch: null,
-        entries: [],
-        error: message,
-      };
-    }
-
-    return {
-      isRepo: false,
-      branch: null,
-      entries: [],
-      error: message,
-    };
-  }
-}
-
-function isNotGitRepositoryError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.includes("not a git repository") ||
-    message.includes("No such file or directory")
-  );
-}
-
-function normalizeGitError(error: unknown, fallback: string): string {
-  if (isNotGitRepositoryError(error)) {
-    return "Not a Git repository";
-  }
-  return error instanceof Error ? error.message : fallback;
-}
-
-async function isGitRepository(projectPath: string): Promise<boolean> {
-  try {
-    const { stdout } = await execFileAsync("git", [
-      "-C",
-      projectPath,
-      "rev-parse",
-      "--is-inside-work-tree",
-    ]);
-    return stdout.trim() === "true";
-  } catch (error) {
-    if (isNotGitRepositoryError(error)) {
-      return false;
-    }
-    throw error;
-  }
-}
-
 function gitRecoveryTimestamp(): string {
   return new Date()
     .toISOString()
@@ -2317,7 +2409,7 @@ async function confirmGitDiscard(
     noLink: true,
     message,
     detail:
-      "LatexDo will save a recovery patch in .latexdo/recovery before discarding changes.",
+      "LatexDo will save recovery data in .latexdo/recovery before discarding changes.",
   };
   const result = targetWindow
     ? await dialog.showMessageBox(targetWindow, options)
@@ -2329,13 +2421,16 @@ async function createGitDiscardRecoveryPatch(
   projectPath: string,
   relativePath?: string,
 ): Promise<string | undefined> {
-  const args = ["-C", projectPath, "diff", "--binary"];
+  const context = await getGitRepositoryContext(projectPath);
+  const args = ["diff", "--binary", "--no-ext-diff"];
   if (relativePath) {
-    args.push("--", relativePath);
+    args.push("--", repoPathForProjectPath(context, relativePath));
+  } else {
+    args.push("--", context.projectPrefix || ".");
   }
 
-  const { stdout } = await execFileAsync("git", args, {
-    maxBuffer: 100 * 1024 * 1024,
+  const stdout = await runGitText(context.repositoryRoot, args, {
+    maxBytes: 100 * 1024 * 1024,
   });
   if (!stdout.trim()) {
     return undefined;
@@ -2352,24 +2447,40 @@ async function createGitDiscardRecoveryPatch(
   return relativeProjectPath(projectPath, patchPath);
 }
 
+async function createGitUntrackedRecoveryCopy(
+  projectPath: string,
+  relativePath: string,
+  targetPath: string,
+): Promise<string> {
+  const recoveryDirectory = resolveProjectPath(projectPath, ".latexdo/recovery");
+  const extension = path.extname(relativePath);
+  const recoveryPath = path.join(
+    recoveryDirectory,
+    `discard-${gitRecoveryTimestamp()}-${gitRecoveryScopeLabel(
+      relativePath,
+    )}-${randomUUID().slice(0, 8)}${extension || ".backup"}`,
+  );
+  await mkdir(recoveryDirectory, { recursive: true });
+  await copyFile(targetPath, recoveryPath);
+  return relativeProjectPath(projectPath, recoveryPath);
+}
+
 async function gitAdd(projectPath: string, relativePath: string): Promise<void> {
-  const targetPath = resolveProjectPath(projectPath, relativePath);
-  await execFileAsync("git", ["-C", projectPath, "add", "--", targetPath]);
+  const context = await getGitRepositoryContext(projectPath);
+  await runGitText(context.repositoryRoot, [
+    "add",
+    "--",
+    repoPathForProjectPath(context, relativePath),
+  ]);
 }
 
 async function gitUnstage(projectPath: string, relativePath: string): Promise<void> {
-  const targetPath = resolveProjectPath(projectPath, relativePath);
+  const context = await getGitRepositoryContext(projectPath);
+  const repoPath = repoPathForProjectPath(context, relativePath);
   try {
-    await execFileAsync("git", [
-      "-C",
-      projectPath,
-      "restore",
-      "--staged",
-      "--",
-      targetPath,
-    ]);
+    await runGitText(context.repositoryRoot, ["restore", "--staged", "--", repoPath]);
   } catch {
-    await execFileAsync("git", ["-C", projectPath, "reset", "HEAD", "--", targetPath]);
+    await runGitText(context.repositoryRoot, ["reset", "HEAD", "--", repoPath]);
   }
 }
 
@@ -2379,26 +2490,8 @@ async function gitCommit(projectPath: string, message: string): Promise<void> {
     throw new Error("Enter a commit message.");
   }
 
-  await execFileAsync("git", ["-C", projectPath, "commit", "-m", trimmed]);
-}
-
-async function gitDiff(
-  projectPath: string,
-  relativePath: string,
-): Promise<GitDiffPreview> {
-  const targetPath = resolveProjectPath(projectPath, relativePath);
-  const { stdout } = await execFileAsync("git", [
-    "-C",
-    projectPath,
-    "diff",
-    "--",
-    targetPath,
-  ]);
-
-  return {
-    path: relativePath,
-    diff: stdout || "No unstaged diff available.",
-  };
+  const context = await getGitRepositoryContext(projectPath);
+  await runGitText(context.repositoryRoot, ["commit", "-m", trimmed]);
 }
 
 async function gitDiscard(
@@ -2406,18 +2499,21 @@ async function gitDiscard(
   relativePath: string,
 ): Promise<GitDiscardResult> {
   const targetPath = resolveProjectPath(projectPath, relativePath);
-  const recoveryPatch = await createGitDiscardRecoveryPatch(projectPath, relativePath);
+  const status = await readStructuredGitStatus(projectPath);
+  const entry = status.entries.find((candidate) => candidate.path === relativePath);
+  const recoveryPatch = entry?.untracked
+    ? await createGitUntrackedRecoveryCopy(projectPath, relativePath, targetPath)
+    : await createGitDiscardRecoveryPatch(projectPath, relativePath);
+  if (entry?.untracked) {
+    await unlink(targetPath);
+    return { discarded: true, recoveryPatch };
+  }
+  const context = await getGitRepositoryContext(projectPath);
+  const repoPath = repoPathForProjectPath(context, relativePath);
   try {
-    await execFileAsync("git", [
-      "-C",
-      projectPath,
-      "restore",
-      "--worktree",
-      "--",
-      targetPath,
-    ]);
+    await runGitText(context.repositoryRoot, ["restore", "--worktree", "--", repoPath]);
   } catch {
-    await execFileAsync("git", ["-C", projectPath, "checkout", "--", targetPath]);
+    await runGitText(context.repositoryRoot, ["checkout", "--", repoPath]);
   }
   return {
     discarded: true,
@@ -2426,179 +2522,37 @@ async function gitDiscard(
 }
 
 async function gitStageAll(projectPath: string): Promise<void> {
-  await execFileAsync("git", ["-C", projectPath, "add", "--all"]);
+  const context = await getGitRepositoryContext(projectPath);
+  await runGitText(context.repositoryRoot, [
+    "add",
+    "--all",
+    "--",
+    context.projectPrefix || ".",
+  ]);
 }
 
 async function gitUnstageAll(projectPath: string): Promise<void> {
+  const context = await getGitRepositoryContext(projectPath);
+  const scope = context.projectPrefix || ".";
   try {
-    await execFileAsync("git", ["-C", projectPath, "restore", "--staged", "."]);
+    await runGitText(context.repositoryRoot, ["restore", "--staged", "--", scope]);
   } catch {
-    await execFileAsync("git", ["-C", projectPath, "reset", "HEAD", "--", "."]);
+    await runGitText(context.repositoryRoot, ["reset", "HEAD", "--", scope]);
   }
 }
 
 async function gitDiscardAll(projectPath: string): Promise<GitDiscardResult> {
   const recoveryPatch = await createGitDiscardRecoveryPatch(projectPath);
+  const context = await getGitRepositoryContext(projectPath);
+  const scope = context.projectPrefix || ".";
   try {
-    await execFileAsync("git", ["-C", projectPath, "restore", "."]);
+    await runGitText(context.repositoryRoot, ["restore", "--worktree", "--", scope]);
   } catch {
-    await execFileAsync("git", ["-C", projectPath, "checkout", "--", "."]);
+    await runGitText(context.repositoryRoot, ["checkout", "--", scope]);
   }
   return {
     discarded: true,
     recoveryPatch,
-  };
-}
-
-async function gitDiffEditorInput(
-  projectPath: string,
-  relativePath: string,
-): Promise<GitDiffEditorInput> {
-  const targetPath = resolveProjectPath(projectPath, relativePath);
-  const modified = await readFile(targetPath, "utf8").catch(() => "");
-
-  if (!(await isGitRepository(projectPath))) {
-    return {
-      path: relativePath,
-      original: "",
-      modified,
-    };
-  }
-
-  let original = "";
-  try {
-    const { stdout } = await execFileAsync("git", [
-      "-C",
-      projectPath,
-      "show",
-      `HEAD:${relativePath}`,
-    ]);
-    original = stdout;
-  } catch {
-    original = "";
-  }
-
-  return {
-    path: relativePath,
-    original,
-    modified,
-  };
-}
-
-function parseGitCommitLines(output: string): GitCommitEntry[] {
-  return output
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => {
-      const [hash, shortHash, author, date, subject] = line.split("\u001f");
-      return {
-        hash,
-        shortHash,
-        author,
-        date,
-        subject,
-      };
-    });
-}
-
-async function gitHistory(
-  projectPath: string,
-  relativePath?: string,
-): Promise<GitHistorySummary> {
-  if (!(await isGitRepository(projectPath))) {
-    return {
-      scope: relativePath ? "file" : "repo",
-      target: relativePath ?? null,
-      commits: [],
-    };
-  }
-
-  const args = [
-    "-C",
-    projectPath,
-    "log",
-    "--date=short",
-    "--pretty=format:%H\u001f%h\u001f%an\u001f%ad\u001f%s",
-    "-n",
-    "20",
-  ];
-
-  if (relativePath) {
-    const targetPath = resolveProjectPath(projectPath, relativePath);
-    args.push("--", targetPath);
-  }
-
-  const { stdout } = await execFileAsync("git", args);
-  return {
-    scope: relativePath ? "file" : "repo",
-    target: relativePath ?? null,
-    commits: parseGitCommitLines(stdout),
-  };
-}
-
-async function gitCommitDetails(
-  projectPath: string,
-  hash: string,
-): Promise<GitCommitDetails> {
-  if (!(await isGitRepository(projectPath))) {
-    return {
-      hash,
-      summary: "",
-      body: "",
-    };
-  }
-
-  const { stdout } = await execFileAsync("git", [
-    "-C",
-    projectPath,
-    "show",
-    "--stat",
-    "--format=%H%n%s%n%b",
-    "--no-patch",
-    hash,
-  ]);
-  const lines = stdout.split(/\r?\n/);
-  const [, summary = "", ...bodyLines] = lines;
-  return {
-    hash,
-    summary,
-    body: bodyLines.join("\n").trim(),
-  };
-}
-
-async function gitDiffAtCommit(
-  projectPath: string,
-  relativePath: string,
-  hash: string,
-): Promise<GitDiffEditorInput> {
-  const targetPath = resolveProjectPath(projectPath, relativePath);
-  const modified = await readFile(targetPath, "utf8").catch(() => "");
-
-  if (!(await isGitRepository(projectPath))) {
-    return {
-      path: relativePath,
-      original: "",
-      modified,
-    };
-  }
-
-  let original = "";
-  try {
-    const { stdout } = await execFileAsync("git", [
-      "-C",
-      projectPath,
-      "show",
-      `${hash}:${relativePath}`,
-    ]);
-    original = stdout;
-  } catch {
-    original = "";
-  }
-
-  return {
-    path: relativePath,
-    original,
-    modified,
   };
 }
 
@@ -3070,7 +3024,8 @@ app.whenReady().then(async () => {
     const [rawProjectId] = expectIpcArgs(channel, rawArgs, 1);
     const projectId = parseProjectId(channel, rawProjectId);
     const projectPath = getProjectRoot(projectId);
-    return readGitStatus(projectPath);
+    await ensureGitWatchers(projectId, projectPath);
+    return readStructuredGitStatus(projectPath);
   });
   ipcMain.handle("git:stage", async (_event, ...rawArgs: unknown[]) => {
     const channel = "git:stage";
@@ -3094,7 +3049,6 @@ app.whenReady().then(async () => {
     const projectId = parseProjectId(channel, rawProjectId);
     const message = parseString(channel, rawMessage, {
       maxLength: maxGitCommitMessageLength,
-      rejectControlChars: true,
     });
     const projectPath = getProjectRoot(projectId);
     await gitCommit(projectPath, message);
@@ -3105,7 +3059,10 @@ app.whenReady().then(async () => {
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
     const projectPath = getProjectRoot(projectId);
-    return gitDiff(projectPath, relativePath);
+    return {
+      path: relativePath,
+      diff: await readGitDiffPreview(projectPath, relativePath),
+    };
   });
   ipcMain.handle("git:discard", async (event, ...rawArgs: unknown[]) => {
     const channel = "git:discard";
@@ -3152,11 +3109,27 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("git:editor-diff", async (_event, ...rawArgs: unknown[]) => {
     const channel = "git:editor-diff";
-    const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
+    const [rawProjectId, rawRelativePath, rawArea] = expectIpcArgRange(
+      channel,
+      rawArgs,
+      2,
+      3,
+    );
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
+    const area =
+      rawArea === undefined
+        ? "changes"
+        : parseString(channel, rawArea, {
+            pattern: /^(staged|changes)$/,
+            rejectControlChars: true,
+          });
     const projectPath = getProjectRoot(projectId);
-    return gitDiffEditorInput(projectPath, relativePath);
+    return readWorkingTreeDiffSession(
+      projectPath,
+      relativePath,
+      area as "staged" | "changes",
+    );
   });
   ipcMain.handle("git:history", async (_event, ...rawArgs: unknown[]) => {
     const channel = "git:history";
@@ -3164,7 +3137,7 @@ app.whenReady().then(async () => {
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseOptionalRelativePath(channel, rawRelativePath);
     const projectPath = getProjectRoot(projectId);
-    return gitHistory(projectPath, relativePath);
+    return readStructuredGitHistory(projectPath, relativePath);
   });
   ipcMain.handle("git:commit-details", async (_event, ...rawArgs: unknown[]) => {
     const channel = "git:commit-details";
@@ -3172,16 +3145,43 @@ app.whenReady().then(async () => {
     const projectId = parseProjectId(channel, rawProjectId);
     const hash = parseGitHash(channel, rawHash);
     const projectPath = getProjectRoot(projectId);
-    return gitCommitDetails(projectPath, hash);
+    return readStructuredGitCommitDetails(projectPath, hash);
   });
   ipcMain.handle("git:commit-file-diff", async (_event, ...rawArgs: unknown[]) => {
     const channel = "git:commit-file-diff";
-    const [rawProjectId, rawRelativePath, rawHash] = expectIpcArgs(channel, rawArgs, 3);
+    const [rawProjectId, rawRelativePath, rawHash, rawParentHash] = expectIpcArgRange(
+      channel,
+      rawArgs,
+      3,
+      4,
+    );
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
     const hash = parseGitHash(channel, rawHash);
+    const parentHash = parseOptionalGitHash(channel, rawParentHash);
     const projectPath = getProjectRoot(projectId);
-    return gitDiffAtCommit(projectPath, relativePath, hash);
+    return readCommitDiffSession(projectPath, relativePath, hash, parentHash);
+  });
+  ipcMain.handle("git:blame", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "git:blame";
+    const [rawProjectId, rawRelativePath, rawRevision] = expectIpcArgs(
+      channel,
+      rawArgs,
+      3,
+    );
+    const projectId = parseProjectId(channel, rawProjectId);
+    const relativePath = parseRelativePath(channel, rawRelativePath);
+    const revision = parseGitRevisionRef(channel, rawRevision);
+    const projectPath = getProjectRoot(projectId);
+    return readGitBlame(projectPath, relativePath, revision);
+  });
+  ipcMain.handle("git:reveal-file", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "git:reveal-file";
+    const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const relativePath = parseRelativePath(channel, rawRelativePath);
+    const projectPath = getProjectRoot(projectId);
+    shell.showItemInFolder(resolveProjectPath(projectPath, relativePath));
   });
   ipcMain.handle("app:check-updates", async (_event, ...rawArgs: unknown[]) => {
     const channel = "app:check-updates";
@@ -3356,4 +3356,8 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("before-quit", () => {
+  for (const projectId of gitWatchStates.keys()) closeGitWatchers(projectId);
 });
