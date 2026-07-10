@@ -7,11 +7,14 @@ import type {
   CreateProjectOptions,
   DocxImportResult,
   MarkdownImportResult,
+  GitBlameLine,
+  GitChangedEvent,
   GitCommitDetails,
   GitDiscardResult,
-  GitDiffEditorInput,
+  GitDiffSession,
   GitDiffPreview,
   GitHistorySummary,
+  GitRevisionRef,
   GitStatusSummary,
   ImportedProjectEntry,
   OpenProject,
@@ -118,8 +121,9 @@ const api = {
   getGitEditorDiff: (
     projectId: string,
     relativePath: string,
-  ): Promise<GitDiffEditorInput> =>
-    ipcRenderer.invoke("git:editor-diff", projectId, relativePath),
+    area: "staged" | "changes" = "changes",
+  ): Promise<GitDiffSession> =>
+    ipcRenderer.invoke("git:editor-diff", projectId, relativePath, area),
   getGitHistory: (
     projectId: string,
     relativePath?: string,
@@ -131,8 +135,32 @@ const api = {
     projectId: string,
     relativePath: string,
     hash: string,
-  ): Promise<GitDiffEditorInput> =>
-    ipcRenderer.invoke("git:commit-file-diff", projectId, relativePath, hash),
+    parentHash?: string,
+  ): Promise<GitDiffSession> =>
+    parentHash === undefined
+      ? ipcRenderer.invoke("git:commit-file-diff", projectId, relativePath, hash)
+      : ipcRenderer.invoke(
+          "git:commit-file-diff",
+          projectId,
+          relativePath,
+          hash,
+          parentHash,
+        ),
+  getGitBlame: (
+    projectId: string,
+    relativePath: string,
+    revision: GitRevisionRef,
+  ): Promise<GitBlameLine[]> =>
+    ipcRenderer.invoke("git:blame", projectId, relativePath, revision),
+  revealGitFile: (projectId: string, relativePath: string): Promise<void> =>
+    ipcRenderer.invoke("git:reveal-file", projectId, relativePath),
+  onGitChanged: (callback: (event: GitChangedEvent) => void) => {
+    const listener = (_event: unknown, payload: GitChangedEvent) => callback(payload);
+    ipcRenderer.on("git:changed", listener);
+    return () => {
+      ipcRenderer.removeListener("git:changed", listener);
+    };
+  },
   checkForUpdates: (): Promise<UpdateCheckResult> =>
     ipcRenderer.invoke("app:check-updates"),
   updateNow: (): Promise<UpdateInstallResult> => ipcRenderer.invoke("app:update-now"),

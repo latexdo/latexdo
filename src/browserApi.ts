@@ -1,6 +1,6 @@
 import type { LatexDoApi, TerminalApi } from "../electron/preload.cjs";
 import type {
-  GitDiffEditorInput,
+  GitDiffSession,
   GitDiffPreview,
   GitDiscardResult,
   GitHistorySummary,
@@ -376,6 +376,26 @@ function emptyGitStatus(): GitStatusSummary {
   };
 }
 
+function unavailableGitDiffSession(
+  relativePath: string,
+  originalLabel = "Index",
+  modifiedLabel = "Working Tree",
+): GitDiffSession {
+  return {
+    id: `browser-git-diff:${relativePath}:${originalLabel}:${modifiedLabel}`,
+    relativePath,
+    originalRef: { kind: "empty" },
+    modifiedRef: { kind: "empty" },
+    originalContent: "",
+    modifiedContent: "",
+    originalLabel,
+    modifiedLabel,
+    status: "modified",
+    language: "plaintext",
+    message: "Git diff is available in the desktop app.",
+  };
+}
+
 function createBrowserLatexDoApi(): BrowserLatexDoApi {
   const api: BrowserLatexDoApi = {
     runtime: "browser",
@@ -579,12 +599,10 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       };
     },
 
-    async getGitEditorDiff(_projectId, relativePath): Promise<GitDiffEditorInput> {
-      return {
-        path: relativePath,
-        original: "",
-        modified: "",
-      };
+    async getGitEditorDiff(_projectId, relativePath, area): Promise<GitDiffSession> {
+      return area === "staged"
+        ? unavailableGitDiffSession(relativePath, "HEAD", "Index")
+        : unavailableGitDiffSession(relativePath);
     },
 
     async getGitHistory(): Promise<GitHistorySummary> {
@@ -598,17 +616,35 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
     async getGitCommitDetails(hash) {
       return {
         hash,
+        shortHash: hash.slice(0, 7),
         summary: "Git history is available in the desktop app.",
         body: "",
+        authorName: "",
+        authorEmail: "",
+        authoredAt: "",
+        committerName: "",
+        committerEmail: "",
+        committedAt: "",
+        parents: [],
+        refs: [],
+        changedFiles: [],
       };
     },
 
-    async getGitCommitFileDiff(_projectId, relativePath): Promise<GitDiffEditorInput> {
-      return {
-        path: relativePath,
-        original: "",
-        modified: "",
-      };
+    async getGitCommitFileDiff(_projectId, relativePath): Promise<GitDiffSession> {
+      return unavailableGitDiffSession(relativePath, "Parent", "Commit");
+    },
+
+    async getGitBlame() {
+      return [];
+    },
+
+    async revealGitFile() {
+      throw browserUnavailable("Reveal file");
+    },
+
+    onGitChanged() {
+      return () => {};
     },
 
     async checkForUpdates() {

@@ -115,15 +115,38 @@ export interface SyncTexPdfLocation {
   word?: string;
 }
 
-export interface GitStatusEntry {
+export type GitFileStatus =
+  | "unmodified"
+  | "added"
+  | "modified"
+  | "deleted"
+  | "renamed"
+  | "copied"
+  | "type-changed"
+  | "untracked"
+  | "conflicted";
+
+export interface GitChangeEntry {
   path: string;
-  indexStatus: string;
-  workingTreeStatus: string;
+  originalPath?: string;
+  indexStatus: GitFileStatus;
+  worktreeStatus: GitFileStatus;
+  staged: boolean;
+  unstaged: boolean;
+  untracked: boolean;
+  conflicted: boolean;
 }
+
+export type GitStatusEntry = GitChangeEntry;
 
 export interface GitStatusSummary {
   isRepo: boolean;
   branch: string | null;
+  repositoryRoot?: string;
+  headHash?: string;
+  upstream?: string;
+  ahead?: number;
+  behind?: number;
   entries: GitStatusEntry[];
   error?: string;
 }
@@ -133,24 +156,71 @@ export interface GitDiffPreview {
   diff: string;
 }
 
-export interface GitDiffEditorInput {
-  path: string;
-  original: string;
-  modified: string;
+export type GitRevisionRef =
+  | { kind: "working-tree" }
+  | { kind: "index" }
+  | { kind: "commit"; hash: string }
+  | { kind: "empty" };
+
+export type GitDiffStatus = "added" | "modified" | "deleted" | "renamed" | "copied";
+
+export interface GitDiffSession {
+  id: string;
+  relativePath: string;
+  originalRef: GitRevisionRef;
+  modifiedRef: GitRevisionRef;
+  originalContent: string;
+  modifiedContent: string;
+  originalLabel: string;
+  modifiedLabel: string;
+  originalShortHash?: string;
+  modifiedShortHash?: string;
+  originalAuthor?: string;
+  modifiedAuthor?: string;
+  originalDate?: string;
+  modifiedDate?: string;
+  status: GitDiffStatus;
+  oldPath?: string;
+  language: string;
+  binary?: boolean;
+  tooLarge?: boolean;
+  message?: string;
 }
+
+export type GitDiffEditorInput = GitDiffSession;
 
 export interface GitDiscardResult {
   discarded: boolean;
   recoveryPatch?: string;
 }
 
-export interface GitCommitEntry {
+export interface GitRef {
+  name: string;
+  kind: "head" | "local-branch" | "remote-branch" | "tag";
+  current: boolean;
+}
+
+export interface GitGraphSegment {
+  fromLane: number;
+  toLane: number;
+  kind: "vertical" | "merge-left" | "merge-right";
+}
+
+export interface GitGraphCommit {
   hash: string;
   shortHash: string;
-  author: string;
-  date: string;
+  parents: string[];
   subject: string;
+  authorName: string;
+  authorEmail: string;
+  authoredAt: string;
+  refs: GitRef[];
+  lane: number;
+  segments: GitGraphSegment[];
+  isHead: boolean;
 }
+
+export type GitCommitEntry = GitGraphCommit;
 
 export interface GitHistorySummary {
   scope: "repo" | "file";
@@ -160,8 +230,38 @@ export interface GitHistorySummary {
 
 export interface GitCommitDetails {
   hash: string;
+  shortHash: string;
   summary: string;
   body: string;
+  authorName: string;
+  authorEmail: string;
+  authoredAt: string;
+  committerName: string;
+  committerEmail: string;
+  committedAt: string;
+  parents: string[];
+  refs: GitRef[];
+  changedFiles: GitCommitFile[];
+}
+
+export interface GitCommitFile {
+  path: string;
+  oldPath?: string;
+  status: GitDiffStatus;
+}
+
+export interface GitBlameLine {
+  line: number;
+  hash: string;
+  shortHash: string;
+  author: string;
+  authorTime: string;
+  summary: string;
+}
+
+export interface GitChangedEvent {
+  projectId: string;
+  reason: "repository" | "working-tree";
 }
 
 export interface ImportedProjectEntry {
