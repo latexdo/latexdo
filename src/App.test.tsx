@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { fallbackExtensionCatalog } from "./extensions";
 import type {
   GitStatusSummary,
   OpenProject,
@@ -194,6 +195,7 @@ function installLatexDoMock(options?: {
     updateNow: vi.fn().mockResolvedValue(updateNowResult),
     openReleasesPage: vi.fn().mockResolvedValue(undefined),
     getSpellCheckerSettings: vi.fn().mockResolvedValue(defaultSpellCheckerSettings),
+    fetchExtensionCatalog: vi.fn().mockResolvedValue(fallbackExtensionCatalog),
     updateSpellCheckerSettings: vi.fn(
       async (settings: SpellCheckerSettings) => settings,
     ),

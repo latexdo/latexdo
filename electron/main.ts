@@ -67,10 +67,12 @@ const appIconPath = path.join(currentDirectory, "..", "build", "icon.png");
 const execFileAsync = promisify(execFile);
 const startupSmokeTest = process.argv.includes("--smoke-test");
 const startupSmokeTimeoutMs = 20_000;
+const extensionCatalogFetchTimeoutMs = 4_500;
 const downloadsPageUrl = "https://latexdo.org/downloads/";
 const downloadsManifestUrl = "https://latexdo.org/downloads/manifest.json";
 const updatesFeedUrl = "https://latexdo.org/updates/latest.json";
 const extensionStoreUrl = "https://store.latexdo.org/";
+const extensionStoreCatalogUrl = "https://store.latexdo.org/extensions/catalog.json";
 const privacyInfoUrl = "https://latexdo.org/privacy.html";
 const externalUrlHosts = new Set([
   "github.com",
@@ -1940,6 +1942,32 @@ async function fetchWebsiteUpdateJson(
   return (await response.json()) as WebsiteUpdatePayload;
 }
 
+async function fetchExtensionStoreCatalogJson(): Promise<unknown> {
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    extensionCatalogFetchTimeoutMs,
+  );
+
+  try {
+    const response = await fetch(extensionStoreCatalogUrl, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": `latexdo/${app.getVersion()}`,
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Store catalog returned HTTP ${response.status}`);
+    }
+
+    return (await response.json()) as unknown;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchWebsiteUpdatePayload(
   url: string,
   currentVersion: string,
@@ -3181,6 +3209,11 @@ app.whenReady().then(async () => {
       throw new Error("Unsupported external URL.");
     }
     await shell.openExternal(url);
+  });
+  ipcMain.handle("extensions:get-catalog", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "extensions:get-catalog";
+    expectIpcArgs(channel, rawArgs, 0);
+    return fetchExtensionStoreCatalogJson();
   });
   ipcMain.handle("spellchecker:get-settings", async (event, ...rawArgs: unknown[]) => {
     const channel = "spellchecker:get-settings";

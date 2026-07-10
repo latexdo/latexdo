@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { fallbackExtensionCatalog, validateExtensionCatalog } from "./extensions";
+import { describe, expect, it, vi } from "vitest";
+import {
+  extensionStoreCatalogUrl,
+  fallbackExtensionCatalog,
+  fetchExtensionCatalog,
+  validateExtensionCatalog,
+  type LatexDoExtensionCatalog,
+} from "./extensions";
 
 describe("extension catalog validation", () => {
   it("accepts the bundled catalog", () => {
@@ -66,5 +72,45 @@ describe("extension catalog validation", () => {
     expect(catalog?.extensions[0].contributes.featureFlags).toEqual({
       notationManagerEnabled: true,
     });
+  });
+
+  it("loads the default catalog through the runtime API when available", async () => {
+    const remoteCatalog: LatexDoExtensionCatalog = {
+      ...fallbackExtensionCatalog,
+      updatedAt: "2026-07-10T00:00:00.000Z",
+      extensions: [
+        {
+          ...fallbackExtensionCatalog.extensions[0],
+          version: "1.0.1",
+        },
+      ],
+    };
+    const loadCatalogJson = vi.fn().mockResolvedValue(remoteCatalog);
+
+    const result = await fetchExtensionCatalog(
+      extensionStoreCatalogUrl,
+      loadCatalogJson,
+    );
+
+    expect(loadCatalogJson).toHaveBeenCalledWith(extensionStoreCatalogUrl);
+    expect(result.source).toBe("remote");
+    expect(
+      result.catalog.extensions.find(
+        (extension) => extension.id === remoteCatalog.extensions[0].id,
+      )?.version,
+    ).toBe("1.0.1");
+  });
+
+  it("falls back to the bundled catalog when the live catalog fails", async () => {
+    const result = await fetchExtensionCatalog(
+      extensionStoreCatalogUrl,
+      async () => {
+        throw new Error("Failed to fetch");
+      },
+    );
+
+    expect(result.source).toBe("fallback");
+    expect(result.catalog).toBe(fallbackExtensionCatalog);
+    expect(result.error).toBe("Failed to fetch");
   });
 });
