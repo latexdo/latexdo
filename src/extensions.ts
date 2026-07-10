@@ -100,6 +100,8 @@ export interface ExtensionCatalogLoadResult {
   error?: string;
 }
 
+type ExtensionCatalogJsonLoader = (catalogUrl: string) => Promise<unknown>;
+
 export const extensionStoreSiteUrl = "https://store.latexdo.org/";
 export const extensionStoreCatalogUrl =
   "https://store.latexdo.org/extensions/catalog.json";
@@ -490,24 +492,10 @@ export function validateExtensionCatalog(
 
 export async function fetchExtensionCatalog(
   catalogUrl = extensionStoreCatalogUrl,
+  loadCatalogJson: ExtensionCatalogJsonLoader = defaultExtensionCatalogJsonLoader,
 ): Promise<ExtensionCatalogLoadResult> {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 4500);
-
   try {
-    const response = await fetch(catalogUrl, {
-      headers: {
-        Accept: "application/json",
-      },
-      cache: "no-store",
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`Store catalog returned HTTP ${response.status}`);
-    }
-
-    const remoteCatalog = validateExtensionCatalog(await response.json());
+    const remoteCatalog = validateExtensionCatalog(await loadCatalogJson(catalogUrl));
     if (!remoteCatalog) {
       throw new Error("Store catalog is not a valid LatexDo extension catalog.");
     }
@@ -525,6 +513,39 @@ export async function fetchExtensionCatalog(
           ? error.message
           : "Could not load the LatexDo extension catalog.",
     };
+  }
+}
+
+async function defaultExtensionCatalogJsonLoader(catalogUrl: string): Promise<unknown> {
+  if (
+    catalogUrl === extensionStoreCatalogUrl &&
+    typeof window !== "undefined" &&
+    typeof window.latexdo?.fetchExtensionCatalog === "function"
+  ) {
+    return window.latexdo.fetchExtensionCatalog();
+  }
+
+  return fetchExtensionCatalogJson(catalogUrl);
+}
+
+async function fetchExtensionCatalogJson(catalogUrl: string): Promise<unknown> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 4500);
+
+  try {
+    const response = await fetch(catalogUrl, {
+      headers: {
+        Accept: "application/json",
+      },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Store catalog returned HTTP ${response.status}`);
+    }
+
+    return (await response.json()) as unknown;
   } finally {
     window.clearTimeout(timeout);
   }

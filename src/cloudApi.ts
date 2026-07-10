@@ -21,6 +21,8 @@ const cloudClientNameKey = "latexdo.cloud.clientName";
 const cloudShareTokensKey = "latexdo.cloud.shareTokens";
 const cloudSpellCheckerSettingsKey = "latexdo.cloud.spellchecker";
 const cloudProofreadingSettingsKey = "latexdo.cloud.proofreading";
+const extensionStoreCatalogUrl =
+  "https://store.latexdo.org/extensions/catalog.json";
 
 const defaultProofreadingSettings: ProofreadingSettings = {
   enabled: false,
@@ -439,6 +441,19 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
 
     async openExternalUrl(url) {
       window.open(url, "_blank", "noopener,noreferrer");
+    },
+
+    async fetchExtensionCatalog() {
+      const response = await fetch(extensionStoreCatalogUrl, {
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`Store catalog returned HTTP ${response.status}`);
+      }
+      return (await response.json()) as unknown;
     },
 
     async getSpellCheckerSettings() {

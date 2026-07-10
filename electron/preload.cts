@@ -140,6 +140,8 @@ const api = {
     ipcRenderer.invoke("app:open-releases", releaseUrl),
   openExternalUrl: (url: string): Promise<void> =>
     ipcRenderer.invoke("app:open-external", url),
+  fetchExtensionCatalog: (): Promise<unknown> =>
+    ipcRenderer.invoke("extensions:get-catalog"),
   getSpellCheckerSettings: (): Promise<SpellCheckerSettings> =>
     ipcRenderer.invoke("spellchecker:get-settings"),
   updateSpellCheckerSettings: (
