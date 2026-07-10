@@ -1944,10 +1944,7 @@ async function fetchWebsiteUpdateJson(
 
 async function fetchExtensionStoreCatalogJson(): Promise<unknown> {
   const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    extensionCatalogFetchTimeoutMs,
-  );
+  const timeout = setTimeout(() => controller.abort(), extensionCatalogFetchTimeoutMs);
 
   try {
     const response = await fetch(extensionStoreCatalogUrl, {

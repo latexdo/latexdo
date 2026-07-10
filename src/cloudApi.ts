@@ -21,8 +21,7 @@ const cloudClientNameKey = "latexdo.cloud.clientName";
 const cloudShareTokensKey = "latexdo.cloud.shareTokens";
 const cloudSpellCheckerSettingsKey = "latexdo.cloud.spellchecker";
 const cloudProofreadingSettingsKey = "latexdo.cloud.proofreading";
-const extensionStoreCatalogUrl =
-  "https://store.latexdo.org/extensions/catalog.json";
+const extensionStoreCatalogUrl = "https://store.latexdo.org/extensions/catalog.json";
 
 const defaultProofreadingSettings: ProofreadingSettings = {
   enabled: false,
