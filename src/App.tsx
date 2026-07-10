@@ -192,6 +192,23 @@ interface GitContextMenuState {
   x: number;
   y: number;
 }
+
+interface GitChangeGroupStatus {
+  code: string;
+  label: string;
+  className: string;
+  count: number;
+}
+
+interface GitChangeGroup {
+  id: string;
+  domId: string;
+  directory: string;
+  label: string;
+  entries: GitChangeEntry[];
+  statusCounts: GitChangeGroupStatus[];
+}
+
 type LatexToolbarCommand =
   | "bold"
   | "italic"
@@ -1300,6 +1317,8 @@ function gitStatusLabel(code: string): string {
       return "Untracked";
     case "!":
       return "Conflict";
+    case "T":
+      return "Type changed";
     case "M":
     default:
       return "Modified";
@@ -1334,10 +1353,95 @@ function gitStatusClass(code: string): string {
       return "untracked";
     case "!":
       return "conflict";
+    case "T":
+      return "type-changed";
     case "M":
     default:
       return "modified";
   }
+}
+
+const gitStatusSortOrder = new Map(
+  ["!", "M", "A", "D", "R", "C", "T", "U"].map((code, index) => [code, index]),
+);
+
+function gitChangeGroupLabel(directory: string): string {
+  return directory === "." ? "Project root" : directory;
+}
+
+function gitChangeGroupDomId(area: GitChangeArea, directory: string): string {
+  const safeDirectory = directory
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/^-+|-+$/g, "");
+  return `scm-${area}-group-${safeDirectory || "root"}`;
+}
+
+function compareGitChangeEntries(left: GitChangeEntry, right: GitChangeEntry): number {
+  return gitDisplayPath(left.path).localeCompare(gitDisplayPath(right.path), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function compareGitChangeDirectories(left: string, right: string): number {
+  if (left === right) return 0;
+  if (left === ".") return -1;
+  if (right === ".") return 1;
+  return left.localeCompare(right, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function summarizeGitChangeStatuses(
+  entries: GitChangeEntry[],
+  area: GitChangeArea,
+): GitChangeGroupStatus[] {
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    const code = gitStatusCode(entry, area);
+    counts.set(code, (counts.get(code) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .sort(
+      ([left], [right]) =>
+        (gitStatusSortOrder.get(left) ?? 99) - (gitStatusSortOrder.get(right) ?? 99) ||
+        left.localeCompare(right),
+    )
+    .map(([code, count]) => ({
+      code,
+      count,
+      label: gitStatusLabel(code),
+      className: gitStatusClass(code),
+    }));
+}
+
+function groupGitChanges(
+  entries: GitChangeEntry[],
+  area: GitChangeArea,
+): GitChangeGroup[] {
+  const byDirectory = new Map<string, GitChangeEntry[]>();
+  for (const entry of entries) {
+    const directory = fileDirectory(entry.path);
+    const groupEntries = byDirectory.get(directory);
+    if (groupEntries) {
+      groupEntries.push(entry);
+    } else {
+      byDirectory.set(directory, [entry]);
+    }
+  }
+
+  return [...byDirectory.entries()]
+    .sort(([left], [right]) => compareGitChangeDirectories(left, right))
+    .map(([directory, groupEntries]) => ({
+      id: `${area}:${directory}`,
+      domId: gitChangeGroupDomId(area, directory),
+      directory,
+      label: gitChangeGroupLabel(directory),
+      entries: [...groupEntries].sort(compareGitChangeEntries),
+      statusCounts: summarizeGitChangeStatuses(groupEntries, area),
+    }));
 }
 
 function gitDiffStatusCode(status: GitCommitFile["status"]): string {
@@ -1814,6 +1918,9 @@ export default function App() {
     null,
   );
   const [gitCommitParentHash, setGitCommitParentHash] = useState("");
+  const [collapsedGitGroups, setCollapsedGitGroups] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [gitContextMenu, setGitContextMenu] = useState<GitContextMenuState | null>(
     null,
   );
@@ -2000,6 +2107,14 @@ export default function App() {
   const unstagedGitEntries = useMemo(
     () => (gitStatus?.entries ?? []).filter((entry) => entry.unstaged),
     [gitStatus],
+  );
+  const stagedGitGroups = useMemo(
+    () => groupGitChanges(stagedGitEntries, "staged"),
+    [stagedGitEntries],
+  );
+  const unstagedGitGroups = useMemo(
+    () => groupGitChanges(unstagedGitEntries, "changes"),
+    [unstagedGitEntries],
   );
   const filteredSpellCheckerLanguages = useMemo(() => {
     const query = spellCheckerLanguageQuery.trim().toLowerCase();
@@ -6260,6 +6375,10 @@ ${macroEnd}
   }, [activeSidebar, projectId, scheduleGitRefresh]);
 
   useEffect(() => {
+    setCollapsedGitGroups(new Set());
+  }, [projectId]);
+
+  useEffect(() => {
     const nextPath = activeDocument?.relativePath;
     if (!nextPath) return;
     setGitFileHistoryPath(nextPath);
@@ -7185,6 +7304,18 @@ ${macroEnd}
     window.addEventListener("pointerup", handleUp);
   };
 
+  const toggleGitChangeGroup = useCallback((groupId: string) => {
+    setCollapsedGitGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  }, []);
+
   const renderGitChangeRow = (entry: GitChangeEntry, area: GitChangeArea) => {
     const code = gitStatusCode(entry, area);
     const displayPath = entry.path;
@@ -7288,6 +7419,54 @@ ${macroEnd}
             </>
           )}
         </span>
+      </div>
+    );
+  };
+
+  const renderGitChangeGroup = (group: GitChangeGroup, area: GitChangeArea) => {
+    const collapsed = collapsedGitGroups.has(group.id);
+    const areaLabel = area === "staged" ? "staged changes" : "changes";
+
+    return (
+      <div className="scm-change-group" key={group.id}>
+        <button
+          type="button"
+          className="scm-change-group-header"
+          aria-expanded={!collapsed}
+          aria-controls={group.domId}
+          aria-label={`${collapsed ? "Expand" : "Collapse"} ${areaLabel} group ${group.label}`}
+          title={group.label}
+          onClick={() => toggleGitChangeGroup(group.id)}
+        >
+          <ChevronDown
+            size={13}
+            className={`scm-change-group-chevron${collapsed ? " collapsed" : ""}`}
+            aria-hidden="true"
+          />
+          <span className="scm-change-group-title">{group.label}</span>
+          <span className="scm-change-group-count">{group.entries.length}</span>
+          <span className="scm-change-group-statuses" aria-hidden="true">
+            {group.statusCounts.map((status) => (
+              <span
+                key={status.code}
+                className="scm-change-group-status"
+                title={`${status.count} ${status.label.toLowerCase()}`}
+              >
+                <span className={`scm-status-badge ${status.className}`}>
+                  {status.code}
+                </span>
+                <span>{status.count}</span>
+              </span>
+            ))}
+          </span>
+        </button>
+        <div
+          id={group.domId}
+          className="scm-change-group-files"
+          hidden={collapsed}
+        >
+          {group.entries.map((entry) => renderGitChangeRow(entry, area))}
+        </div>
       </div>
     );
   };
@@ -7737,8 +7916,8 @@ ${macroEnd}
                             </button>
                           </div>
                           {stagedGitEntries.length ? (
-                            stagedGitEntries.map((entry) =>
-                              renderGitChangeRow(entry, "staged"),
+                            stagedGitGroups.map((group) =>
+                              renderGitChangeGroup(group, "staged"),
                             )
                           ) : (
                             <div className="sidebar-empty-state compact">
@@ -7779,8 +7958,8 @@ ${macroEnd}
                             </div>
                           </div>
                           {unstagedGitEntries.length ? (
-                            unstagedGitEntries.map((entry) =>
-                              renderGitChangeRow(entry, "changes"),
+                            unstagedGitGroups.map((group) =>
+                              renderGitChangeGroup(group, "changes"),
                             )
                           ) : (
                             <div className="sidebar-empty-state compact">
