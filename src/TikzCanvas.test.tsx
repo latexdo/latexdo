@@ -16,7 +16,7 @@ function generatedCode(container: HTMLElement): string {
 }
 
 describe("TikzCanvas interactions", () => {
-  it("selects a drawn shape and allows it to move", () => {
+  it("keeps the toolbar stable while selecting and moving a shape", () => {
     const { container } = render(<TikzCanvas />);
     const svg = getSvg(container);
 
@@ -25,7 +25,9 @@ describe("TikzCanvas interactions", () => {
     fireEvent.mouseMove(svg, { clientX: 200, clientY: 200 });
     fireEvent.mouseUp(svg);
 
-    expect(screen.getByText("Selected: rect")).toBeInTheDocument();
+    expect(screen.queryByText("Selected: rect")).not.toBeInTheDocument();
+    expect(container.querySelector(".tikz-toolbar-selected")).toBeNull();
+    expect(container.querySelector(".tikz-toolbar-selected-props")).toBeNull();
     expect(container.querySelector(".tikz-selected-props")).toBeNull();
     expect(screen.getByTitle("Rectangle (R)")).toHaveClass("active");
     expect(generatedCode(container)).toContain("(2,14) rectangle (4,12)");
@@ -40,6 +42,9 @@ describe("TikzCanvas interactions", () => {
     fireEvent.mouseMove(svg, { clientX: 200, clientY: 225 });
     fireEvent.mouseUp(svg);
 
+    expect(screen.queryByText("Selected: rect")).not.toBeInTheDocument();
+    expect(container.querySelector(".tikz-toolbar-selected")).toBeNull();
+    expect(container.querySelector(".tikz-toolbar-selected-props")).toBeNull();
     expect(generatedCode(container)).toContain("(3,12.5) rectangle (5,10.5)");
     expect(generatedCode(container)).toContain(
       "draw={rgb,255:red,239;green,68;blue,68}",

@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   ArrowRight,
   Circle,
   Cloud,
@@ -1411,40 +1410,6 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     [pushHistory, selected, setShapes],
   );
 
-  const moveSelectedLayer = useCallback(
-    (offset: -1 | 1) => {
-      if (!selected) return;
-      const currentShapes = shapesRef.current;
-      const idx = currentShapes.findIndex((s) => s.id === selected);
-      const nextIdx = idx + offset;
-      if (idx < 0 || nextIdx < 0 || nextIdx >= currentShapes.length) return;
-      const next = [...currentShapes];
-      [next[idx], next[nextIdx]] = [next[nextIdx], next[idx]];
-      setShapes(next);
-      pushHistory(next);
-    },
-    [pushHistory, selected, setShapes],
-  );
-
-  const lineLikeSelected =
-    selectedShape?.kind === "line" ||
-    selectedShape?.kind === "arrow" ||
-    selectedShape?.kind === "freehand";
-  const canEditSelectedPosition = Boolean(selectedShape && !lineLikeSelected);
-  const canEditSelectedSize = Boolean(
-    selectedShape && !lineLikeSelected && selectedShape.kind !== "text",
-  );
-  const canEditSelectedLabel = Boolean(
-    selectedShape &&
-    (selectedShape.kind === "text" ||
-      (!lineLikeSelected &&
-        selectedShape.kind !== "grid" &&
-        selectedShape.kind !== "axes")),
-  );
-  const selectedIndex = selected
-    ? shapes.findIndex((shape) => shape.id === selected)
-    : -1;
-
   const activeStroke = selectedShape?.stroke ?? stroke;
   const activeFill = selectedShape?.fill ?? fill;
   const activeStrokeWidth = selectedShape?.strokeWidth ?? strokeWidth;
@@ -1500,33 +1465,6 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
               </button>
             ))}
           </div>
-
-          {selectedShape && (
-            <>
-              <div className="tikz-toolbar-divider" />
-              <div className="tikz-toolbar-selected">
-                <span className="tikz-prop-label">Selected: {selectedShape.kind}</span>
-                <div className="tikz-zorder-controls">
-                  <button
-                    className="tikz-tool-btn tikz-zorder-btn"
-                    onClick={() => moveSelectedLayer(-1)}
-                    disabled={selectedIndex <= 0}
-                    title="Send backward"
-                  >
-                    <ArrowLeft size={12} />
-                  </button>
-                  <button
-                    className="tikz-tool-btn tikz-zorder-btn"
-                    onClick={() => moveSelectedLayer(1)}
-                    disabled={selectedIndex < 0 || selectedIndex >= shapes.length - 1}
-                    title="Bring forward"
-                  >
-                    <ArrowRight size={12} />
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
 
           <div className="tikz-toolbar-divider" />
 
@@ -1591,34 +1529,6 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
               />
               <span className="tikz-prop-label">Dashed</span>
             </label>
-            {selectedShape?.kind === "text" && (
-              <label className="tikz-prop-group">
-                <span className="tikz-prop-label">Font</span>
-                <input
-                  type="range"
-                  min="8"
-                  max="48"
-                  step="1"
-                  value={selectedShape.fontSize}
-                  onChange={(e) => updateSelected({ fontSize: Number(e.target.value) })}
-                />
-                <span className="tikz-prop-value">{selectedShape.fontSize}px</span>
-              </label>
-            )}
-            {selectedShape && (
-              <label className="tikz-prop-group">
-                <span className="tikz-prop-label">Rotate</span>
-                <input
-                  type="range"
-                  min="-180"
-                  max="180"
-                  step="5"
-                  value={selectedShape.rotation}
-                  onChange={(e) => updateSelected({ rotation: Number(e.target.value) })}
-                />
-                <span className="tikz-prop-value">{selectedShape.rotation}deg</span>
-              </label>
-            )}
             <label className="tikz-prop-group tikz-checkbox-group">
               <input
                 type="checkbox"
@@ -1636,76 +1546,6 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
               <span className="tikz-prop-label">Grid</span>
             </label>
           </div>
-
-          {selectedShape &&
-            (canEditSelectedPosition ||
-              canEditSelectedSize ||
-              canEditSelectedLabel) && (
-              <>
-                <div className="tikz-toolbar-divider" />
-                <div className="tikz-toolbar-selected-props">
-                  {canEditSelectedPosition && (
-                    <>
-                      <label className="tikz-mini-prop">
-                        <span>X</span>
-                        <input
-                          type="number"
-                          value={Math.round(selectedShape.x)}
-                          onChange={(e) =>
-                            updateSelected({ x: Number(e.target.value) })
-                          }
-                        />
-                      </label>
-                      <label className="tikz-mini-prop">
-                        <span>Y</span>
-                        <input
-                          type="number"
-                          value={Math.round(selectedShape.y)}
-                          onChange={(e) =>
-                            updateSelected({ y: Number(e.target.value) })
-                          }
-                        />
-                      </label>
-                    </>
-                  )}
-                  {canEditSelectedSize && (
-                    <>
-                      <label className="tikz-mini-prop">
-                        <span>W</span>
-                        <input
-                          type="number"
-                          value={Math.round(selectedShape.w)}
-                          onChange={(e) =>
-                            updateSelected({ w: Number(e.target.value) })
-                          }
-                        />
-                      </label>
-                      <label className="tikz-mini-prop">
-                        <span>H</span>
-                        <input
-                          type="number"
-                          value={Math.round(selectedShape.h)}
-                          onChange={(e) =>
-                            updateSelected({ h: Number(e.target.value) })
-                          }
-                        />
-                      </label>
-                    </>
-                  )}
-                  {canEditSelectedLabel && (
-                    <label className="tikz-mini-prop tikz-mini-prop-wide">
-                      <span>Label</span>
-                      <input
-                        type="text"
-                        value={selectedShape.label}
-                        onChange={(e) => updateSelected({ label: e.target.value })}
-                        placeholder="Text..."
-                      />
-                    </label>
-                  )}
-                </div>
-              </>
-            )}
 
           <div className="tikz-toolbar-divider" />
 
@@ -1726,15 +1566,14 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
             >
               <Redo2 size={14} />
             </button>
-            {selected && (
-              <button
-                className="tikz-action-btn tikz-delete-btn"
-                onClick={handleDeleteSelected}
-                title="Delete selected (Del)"
-              >
-                <Trash2 size={14} />
-              </button>
-            )}
+            <button
+              className="tikz-action-btn tikz-delete-btn"
+              onClick={handleDeleteSelected}
+              disabled={!selected}
+              title="Delete selected (Del)"
+            >
+              <Trash2 size={14} />
+            </button>
             <button
               className="tikz-action-btn tikz-clear-btn"
               onClick={handleClear}
