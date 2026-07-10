@@ -56,6 +56,73 @@ function laneColor(lane: number): string {
   return laneColors[Math.abs(lane) % laneColors.length];
 }
 
+function normalizeCommit(commit: GitGraphCommit): GitGraphCommit | null {
+  const raw = commit as Partial<GitGraphCommit>;
+  if (typeof raw.hash !== "string" || !raw.hash) {
+    return null;
+  }
+
+  const refs = Array.isArray(raw.refs)
+    ? raw.refs
+        .filter((ref) => ref && typeof ref.name === "string")
+        .map((ref) => ({
+          name: ref.name,
+          kind:
+            ref.kind === "head" ||
+            ref.kind === "local-branch" ||
+            ref.kind === "remote-branch" ||
+            ref.kind === "tag"
+              ? ref.kind
+              : "local-branch",
+          current: Boolean(ref.current),
+        }))
+    : [];
+  const lane = Number.isFinite(raw.lane) ? (raw.lane ?? 0) : 0;
+  const segments = Array.isArray(raw.segments)
+    ? raw.segments
+        .filter(
+          (segment) =>
+            Number.isFinite(segment?.fromLane) && Number.isFinite(segment?.toLane),
+        )
+        .map((segment) => ({
+          fromLane: segment.fromLane,
+          toLane: segment.toLane,
+          kind:
+            segment.kind === "merge-left" ||
+            segment.kind === "merge-right" ||
+            segment.kind === "vertical"
+              ? segment.kind
+              : segment.fromLane === segment.toLane
+                ? "vertical"
+                : segment.toLane < segment.fromLane
+                  ? "merge-left"
+                  : "merge-right",
+        }))
+    : [];
+
+  return {
+    hash: raw.hash,
+    shortHash:
+      typeof raw.shortHash === "string" && raw.shortHash
+        ? raw.shortHash
+        : raw.hash.slice(0, 8),
+    parents: Array.isArray(raw.parents)
+      ? raw.parents.filter((parent): parent is string => typeof parent === "string")
+      : [],
+    subject:
+      typeof raw.subject === "string" && raw.subject ? raw.subject : "Untitled commit",
+    authorName:
+      typeof raw.authorName === "string" && raw.authorName ? raw.authorName : "Unknown",
+    authorEmail: typeof raw.authorEmail === "string" ? raw.authorEmail : "",
+    authoredAt: typeof raw.authoredAt === "string" ? raw.authoredAt : "",
+    refs,
+    lane,
+    segments,
+    isHead:
+      Boolean(raw.isHead) || refs.some((ref) => ref.current || ref.kind === "head"),
+  };
+}
+
 function graphLaneCount(commits: GitGraphCommit[]): number {
   let maximumLane = 0;
   for (const commit of commits) {
@@ -99,13 +166,25 @@ export function GitGraph({
   formatTimestamp = relativeTimestamp,
 }: GitGraphProps) {
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
-  const laneCount = useMemo(() => graphLaneCount(commits), [commits]);
+  const normalizedCommits = useMemo(
+    () =>
+      commits
+        .map(normalizeCommit)
+        .filter((commit): commit is GitGraphCommit => Boolean(commit)),
+    [commits],
+  );
+  const laneCount = useMemo(
+    () => graphLaneCount(normalizedCommits),
+    [normalizedCommits],
+  );
   const graphWidth = Math.max(laneWidth, laneCount * laneWidth);
-  const selectedIndex = commits.findIndex((commit) => commit.hash === selectedHash);
+  const selectedIndex = normalizedCommits.findIndex(
+    (commit) => commit.hash === selectedHash,
+  );
   const tabbableIndex = selectedIndex >= 0 ? selectedIndex : 0;
 
   const focusCommit = (index: number) => {
-    const next = commits[index];
+    const next = normalizedCommits[index];
     if (!next) return;
     onSelectCommit(next);
     rowRefs.current.get(next.hash)?.focus();
@@ -113,10 +192,11 @@ export function GitGraph({
 
   const handleRowKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     let nextIndex: number | null = null;
-    if (event.key === "ArrowDown") nextIndex = Math.min(commits.length - 1, index + 1);
+    if (event.key === "ArrowDown")
+      nextIndex = Math.min(normalizedCommits.length - 1, index + 1);
     if (event.key === "ArrowUp") nextIndex = Math.max(0, index - 1);
     if (event.key === "Home") nextIndex = 0;
-    if (event.key === "End") nextIndex = commits.length - 1;
+    if (event.key === "End") nextIndex = normalizedCommits.length - 1;
 
     if (nextIndex !== null) {
       event.preventDefault();
@@ -136,7 +216,7 @@ export function GitGraph({
     );
   }
 
-  if (!commits.length) {
+  if (!normalizedCommits.length) {
     return (
       <div
         className={["git-graph-empty git-graph-state", className]
@@ -155,7 +235,7 @@ export function GitGraph({
       aria-label="Repository commit graph"
       style={{ "--graph-width": `${graphWidth}px` } as CSSProperties}
     >
-      {commits.map((commit, index) => {
+      {normalizedCommits.map((commit, index) => {
         const selected = commit.hash === selectedHash;
         const timestamp = formatTimestamp(commit.authoredAt);
         const isHead = commitHasHeadRef(commit);

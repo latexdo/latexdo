@@ -117,6 +117,43 @@ Start writing here.
 \end{document}
 `;
 
+function isBrokenPipeError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as NodeJS.ErrnoException).code === "EPIPE"
+  );
+}
+
+function installSafeConsole(): void {
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on("error", (error) => {
+      if (isBrokenPipeError(error)) {
+        return;
+      }
+      throw error;
+    });
+  }
+
+  const wrapConsoleMethod =
+    (method: (...data: unknown[]) => void) =>
+    (...data: unknown[]) => {
+      try {
+        method(...data);
+      } catch (error) {
+        if (!isBrokenPipeError(error)) {
+          throw error;
+        }
+      }
+    };
+
+  console.log = wrapConsoleMethod(console.log.bind(console));
+  console.warn = wrapConsoleMethod(console.warn.bind(console));
+  console.error = wrapConsoleMethod(console.error.bind(console));
+}
+
+installSafeConsole();
+
 const openProjects = new Map<string, OpenProject>();
 
 interface GitWatchState {

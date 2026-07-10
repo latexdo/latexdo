@@ -121,4 +121,13 @@ describe("CitationManager", () => {
     expect(screen.getAllByText("metadataDebt").length).toBeGreaterThan(1);
     expect(screen.getByText("Missing title")).toBeVisible();
   });
+
+  it("exposes an explicit close button", () => {
+    const onClose = vi.fn();
+    render(<CitationManager analysis={analysis} onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /close citation manager/i }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });
