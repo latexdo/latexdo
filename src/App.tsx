@@ -1,7 +1,4 @@
-import Editor, {
-  type BeforeMount,
-  type OnMount,
-} from "@monaco-editor/react";
+import Editor, { type BeforeMount, type OnMount } from "@monaco-editor/react";
 import {
   AlertCircle,
   ArrowLeftToLine,
@@ -1377,10 +1374,14 @@ function gitChangeGroupDomId(area: GitChangeArea, directory: string): string {
 }
 
 function compareGitChangeEntries(left: GitChangeEntry, right: GitChangeEntry): number {
-  return gitDisplayPath(left.path).localeCompare(gitDisplayPath(right.path), undefined, {
-    numeric: true,
-    sensitivity: "base",
-  });
+  return gitDisplayPath(left.path).localeCompare(
+    gitDisplayPath(right.path),
+    undefined,
+    {
+      numeric: true,
+      sensitivity: "base",
+    },
+  );
 }
 
 function compareGitChangeDirectories(left: string, right: string): number {
@@ -6070,16 +6071,13 @@ ${macroEnd}
     }
   }, []);
 
-  const refreshGitData = useCallback(
-    async () => {
-      await Promise.all([
-        refreshGitStatus(),
-        refreshGitHistories(),
-        refreshOpenGitDiff(),
-      ]);
-    },
-    [refreshGitHistories, refreshGitStatus, refreshOpenGitDiff],
-  );
+  const refreshGitData = useCallback(async () => {
+    await Promise.all([
+      refreshGitStatus(),
+      refreshGitHistories(),
+      refreshOpenGitDiff(),
+    ]);
+  }, [refreshGitHistories, refreshGitStatus, refreshOpenGitDiff]);
 
   const scheduleGitRefresh = useCallback(() => {
     if (gitRefreshTimerRef.current !== null) {
@@ -6092,21 +6090,26 @@ ${macroEnd}
   }, [refreshGitData]);
   scheduleGitRefreshRef.current = scheduleGitRefresh;
 
-  const closeGitDiffSession = useCallback((restoreDocument = true) => {
-    const diffWasActive = !activePathRef.current && !welcomeOpen;
-    setGitDiffSession(null);
-    gitDiffSessionRef.current = null;
-    setGitBlameLines([]);
-    gitDiffSessionIdRef.current = "";
-    if (!restoreDocument || !diffWasActive) return;
+  const closeGitDiffSession = useCallback(
+    (restoreDocument = true) => {
+      const diffWasActive = !activePathRef.current && !welcomeOpen;
+      setGitDiffSession(null);
+      gitDiffSessionRef.current = null;
+      setGitBlameLines([]);
+      gitDiffSessionIdRef.current = "";
+      if (!restoreDocument || !diffWasActive) return;
 
-    const returnPath = gitDiffReturnPathRef.current;
-    const nextPath = documentsRef.current.some((document) => document.path === returnPath)
-      ? returnPath
-      : (documentsRef.current[0]?.path ?? "");
-    setActivePath(nextPath);
-    activePathRef.current = nextPath;
-  }, [welcomeOpen]);
+      const returnPath = gitDiffReturnPathRef.current;
+      const nextPath = documentsRef.current.some(
+        (document) => document.path === returnPath,
+      )
+        ? returnPath
+        : (documentsRef.current[0]?.path ?? "");
+      setActivePath(nextPath);
+      activePathRef.current = nextPath;
+    },
+    [welcomeOpen],
+  );
 
   const activateGitDiffSession = useCallback(async (session: GitDiffSession) => {
     const currentProject = projectIdRef.current;
@@ -6195,7 +6198,10 @@ ${macroEnd}
       setGitActionBusy(`stage:${relativePath}`);
       try {
         await window.latexdo.stageGitFile(currentProject, relativePath);
-        if (gitDiffSessionIdRef.current && gitDiffSession?.relativePath === relativePath) {
+        if (
+          gitDiffSessionIdRef.current &&
+          gitDiffSession?.relativePath === relativePath
+        ) {
           closeGitDiffSession();
         }
         await refreshGitData();
@@ -6215,7 +6221,10 @@ ${macroEnd}
       setGitActionBusy(`unstage:${relativePath}`);
       try {
         await window.latexdo.unstageGitFile(currentProject, relativePath);
-        if (gitDiffSessionIdRef.current && gitDiffSession?.relativePath === relativePath) {
+        if (
+          gitDiffSessionIdRef.current &&
+          gitDiffSession?.relativePath === relativePath
+        ) {
           closeGitDiffSession();
         }
         await refreshGitData();
@@ -6329,23 +6338,20 @@ ${macroEnd}
     }
   }, [closeGitDiffSession, refreshGitData, refreshProject]);
 
-  const openGitCommitDetails = useCallback(
-    async (hash: string) => {
-      const currentProject = projectIdRef.current;
-      if (!currentProject) return;
+  const openGitCommitDetails = useCallback(async (hash: string) => {
+    const currentProject = projectIdRef.current;
+    if (!currentProject) return;
 
-      setSelectedGitCommitHash(hash);
-      setGitActionBusy(`commit:${hash}`);
-      try {
-        const details = await window.latexdo.getGitCommitDetails(currentProject, hash);
-        setGitCommitDetails(details);
-        setGitCommitParentHash(details.parents[0] ?? "");
-      } finally {
-        setGitActionBusy(null);
-      }
-    },
-    [],
-  );
+    setSelectedGitCommitHash(hash);
+    setGitActionBusy(`commit:${hash}`);
+    try {
+      const details = await window.latexdo.getGitCommitDetails(currentProject, hash);
+      setGitCommitDetails(details);
+      setGitCommitParentHash(details.parents[0] ?? "");
+    } finally {
+      setGitActionBusy(null);
+    }
+  }, []);
 
   const openGitCommitRevisionDiff = useCallback(
     async (hash: string, relativePath: string, parentHash?: string) => {
@@ -7460,11 +7466,7 @@ ${macroEnd}
             ))}
           </span>
         </button>
-        <div
-          id={group.domId}
-          className="scm-change-group-files"
-          hidden={collapsed}
-        >
+        <div id={group.domId} className="scm-change-group-files" hidden={collapsed}>
           {group.entries.map((entry) => renderGitChangeRow(entry, area))}
         </div>
       </div>
@@ -8008,7 +8010,9 @@ ${macroEnd}
                                   <div className="scm-file-history-actions">
                                     <button
                                       className="sidebar-mini-action subtle"
-                                      onClick={() => void openGitCommitDetails(commit.hash)}
+                                      onClick={() =>
+                                        void openGitCommitDetails(commit.hash)
+                                      }
                                     >
                                       Details
                                     </button>
@@ -8047,9 +8051,7 @@ ${macroEnd}
                       <div className="scm-commit-details">
                         {gitCommitDetails ? (
                           <>
-                            <h3>
-                              {gitCommitDetails.summary || gitCommitDetails.hash}
-                            </h3>
+                            <h3>{gitCommitDetails.summary || gitCommitDetails.hash}</h3>
                             {gitCommitDetails.body ? (
                               <p className="scm-commit-body">{gitCommitDetails.body}</p>
                             ) : null}
@@ -8079,7 +8081,10 @@ ${macroEnd}
                             {gitCommitDetails.refs.length ? (
                               <div className="scm-detail-refs">
                                 {gitCommitDetails.refs.map((ref) => (
-                                  <span key={`${ref.kind}:${ref.name}`} className={ref.kind}>
+                                  <span
+                                    key={`${ref.kind}:${ref.name}`}
+                                    className={ref.kind}
+                                  >
                                     {ref.name}
                                   </span>
                                 ))}
@@ -8102,7 +8107,10 @@ ${macroEnd}
                                 </select>
                               </label>
                             ) : null}
-                            <div className="scm-detail-files" aria-label="Changed files">
+                            <div
+                              className="scm-detail-files"
+                              aria-label="Changed files"
+                            >
                               {gitCommitDetails.changedFiles.map((file) => {
                                 const code = gitDiffStatusCode(file.status);
                                 return (
