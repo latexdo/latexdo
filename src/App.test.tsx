@@ -472,6 +472,72 @@ describe("App critical UI controls", () => {
     });
   });
 
+  it("splits source-control changes into expandable directory groups", async () => {
+    installLatexDoMock({
+      gitStatus: {
+        isRepo: true,
+        branch: "main",
+        entries: [
+          {
+            path: "main.tex",
+            indexStatus: "unmodified",
+            worktreeStatus: "modified",
+            staged: false,
+            unstaged: true,
+            untracked: false,
+            conflicted: false,
+          },
+          {
+            path: "chapters/intro.tex",
+            indexStatus: "unmodified",
+            worktreeStatus: "added",
+            staged: false,
+            unstaged: true,
+            untracked: false,
+            conflicted: false,
+          },
+        ],
+      },
+    });
+
+    render(<App />);
+    await openProjectFromWelcome();
+    fireEvent.click(screen.getByTitle("Source control"));
+
+    expect(
+      await screen.findByRole("button", {
+        name: /collapse changes group project root/i,
+      }),
+    ).toHaveAttribute("aria-expanded", "true");
+
+    const chaptersGroup = screen.getByRole("button", {
+      name: /collapse changes group chapters/i,
+    });
+    expect(chaptersGroup).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByRole("button", {
+        name: /open working tree diff for chapters\/intro\.tex/i,
+      }),
+    ).toBeVisible();
+
+    fireEvent.click(chaptersGroup);
+
+    expect(chaptersGroup).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("button", {
+        name: /open working tree diff for chapters\/intro\.tex/i,
+      }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(chaptersGroup);
+
+    expect(
+      screen.getByRole("button", {
+        name: /open working tree diff for chapters\/intro\.tex/i,
+      }),
+    ).toBeVisible();
+  });
+
   it("opens staged and unstaged occurrences as distinct Monaco diff sessions", async () => {
     const api = installLatexDoMock({
       gitStatus: {

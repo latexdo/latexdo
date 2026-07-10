@@ -1397,7 +1397,8 @@ button {
 }
 
 .scm-status-badge.renamed,
-.scm-status-badge.untracked {
+.scm-status-badge.untracked,
+.scm-status-badge.type-changed {
   background: rgb(213 169 76 / 18%);
   color: #e5bd67;
 }
@@ -7686,6 +7687,100 @@ button {
   gap: 0;
 }
 
+.scm-change-group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.scm-change-group-header {
+  display: grid;
+  width: 100%;
+  min-height: 30px;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 4px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.scm-change-group-header:hover,
+.scm-change-group-header:focus-visible {
+  background: var(--bg-row-hover);
+  color: var(--text-primary);
+}
+
+.scm-change-group-header:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: -1px;
+}
+
+.scm-change-group-chevron {
+  color: var(--text-soft);
+  transition: transform 120ms ease;
+}
+
+.scm-change-group-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.scm-change-group-title {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scm-change-group-count {
+  display: grid;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--bg-button-secondary);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  place-items: center;
+}
+
+.scm-change-group-statuses {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.scm-change-group-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-soft);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.scm-change-group-status .scm-status-badge {
+  width: 16px;
+  height: 16px;
+  font-size: 9px;
+}
+
+.scm-change-group-files {
+  min-width: 0;
+}
+
 .scm-file-row,
 .scm-change-row {
   position: relative;
@@ -7713,6 +7808,10 @@ button {
   padding: 3px 12px 3px 20px;
   cursor: pointer;
   font: inherit;
+}
+
+.scm-change-group-files .scm-change-row {
+  padding-left: 34px;
 }
 
 .scm-file-row:hover,
@@ -7785,7 +7884,8 @@ button {
 
 .scm-status-badge.renamed,
 .scm-status-badge.untracked,
-.scm-status-badge.copied {
+.scm-status-badge.copied,
+.scm-status-badge.type-changed {
   background: color-mix(in srgb, var(--warning) 16%, transparent);
   color: var(--warning);
 }
