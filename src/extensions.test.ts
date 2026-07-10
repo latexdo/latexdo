@@ -102,12 +102,9 @@ describe("extension catalog validation", () => {
   });
 
   it("falls back to the bundled catalog when the live catalog fails", async () => {
-    const result = await fetchExtensionCatalog(
-      extensionStoreCatalogUrl,
-      async () => {
-        throw new Error("Failed to fetch");
-      },
-    );
+    const result = await fetchExtensionCatalog(extensionStoreCatalogUrl, async () => {
+      throw new Error("Failed to fetch");
+    });
 
     expect(result.source).toBe("fallback");
     expect(result.catalog).toBe(fallbackExtensionCatalog);

@@ -1,5 +1,8 @@
 import {
+  ArrowDown,
   ArrowRight,
+  ArrowUp,
+  BringToFront,
   Circle,
   Cloud,
   Copy,
@@ -18,6 +21,7 @@ import {
   Pentagon,
   Plus,
   Redo2,
+  SendToBack,
   Square,
   Star,
   Trash2,
@@ -154,6 +158,14 @@ interface DragSession {
   moved: boolean;
 }
 
+type LayerAction = "front" | "forward" | "backward" | "back";
+
+interface ShapeContextMenu {
+  shapeId: string;
+  x: number;
+  y: number;
+}
+
 export interface TikzCanvasProps {
   onInsertCode?: (code: string) => void;
 }
@@ -195,6 +207,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
   const [copied, setCopied] = useState(false);
   const [editableCode, setEditableCode] = useState("");
   const [parseError, setParseError] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<ShapeContextMenu | null>(null);
   const manualEditRef = useRef(false);
 
   const setShapes = useCallback((next: DrawShape[]) => {
@@ -286,6 +299,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
       }
       if (e.key === "Escape") {
         setSelected(null);
+        setContextMenu(null);
         setTool("select");
       }
       // tool shortcuts
@@ -383,9 +397,17 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     };
   };
 
+  const shapeAtPoint = useCallback((px: number, py: number): DrawShape | null => {
+    return (
+      [...shapesRef.current].reverse().find((shape) => shapeContains(shape, px, py)) ??
+      null
+    );
+  }, []);
+
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
+    setContextMenu(null);
     const pt = getSvgPoint(e);
     const x = snap(pt.x);
     const y = snap(pt.y);
@@ -393,9 +415,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
 
     if (tool === "select") {
       // check if clicking a shape
-      const hit = [...currentShapes]
-        .reverse()
-        .find((s) => shapeContains(s, pt.x, pt.y));
+      const hit = shapeAtPoint(pt.x, pt.y);
       if (hit) {
         const originalShapes = cloneShapes(currentShapes);
         dragSessionRef.current = {
@@ -480,6 +500,27 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     };
     drawingShapeIdRef.current = shape.id;
     setShapes([...currentShapes, shape]);
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const pt = getSvgPoint(e);
+    const hit = shapeAtPoint(pt.x, pt.y);
+    dragSessionRef.current = null;
+
+    if (!hit) {
+      setContextMenu(null);
+      setSelected(null);
+      return;
+    }
+
+    setSelected(hit.id);
+    setTool("select");
+    setContextMenu({
+      shapeId: hit.id,
+      x: e.clientX,
+      y: e.clientY,
+    });
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -702,6 +743,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
     const next = shapes.filter((s) => s.id !== selected);
     commitShape(next);
     setSelected(null);
+    setContextMenu(null);
   };
 
   // -- render SVG shapes --
@@ -1397,6 +1439,9 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
 
   // -- selected shape for property editing --
   const selectedShape = shapes.find((s) => s.id === selected);
+  const contextShapeIndex = contextMenu
+    ? shapes.findIndex((shape) => shape.id === contextMenu.shapeId)
+    : -1;
 
   const updateSelected = useCallback(
     (updates: Partial<DrawShape>) => {
@@ -1408,6 +1453,39 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
       pushHistory(next);
     },
     [pushHistory, selected, setShapes],
+  );
+
+  const moveShapeLayer = useCallback(
+    (shapeId: string, action: LayerAction) => {
+      const currentShapes = shapesRef.current;
+      const index = currentShapes.findIndex((shape) => shape.id === shapeId);
+      if (index < 0) return;
+
+      let nextIndex = index;
+      if (action === "front") {
+        nextIndex = currentShapes.length - 1;
+      } else if (action === "forward") {
+        nextIndex = Math.min(currentShapes.length - 1, index + 1);
+      } else if (action === "backward") {
+        nextIndex = Math.max(0, index - 1);
+      } else {
+        nextIndex = 0;
+      }
+
+      if (nextIndex === index) {
+        setContextMenu(null);
+        return;
+      }
+
+      const next = [...currentShapes];
+      const [shape] = next.splice(index, 1);
+      next.splice(nextIndex, 0, shape);
+      setShapes(next);
+      pushHistory(next);
+      setSelected(shapeId);
+      setContextMenu(null);
+    },
+    [pushHistory, setShapes],
   );
 
   const activeStroke = selectedShape?.stroke ?? stroke;
@@ -1596,6 +1674,7 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
+            onContextMenu={handleContextMenu}
             style={{
               cursor:
                 tool === "select"
@@ -1645,6 +1724,52 @@ export default function TikzCanvas({ onInsertCode }: TikzCanvasProps) {
             {renderGrid()}
             {shapes.map(renderShape)}
           </svg>
+          {contextMenu && (
+            <div
+              className="tikz-context-menu"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+              role="menu"
+              aria-label="Shape order"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => moveShapeLayer(contextMenu.shapeId, "front")}
+                disabled={contextShapeIndex >= shapes.length - 1}
+              >
+                <BringToFront size={14} />
+                <span>Bring to front</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => moveShapeLayer(contextMenu.shapeId, "forward")}
+                disabled={contextShapeIndex >= shapes.length - 1}
+              >
+                <ArrowUp size={14} />
+                <span>Bring forward</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => moveShapeLayer(contextMenu.shapeId, "backward")}
+                disabled={contextShapeIndex <= 0}
+              >
+                <ArrowDown size={14} />
+                <span>Send backward</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => moveShapeLayer(contextMenu.shapeId, "back")}
+                disabled={contextShapeIndex <= 0}
+              >
+                <SendToBack size={14} />
+                <span>Send to back</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Text prompt (replaces window.prompt which is blocked in sandboxed Electron) */}

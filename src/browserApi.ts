@@ -40,8 +40,7 @@ type BrowserTreeNode = {
 };
 
 const browserStoreKey = "latexdo.browser.workspace.v1";
-const extensionStoreCatalogUrl =
-  "https://store.latexdo.org/extensions/catalog.json";
+const extensionStoreCatalogUrl = "https://store.latexdo.org/extensions/catalog.json";
 const starterDocument = String.raw`\documentclass[11pt]{article}
 
 \usepackage[margin=1in]{geometry}
