@@ -341,7 +341,11 @@ export interface DocumentHistorySnapshot {
   filePath: string;
   fileName: string;
   label: string;
-  content: string;
+  content?: string;
+  contentPath?: string;
+  contentHash?: string;
+  contentSize?: number;
+  preview?: string;
   timestamp: number;
   source: DocumentHistorySource;
 }

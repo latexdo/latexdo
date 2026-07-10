@@ -163,6 +163,7 @@ import {
   getLatexCommandCompletionRange,
   getLatexCompletionContext,
 } from "./latex/completionContext";
+import { getLatexListEnterEdit } from "./latex/listContinuation";
 import { SYMBOL_PALETTE } from "./components/mathSymbolPalette";
 import {
   buildLatexFoldingRanges,
@@ -1253,10 +1254,13 @@ const supportedExtensions = new Set([
   "json",
 ]);
 
-const historyStorageRelativePath = ".latexdo/history.json";
+const legacyHistoryStorageRelativePath = ".latexdo/history.json";
+const historyIndexRelativePath = ".latexdo/history/recent.json";
+const historySnapshotStorageDirectory = ".latexdo/history/snapshots";
 const bookmarksStorageKey = "latexdo.bookmarks.v1";
 const legacyReviewPlaceholderText = "Add your comment here...";
-const maxHistorySnapshotsPerFile = 80;
+const maxHistorySnapshotsPerFile = 500;
+const maxHistorySnapshotsInHotIndex = 5000;
 const historyAutoCaptureDelayMs = 5000;
 
 function fileName(filePath: string): string {
@@ -1742,6 +1746,34 @@ function historySnapshotId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function historySnapshotContentPath(snapshotId: string): string {
+  const safeId = snapshotId.replace(/[^a-z0-9_-]+/gi, "-").slice(0, 96);
+  return `${historySnapshotStorageDirectory}/${safeId || "snapshot"}.txt`;
+}
+
+function textHash(content: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < content.length; index += 1) {
+    hash ^= content.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function historyContentPreview(content: string): string {
+  const line = content
+    .split(/\r?\n/)
+    .map((part) => part.trim())
+    .find(Boolean);
+  return (line ?? "Empty document").slice(0, 240);
+}
+
+function snapshotContentKey(snapshot: Partial<DocumentHistorySnapshot>): string {
+  if (snapshot.contentHash) return snapshot.contentHash;
+  if (typeof snapshot.content === "string") return textHash(snapshot.content);
+  return "";
+}
+
 function removeLegacyReviewPlaceholders(chats: ReviewChat[]): {
   chats: ReviewChat[];
   changed: boolean;
@@ -1769,13 +1801,22 @@ function buildHistorySnapshot(
 ): DocumentHistorySnapshot {
   const timestamp = Date.now();
   const sourceLabel =
-    source === "manual" ? "Manual" : source === "restore" ? "Restore point" : "Auto";
+    source === "manual"
+      ? "Manual checkpoint"
+      : source === "restore"
+        ? "Before restore"
+        : "Auto checkpoint";
+  const id = historySnapshotId();
   return {
-    id: historySnapshotId(),
+    id,
     filePath: document.relativePath,
     fileName: document.name,
-    label: `${sourceLabel} state`,
+    label: sourceLabel,
     content: document.content,
+    contentPath: historySnapshotContentPath(id),
+    contentHash: textHash(document.content),
+    contentSize: document.content.length,
+    preview: historyContentPreview(document.content),
     timestamp,
     source,
   };
@@ -1789,11 +1830,12 @@ function normalizeHistorySnapshot(value: unknown): DocumentHistorySnapshot | nul
   if (
     typeof item.id !== "string" ||
     typeof item.filePath !== "string" ||
-    typeof item.content !== "string" ||
+    (typeof item.content !== "string" && typeof item.contentPath !== "string") ||
     typeof item.timestamp !== "number"
   ) {
     return null;
   }
+  const content = typeof item.content === "string" ? item.content : undefined;
 
   return {
     id: item.id,
@@ -1801,7 +1843,29 @@ function normalizeHistorySnapshot(value: unknown): DocumentHistorySnapshot | nul
     fileName:
       typeof item.fileName === "string" ? item.fileName : fileName(item.filePath),
     label: typeof item.label === "string" ? item.label : "History state",
-    content: item.content,
+    content,
+    contentPath:
+      typeof item.contentPath === "string"
+        ? item.contentPath
+        : historySnapshotContentPath(item.id),
+    contentHash:
+      typeof item.contentHash === "string"
+        ? item.contentHash
+        : content
+          ? textHash(content)
+          : undefined,
+    contentSize:
+      typeof item.contentSize === "number"
+        ? item.contentSize
+        : content
+          ? content.length
+          : undefined,
+    preview:
+      typeof item.preview === "string"
+        ? item.preview
+        : content
+          ? historyContentPreview(content)
+          : undefined,
     timestamp: item.timestamp,
     source:
       item.source === "manual" || item.source === "restore" || item.source === "auto"
@@ -1818,6 +1882,9 @@ function pruneHistorySnapshots(
   const kept: DocumentHistorySnapshot[] = [];
 
   for (const snapshot of sorted) {
+    if (kept.length >= maxHistorySnapshotsInHotIndex) {
+      break;
+    }
     const count = perFileCount.get(snapshot.filePath) ?? 0;
     if (count >= maxHistorySnapshotsPerFile) {
       continue;
@@ -2000,6 +2067,7 @@ export default function App() {
   const figurePreviewCacheRef = useRef<Map<string, string>>(new Map());
   const historySaveTimerRef = useRef<number | null>(null);
   const historyAutoCaptureTimerRef = useRef<number | null>(null);
+  const historyContentLoadingRef = useRef<Set<string>>(new Set());
   const browserAutoOpenRef = useRef(false);
   const gitDiffSessionRef = useRef<GitDiffSession | null>(null);
   const gitDiffSessionIdRef = useRef("");
@@ -2116,6 +2184,14 @@ export default function App() {
   const unstagedGitGroups = useMemo(
     () => groupGitChanges(unstagedGitEntries, "changes"),
     [unstagedGitEntries],
+  );
+  const gitRepositoryCommits = useMemo(
+    () => (Array.isArray(gitRepoHistory?.commits) ? gitRepoHistory.commits : []),
+    [gitRepoHistory],
+  );
+  const gitFileCommits = useMemo(
+    () => (Array.isArray(gitFileHistory?.commits) ? gitFileHistory.commits : []),
+    [gitFileHistory],
   );
   const filteredSpellCheckerLanguages = useMemo(() => {
     const query = spellCheckerLanguageQuery.trim().toLowerCase();
@@ -2769,9 +2845,62 @@ ${macroEnd}
       if (!currentProject) return;
 
       try {
-        const data = JSON.stringify({ snapshots }, null, 2);
-        const filePath = resolveProjectDataPath(historyStorageRelativePath);
-        await window.latexdo.writeFile(currentProject, filePath, data);
+        await Promise.all(
+          snapshots.map(async (snapshot) => {
+            if (typeof snapshot.content !== "string") {
+              return;
+            }
+            const contentPath =
+              snapshot.contentPath ?? historySnapshotContentPath(snapshot.id);
+            await window.latexdo.writeFile(
+              currentProject,
+              resolveProjectDataPath(contentPath),
+              snapshot.content,
+            );
+          }),
+        );
+
+        const indexedSnapshots = snapshots.map((snapshot) => ({
+          id: snapshot.id,
+          filePath: snapshot.filePath,
+          fileName: snapshot.fileName,
+          label: snapshot.label,
+          contentPath: snapshot.contentPath ?? historySnapshotContentPath(snapshot.id),
+          contentHash:
+            snapshot.contentHash ??
+            (typeof snapshot.content === "string"
+              ? textHash(snapshot.content)
+              : undefined),
+          contentSize:
+            snapshot.contentSize ??
+            (typeof snapshot.content === "string"
+              ? snapshot.content.length
+              : undefined),
+          preview:
+            snapshot.preview ??
+            (typeof snapshot.content === "string"
+              ? historyContentPreview(snapshot.content)
+              : undefined),
+          timestamp: snapshot.timestamp,
+          source: snapshot.source,
+        }));
+        const data = JSON.stringify(
+          {
+            schemaVersion: 2,
+            snapshots: indexedSnapshots,
+            limits: {
+              hotIndex: maxHistorySnapshotsInHotIndex,
+              perFile: maxHistorySnapshotsPerFile,
+            },
+          },
+          null,
+          2,
+        );
+        await window.latexdo.writeFile(
+          currentProject,
+          resolveProjectDataPath(historyIndexRelativePath),
+          data,
+        );
       } catch (e) {
         console.error("Failed to save document history", e);
       }
@@ -2811,10 +2940,23 @@ ${macroEnd}
   const addHistorySnapshot = useCallback(
     (snapshot: DocumentHistorySnapshot) => {
       updateDocumentHistory((current) => {
-        const latestForFile = [...current]
-          .filter((item) => item.filePath === snapshot.filePath)
-          .sort((a, b) => b.timestamp - a.timestamp)[0];
-        if (latestForFile?.content === snapshot.content) {
+        const nextContentKey = snapshotContentKey(snapshot);
+        const snapshotsForFile = current.filter(
+          (item) => item.filePath === snapshot.filePath,
+        );
+        const latestForFile = [...snapshotsForFile].sort(
+          (a, b) => b.timestamp - a.timestamp,
+        )[0];
+        if (
+          nextContentKey &&
+          snapshotContentKey(latestForFile ?? {}) === nextContentKey
+        ) {
+          return current;
+        }
+        if (
+          nextContentKey &&
+          snapshotsForFile.some((item) => snapshotContentKey(item) === nextContentKey)
+        ) {
           return current;
         }
         return [snapshot, ...current];
@@ -2832,10 +2974,12 @@ ${macroEnd}
         setStatusMessage("Open a document before capturing history.");
         return;
       }
-      const latestForFile = [...documentHistoryRef.current]
-        .filter((item) => item.filePath === document.relativePath)
-        .sort((a, b) => b.timestamp - a.timestamp)[0];
-      const added = latestForFile?.content !== document.content;
+      const contentHash = textHash(document.content);
+      const added = !documentHistoryRef.current.some(
+        (item) =>
+          item.filePath === document.relativePath &&
+          snapshotContentKey(item) === contentHash,
+      );
       addHistorySnapshot(buildHistorySnapshot(document, source));
       if (source === "manual") {
         setStatusMessage(
@@ -2851,14 +2995,40 @@ ${macroEnd}
   const loadHistoryData = useCallback(
     async (id: string) => {
       try {
-        const filePath = resolveProjectDataPath(historyStorageRelativePath);
-        const exists = await window.latexdo.fileExists(id, filePath);
-        if (!exists) {
+        const indexPath = resolveProjectDataPath(historyIndexRelativePath);
+        const indexExists = await window.latexdo.fileExists(id, indexPath);
+        if (indexExists) {
+          const content = await window.latexdo.readFile(id, indexPath);
+          const parsed = JSON.parse(content) as
+            | {
+                snapshots?: unknown[];
+              }
+            | unknown[];
+          const rawSnapshots = Array.isArray(parsed)
+            ? parsed
+            : Array.isArray(parsed.snapshots)
+              ? parsed.snapshots
+              : [];
+          const snapshots = pruneHistorySnapshots(
+            rawSnapshots
+              .map(normalizeHistorySnapshot)
+              .filter((snapshot): snapshot is DocumentHistorySnapshot =>
+                Boolean(snapshot),
+              ),
+          );
+          setDocumentHistory(snapshots);
+          documentHistoryRef.current = snapshots;
+          return;
+        }
+
+        const legacyPath = resolveProjectDataPath(legacyHistoryStorageRelativePath);
+        const legacyExists = await window.latexdo.fileExists(id, legacyPath);
+        if (!legacyExists) {
           setDocumentHistory([]);
           documentHistoryRef.current = [];
           return;
         }
-        const content = await window.latexdo.readFile(id, filePath);
+        const content = await window.latexdo.readFile(id, legacyPath);
         const parsed = JSON.parse(content) as
           | {
               snapshots?: unknown[];
@@ -2878,12 +3048,73 @@ ${macroEnd}
         );
         setDocumentHistory(snapshots);
         documentHistoryRef.current = snapshots;
-      } catch (e) {
+        scheduleHistorySave(snapshots);
+      } catch (_e) {
         setDocumentHistory([]);
         documentHistoryRef.current = [];
       }
     },
+    [resolveProjectDataPath, scheduleHistorySave],
+  );
+
+  const resolveHistorySnapshotContent = useCallback(
+    async (snapshot: DocumentHistorySnapshot): Promise<string | null> => {
+      if (typeof snapshot.content === "string") {
+        return snapshot.content;
+      }
+      const currentProject = projectIdRef.current;
+      const contentPath = snapshot.contentPath;
+      if (!currentProject || !contentPath) {
+        return null;
+      }
+
+      try {
+        return await window.latexdo.readFile(
+          currentProject,
+          resolveProjectDataPath(contentPath),
+        );
+      } catch {
+        return null;
+      }
+    },
     [resolveProjectDataPath],
+  );
+
+  const hydrateHistorySnapshotContent = useCallback(
+    async (snapshot: DocumentHistorySnapshot) => {
+      if (typeof snapshot.content === "string") {
+        return;
+      }
+      if (historyContentLoadingRef.current.has(snapshot.id)) {
+        return;
+      }
+
+      historyContentLoadingRef.current.add(snapshot.id);
+      try {
+        const content = await resolveHistorySnapshotContent(snapshot);
+        if (content === null) {
+          return;
+        }
+        setDocumentHistory((current) => {
+          const next = current.map((item) =>
+            item.id === snapshot.id
+              ? {
+                  ...item,
+                  content,
+                  contentHash: item.contentHash ?? textHash(content),
+                  contentSize: item.contentSize ?? content.length,
+                  preview: item.preview ?? historyContentPreview(content),
+                }
+              : item,
+          );
+          documentHistoryRef.current = next;
+          return next;
+        });
+      } finally {
+        historyContentLoadingRef.current.delete(snapshot.id);
+      }
+    },
+    [resolveHistorySnapshotContent],
   );
 
   const generateRebuttalFile = useCallback(async () => {
@@ -2990,26 +3221,32 @@ ${macroEnd}
     })();
   }, [loadProject]);
 
-  const saveDocument = useCallback(async (document: OpenDocument) => {
-    const currentProject = projectIdRef.current;
-    if (!currentProject) {
-      return;
-    }
-    await window.latexdo.writeFile(
-      currentProject,
-      document.relativePath,
-      document.content,
-    );
-    setDocuments((current) => {
-      const nextDocuments = current.map((item) =>
-        item.path === document.path ? { ...item, savedContent: item.content } : item,
+  const saveDocument = useCallback(
+    async (document: OpenDocument) => {
+      const currentProject = projectIdRef.current;
+      if (!currentProject) {
+        return;
+      }
+      if (document.content !== document.savedContent && document.content.trim()) {
+        addHistorySnapshot(buildHistorySnapshot(document, "auto"));
+      }
+      await window.latexdo.writeFile(
+        currentProject,
+        document.relativePath,
+        document.content,
       );
-      documentsRef.current = nextDocuments;
-      return nextDocuments;
-    });
-    scheduleGitRefreshRef.current();
-    setStatusMessage(`Saved ${document.relativePath}`);
-  }, []);
+      setDocuments((current) => {
+        const nextDocuments = current.map((item) =>
+          item.path === document.path ? { ...item, savedContent: item.content } : item,
+        );
+        documentsRef.current = nextDocuments;
+        return nextDocuments;
+      });
+      scheduleGitRefreshRef.current();
+      setStatusMessage(`Saved ${document.relativePath}`);
+    },
+    [addHistorySnapshot],
+  );
 
   const compile = useCallback(async (): Promise<CompileResult | null> => {
     const currentProject = projectIdRef.current;
@@ -4022,15 +4259,43 @@ ${macroEnd}
         setCreateDialog("file");
       }
       if (event.key === "Escape") {
+        const hasClosableSurface =
+          createDialog !== null ||
+          settingsOpen ||
+          tikzCanvasOpen ||
+          tableCanvasOpen ||
+          tikzConverterOpen ||
+          notationManagerOpen ||
+          citationManagerOpen ||
+          gitContextMenu !== null;
+        if (!hasClosableSurface) {
+          return;
+        }
+        event.preventDefault();
         setCreateDialog(null);
         setSettingsOpen(false);
         setTikzCanvasOpen(false);
         setTableCanvasOpen(false);
+        setTikzConverterOpen(false);
+        setNotationManagerOpen(false);
+        setCitationManagerOpen(false);
+        setGitContextMenu(null);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [compile, saveActiveAndCompile]);
+  }, [
+    citationManagerOpen,
+    compile,
+    createDialog,
+    gitContextMenu,
+    notationManagerOpen,
+    saveActiveAndCompile,
+    settingsOpen,
+    tableCanvasOpen,
+    tikzCanvasOpen,
+    tikzConverterOpen,
+  ]);
 
   useEffect(() => {
     if (!activeDocument || !editorRef.current) {
@@ -5013,6 +5278,56 @@ ${macroEnd}
         contextMenuGroupId: "1_modification",
         contextMenuOrder: 1,
         run: () => applyLatexToolbarCommand("formatTable"),
+      }),
+      editor.addAction({
+        id: "latexdo.continueLatexList",
+        label: "Continue or Close LaTeX List",
+        keybindings: [monaco.KeyCode.Enter],
+        precondition:
+          "editorTextFocus && editorLangId == 'latex' && !suggestWidgetVisible",
+        run: (targetEditor) => {
+          const model = targetEditor.getModel();
+          const position = targetEditor.getPosition();
+          const selections = targetEditor.getSelections() ?? [];
+
+          if (
+            !model ||
+            !position ||
+            selections.length !== 1 ||
+            !selections[0].isEmpty()
+          ) {
+            targetEditor.trigger("keyboard", "type", { text: "\n" });
+            return;
+          }
+
+          const edit = getLatexListEnterEdit(
+            model.getValue(),
+            model.getOffsetAt(position),
+          );
+          if (!edit) {
+            targetEditor.trigger("keyboard", "type", { text: "\n" });
+            return;
+          }
+
+          const start = model.getPositionAt(edit.startOffset);
+          const end = model.getPositionAt(edit.endOffset);
+          targetEditor.executeEdits("latex-list-enter", [
+            {
+              range: new monaco.Range(
+                start.lineNumber,
+                start.column,
+                end.lineNumber,
+                end.column,
+              ),
+              text: edit.text,
+              forceMoveMarkers: true,
+            },
+          ]);
+
+          const cursor = model.getPositionAt(edit.startOffset + edit.cursorOffset);
+          targetEditor.setPosition(cursor);
+          targetEditor.revealPositionInCenterIfOutsideViewport(cursor);
+        },
       }),
     ];
     applyBookmarkDecorations(editor, activeBookmarkLines);
@@ -6158,6 +6473,20 @@ ${macroEnd}
         );
         setStatusMessage(`LatexDo ${result.latestVersion} is available.`);
       }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not check for updates.";
+      setUpdateInfo((current) => ({
+        currentVersion: current?.currentVersion ?? "Unknown",
+        latestVersion: current?.latestVersion ?? null,
+        releaseUrl: current?.releaseUrl ?? null,
+        updateAvailable: false,
+        checkedAt: new Date().toISOString(),
+        error: message,
+      }));
+      if (!options?.silent) {
+        setStatusMessage(message);
+      }
     } finally {
       if (!options?.silent) {
         setCheckingUpdates(false);
@@ -6170,6 +6499,11 @@ ${macroEnd}
     try {
       const result = await window.latexdo.updateNow();
       setUpdateInfo(result);
+
+      if (result.error) {
+        setStatusMessage(result.error);
+        return;
+      }
 
       if (!result.updateAvailable) {
         setStatusMessage(`LatexDo ${result.currentVersion} is up to date.`);
@@ -6997,6 +7331,12 @@ ${macroEnd}
 
   const handleRestoreHistorySnapshot = useCallback(
     async (snapshot: DocumentHistorySnapshot) => {
+      const snapshotContent = await resolveHistorySnapshotContent(snapshot);
+      if (snapshotContent === null) {
+        setStatusMessage(`Could not load history content for ${snapshot.filePath}.`);
+        return;
+      }
+
       const entry = allProjectEntries.find(
         (item) =>
           item.type === "file" &&
@@ -7014,15 +7354,15 @@ ${macroEnd}
           normalizeRelativePath(document.relativePath) ===
           normalizeRelativePath(snapshot.filePath),
       );
-      if (currentDocument && currentDocument.content !== snapshot.content) {
+      if (currentDocument && currentDocument.content !== snapshotContent) {
         addHistorySnapshot(buildHistorySnapshot(currentDocument, "restore"));
       }
 
       const savedContent = currentProject
         ? await window.latexdo
             .readFile(currentProject, entry.relativePath)
-            .catch(() => snapshot.content)
-        : snapshot.content;
+            .catch(() => snapshotContent)
+        : snapshotContent;
 
       setWelcomeOpen(false);
       setActivePath(entry.path);
@@ -7032,7 +7372,7 @@ ${macroEnd}
         const nextDocuments = exists
           ? current.map((document) =>
               document.path === entry.path
-                ? { ...document, content: snapshot.content, savedContent }
+                ? { ...document, content: snapshotContent, savedContent }
                 : document,
             )
           : [
@@ -7041,7 +7381,7 @@ ${macroEnd}
                 path: entry.path,
                 relativePath: entry.relativePath,
                 name: entry.name,
-                content: snapshot.content,
+                content: snapshotContent,
                 savedContent,
               },
             ];
@@ -7052,7 +7392,7 @@ ${macroEnd}
         `Restored ${snapshot.filePath} from history. Save to write it to disk.`,
       );
     },
-    [addHistorySnapshot, allProjectEntries],
+    [addHistorySnapshot, allProjectEntries, resolveHistorySnapshotContent],
   );
 
   const handleDeleteHistorySnapshot = useCallback(
@@ -7207,7 +7547,7 @@ ${macroEnd}
       window.clearTimeout(historyAutoCaptureTimerRef.current);
       historyAutoCaptureTimerRef.current = null;
     }
-    if (!projectId || !activeDocument || showWelcome || showBlankWorkspace) {
+    if (!projectId || !activeDocument?.path || showWelcome || showBlankWorkspace) {
       return;
     }
 
@@ -7216,7 +7556,11 @@ ${macroEnd}
       const document = documentsRef.current.find(
         (item) => item.path === activePathRef.current,
       );
-      if (!document || !document.content.trim()) {
+      if (
+        !document ||
+        !document.content.trim() ||
+        document.content === document.savedContent
+      ) {
         return;
       }
       addHistorySnapshot(buildHistorySnapshot(document, "auto"));
@@ -7480,6 +7824,7 @@ ${macroEnd}
     availableUpdateVersion && availableUpdateVersion !== dismissedUpdateVersion,
   );
   const updatePublishedLabel = formatUpdateDate(updateInfo?.publishedAt);
+  const updateCheckedLabel = formatUpdateDate(updateInfo?.checkedAt);
 
   return (
     <div className="app-shell" data-theme={settings.colorTheme}>
@@ -7979,7 +8324,7 @@ ${macroEnd}
                       </div>
                       <div className="scm-timeline">
                         <GitGraph
-                          commits={gitRepoHistory?.commits ?? []}
+                          commits={gitRepositoryCommits}
                           selectedHash={selectedGitCommitHash}
                           loading={gitLoading && !gitRepoHistory}
                           onSelectCommit={(commit: GitGraphCommit) => {
@@ -7996,8 +8341,8 @@ ${macroEnd}
                             </span>
                           </div>
                           <div className="scm-file-history">
-                            {gitFileHistory?.commits.length ? (
-                              gitFileHistory.commits.slice(0, 6).map((commit) => (
+                            {gitFileCommits.length ? (
+                              gitFileCommits.slice(0, 6).map((commit) => (
                                 <div
                                   key={`${commit.hash}:${gitFileHistoryPath}`}
                                   className="scm-file-history-row"
@@ -8270,10 +8615,12 @@ ${macroEnd}
               <div className="sidebar-panel history-panel">
                 <HistorySidebar
                   activeFilePath={activeDocument?.relativePath}
+                  activeFileContent={activeDocument?.content}
                   activeFileSnapshotCount={activeDocumentHistoryCount}
                   totalSnapshotCount={documentHistory.length}
                   snapshots={documentHistory}
                   onCaptureSnapshot={() => captureActiveHistorySnapshot("manual")}
+                  onLoadSnapshotContent={hydrateHistorySnapshotContent}
                   onRestoreSnapshot={handleRestoreHistorySnapshot}
                   onDeleteSnapshot={handleDeleteHistorySnapshot}
                 />
@@ -8935,6 +9282,8 @@ ${macroEnd}
                 <button
                   className="tikz-modal-close"
                   onClick={() => setTikzCanvasOpen(false)}
+                  aria-label="Close TikZ Drawing Canvas"
+                  title="Close TikZ Drawing Canvas (Esc)"
                 >
                   <X size={18} />
                 </button>
@@ -8980,6 +9329,8 @@ ${macroEnd}
                 <button
                   className="tikz-modal-close"
                   onClick={() => setTableCanvasOpen(false)}
+                  aria-label="Close Table Generator"
+                  title="Close Table Generator (Esc)"
                 >
                   <X size={18} />
                 </button>
@@ -9028,6 +9379,8 @@ ${macroEnd}
                 <button
                   className="tikz-modal-close"
                   onClick={() => setTikzConverterOpen(false)}
+                  aria-label="Close Figure to TikZ Converter"
+                  title="Close Figure to TikZ Converter (Esc)"
                 >
                   <X size={18} />
                 </button>
@@ -9076,6 +9429,8 @@ ${macroEnd}
                 <button
                   className="tikz-modal-close"
                   onClick={() => setNotationManagerOpen(false)}
+                  aria-label="Close Notation Manager"
+                  title="Close Notation Manager (Esc)"
                 >
                   <X size={18} />
                 </button>
@@ -9102,6 +9457,8 @@ ${macroEnd}
                 <button
                   className="tikz-modal-close"
                   onClick={() => setCitationManagerOpen(false)}
+                  aria-label="Close Citation Manager"
+                  title="Close Citation Manager (Esc)"
                 >
                   <X size={18} />
                 </button>
@@ -9114,6 +9471,7 @@ ${macroEnd}
                   activeDocumentPath={activeDocument?.relativePath}
                   onInsertCitation={handleInsertCitationCode}
                   onAppendBibEntry={handleAppendBibEntry}
+                  onClose={() => setCitationManagerOpen(false)}
                 />
               </div>
             </div>
@@ -10065,7 +10423,7 @@ ${macroEnd}
                 className={`settings-tab ${settingsTab === "application" ? "active" : ""}`}
                 onClick={() => setSettingsTab("application")}
               >
-                Application
+                Updates
               </button>
             </div>
 
@@ -11533,57 +11891,75 @@ ${macroEnd}
               {settingsTab === "application" ? (
                 <>
                   <div className="settings-section-heading">
-                    <strong>Application</strong>
-                    <span>Version and release management.</span>
+                    <strong>Updates</strong>
+                    <span>Check, download, and install LatexDo releases manually.</span>
                   </div>
 
                   <div className="settings-row update-row">
                     <span>
-                      <strong>App updates</strong>
+                      <strong>Manual updates</strong>
                       <small>
-                        {checkingUpdates
-                          ? "Checking for the latest release…"
-                          : updateInfo?.updateAvailable
-                            ? `Version ${updateInfo.latestVersion} is available. You are on ${updateInfo.currentVersion}.`
-                            : updateInfo?.latestVersion
-                              ? `You are up to date on version ${updateInfo.currentVersion}.`
-                              : updateInfo?.error
-                                ? updateInfo.error
-                                : "Check the LatexDo downloads page for updates."}
+                        {updatingNow
+                          ? "Preparing the updater and installer…"
+                          : checkingUpdates
+                            ? "Checking for the latest release…"
+                            : updateInfo?.error
+                              ? updateInfo.error
+                              : updateInfo?.updateAvailable
+                                ? `Version ${updateInfo.latestVersion} is available. You are on ${updateInfo.currentVersion}.`
+                                : updateInfo?.latestVersion
+                                  ? `You are up to date on version ${updateInfo.currentVersion}.`
+                                  : "No manual check has been run in this session."}
                       </small>
+                      {updateCheckedLabel || updatePublishedLabel ? (
+                        <small className="settings-update-meta">
+                          {updateCheckedLabel
+                            ? `Last checked ${updateCheckedLabel}`
+                            : `Published ${updatePublishedLabel}`}
+                        </small>
+                      ) : null}
                     </span>
                     <div className="settings-update-actions">
                       <button
                         type="button"
                         className="dialog-cancel"
                         onClick={() => void checkForUpdates()}
-                        disabled={checkingUpdates}
+                        disabled={checkingUpdates || updatingNow}
                       >
-                        {checkingUpdates ? "Checking…" : "Check now"}
+                        {checkingUpdates ? (
+                          <LoaderCircle size={13} className="spin" />
+                        ) : (
+                          <RefreshCw size={13} />
+                        )}
+                        {checkingUpdates ? "Checking…" : "Check for updates"}
                       </button>
-                      {updateInfo?.updateAvailable ? (
-                        <button
-                          type="button"
-                          className="dialog-submit"
-                          onClick={() => void updateNow()}
-                          disabled={updatingNow}
-                        >
-                          {updatingNow ? "Updating…" : "Update now"}
-                        </button>
-                      ) : null}
                       <button
                         type="button"
-                        className={
-                          updateInfo?.updateAvailable
-                            ? "dialog-cancel"
-                            : "dialog-submit"
-                        }
+                        className="dialog-submit"
+                        onClick={() => void updateNow()}
+                        disabled={checkingUpdates || updatingNow}
+                      >
+                        {updatingNow ? (
+                          <LoaderCircle size={13} className="spin" />
+                        ) : (
+                          <Download size={13} />
+                        )}
+                        {updatingNow
+                          ? "Updating…"
+                          : updateInfo?.updateAvailable
+                            ? "Install update"
+                            : "Update manually"}
+                      </button>
+                      <button
+                        type="button"
+                        className="dialog-cancel"
                         onClick={() =>
                           void window.latexdo.openReleasesPage(
                             updateInfo?.releaseUrl ?? undefined,
                           )
                         }
                       >
+                        <ExternalLink size={13} />
                         Open downloads
                       </button>
                     </div>

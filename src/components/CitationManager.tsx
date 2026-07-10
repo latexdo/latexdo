@@ -7,6 +7,7 @@ import {
   FilePlus2,
   Link2,
   Search,
+  X,
 } from "lucide-react";
 import type { CitationEntry } from "../latex/latexIndex";
 import {
@@ -26,6 +27,7 @@ interface CitationManagerProps {
   activeDocumentPath?: string;
   onInsertCitation?: (key: string, command: CitationInsertCommand) => void;
   onAppendBibEntry?: (targetFile: string, bibtex: string) => void;
+  onClose?: () => void;
 }
 
 const citationTabs: Array<{ id: CitationManagerTab; label: string }> = [
@@ -110,6 +112,7 @@ export function CitationManager({
   activeDocumentPath,
   onInsertCitation,
   onAppendBibEntry,
+  onClose,
 }: CitationManagerProps) {
   const [activeTab, setActiveTab] = useState<CitationManagerTab>("library");
   const [searchQuery, setSearchQuery] = useState("");
@@ -233,12 +236,25 @@ export function CitationManager({
             bibliography hygiene before compile time.
           </p>
         </div>
-        <div className="citation-manager-status">
-          {loading
-            ? "Scanning project..."
-            : copied
-              ? `Copied ${copied}`
-              : "Local BibTeX"}
+        <div className="citation-manager-hero-actions">
+          <div className="citation-manager-status">
+            {loading
+              ? "Scanning project..."
+              : copied
+                ? `Copied ${copied}`
+                : "Local BibTeX"}
+          </div>
+          {onClose ? (
+            <button
+              type="button"
+              className="citation-manager-close"
+              onClick={onClose}
+              aria-label="Close citation manager"
+              title="Close citation manager (Esc)"
+            >
+              <X size={16} />
+            </button>
+          ) : null}
         </div>
       </div>
 

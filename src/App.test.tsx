@@ -4,6 +4,7 @@ import App from "./App";
 import { fallbackExtensionCatalog } from "./extensions";
 import type {
   GitDiffSession,
+  GitGraphCommit,
   GitStatusSummary,
   OpenProject,
   ProjectEntry,
@@ -372,6 +373,57 @@ describe("App critical UI controls", () => {
     });
   });
 
+  it("shows a manual update button in settings", async () => {
+    const api = installLatexDoMock({
+      updateResult: {
+        currentVersion: "0.1.0",
+        latestVersion: "0.1.0",
+        releaseUrl: "https://latexdo.org/downloads/",
+        updateAvailable: false,
+      },
+    });
+
+    render(<App />);
+
+    fireEvent.click(screen.getByLabelText(/open settings/i));
+    fireEvent.click(screen.getByRole("button", { name: "Updates" }));
+
+    const manualUpdateButton = await screen.findByRole("button", {
+      name: /update manually/i,
+    });
+    fireEvent.click(manualUpdateButton);
+
+    await waitFor(() => {
+      expect(api.updateNow).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("closes settings and citation manager with Escape", async () => {
+    installLatexDoMock();
+
+    render(<App />);
+
+    fireEvent.click(screen.getByLabelText(/open settings/i));
+    expect(screen.getByRole("dialog", { name: /settings/i })).toBeVisible();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: /settings/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTitle("Citation Manager"));
+    expect(await screen.findByText("Project Bibliography")).toBeVisible();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Project Bibliography")).not.toBeInTheDocument();
+    });
+  });
+
   it("creates a project from a welcome template", async () => {
     const api = installLatexDoMock();
 
@@ -535,6 +587,35 @@ describe("App critical UI controls", () => {
       screen.getByRole("button", {
         name: /open working tree diff for chapters\/intro\.tex/i,
       }),
+    ).toBeVisible();
+  });
+
+  it("keeps source control visible when Git history data is partial", async () => {
+    const api = installLatexDoMock({
+      gitStatus: {
+        isRepo: true,
+        branch: "main",
+        entries: [],
+      },
+    });
+    api.getGitHistory.mockResolvedValue({
+      scope: "repo",
+      target: null,
+      commits: [
+        {
+          hash: "abcdef1234567890",
+          subject: "Partial commit from older backend",
+        } as unknown as GitGraphCommit,
+      ],
+    });
+
+    render(<App />);
+    await openProjectFromWelcome();
+    fireEvent.click(screen.getByTitle("Source control"));
+
+    expect(await screen.findByText("SOURCE CONTROL")).toBeVisible();
+    expect(
+      (await screen.findAllByText("Partial commit from older backend"))[0],
     ).toBeVisible();
   });
 
