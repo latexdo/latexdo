@@ -1,5 +1,4 @@
 import Editor, {
-  DiffEditor,
   type BeforeMount,
   type OnMount,
 } from "@monaco-editor/react";
@@ -17,6 +16,7 @@ import {
   CircleCheck,
   Code2,
   Command,
+  Copy,
   Download,
   ExternalLink,
   FilePlus2,
@@ -73,6 +73,8 @@ import { TerminalPanel } from "./components/TerminalPanel";
 import { ReviewSidebar } from "./components/ReviewSidebar";
 import { RebuttalSidebar } from "./components/RebuttalSidebar";
 import { HistorySidebar } from "./components/HistorySidebar";
+import { GitGraph } from "./components/GitGraph";
+import { GitDiffWorkbench } from "./components/GitDiffWorkbench";
 import {
   CitationManager,
   type CitationInsertCommand,
@@ -98,12 +100,15 @@ import type {
   DocumentHistorySnapshot,
   EditorMode,
   Engine,
+  GitBlameLine,
+  GitChangeEntry,
+  GitChangedEvent,
   GitCommitDetails,
+  GitCommitFile,
   GitDiscardResult,
-  GitDiffEditorInput,
-  GitDiffPreview,
+  GitDiffSession,
+  GitGraphCommit,
   GitHistorySummary,
-  GitStatusEntry,
   GitStatusSummary,
   ImportedProjectEntry,
   OpenProject,
@@ -179,6 +184,14 @@ type PanelKind =
   | "structureReport"
   | "pdfReport";
 type SidebarView = "explorer" | "sourceControl" | "history" | "search";
+type GitChangeArea = "staged" | "changes";
+
+interface GitContextMenuState {
+  entry: GitChangeEntry;
+  area: GitChangeArea;
+  x: number;
+  y: number;
+}
 type LatexToolbarCommand =
   | "bold"
   | "italic"
@@ -193,10 +206,6 @@ type LatexToolbarCommand =
   | "ref"
   | "href"
   | "formatTable";
-
-interface GitDiffSession extends GitDiffEditorInput {
-  label: string;
-}
 
 function AppIcon({ className }: { className?: string }) {
   return (
@@ -1253,14 +1262,28 @@ function fileDirectory(filePath: string): string {
   return parts.join("/") || ".";
 }
 
-function gitStatusCode(entry: GitStatusEntry, area: "staged" | "changes"): string {
-  const raw =
-    area === "staged"
-      ? entry.indexStatus || entry.workingTreeStatus
-      : entry.workingTreeStatus || entry.indexStatus;
-  if (entry.indexStatus === "?" || entry.workingTreeStatus === "?") return "U";
-  if (entry.indexStatus === "U" || entry.workingTreeStatus === "U") return "!";
-  return raw || "M";
+function gitStatusCode(entry: GitChangeEntry, area: GitChangeArea): string {
+  const status = area === "staged" ? entry.indexStatus : entry.worktreeStatus;
+  switch (status) {
+    case "added":
+      return "A";
+    case "deleted":
+      return "D";
+    case "renamed":
+      return "R";
+    case "copied":
+      return "C";
+    case "untracked":
+      return "U";
+    case "conflicted":
+      return "!";
+    case "type-changed":
+      return "T";
+    case "modified":
+    case "unmodified":
+    default:
+      return "M";
+  }
 }
 
 function gitStatusLabel(code: string): string {
@@ -1283,6 +1306,21 @@ function gitStatusLabel(code: string): string {
   }
 }
 
+function gitDiffTabLabel(session: GitDiffSession): string {
+  const name = fileName(session.relativePath);
+  return `${name} (${session.originalLabel}) ↔ ${name} (${session.modifiedLabel})`;
+}
+
+function formatGitDate(value: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+  }).format(timestamp);
+}
+
 function gitStatusClass(code: string): string {
   switch (code) {
     case "A":
@@ -1299,6 +1337,22 @@ function gitStatusClass(code: string): string {
     case "M":
     default:
       return "modified";
+  }
+}
+
+function gitDiffStatusCode(status: GitCommitFile["status"]): string {
+  switch (status) {
+    case "added":
+      return "A";
+    case "deleted":
+      return "D";
+    case "renamed":
+      return "R";
+    case "copied":
+      return "C";
+    case "modified":
+    default:
+      return "M";
   }
 }
 
@@ -1748,16 +1802,21 @@ export default function App() {
   const [gitLoading, setGitLoading] = useState(false);
   const [gitCommitMessage, setGitCommitMessage] = useState("");
   const [gitActionBusy, setGitActionBusy] = useState<string | null>(null);
-  const [gitDiffPreview, setGitDiffPreview] = useState<GitDiffPreview | null>(null);
   const [gitDiffSession, setGitDiffSession] = useState<GitDiffSession | null>(null);
+  const [gitBlameLines, setGitBlameLines] = useState<GitBlameLine[]>([]);
   const [gitRepoHistory, setGitRepoHistory] = useState<GitHistorySummary | null>(null);
   const [gitFileHistory, setGitFileHistory] = useState<GitHistorySummary | null>(null);
+  const [gitFileHistoryPath, setGitFileHistoryPath] = useState<string | null>(null);
+  const [selectedGitCommitHash, setSelectedGitCommitHash] = useState<string | null>(
+    null,
+  );
   const [gitCommitDetails, setGitCommitDetails] = useState<GitCommitDetails | null>(
     null,
   );
-  const [gitCommitDetailsTargetPath, setGitCommitDetailsTargetPath] = useState<
-    string | null
-  >(null);
+  const [gitCommitParentHash, setGitCommitParentHash] = useState("");
+  const [gitContextMenu, setGitContextMenu] = useState<GitContextMenuState | null>(
+    null,
+  );
   const [documentHistory, setDocumentHistory] = useState<DocumentHistorySnapshot[]>([]);
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
@@ -1834,6 +1893,13 @@ export default function App() {
   const historySaveTimerRef = useRef<number | null>(null);
   const historyAutoCaptureTimerRef = useRef<number | null>(null);
   const browserAutoOpenRef = useRef(false);
+  const gitDiffSessionRef = useRef<GitDiffSession | null>(null);
+  const gitDiffSessionIdRef = useRef("");
+  const gitDiffReturnPathRef = useRef("");
+  const gitFileHistoryPathRef = useRef("");
+  const gitRefreshTimerRef = useRef<number | null>(null);
+  const gitRowClickTimerRef = useRef<number | null>(null);
+  const scheduleGitRefreshRef = useRef<() => void>(() => {});
   const installedExtensionSnippetsRef = useRef<LatexDoExtensionSnippet[]>([]);
   const runtime = (window.latexdo as typeof window.latexdo & { runtime?: string })
     .runtime;
@@ -1864,7 +1930,8 @@ export default function App() {
   const hasVisibleProject = Boolean(projectId) && !hideProjectEntries;
   const showWelcome = welcomeOpen && !activePath;
   const showBlankWorkspace = hideProjectEntries && !welcomeOpen && !activePath;
-  const previewShown = previewVisible && !showWelcome && !showBlankWorkspace;
+  const previewShown =
+    previewVisible && !showWelcome && !showBlankWorkspace && !gitDiffSession;
   const projectName = hasVisibleProject
     ? fileName(projectPath) || "Project"
     : "No Folder";
@@ -1927,12 +1994,11 @@ export default function App() {
   );
   const modifiedFiles = gitStatus?.entries.length ?? 0;
   const stagedGitEntries = useMemo(
-    () => (gitStatus?.entries ?? []).filter((entry) => Boolean(entry.indexStatus)),
+    () => (gitStatus?.entries ?? []).filter((entry) => entry.staged),
     [gitStatus],
   );
   const unstagedGitEntries = useMemo(
-    () =>
-      (gitStatus?.entries ?? []).filter((entry) => Boolean(entry.workingTreeStatus)),
+    () => (gitStatus?.entries ?? []).filter((entry) => entry.unstaged),
     [gitStatus],
   );
   const filteredSpellCheckerLanguages = useMemo(() => {
@@ -2741,6 +2807,18 @@ ${macroEnd}
       documentHistoryRef.current = [];
       setActivePath("");
       activePathRef.current = "";
+      setGitStatus(null);
+      setGitDiffSession(null);
+      gitDiffSessionRef.current = null;
+      gitDiffSessionIdRef.current = "";
+      setGitBlameLines([]);
+      setGitRepoHistory(null);
+      setGitFileHistory(null);
+      setGitFileHistoryPath(null);
+      gitFileHistoryPathRef.current = "";
+      setSelectedGitCommitHash(null);
+      setGitCommitDetails(null);
+      setGitCommitParentHash("");
       setWelcomeOpen(true);
       setCompileResult(null);
       setPdfData(null);
@@ -2813,6 +2891,7 @@ ${macroEnd}
       documentsRef.current = nextDocuments;
       return nextDocuments;
     });
+    scheduleGitRefreshRef.current();
     setStatusMessage(`Saved ${document.relativePath}`);
   }, []);
 
@@ -3617,7 +3696,6 @@ ${macroEnd}
         endLine: match.line,
         endColumn: match.endColumn,
       };
-      setGitDiffSession(null);
       setWelcomeOpen(false);
       await openDocument(entry);
       requestAnimationFrame(() => {
@@ -5810,6 +5888,145 @@ ${macroEnd}
     }
   }, []);
 
+  const refreshGitHistories = useCallback(async () => {
+    const currentProject = projectIdRef.current;
+    if (!currentProject) {
+      setGitRepoHistory(null);
+      setGitFileHistory(null);
+      return;
+    }
+
+    const currentDocument = documentsRef.current.find(
+      (document) => document.path === activePathRef.current,
+    );
+    const targetPath =
+      gitFileHistoryPathRef.current || currentDocument?.relativePath || "";
+    try {
+      const [repositoryHistory, fileHistory] = await Promise.all([
+        window.latexdo.getGitHistory(currentProject),
+        targetPath
+          ? window.latexdo.getGitHistory(currentProject, targetPath)
+          : Promise.resolve(null),
+      ]);
+      setGitRepoHistory(repositoryHistory);
+      setGitFileHistory(fileHistory);
+    } catch {
+      setGitRepoHistory(null);
+      setGitFileHistory(null);
+    }
+  }, []);
+
+  const refreshOpenGitDiff = useCallback(async () => {
+    const currentProject = projectIdRef.current;
+    const currentSession = gitDiffSessionRef.current;
+    if (!currentProject || !currentSession) return;
+
+    const area =
+      currentSession.modifiedRef.kind === "index"
+        ? "staged"
+        : currentSession.modifiedRef.kind === "working-tree"
+          ? "changes"
+          : null;
+    if (!area) return;
+
+    try {
+      const refreshedSession = await window.latexdo.getGitEditorDiff(
+        currentProject,
+        currentSession.relativePath,
+        area,
+      );
+      if (gitDiffSessionRef.current?.id !== currentSession.id) return;
+      gitDiffSessionRef.current = refreshedSession;
+      gitDiffSessionIdRef.current = refreshedSession.id;
+      setGitDiffSession(refreshedSession);
+      const blame =
+        refreshedSession.binary || refreshedSession.tooLarge
+          ? []
+          : await window.latexdo.getGitBlame(
+              currentProject,
+              refreshedSession.relativePath,
+              refreshedSession.modifiedRef,
+            );
+      if (gitDiffSessionRef.current?.id === refreshedSession.id) {
+        setGitBlameLines(blame);
+      }
+    } catch {
+      // The revision may disappear after a stage/commit; the explicit operation closes it.
+    }
+  }, []);
+
+  const refreshGitData = useCallback(
+    async () => {
+      await Promise.all([
+        refreshGitStatus(),
+        refreshGitHistories(),
+        refreshOpenGitDiff(),
+      ]);
+    },
+    [refreshGitHistories, refreshGitStatus, refreshOpenGitDiff],
+  );
+
+  const scheduleGitRefresh = useCallback(() => {
+    if (gitRefreshTimerRef.current !== null) {
+      window.clearTimeout(gitRefreshTimerRef.current);
+    }
+    gitRefreshTimerRef.current = window.setTimeout(() => {
+      gitRefreshTimerRef.current = null;
+      void refreshGitData();
+    }, 150);
+  }, [refreshGitData]);
+  scheduleGitRefreshRef.current = scheduleGitRefresh;
+
+  const closeGitDiffSession = useCallback((restoreDocument = true) => {
+    const diffWasActive = !activePathRef.current && !welcomeOpen;
+    setGitDiffSession(null);
+    gitDiffSessionRef.current = null;
+    setGitBlameLines([]);
+    gitDiffSessionIdRef.current = "";
+    if (!restoreDocument || !diffWasActive) return;
+
+    const returnPath = gitDiffReturnPathRef.current;
+    const nextPath = documentsRef.current.some((document) => document.path === returnPath)
+      ? returnPath
+      : (documentsRef.current[0]?.path ?? "");
+    setActivePath(nextPath);
+    activePathRef.current = nextPath;
+  }, [welcomeOpen]);
+
+  const activateGitDiffSession = useCallback(async (session: GitDiffSession) => {
+    const currentProject = projectIdRef.current;
+    if (!currentProject) return;
+
+    if (activePathRef.current) {
+      gitDiffReturnPathRef.current = activePathRef.current;
+    }
+    gitDiffSessionIdRef.current = session.id;
+    gitDiffSessionRef.current = session;
+    setGitDiffSession(session);
+    setGitBlameLines([]);
+    setWelcomeOpen(false);
+    setActivePath("");
+    activePathRef.current = "";
+
+    if (session.modifiedRef.kind === "empty" || session.binary || session.tooLarge) {
+      return;
+    }
+    try {
+      const blame = await window.latexdo.getGitBlame(
+        currentProject,
+        session.relativePath,
+        session.modifiedRef,
+      );
+      if (gitDiffSessionIdRef.current === session.id) {
+        setGitBlameLines(blame);
+      }
+    } catch {
+      if (gitDiffSessionIdRef.current === session.id) {
+        setGitBlameLines([]);
+      }
+    }
+  }, []);
+
   const checkForUpdates = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) {
       setCheckingUpdates(true);
@@ -5863,13 +6080,16 @@ ${macroEnd}
       setGitActionBusy(`stage:${relativePath}`);
       try {
         await window.latexdo.stageGitFile(currentProject, relativePath);
-        await refreshGitStatus();
+        if (gitDiffSessionIdRef.current && gitDiffSession?.relativePath === relativePath) {
+          closeGitDiffSession();
+        }
+        await refreshGitData();
         setStatusMessage(`Staged ${relativePath}`);
       } finally {
         setGitActionBusy(null);
       }
     },
-    [refreshGitStatus],
+    [closeGitDiffSession, gitDiffSession?.relativePath, refreshGitData],
   );
 
   const unstageGitEntry = useCallback(
@@ -5880,13 +6100,16 @@ ${macroEnd}
       setGitActionBusy(`unstage:${relativePath}`);
       try {
         await window.latexdo.unstageGitFile(currentProject, relativePath);
-        await refreshGitStatus();
+        if (gitDiffSessionIdRef.current && gitDiffSession?.relativePath === relativePath) {
+          closeGitDiffSession();
+        }
+        await refreshGitData();
         setStatusMessage(`Unstaged ${relativePath}`);
       } finally {
         setGitActionBusy(null);
       }
     },
-    [refreshGitStatus],
+    [closeGitDiffSession, gitDiffSession?.relativePath, refreshGitData],
   );
 
   const commitGitChanges = useCallback(async () => {
@@ -5897,27 +6120,15 @@ ${macroEnd}
     try {
       await window.latexdo.commitGit(currentProject, gitCommitMessage);
       setGitCommitMessage("");
-      await refreshGitStatus();
+      closeGitDiffSession();
+      await refreshGitData();
       setStatusMessage("Created commit");
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Git commit failed");
     } finally {
       setGitActionBusy(null);
     }
-  }, [gitCommitMessage, refreshGitStatus]);
-
-  const previewGitDiff = useCallback(async (relativePath: string) => {
-    const currentProject = projectIdRef.current;
-    if (!currentProject) return;
-
-    setGitActionBusy(`diff:${relativePath}`);
-    try {
-      const preview = await window.latexdo.getGitDiff(currentProject, relativePath);
-      setGitDiffPreview(preview);
-    } finally {
-      setGitActionBusy(null);
-    }
-  }, []);
+  }, [closeGitDiffSession, gitCommitMessage, refreshGitData]);
 
   const discardGitEntry = useCallback(
     async (relativePath: string) => {
@@ -5937,10 +6148,10 @@ ${macroEnd}
         if (activePathRef.current.endsWith(relativePath)) {
           await refreshProject(currentProject);
         }
-        await refreshGitStatus();
-        if (gitDiffPreview?.path === relativePath) {
-          setGitDiffPreview(null);
+        if (gitDiffSession?.relativePath === relativePath) {
+          closeGitDiffSession();
         }
+        await refreshGitData();
         setStatusMessage(
           gitDiscardStatusMessage(result, `Discarded changes in ${relativePath}`),
         );
@@ -5948,7 +6159,7 @@ ${macroEnd}
         setGitActionBusy(null);
       }
     },
-    [gitDiffPreview?.path, refreshGitStatus, refreshProject],
+    [closeGitDiffSession, gitDiffSession?.relativePath, refreshGitData, refreshProject],
   );
 
   const stageAllGitEntries = useCallback(async () => {
@@ -5958,12 +6169,13 @@ ${macroEnd}
     setGitActionBusy("stage-all");
     try {
       await window.latexdo.stageAllGit(currentProject);
-      await refreshGitStatus();
+      closeGitDiffSession();
+      await refreshGitData();
       setStatusMessage("Staged all changes");
     } finally {
       setGitActionBusy(null);
     }
-  }, [refreshGitStatus]);
+  }, [closeGitDiffSession, refreshGitData]);
 
   const unstageAllGitEntries = useCallback(async () => {
     const currentProject = projectIdRef.current;
@@ -5972,12 +6184,13 @@ ${macroEnd}
     setGitActionBusy("unstage-all");
     try {
       await window.latexdo.unstageAllGit(currentProject);
-      await refreshGitStatus();
+      closeGitDiffSession();
+      await refreshGitData();
       setStatusMessage("Unstaged all changes");
     } finally {
       setGitActionBusy(null);
     }
-  }, [refreshGitStatus]);
+  }, [closeGitDiffSession, refreshGitData]);
 
   const discardAllGitEntries = useCallback(async () => {
     const currentProject = projectIdRef.current;
@@ -5990,26 +6203,28 @@ ${macroEnd}
         setStatusMessage("Discard canceled.");
         return;
       }
-      setGitDiffPreview(null);
-      await refreshGitStatus();
+      closeGitDiffSession();
+      await refreshProject(currentProject);
+      await refreshGitData();
       setStatusMessage(
         gitDiscardStatusMessage(result, "Discarded all unstaged changes"),
       );
     } finally {
       setGitActionBusy(null);
     }
-  }, [refreshGitStatus]);
+  }, [closeGitDiffSession, refreshGitData, refreshProject]);
 
   const openGitCommitDetails = useCallback(
-    async (hash: string, targetPath?: string) => {
+    async (hash: string) => {
       const currentProject = projectIdRef.current;
       if (!currentProject) return;
 
+      setSelectedGitCommitHash(hash);
       setGitActionBusy(`commit:${hash}`);
       try {
         const details = await window.latexdo.getGitCommitDetails(currentProject, hash);
         setGitCommitDetails(details);
-        setGitCommitDetailsTargetPath(targetPath ?? null);
+        setGitCommitParentHash(details.parents[0] ?? "");
       } finally {
         setGitActionBusy(null);
       }
@@ -6018,7 +6233,7 @@ ${macroEnd}
   );
 
   const openGitCommitRevisionDiff = useCallback(
-    async (hash: string, relativePath: string) => {
+    async (hash: string, relativePath: string, parentHash?: string) => {
       const currentProject = projectIdRef.current;
       if (!currentProject) return;
 
@@ -6028,28 +6243,71 @@ ${macroEnd}
           currentProject,
           relativePath,
           hash,
+          parentHash || undefined,
         );
-        setWelcomeOpen(false);
-        setActivePath("");
-        activePathRef.current = "";
-        setGitDiffSession({
-          ...snapshot,
-          label: `${fileName(relativePath)} (${hash.slice(0, 7)})`,
-        });
+        await activateGitDiffSession(snapshot);
         setStatusMessage(`Opened ${relativePath} at ${hash.slice(0, 7)}`);
       } finally {
         setGitActionBusy(null);
       }
     },
-    [],
+    [activateGitDiffSession],
   );
 
   useEffect(() => {
-    if (activeSidebar !== "sourceControl") {
-      return;
+    if (!projectId) return;
+    scheduleGitRefresh();
+  }, [activeSidebar, projectId, scheduleGitRefresh]);
+
+  useEffect(() => {
+    const nextPath = activeDocument?.relativePath;
+    if (!nextPath) return;
+    setGitFileHistoryPath(nextPath);
+    gitFileHistoryPathRef.current = nextPath;
+    if (activeSidebar === "sourceControl" && projectId) {
+      scheduleGitRefresh();
     }
-    void refreshGitStatus();
-  }, [activeSidebar, projectId, refreshGitStatus]);
+  }, [activeDocument?.relativePath, activeSidebar, projectId, scheduleGitRefresh]);
+
+  useEffect(() => {
+    const handleFocus = () => scheduleGitRefresh();
+    window.addEventListener("focus", handleFocus);
+    const disposeGitWatcher = window.latexdo.onGitChanged((event: GitChangedEvent) => {
+      if (event.projectId === projectIdRef.current) {
+        scheduleGitRefresh();
+      }
+    });
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      disposeGitWatcher();
+      if (gitRefreshTimerRef.current !== null) {
+        window.clearTimeout(gitRefreshTimerRef.current);
+        gitRefreshTimerRef.current = null;
+      }
+      if (gitRowClickTimerRef.current !== null) {
+        window.clearTimeout(gitRowClickTimerRef.current);
+        gitRowClickTimerRef.current = null;
+      }
+    };
+  }, [scheduleGitRefresh]);
+
+  useEffect(() => {
+    if (!gitContextMenu) return;
+    const closeContextMenu = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".scm-context-menu")) return;
+      setGitContextMenu(null);
+    };
+    const closeContextMenuFromKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setGitContextMenu(null);
+    };
+    window.addEventListener("pointerdown", closeContextMenu);
+    window.addEventListener("keydown", closeContextMenuFromKey);
+    return () => {
+      window.removeEventListener("pointerdown", closeContextMenu);
+      window.removeEventListener("keydown", closeContextMenuFromKey);
+    };
+  }, [gitContextMenu]);
 
   useEffect(() => {
     void checkForUpdates({ silent: true });
@@ -6058,39 +6316,6 @@ ${macroEnd}
     }, updateCheckIntervalMs);
     return () => window.clearInterval(interval);
   }, [checkForUpdates]);
-
-  useEffect(() => {
-    if (activeSidebar !== "sourceControl" || !projectId) {
-      return;
-    }
-
-    let cancelled = false;
-    const loadHistory = async () => {
-      try {
-        const [repoHistory, fileHistory] = await Promise.all([
-          window.latexdo.getGitHistory(projectId),
-          activeDocument
-            ? window.latexdo.getGitHistory(projectId, activeDocument.relativePath)
-            : Promise.resolve(null),
-        ]);
-
-        if (!cancelled) {
-          setGitRepoHistory(repoHistory);
-          setGitFileHistory(fileHistory);
-        }
-      } catch {
-        if (!cancelled) {
-          setGitRepoHistory(null);
-          setGitFileHistory(null);
-        }
-      }
-    };
-
-    void loadHistory();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSidebar, projectId, activeDocument]);
 
   const togglePreview = async () => {
     if (previewShown) {
@@ -6173,39 +6398,65 @@ ${macroEnd}
 
   const openGitFile = useCallback(
     async (relativePath: string) => {
-      setGitDiffSession(null);
-      const entry = allProjectEntries.find(
+      let entry = allProjectEntries.find(
         (item) => item.type === "file" && item.relativePath === relativePath,
       );
       if (!entry) {
+        const refreshedEntries = await refreshProject();
+        entry = flattenEntries(refreshedEntries).find(
+          (item) => item.type === "file" && item.relativePath === relativePath,
+        );
+      }
+      if (!entry) {
+        setStatusMessage(`${relativePath} is not present in the working tree.`);
         return;
       }
       await openDocument(entry);
     },
-    [allProjectEntries, openDocument],
+    [allProjectEntries, openDocument, refreshProject],
   );
 
-  const openGitDiffEditor = useCallback(async (relativePath: string) => {
+  const openGitDiffEditor = useCallback(
+    async (entry: GitChangeEntry, area: GitChangeArea) => {
+      const currentProject = projectIdRef.current;
+      if (!currentProject) return;
+
+      setGitActionBusy(`editor-diff:${area}:${entry.path}`);
+      try {
+        const session = await window.latexdo.getGitEditorDiff(
+          currentProject,
+          entry.path,
+          area,
+        );
+        await activateGitDiffSession(session);
+        setStatusMessage(
+          `Opened ${session.originalLabel} ↔ ${session.modifiedLabel} for ${entry.path}`,
+        );
+      } finally {
+        setGitActionBusy(null);
+      }
+    },
+    [activateGitDiffSession],
+  );
+
+  const revealGitFile = useCallback(async (relativePath: string) => {
     const currentProject = projectIdRef.current;
     if (!currentProject) return;
+    await window.latexdo.revealGitFile(currentProject, relativePath);
+  }, []);
 
-    setGitActionBusy(`editor-diff:${relativePath}`);
-    try {
-      const snapshot = await window.latexdo.getGitEditorDiff(
-        currentProject,
-        relativePath,
-      );
-      setWelcomeOpen(false);
-      setActivePath("");
-      activePathRef.current = "";
-      setGitDiffSession({
-        ...snapshot,
-        label: `${fileName(relativePath)} (Diff)`,
-      });
-      setStatusMessage(`Opened diff for ${relativePath}`);
-    } finally {
-      setGitActionBusy(null);
-    }
+  const copyGitPath = useCallback(async (relativePath: string) => {
+    await navigator.clipboard?.writeText(relativePath);
+    setStatusMessage(`Copied ${relativePath}`);
+  }, []);
+
+  const openGitFileHistory = useCallback(async (relativePath: string) => {
+    const currentProject = projectIdRef.current;
+    if (!currentProject) return;
+    gitFileHistoryPathRef.current = relativePath;
+    setGitFileHistoryPath(relativePath);
+    const history = await window.latexdo.getGitHistory(currentProject, relativePath);
+    setGitFileHistory(history);
   }, []);
 
   const applyLatexToolbarCommand = useCallback((command: LatexToolbarCommand) => {
@@ -6648,7 +6899,6 @@ ${macroEnd}
             .catch(() => snapshot.content)
         : snapshot.content;
 
-      setGitDiffSession(null);
       setWelcomeOpen(false);
       setActivePath(entry.path);
       activePathRef.current = entry.path;
@@ -6935,39 +7185,70 @@ ${macroEnd}
     window.addEventListener("pointerup", handleUp);
   };
 
-  const renderGitChangeRow = (entry: GitStatusEntry, area: "staged" | "changes") => {
+  const renderGitChangeRow = (entry: GitChangeEntry, area: GitChangeArea) => {
     const code = gitStatusCode(entry, area);
-    const displayPath = gitDisplayPath(entry.path);
+    const displayPath = entry.path;
     const directory = fileDirectory(entry.path);
     const statusLabel = gitStatusLabel(code);
-    const isPreviewed = gitDiffPreview?.path === entry.path;
+    const isSelected =
+      gitDiffSession?.relativePath === entry.path &&
+      (area === "staged"
+        ? gitDiffSession.modifiedRef.kind === "index"
+        : gitDiffSession.modifiedRef.kind === "working-tree");
 
     return (
       <div
-        key={`${entry.path}:${entry.indexStatus}:${entry.workingTreeStatus}:${area}`}
-        className={`scm-file-row ${isPreviewed ? "active" : ""}`}
+        key={`${entry.path}:${entry.indexStatus}:${entry.worktreeStatus}:${area}`}
+        className={`scm-change-row ${isSelected ? "active" : ""}`}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          setGitContextMenu({
+            entry,
+            area,
+            x: event.clientX,
+            y: event.clientY,
+          });
+        }}
       >
+        <span className={`scm-status-badge ${gitStatusClass(code)}`}>{code}</span>
         <button
           type="button"
-          className="scm-file-main"
-          onClick={() => void previewGitDiff(entry.path)}
-          title={`Preview ${displayPath}`}
+          className="scm-change-name"
+          aria-label={`Open ${area === "staged" ? "staged" : "working tree"} diff for ${displayPath}`}
+          title={`${statusLabel}: ${displayPath}`}
+          onClick={() => {
+            if (gitRowClickTimerRef.current !== null) {
+              window.clearTimeout(gitRowClickTimerRef.current);
+            }
+            gitRowClickTimerRef.current = window.setTimeout(() => {
+              gitRowClickTimerRef.current = null;
+              void openGitDiffEditor(entry, area);
+            }, 180);
+          }}
+          onDoubleClick={(event) => {
+            event.preventDefault();
+            if (gitRowClickTimerRef.current !== null) {
+              window.clearTimeout(gitRowClickTimerRef.current);
+              gitRowClickTimerRef.current = null;
+            }
+            void openGitFile(entry.path);
+          }}
         >
-          <span className={`scm-status-badge ${gitStatusClass(code)}`}>{code}</span>
-          <span className="scm-file-text">
-            <strong>{fileName(displayPath)}</strong>
-            <small>{directory}</small>
-          </span>
+          <strong>{fileName(displayPath)}</strong>
+          <span>{directory}</span>
         </button>
 
-        <div className="scm-row-actions">
+        <span
+          className="scm-change-actions"
+          onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+        >
           <button
             type="button"
             className="scm-icon-action"
-            onClick={() => void openGitDiffEditor(entry.path)}
-            disabled={gitActionBusy === `editor-diff:${entry.path}`}
-            title="Open diff"
-            aria-label={`Open diff for ${displayPath}`}
+            onClick={() => void openGitFile(entry.path)}
+            title="Open file"
+            aria-label={`Open file ${displayPath}`}
           >
             <ExternalLink size={13} />
           </button>
@@ -7006,8 +7287,7 @@ ${macroEnd}
               </button>
             </>
           )}
-        </div>
-        <span className="scm-row-status">{statusLabel}</span>
+        </span>
       </div>
     );
   };
@@ -7223,7 +7503,10 @@ ${macroEnd}
         </nav>
 
         {sidebarVisible ? (
-          <aside className="sidebar">
+          <aside
+            className={`sidebar ${activeSidebar === "sourceControl" ? "source-control-sidebar" : ""}`}
+            data-view={activeSidebar}
+          >
             <div className="sidebar-header">
               <span>
                 {activeSidebar === "explorer"
@@ -7299,8 +7582,8 @@ ${macroEnd}
                 ) : activeSidebar === "sourceControl" ? (
                   <button
                     className="small-icon"
-                    onClick={() => void refreshGitStatus()}
-                    title="Refresh Git status"
+                    onClick={() => void refreshGitData()}
+                    title="Refresh source control"
                   >
                     <RefreshCw size={14} />
                   </button>
@@ -7426,6 +7709,7 @@ ${macroEnd}
                       <span>
                         {gitActionBusy === "commit" ? "Committing..." : "Commit"}
                       </span>
+                      <ChevronDown size={13} className="scm-commit-chevron" />
                     </button>
                   </div>
                 ) : null}
@@ -7510,73 +7794,42 @@ ${macroEnd}
                         </div>
                       )}
                       <div className="scm-section-header">
-                        <span>Diff Preview</span>
-                      </div>
-                      <div className="sidebar-diff-preview scm-diff-preview">
-                        {gitDiffPreview ? (
-                          <>
-                            <button
-                              className="sidebar-diff-open"
-                              onClick={() => void openGitFile(gitDiffPreview.path)}
-                            >
-                              {gitDiffPreview.path}
-                            </button>
-                            <pre>{gitDiffPreview.diff}</pre>
-                          </>
-                        ) : (
-                          <div className="sidebar-empty-state">
-                            Select Diff on a changed file to inspect it here.
-                          </div>
-                        )}
-                      </div>
-                      <div className="scm-section-header">
                         <span>Timeline</span>
                       </div>
-                      <div className="scm-history-list">
-                        {gitRepoHistory?.commits.length ? (
-                          gitRepoHistory.commits.slice(0, 5).map((commit) => (
-                            <button
-                              key={commit.hash}
-                              className="scm-history-row"
-                              onClick={() => void openGitCommitDetails(commit.hash)}
-                            >
-                              <strong>{commit.subject}</strong>
-                              <span>
-                                {commit.shortHash} · {commit.author} · {commit.date}
-                              </span>
-                            </button>
-                          ))
-                        ) : (
-                          <div className="sidebar-empty-state compact">
-                            No repository history available.
-                          </div>
-                        )}
+                      <div className="scm-timeline">
+                        <GitGraph
+                          commits={gitRepoHistory?.commits ?? []}
+                          selectedHash={selectedGitCommitHash}
+                          loading={gitLoading && !gitRepoHistory}
+                          onSelectCommit={(commit: GitGraphCommit) => {
+                            void openGitCommitDetails(commit.hash);
+                          }}
+                          emptyMessage="No repository history available."
+                        />
                       </div>
-                      {activeDocument ? (
+                      {gitFileHistoryPath ? (
                         <>
-                          <div className="sidebar-section-label">
-                            File History ({activeDocument.relativePath})
+                          <div className="scm-section-header">
+                            <span title={gitFileHistoryPath}>
+                              File History ({fileName(gitFileHistoryPath)})
+                            </span>
                           </div>
-                          <div className="sidebar-list">
+                          <div className="scm-file-history">
                             {gitFileHistory?.commits.length ? (
                               gitFileHistory.commits.slice(0, 6).map((commit) => (
                                 <div
-                                  key={`${commit.hash}:${activeDocument.relativePath}`}
-                                  className="sidebar-item static"
+                                  key={`${commit.hash}:${gitFileHistoryPath}`}
+                                  className="scm-file-history-row"
                                 >
                                   <strong>{commit.subject}</strong>
                                   <span>
-                                    {commit.shortHash} · {commit.author} · {commit.date}
+                                    {commit.shortHash} · {commit.authorName} ·{" "}
+                                    {formatGitDate(commit.authoredAt)}
                                   </span>
-                                  <div className="sidebar-item-actions">
+                                  <div className="scm-file-history-actions">
                                     <button
                                       className="sidebar-mini-action subtle"
-                                      onClick={() =>
-                                        void openGitCommitDetails(
-                                          commit.hash,
-                                          activeDocument.relativePath,
-                                        )
-                                      }
+                                      onClick={() => void openGitCommitDetails(commit.hash)}
                                     >
                                       Details
                                     </button>
@@ -7585,16 +7838,16 @@ ${macroEnd}
                                       onClick={() =>
                                         void openGitCommitRevisionDiff(
                                           commit.hash,
-                                          activeDocument.relativePath,
+                                          gitFileHistoryPath,
                                         )
                                       }
                                       disabled={
                                         gitActionBusy ===
-                                        `commit-diff:${commit.hash}:${activeDocument.relativePath}`
+                                        `commit-diff:${commit.hash}:${gitFileHistoryPath}`
                                       }
                                     >
                                       {gitActionBusy ===
-                                      `commit-diff:${commit.hash}:${activeDocument.relativePath}`
+                                      `commit-diff:${commit.hash}:${gitFileHistoryPath}`
                                         ? "Opening…"
                                         : "Open Diff"}
                                     </button>
@@ -7603,42 +7856,106 @@ ${macroEnd}
                               ))
                             ) : (
                               <div className="sidebar-empty-state compact">
-                                No file history for the active document.
+                                No file history for {fileName(gitFileHistoryPath)}.
                               </div>
                             )}
                           </div>
                         </>
                       ) : null}
-                      <div className="sidebar-section-label">Commit Details</div>
-                      <div className="sidebar-diff-preview">
+                      <div className="scm-section-header">
+                        <span>Commit Details</span>
+                      </div>
+                      <div className="scm-commit-details">
                         {gitCommitDetails ? (
                           <>
-                            <strong>
+                            <h3>
                               {gitCommitDetails.summary || gitCommitDetails.hash}
-                            </strong>
-                            {gitCommitDetailsTargetPath ? (
-                              <div className="sidebar-item-actions">
-                                <button
-                                  className="sidebar-mini-action subtle"
-                                  onClick={() =>
-                                    void openGitCommitRevisionDiff(
-                                      gitCommitDetails.hash,
-                                      gitCommitDetailsTargetPath,
-                                    )
-                                  }
-                                  disabled={
-                                    gitActionBusy ===
-                                    `commit-diff:${gitCommitDetails.hash}:${gitCommitDetailsTargetPath}`
-                                  }
-                                >
-                                  {gitActionBusy ===
-                                  `commit-diff:${gitCommitDetails.hash}:${gitCommitDetailsTargetPath}`
-                                    ? "Opening…"
-                                    : "Open This Revision As Diff"}
-                                </button>
+                            </h3>
+                            {gitCommitDetails.body ? (
+                              <p className="scm-commit-body">{gitCommitDetails.body}</p>
+                            ) : null}
+                            <dl>
+                              <dt>Commit</dt>
+                              <dd title={gitCommitDetails.hash}>
+                                {gitCommitDetails.hash}
+                              </dd>
+                              <dt>Author</dt>
+                              <dd>
+                                {gitCommitDetails.authorName} &lt;
+                                {gitCommitDetails.authorEmail}&gt;
+                              </dd>
+                              <dt>Authored</dt>
+                              <dd>{formatGitDate(gitCommitDetails.authoredAt)}</dd>
+                              <dt>Committed</dt>
+                              <dd>{formatGitDate(gitCommitDetails.committedAt)}</dd>
+                              <dt>Parents</dt>
+                              <dd title={gitCommitDetails.parents.join(" ")}>
+                                {gitCommitDetails.parents.length
+                                  ? gitCommitDetails.parents
+                                      .map((parent) => parent.slice(0, 8))
+                                      .join(", ")
+                                  : "Root commit"}
+                              </dd>
+                            </dl>
+                            {gitCommitDetails.refs.length ? (
+                              <div className="scm-detail-refs">
+                                {gitCommitDetails.refs.map((ref) => (
+                                  <span key={`${ref.kind}:${ref.name}`} className={ref.kind}>
+                                    {ref.name}
+                                  </span>
+                                ))}
                               </div>
                             ) : null}
-                            <pre>{gitCommitDetails.body || gitCommitDetails.hash}</pre>
+                            {gitCommitDetails.parents.length > 1 ? (
+                              <label className="scm-parent-selector">
+                                <span>Compare with parent</span>
+                                <select
+                                  value={gitCommitParentHash}
+                                  onChange={(event) =>
+                                    setGitCommitParentHash(event.target.value)
+                                  }
+                                >
+                                  {gitCommitDetails.parents.map((parent, index) => (
+                                    <option key={parent} value={parent}>
+                                      Parent {index + 1} · {parent.slice(0, 8)}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            ) : null}
+                            <div className="scm-detail-files" aria-label="Changed files">
+                              {gitCommitDetails.changedFiles.map((file) => {
+                                const code = gitDiffStatusCode(file.status);
+                                return (
+                                  <button
+                                    key={`${file.oldPath ?? ""}:${file.path}`}
+                                    type="button"
+                                    onClick={() =>
+                                      void openGitCommitRevisionDiff(
+                                        gitCommitDetails.hash,
+                                        file.path,
+                                        gitCommitParentHash,
+                                      )
+                                    }
+                                    title={`Open ${file.path} diff`}
+                                  >
+                                    <span
+                                      className={`scm-status-badge ${gitStatusClass(code)}`}
+                                    >
+                                      {code}
+                                    </span>
+                                    <span>
+                                      <strong>{fileName(file.path)}</strong>
+                                      <small>
+                                        {file.oldPath
+                                          ? `${file.oldPath} → ${file.path}`
+                                          : fileDirectory(file.path)}
+                                      </small>
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </>
                         ) : (
                           <div className="sidebar-empty-state compact">
@@ -7653,6 +7970,114 @@ ${macroEnd}
                     </div>
                   )}
                 </div>
+                {gitContextMenu ? (
+                  <div
+                    className="scm-context-menu"
+                    role="menu"
+                    aria-label={`Actions for ${gitContextMenu.entry.path}`}
+                    style={{
+                      left: Math.min(gitContextMenu.x, window.innerWidth - 210),
+                      top: Math.min(gitContextMenu.y, window.innerHeight - 260),
+                    }}
+                    onContextMenu={(event) => event.preventDefault()}
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        const { entry, area } = gitContextMenu;
+                        setGitContextMenu(null);
+                        void openGitDiffEditor(entry, area);
+                      }}
+                    >
+                      Open Diff
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        const path = gitContextMenu.entry.path;
+                        setGitContextMenu(null);
+                        void openGitFile(path);
+                      }}
+                    >
+                      Open File
+                    </button>
+                    {gitContextMenu.area === "staged" ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          const path = gitContextMenu.entry.path;
+                          setGitContextMenu(null);
+                          void unstageGitEntry(path);
+                        }}
+                      >
+                        Unstage Changes
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            const path = gitContextMenu.entry.path;
+                            setGitContextMenu(null);
+                            void stageGitEntry(path);
+                          }}
+                        >
+                          Stage Changes
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="danger"
+                          onClick={() => {
+                            const path = gitContextMenu.entry.path;
+                            setGitContextMenu(null);
+                            void discardGitEntry(path);
+                          }}
+                        >
+                          Discard Changes
+                        </button>
+                      </>
+                    )}
+                    <span className="scm-context-menu-separator" />
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        const path = gitContextMenu.entry.path;
+                        setGitContextMenu(null);
+                        void revealGitFile(path);
+                      }}
+                    >
+                      Reveal in File Manager
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        const path = gitContextMenu.entry.path;
+                        setGitContextMenu(null);
+                        void copyGitPath(path);
+                      }}
+                    >
+                      <Copy size={13} /> Copy Path
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        const path = gitContextMenu.entry.path;
+                        setGitContextMenu(null);
+                        void openGitFileHistory(path);
+                      }}
+                    >
+                      Open File History
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ) : activeSidebar === "history" ? (
               <div className="sidebar-panel history-panel">
@@ -7686,7 +8111,7 @@ ${macroEnd}
             ) : null}
             {gitDiffSession ? (
               <button
-                className={`document-tab ${!showWelcome && !activeDocument ? "active" : ""}`}
+                className={`document-tab git-diff-tab ${!showWelcome && !activeDocument ? "active" : ""}`}
                 onClick={() => {
                   setWelcomeOpen(false);
                   setActivePath("");
@@ -7694,12 +8119,12 @@ ${macroEnd}
                 }}
               >
                 <GitBranch size={14} className="tab-file-icon" />
-                <span>{gitDiffSession.label}</span>
+                <span>{gitDiffTabLabel(gitDiffSession)}</span>
                 <span
                   className="tab-close"
                   onClick={(event) => {
                     event.stopPropagation();
-                    setGitDiffSession(null);
+                    closeGitDiffSession();
                   }}
                 >
                   <X size={13} />
@@ -7745,8 +8170,10 @@ ${macroEnd}
               } as React.CSSProperties
             }
           >
-            <section className={`source-pane ${showWelcome ? "welcome-only" : ""}`}>
-              {!showWelcome && !showBlankWorkspace ? (
+            <section
+              className={`source-pane ${showWelcome ? "welcome-only" : ""} ${gitDiffSession ? "git-diff-active" : ""}`}
+            >
+              {!showWelcome && !showBlankWorkspace && !gitDiffSession ? (
                 <div className="source-toolbar">
                   <div className="root-control">
                     <span className="control-label">ROOT</span>
@@ -8179,25 +8606,14 @@ ${macroEnd}
                   />
                 </div>
               ) : gitDiffSession ? (
-                <DiffEditor
-                  key={gitDiffSession.path}
-                  original={gitDiffSession.original}
-                  modified={gitDiffSession.modified}
-                  language={languageFor(gitDiffSession.path)}
+                <GitDiffWorkbench
+                  session={gitDiffSession}
                   theme={editorTheme}
+                  fontSize={settings.editorFontSize}
+                  blameLines={gitBlameLines}
                   beforeMount={configureMonaco}
-                  options={{
-                    readOnly: true,
-                    originalEditable: false,
-                    automaticLayout: true,
-                    renderSideBySide: true,
-                    fontFamily:
-                      "'SFMono-Regular', 'Cascadia Code', 'Fira Code', Menlo, monospace",
-                    fontSize: settings.editorFontSize,
-                    scrollBeyondLastLine: false,
-                    minimap: { enabled: false },
-                    renderOverviewRuler: false,
-                  }}
+                  onOpenFile={(relativePath) => void openGitFile(relativePath)}
+                  onClose={() => closeGitDiffSession()}
                 />
               ) : (
                 <div className="empty-editor">

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { fallbackExtensionCatalog } from "./extensions";
 import type {
+  GitDiffSession,
   GitStatusSummary,
   OpenProject,
   ProjectEntry,
@@ -124,6 +125,29 @@ const defaultUpdateResult: UpdateCheckResult = {
   updateAvailable: false,
 };
 
+const workingTreeDiffSession: GitDiffSession = {
+  id: "main.tex:index:working-tree",
+  relativePath: "main.tex",
+  originalRef: { kind: "index" },
+  modifiedRef: { kind: "working-tree" },
+  originalContent: "old",
+  modifiedContent: "new",
+  originalLabel: "Index",
+  modifiedLabel: "Working Tree",
+  status: "modified",
+  language: "latex",
+};
+
+const stagedDiffSession: GitDiffSession = {
+  ...workingTreeDiffSession,
+  id: "main.tex:head:index",
+  originalRef: { kind: "commit", hash: "abcdef1234567890" },
+  modifiedRef: { kind: "index" },
+  originalLabel: "HEAD",
+  modifiedLabel: "Index",
+  originalShortHash: "abcdef1",
+};
+
 function installLatexDoMock(options?: {
   gitStatus?: GitStatusSummary;
   proofreadingSettings?: ProofreadingSettings;
@@ -171,11 +195,10 @@ function installLatexDoMock(options?: {
     stageAllGit: vi.fn().mockResolvedValue(undefined),
     unstageAllGit: vi.fn().mockResolvedValue(undefined),
     discardAllGit: vi.fn().mockResolvedValue({ discarded: false }),
-    getGitEditorDiff: vi.fn().mockResolvedValue({
-      path: "main.tex",
-      original: "old",
-      modified: "new",
-    }),
+    getGitEditorDiff: vi.fn(
+      async (_projectId: string, _path: string, area = "changes") =>
+        area === "staged" ? stagedDiffSession : workingTreeDiffSession,
+    ),
     getGitHistory: vi.fn().mockResolvedValue({
       scope: "repo",
       target: null,
@@ -183,14 +206,30 @@ function installLatexDoMock(options?: {
     }),
     getGitCommitDetails: vi.fn().mockResolvedValue({
       hash: "abcdef1",
+      shortHash: "abcdef1",
       summary: "Commit",
       body: "Commit body",
+      authorName: "Omar",
+      authorEmail: "omar@example.com",
+      authoredAt: "2026-07-10T10:00:00Z",
+      committerName: "Omar",
+      committerEmail: "omar@example.com",
+      committedAt: "2026-07-10T10:00:00Z",
+      parents: [],
+      refs: [],
+      changedFiles: [],
     }),
     getGitCommitFileDiff: vi.fn().mockResolvedValue({
-      path: "main.tex",
-      original: "old",
-      modified: "new",
+      ...workingTreeDiffSession,
+      id: "main.tex:parent:commit",
+      originalRef: { kind: "empty" },
+      modifiedRef: { kind: "commit", hash: "abcdef1234567890" },
+      originalLabel: "Empty",
+      modifiedLabel: "abcdef1",
     }),
+    getGitBlame: vi.fn().mockResolvedValue([]),
+    revealGitFile: vi.fn().mockResolvedValue(undefined),
+    onGitChanged: vi.fn(() => vi.fn()),
     checkForUpdates: vi.fn().mockResolvedValue(updateResult),
     updateNow: vi.fn().mockResolvedValue(updateNowResult),
     openReleasesPage: vi.fn().mockResolvedValue(undefined),
@@ -365,8 +404,12 @@ describe("App critical UI controls", () => {
         entries: [
           {
             path: "main.tex",
-            indexStatus: "M",
-            workingTreeStatus: "",
+            indexStatus: "modified",
+            worktreeStatus: "unmodified",
+            staged: true,
+            unstaged: false,
+            untracked: false,
+            conflicted: false,
           },
         ],
       },
@@ -392,8 +435,12 @@ describe("App critical UI controls", () => {
         entries: [
           {
             path: "main.tex",
-            indexStatus: "",
-            workingTreeStatus: "M",
+            indexStatus: "unmodified",
+            worktreeStatus: "modified",
+            staged: false,
+            unstaged: true,
+            untracked: false,
+            conflicted: false,
           },
         ],
       },
@@ -423,6 +470,69 @@ describe("App critical UI controls", () => {
     await waitFor(() => {
       expect(api.discardAllGit).toHaveBeenCalledWith("project-1");
     });
+  });
+
+  it("opens staged and unstaged occurrences as distinct Monaco diff sessions", async () => {
+    const api = installLatexDoMock({
+      gitStatus: {
+        isRepo: true,
+        branch: "main",
+        entries: [
+          {
+            path: "main.tex",
+            indexStatus: "modified",
+            worktreeStatus: "modified",
+            staged: true,
+            unstaged: true,
+            untracked: false,
+            conflicted: false,
+          },
+        ],
+      },
+    });
+
+    render(<App />);
+    await openProjectFromWelcome();
+    fireEvent.click(screen.getByTitle("Source control"));
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /open working tree diff for main\.tex/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(api.getGitEditorDiff).toHaveBeenCalledWith(
+        "project-1",
+        "main.tex",
+        "changes",
+      );
+    });
+    expect(await screen.findByTestId("mock-diff-editor")).toBeVisible();
+    expect(
+      screen.getByRole("button", {
+        name: /main\.tex \(index\).*main\.tex \(working tree\)/i,
+      }),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: /^main\.tex$/i })).toBeVisible();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /open staged diff for main\.tex/i,
+      }),
+    );
+    await waitFor(() => {
+      expect(api.getGitEditorDiff).toHaveBeenLastCalledWith(
+        "project-1",
+        "main.tex",
+        "staged",
+      );
+    });
+    expect(
+      screen.getByRole("button", {
+        name: /main\.tex \(head\).*main\.tex \(index\)/i,
+      }),
+    ).toBeVisible();
   });
 
   it("uses PDF inverse search to open the matching source line", async () => {

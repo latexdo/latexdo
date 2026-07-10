@@ -1,7 +1,7 @@
 import type { LatexDoApi } from "../electron/preload.cjs";
 import type {
   CollaborationState,
-  GitDiffEditorInput,
+  GitDiffSession,
   GitDiffPreview,
   GitDiscardResult,
   GitHistorySummary,
@@ -178,6 +178,26 @@ function emptyGitStatus(): GitStatusSummary {
     branch: null,
     entries: [],
     error: "Git actions are not enabled in the hosted editor yet.",
+  };
+}
+
+function unavailableGitDiffSession(
+  relativePath: string,
+  originalLabel = "Index",
+  modifiedLabel = "Working Tree",
+): GitDiffSession {
+  return {
+    id: `cloud-git-diff:${relativePath}:${originalLabel}:${modifiedLabel}`,
+    relativePath,
+    originalRef: { kind: "empty" },
+    modifiedRef: { kind: "empty" },
+    originalContent: "",
+    modifiedContent: "",
+    originalLabel,
+    modifiedLabel,
+    status: "modified",
+    language: "plaintext",
+    message: "Git diff is not enabled in the hosted editor yet.",
   };
 }
 
@@ -386,11 +406,11 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
     getGitEditorDiff: async (
       _projectId,
       relativePath,
-    ): Promise<GitDiffEditorInput> => ({
-      path: relativePath,
-      original: "",
-      modified: "",
-    }),
+      area,
+    ): Promise<GitDiffSession> =>
+      area === "staged"
+        ? unavailableGitDiffSession(relativePath, "HEAD", "Index")
+        : unavailableGitDiffSession(relativePath),
     getGitHistory: async (): Promise<GitHistorySummary> => ({
       scope: "repo",
       target: null,
@@ -398,17 +418,29 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
     }),
     getGitCommitDetails: async (hash) => ({
       hash,
+      shortHash: hash.slice(0, 7),
       summary: "Git history is not enabled in the hosted editor yet.",
       body: "",
+      authorName: "",
+      authorEmail: "",
+      authoredAt: "",
+      committerName: "",
+      committerEmail: "",
+      committedAt: "",
+      parents: [],
+      refs: [],
+      changedFiles: [],
     }),
     getGitCommitFileDiff: async (
       _projectId,
       relativePath,
-    ): Promise<GitDiffEditorInput> => ({
-      path: relativePath,
-      original: "",
-      modified: "",
-    }),
+    ): Promise<GitDiffSession> =>
+      unavailableGitDiffSession(relativePath, "Parent", "Commit"),
+    getGitBlame: async () => [],
+    revealGitFile: async () => {
+      throw cloudUnavailable("Reveal file");
+    },
+    onGitChanged: () => () => {},
 
     checkForUpdates: async () => ({
       currentVersion: "0.1.0",
