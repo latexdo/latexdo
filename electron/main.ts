@@ -210,7 +210,10 @@ async function addGitDirectoryTreeWatchers(
   );
 }
 
-async function ensureGitWatchers(projectId: string, projectPath: string): Promise<void> {
+async function ensureGitWatchers(
+  projectId: string,
+  projectPath: string,
+): Promise<void> {
   if (gitWatchStates.has(projectId)) return;
   let context;
   try {
@@ -239,17 +242,20 @@ async function ensureGitWatchers(projectId: string, projectPath: string): Promis
   for (const directory of [context.gitDirectory, context.commonGitDirectory]) {
     if (watchedMetadataDirectories.has(directory)) continue;
     watchedMetadataDirectories.add(directory);
-    await addGitDirectoryTreeWatchers(
+    await addGitDirectoryTreeWatchers(state, projectId, directory, () => "repository");
+    addGitWatcher(
       state,
       projectId,
-      directory,
+      path.join(directory, "index"),
+      false,
       () => "repository",
     );
-    addGitWatcher(state, projectId, path.join(directory, "index"), false, () =>
-      "repository",
-    );
-    addGitWatcher(state, projectId, path.join(directory, "HEAD"), false, () =>
-      "repository",
+    addGitWatcher(
+      state,
+      projectId,
+      path.join(directory, "HEAD"),
+      false,
+      () => "repository",
     );
     await addGitDirectoryTreeWatchers(
       state,

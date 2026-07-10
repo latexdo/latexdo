@@ -87,9 +87,7 @@ export async function runGitBuffer(
       if (exceededLimit) {
         reject(new GitOutputLimitError(maxBytes));
       } else if (code !== 0) {
-        reject(
-          new GitCommandError(args, code, Buffer.concat(stderr).toString("utf8")),
-        );
+        reject(new GitCommandError(args, code, Buffer.concat(stderr).toString("utf8")));
       } else {
         resolve(Buffer.concat(stdout));
       }
@@ -138,7 +136,9 @@ export async function getGitRepositoryContext(
   }
 
   const gitDirectory = path.resolve(
-    (await runGitText(canonicalProjectRoot, ["rev-parse", "--absolute-git-dir"])).trim(),
+    (
+      await runGitText(canonicalProjectRoot, ["rev-parse", "--absolute-git-dir"])
+    ).trim(),
   );
   let commonGitDirectory = gitDirectory;
   try {
@@ -229,9 +229,7 @@ function changeEntry(
   conflicted = false,
 ): GitChangeEntry {
   const indexStatus = conflicted ? "conflicted" : statusFromCode(xy[0] ?? ".");
-  const worktreeStatus = conflicted
-    ? "conflicted"
-    : statusFromCode(xy[1] ?? ".");
+  const worktreeStatus = conflicted ? "conflicted" : statusFromCode(xy[1] ?? ".");
   return {
     path: pathValue,
     originalPath,
@@ -312,7 +310,8 @@ export function parseGitStatusPorcelainV2(
     if (recordKind === "2") {
       const originalRepositoryPath = records[index + 1] ?? "";
       index += 1;
-      const originalPath = projectPathForRepoPath(context, originalRepositoryPath) ?? undefined;
+      const originalPath =
+        projectPathForRepoPath(context, originalRepositoryPath) ?? undefined;
       entries.push(changeEntry(projectPath, originalPath, xy));
     } else {
       entries.push(changeEntry(projectPath, undefined, xy, recordKind === "u"));
@@ -455,8 +454,16 @@ function parseCommitRecords(output: string): ParsedCommit[] {
     .map((record) => record.replace(/^\r?\n/, ""))
     .filter(Boolean)
     .map((record) => {
-      const [hash, shortHash, parents, authorName, authorEmail, authoredAt, refs, subject] =
-        record.split("\u001f");
+      const [
+        hash,
+        shortHash,
+        parents,
+        authorName,
+        authorEmail,
+        authoredAt,
+        refs,
+        subject,
+      ] = record.split("\u001f");
       return {
         hash: hash ?? "",
         shortHash: shortHash ?? "",
@@ -523,8 +530,7 @@ export function assignGraphLanes(commits: ParsedCommit[]): GitGraphCommit[] {
   });
 }
 
-const logFormat =
-  "%H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%D%x1f%s%x1e";
+const logFormat = "%H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%D%x1f%s%x1e";
 
 export async function readStructuredGitHistory(
   projectRoot: string,

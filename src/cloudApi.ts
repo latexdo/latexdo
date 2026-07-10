@@ -431,10 +431,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       refs: [],
       changedFiles: [],
     }),
-    getGitCommitFileDiff: async (
-      _projectId,
-      relativePath,
-    ): Promise<GitDiffSession> =>
+    getGitCommitFileDiff: async (_projectId, relativePath): Promise<GitDiffSession> =>
       unavailableGitDiffSession(relativePath, "Parent", "Commit"),
     getGitBlame: async () => [],
     revealGitFile: async () => {
