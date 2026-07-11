@@ -65,6 +65,7 @@ export interface Diagnostic {
   message: string;
   detail?: string;
   suggestion?: string;
+  compilerExcerpt?: string;
   sourceLine?: string;
   source?:
     | "latex"

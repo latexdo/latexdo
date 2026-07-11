@@ -4590,6 +4590,12 @@ button {
   line-height: 1.45;
 }
 
+.diagnostic-analysis-body .diagnostic-explicit-problem,
+.diagnostic-analysis-body .diagnostic-compiler-excerpt {
+  max-width: 780px;
+  margin-top: 8px;
+}
+
 .diagnostic-analysis-buttons {
   display: flex;
   flex: 0 0 auto;
@@ -4701,6 +4707,34 @@ button {
   line-height: 1.5;
 }
 
+.diagnostic-explicit-problem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid #3c4b5e;
+  border-radius: 5px;
+  background: #171f2a;
+  color: #c8d4e3;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.diagnostic-explicit-problem strong {
+  color: #f0c878;
+  font-weight: 750;
+}
+
+.diagnostic-explicit-problem code {
+  min-width: 0;
+  color: #f2e2b7;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .diagnostic-origin-reason,
 .diagnostic-detection-location,
 .diagnostic-cascade-reason {
@@ -4796,6 +4830,38 @@ button {
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: pre;
+}
+
+.diagnostic-compiler-excerpt {
+  display: grid;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid #303844;
+  border-radius: 6px;
+  background: #10141a;
+  color: #8e99a8;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.diagnostic-compiler-excerpt strong {
+  color: #b9c4d1;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.diagnostic-compiler-excerpt code {
+  display: block;
+  max-height: 128px;
+  overflow: auto;
+  color: #d4dbe5;
+  font-family: "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .diagnostic-suggestion {
