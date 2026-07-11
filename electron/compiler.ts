@@ -16,6 +16,18 @@ type CompileAsymptoteRequest = {
   relativePath: string;
 };
 
+interface CompileRunOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  killGraceMs?: number;
+  executable?: string;
+}
+
+type CompileStopReason = "canceled" | "timeout";
+
+const defaultCompileTimeoutMs = 60_000;
+const defaultKillGraceMs = 2_500;
+
 const executableCandidates =
   process.platform === "darwin"
     ? ["/Library/TeX/texbin/latexmk", "/usr/local/bin/latexmk", "latexmk"]
@@ -139,6 +151,40 @@ function sanitizeCompileOutput(output: string): string {
   );
 }
 
+function compileStoppedMessage(reason: CompileStopReason, timeoutMs: number): string {
+  if (reason === "timeout") {
+    const seconds = Math.max(1, Math.ceil(timeoutMs / 1000));
+    return `LaTeX compile timed out after ${seconds} second${
+      seconds === 1 ? "" : "s"
+    }.`;
+  }
+  return "LaTeX compile canceled.";
+}
+
+function killChildProcess(
+  child: ReturnType<typeof spawn>,
+  signal: NodeJS.Signals,
+): void {
+  if (!child.pid) {
+    return;
+  }
+
+  if (process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+      // Fall through to killing the direct child if process-group kill fails.
+    }
+  }
+
+  try {
+    child.kill(signal);
+  } catch {
+    // The process may already have exited.
+  }
+}
+
 async function enrichDiagnostics(
   diagnostics: Diagnostic[],
   output: string,
@@ -214,11 +260,7 @@ function warningContinuationText(line: string): string | null {
 }
 
 function relatedProblemStartIndex(lines: string[], errorIndex: number): number {
-  for (
-    let index = errorIndex - 1;
-    index >= Math.max(0, errorIndex - 4);
-    index -= 1
-  ) {
+  for (let index = errorIndex - 1; index >= Math.max(0, errorIndex - 4); index -= 1) {
     const trimmed = lines[index].trim();
     if (/^Runaway argument\??/i.test(trimmed)) {
       return index;
@@ -231,11 +273,7 @@ function relatedProblemStartIndex(lines: string[], errorIndex: number): number {
   return errorIndex;
 }
 
-function compilerExcerpt(
-  lines: string[],
-  startIndex: number,
-  maxLines = 10,
-): string {
+function compilerExcerpt(lines: string[], startIndex: number, maxLines = 10): string {
   const excerpt: string[] = [];
   const end = Math.min(lines.length, startIndex + maxLines);
   const startsWithRunawayArgument = /^Runaway argument\??/i.test(
@@ -318,7 +356,9 @@ function fallbackProblemBlock(
       continue;
     }
 
-    const startIndex = isRunawayArgument ? index : relatedProblemStartIndex(lines, index);
+    const startIndex = isRunawayArgument
+      ? index
+      : relatedProblemStartIndex(lines, index);
     const location = lineLocationAfter(lines, startIndex);
     return {
       line: location?.line ?? 1,
@@ -486,9 +526,10 @@ export function parseDiagnostics(
 
 export async function compileLatex(
   request: CompileLatexRequest,
+  options: CompileRunOptions = {},
 ): Promise<CompileResult> {
   const startedAt = performance.now();
-  const latexmk = await findLatexmk();
+  const latexmk = options.executable ?? (await findLatexmk());
 
   if (!latexmk) {
     return {
@@ -527,16 +568,94 @@ export async function compileLatex(
   ];
 
   return new Promise((resolve) => {
+    if (options.signal?.aborted) {
+      resolve({
+        ok: false,
+        durationMs: Math.round(performance.now() - startedAt),
+        output: "",
+        diagnostics: [],
+        error: compileStoppedMessage(
+          "canceled",
+          options.timeoutMs ?? defaultCompileTimeoutMs,
+        ),
+      });
+      return;
+    }
+
+    const timeoutMs = options.timeoutMs ?? defaultCompileTimeoutMs;
+    const killGraceMs = options.killGraceMs ?? defaultKillGraceMs;
+    let stopReason: CompileStopReason | null = null;
+    let settled = false;
+    let forceKillTimer: NodeJS.Timeout | null = null;
+
     const child = spawn(latexmk, args, {
       cwd: request.projectPath,
       env: {
         ...process.env,
         PATH: `/Library/TeX/texbin:${process.env.PATH ?? ""}`,
       },
+      detached: process.platform !== "win32",
       windowsHide: true,
     });
 
     let output = "";
+    const timeout = setTimeout(() => {
+      stopReason = "timeout";
+      killChildProcess(child, "SIGTERM");
+      forceKillTimer = setTimeout(() => {
+        killChildProcess(child, "SIGKILL");
+      }, killGraceMs);
+      forceKillTimer.unref?.();
+    }, timeoutMs);
+    timeout.unref?.();
+    const abortHandler = () => {
+      stopReason = "canceled";
+      clearTimeout(timeout);
+      killChildProcess(child, "SIGTERM");
+      forceKillTimer = setTimeout(() => {
+        killChildProcess(child, "SIGKILL");
+      }, killGraceMs);
+      forceKillTimer.unref?.();
+    };
+    options.signal?.addEventListener("abort", abortHandler, { once: true });
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      if (forceKillTimer) {
+        clearTimeout(forceKillTimer);
+      }
+      options.signal?.removeEventListener("abort", abortHandler);
+    };
+
+    const finish = (code: number | null, spawnError?: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      const cleanedOutput = sanitizeCompileOutput(output);
+      void enrichDiagnostics(
+        parseDiagnostics(cleanedOutput, request.projectPath, request.rootFile),
+        cleanedOutput,
+        request.projectPath,
+      ).then((diagnostics) => {
+        const stoppedMessage = stopReason
+          ? compileStoppedMessage(stopReason, timeoutMs)
+          : null;
+        resolve({
+          ok: false,
+          pdfPath: undefined,
+          durationMs: Math.round(performance.now() - startedAt),
+          output: cleanedOutput,
+          diagnostics,
+          error:
+            stoppedMessage ??
+            spawnError?.message ??
+            `LaTeX exited with code ${code ?? "unknown"}.`,
+        });
+      });
+    };
+
     child.stdout.on("data", (data: Buffer) => {
       output += data.toString();
     });
@@ -544,22 +663,18 @@ export async function compileLatex(
       output += data.toString();
     });
     child.on("error", (error) => {
-      const cleanedOutput = sanitizeCompileOutput(output);
-      void enrichDiagnostics(
-        parseDiagnostics(cleanedOutput, request.projectPath, request.rootFile),
-        cleanedOutput,
-        request.projectPath,
-      ).then((diagnostics) => {
-        resolve({
-          ok: false,
-          durationMs: Math.round(performance.now() - startedAt),
-          output: cleanedOutput,
-          diagnostics,
-          error: error.message,
-        });
-      });
+      finish(null, error);
     });
     child.on("close", (code) => {
+      if (stopReason || code !== 0) {
+        finish(code);
+        return;
+      }
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
       const pdfName = `${path.basename(request.rootFile, path.extname(request.rootFile))}.pdf`;
       const pdfPath = path.join(buildDirectory, pdfName);
       const cleanedOutput = sanitizeCompileOutput(output);
@@ -569,13 +684,12 @@ export async function compileLatex(
         request.projectPath,
       ).then((diagnostics) => {
         resolve({
-          ok: code === 0,
-          pdfPath: code === 0 ? pdfPath : undefined,
+          ok: true,
+          pdfPath,
           durationMs: Math.round(performance.now() - startedAt),
           output: cleanedOutput,
           diagnostics,
-          error:
-            code === 0 ? undefined : `LaTeX exited with code ${code ?? "unknown"}.`,
+          error: undefined,
         });
       });
     });
@@ -617,9 +731,10 @@ function parseAsymptoteDiagnostics(output: string, relativePath: string): Diagno
 
 export async function compileAsymptote(
   request: CompileAsymptoteRequest,
+  options: CompileRunOptions = {},
 ): Promise<CompileResult> {
   const startedAt = performance.now();
-  const asymptote = await findAsymptote();
+  const asymptote = options.executable ?? (await findAsymptote());
 
   if (!asymptote) {
     return {
@@ -648,16 +763,90 @@ export async function compileAsymptote(
   const args = ["-f", "pdf", "-o", outputBase, request.relativePath];
 
   return new Promise((resolve) => {
+    if (options.signal?.aborted) {
+      resolve({
+        ok: false,
+        durationMs: Math.round(performance.now() - startedAt),
+        output: "",
+        diagnostics: [],
+        error: compileStoppedMessage(
+          "canceled",
+          options.timeoutMs ?? defaultCompileTimeoutMs,
+        ),
+      });
+      return;
+    }
+
+    const timeoutMs = options.timeoutMs ?? defaultCompileTimeoutMs;
+    const killGraceMs = options.killGraceMs ?? defaultKillGraceMs;
+    let stopReason: CompileStopReason | null = null;
+    let settled = false;
+    let forceKillTimer: NodeJS.Timeout | null = null;
+
     const child = spawn(asymptote, args, {
       cwd: request.projectPath,
       env: {
         ...process.env,
         PATH: `/Library/TeX/texbin:${process.env.PATH ?? ""}`,
       },
+      detached: process.platform !== "win32",
       windowsHide: true,
     });
 
     let output = "";
+    const timeout = setTimeout(() => {
+      stopReason = "timeout";
+      killChildProcess(child, "SIGTERM");
+      forceKillTimer = setTimeout(() => {
+        killChildProcess(child, "SIGKILL");
+      }, killGraceMs);
+      forceKillTimer.unref?.();
+    }, timeoutMs);
+    timeout.unref?.();
+    const abortHandler = () => {
+      stopReason = "canceled";
+      clearTimeout(timeout);
+      killChildProcess(child, "SIGTERM");
+      forceKillTimer = setTimeout(() => {
+        killChildProcess(child, "SIGKILL");
+      }, killGraceMs);
+      forceKillTimer.unref?.();
+    };
+    options.signal?.addEventListener("abort", abortHandler, { once: true });
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      if (forceKillTimer) {
+        clearTimeout(forceKillTimer);
+      }
+      options.signal?.removeEventListener("abort", abortHandler);
+    };
+
+    const finish = (code: number | null, spawnError?: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      const cleanedOutput = sanitizeCompileOutput(output);
+      const stoppedMessage = stopReason
+        ? compileStoppedMessage(stopReason, timeoutMs)
+        : null;
+      resolve({
+        ok: false,
+        durationMs: Math.round(performance.now() - startedAt),
+        output: cleanedOutput,
+        diagnostics: parseAsymptoteDiagnostics(
+          cleanedOutput || spawnError?.message || "",
+          request.relativePath,
+        ),
+        error:
+          stoppedMessage ??
+          spawnError?.message ??
+          `Asymptote exited with code ${code ?? "unknown"}.`,
+      });
+    };
+
     child.stdout.on("data", (data: Buffer) => {
       output += data.toString();
     });
@@ -665,31 +854,26 @@ export async function compileAsymptote(
       output += data.toString();
     });
     child.on("error", (error) => {
-      const cleanedOutput = sanitizeCompileOutput(output);
-      resolve({
-        ok: false,
-        durationMs: Math.round(performance.now() - startedAt),
-        output: cleanedOutput,
-        diagnostics: parseAsymptoteDiagnostics(
-          cleanedOutput || error.message,
-          request.relativePath,
-        ),
-        error: error.message,
-      });
+      finish(null, error);
     });
     child.on("close", (code) => {
+      if (stopReason || code !== 0) {
+        finish(code);
+        return;
+      }
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
       const cleanedOutput = sanitizeCompileOutput(output);
       resolve({
-        ok: code === 0,
-        pdfPath: code === 0 ? outputPdf : undefined,
+        ok: true,
+        pdfPath: outputPdf,
         durationMs: Math.round(performance.now() - startedAt),
         output: cleanedOutput,
-        diagnostics:
-          code === 0
-            ? []
-            : parseAsymptoteDiagnostics(cleanedOutput, request.relativePath),
-        error:
-          code === 0 ? undefined : `Asymptote exited with code ${code ?? "unknown"}.`,
+        diagnostics: [],
+        error: undefined,
       });
     });
   });

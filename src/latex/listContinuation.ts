@@ -164,6 +164,7 @@ export function getLatexListEnterEdit(
   const lineBeforeCursor = currentLine.slice(0, cursorColumn);
   const lineAfterCursor = currentLine.slice(cursorColumn);
   const currentItemMatch = currentLine.match(/^(\s*)\\item\b/);
+  const currentLineIndent = currentLine.match(/^\s*/)?.[0] ?? "";
 
   if (
     emptyItemLine(currentLine) &&
@@ -190,6 +191,23 @@ export function getLatexListEnterEdit(
       text: closeLine,
       cursorOffset: closeLine.length,
       action: "close",
+      environment: openList.environment,
+    };
+  }
+
+  if (!currentLine.trim()) {
+    const itemIndent =
+      currentLineIndent ||
+      previousItemIndent(text, openList.beginOffset, safeOffset) ||
+      `${openList.indent}\t`;
+    const textToInsert = `${itemIndent}\\item `;
+
+    return {
+      startOffset: currentLineStart,
+      endOffset: currentLineEnd,
+      text: textToInsert,
+      cursorOffset: textToInsert.length,
+      action: "continue",
       environment: openList.environment,
     };
   }
