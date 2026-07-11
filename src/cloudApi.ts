@@ -532,6 +532,10 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
         shareTokenForProject(request.projectId),
       ),
 
+    async cancelCompile(_projectId) {
+      return false;
+    },
+
     async compileAsymptote(request) {
       return {
         ok: false,

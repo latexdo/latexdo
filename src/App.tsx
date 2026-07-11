@@ -3375,6 +3375,25 @@ ${macroEnd}
     }
   }, []);
 
+  const cancelCompile = useCallback(async () => {
+    const currentProject = projectIdRef.current;
+    if (!currentProject || !compiling) {
+      return;
+    }
+
+    compileRunIdRef.current += 1;
+    try {
+      const canceled = await window.latexdo.cancelCompile(currentProject);
+      setStatusMessage(
+        canceled ? "Canceling compile..." : "No active compile to cancel.",
+      );
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Could not cancel compile.",
+      );
+    }
+  }, [compiling]);
+
   const saveActiveAndCompile = useCallback(async () => {
     const document = documentsRef.current.find(
       (item) => item.path === activePathRef.current,
@@ -10227,10 +10246,22 @@ ${macroEnd}
             <AlertCircle size={13} /> {warnings}
           </button>
           {compiling ? (
-            <span className="status-compile">
-              <LoaderCircle size={13} className="spin" />
-              {compileJobCount} compile job{compileJobCount === 1 ? "" : "s"}
-            </span>
+            <>
+              <span className="status-compile">
+                <LoaderCircle size={13} className="spin" />
+                {compileJobCount} compile job{compileJobCount === 1 ? "" : "s"}
+              </span>
+              <button
+                type="button"
+                className="status-cancel-compile"
+                onClick={() => void cancelCompile()}
+                title="Cancel compile"
+                aria-label="Cancel compile"
+              >
+                <X size={13} />
+                Cancel
+              </button>
+            </>
           ) : null}
           {collaborationState.enabled ? (
             <button

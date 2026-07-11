@@ -26,6 +26,25 @@ describe("getLatexListEnterEdit", () => {
     expect(applyEnter("\\begin{enumerate}|")).toBe("\\begin{enumerate}\n\t\\item |");
   });
 
+  it("turns a blank line inside itemize into an item without adding another blank line", () => {
+    expect(applyEnter("\\begin{itemize}\n  |\n\\end{itemize}")).toBe(
+      "\\begin{itemize}\n  \\item |\n\\end{itemize}",
+    );
+  });
+
+  it("continues then closes itemize on a double enter", () => {
+    const afterFirstEnter = applyEnter(
+      "\\begin{itemize}\n  \\item First|\n\\end{itemize}",
+    );
+    expect(afterFirstEnter).toBe(
+      "\\begin{itemize}\n  \\item First\n  \\item |\n\\end{itemize}",
+    );
+
+    expect(applyEnter(afterFirstEnter)).toBe(
+      "\\begin{itemize}\n  \\item First\n\\end{itemize}|",
+    );
+  });
+
   it("closes the open list when enter is pressed on an empty item", () => {
     expect(applyEnter("\\begin{itemize}\n  \\item |")).toBe(
       "\\begin{itemize}\n\\end{itemize}|",

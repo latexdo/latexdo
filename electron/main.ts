@@ -155,6 +155,7 @@ function installSafeConsole(): void {
 installSafeConsole();
 
 const openProjects = new Map<string, OpenProject>();
+const activeCompileControllers = new Map<string, Set<AbortController>>();
 
 interface GitWatchState {
   watchers: FSWatcher[];
@@ -365,6 +366,37 @@ function getProjectRoot(projectId: string): string {
     throw new Error("The requested project is not open.");
   }
   return project.rootPath;
+}
+
+function trackCompileController(
+  projectId: string,
+  controller: AbortController,
+): () => void {
+  let controllers = activeCompileControllers.get(projectId);
+  if (!controllers) {
+    controllers = new Set();
+    activeCompileControllers.set(projectId, controllers);
+  }
+  controllers.add(controller);
+
+  return () => {
+    controllers.delete(controller);
+    if (!controllers.size) {
+      activeCompileControllers.delete(projectId);
+    }
+  };
+}
+
+function cancelActiveCompiles(projectId: string): boolean {
+  const controllers = activeCompileControllers.get(projectId);
+  if (!controllers?.size) {
+    return false;
+  }
+
+  for (const controller of controllers) {
+    controller.abort();
+  }
+  return true;
 }
 
 function isInside(parent: string, child: string): boolean {
@@ -3289,17 +3321,33 @@ app.whenReady().then(async () => {
     const request = parseCompileRequestInput(channel, rawRequest);
     const projectPath = getProjectRoot(request.projectId);
     resolveProjectPath(projectPath, request.rootFile);
-    const result = await compileLatex({
-      projectPath,
-      rootFile: request.rootFile,
-      engine: request.engine,
-    });
-    return {
-      ...result,
-      pdfPath: result.pdfPath
-        ? relativeProjectPath(projectPath, result.pdfPath)
-        : undefined,
-    };
+    const controller = new AbortController();
+    const untrack = trackCompileController(request.projectId, controller);
+    try {
+      const result = await compileLatex(
+        {
+          projectPath,
+          rootFile: request.rootFile,
+          engine: request.engine,
+        },
+        { signal: controller.signal },
+      );
+      return {
+        ...result,
+        pdfPath: result.pdfPath
+          ? relativeProjectPath(projectPath, result.pdfPath)
+          : undefined,
+      };
+    } finally {
+      untrack();
+    }
+  });
+  ipcMain.handle("latex:compile-cancel", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "latex:compile-cancel";
+    const [rawProjectId] = expectIpcArgs(channel, rawArgs, 1);
+    const projectId = parseProjectId(channel, rawProjectId);
+    getProjectRoot(projectId);
+    return cancelActiveCompiles(projectId);
   });
   ipcMain.handle("asymptote:compile", async (_event, ...rawArgs: unknown[]) => {
     const channel = "asymptote:compile";
@@ -3307,16 +3355,25 @@ app.whenReady().then(async () => {
     const request = parseAsymptoteCompileRequestInput(channel, rawRequest);
     const projectPath = getProjectRoot(request.projectId);
     resolveProjectPath(projectPath, request.relativePath);
-    const result = await compileAsymptote({
-      projectPath,
-      relativePath: request.relativePath,
-    });
-    return {
-      ...result,
-      pdfPath: result.pdfPath
-        ? relativeProjectPath(projectPath, result.pdfPath)
-        : undefined,
-    };
+    const controller = new AbortController();
+    const untrack = trackCompileController(request.projectId, controller);
+    try {
+      const result = await compileAsymptote(
+        {
+          projectPath,
+          relativePath: request.relativePath,
+        },
+        { signal: controller.signal },
+      );
+      return {
+        ...result,
+        pdfPath: result.pdfPath
+          ? relativeProjectPath(projectPath, result.pdfPath)
+          : undefined,
+      };
+    } finally {
+      untrack();
+    }
   });
   ipcMain.handle("pdf:read", async (_event, ...rawArgs: unknown[]) => {
     const channel = "pdf:read";

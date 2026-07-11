@@ -189,6 +189,8 @@ const api = {
     ipcRenderer.invoke("proofread:check", relativePath, content),
   compile: (request: CompileRequest): Promise<CompileResult> =>
     ipcRenderer.invoke("latex:compile", request),
+  cancelCompile: (projectId: string): Promise<boolean> =>
+    ipcRenderer.invoke("latex:compile-cancel", projectId),
   compileAsymptote: (request: AsymptoteCompileRequest): Promise<CompileResult> =>
     ipcRenderer.invoke("asymptote:compile", request),
   readPdf: (projectId: string, pdfRelativePath: string): Promise<Uint8Array> =>

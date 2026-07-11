@@ -5285,6 +5285,17 @@ button {
   font-weight: 600;
 }
 
+.statusbar .status-cancel-compile {
+  padding: 0 6px;
+  background: rgb(120 32 32 / 28%);
+  color: var(--text-on-accent);
+  font-weight: 650;
+}
+
+.statusbar .status-cancel-compile:hover {
+  background: rgb(120 32 32 / 42%);
+}
+
 .status-message {
   overflow: hidden;
   max-width: 380px;
