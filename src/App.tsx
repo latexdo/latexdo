@@ -1660,6 +1660,9 @@ function diagnosticLocationLabel(diagnostic: Diagnostic, rootFile: string): stri
 function diagnosticMarkerMessage(diagnostic: Diagnostic): string {
   return [
     diagnosticHeadline(diagnostic),
+    diagnosticExplicitProblem(diagnostic)
+      ? `Problem: ${diagnosticExplicitProblem(diagnostic)}`
+      : undefined,
     diagnostic.detail,
     diagnostic.originReason
       ? `Why this location: ${diagnostic.originReason}`
@@ -1670,10 +1673,22 @@ function diagnosticMarkerMessage(diagnostic: Diagnostic): string {
         }.`
       : undefined,
     diagnostic.suggestion ? `Suggested fix: ${diagnostic.suggestion}` : undefined,
+    diagnostic.compilerExcerpt
+      ? `Compiler excerpt:\n${diagnostic.compilerExcerpt}`
+      : undefined,
     `Compiler message: ${diagnostic.message}`,
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+function diagnosticExplicitProblem(diagnostic: Diagnostic): string | null {
+  if (diagnostic.highlightText) {
+    return diagnostic.highlightText;
+  }
+
+  const message = diagnostic.message.trim();
+  return message ? message : null;
 }
 
 function diagnosticAccuracyLabel(diagnostic: Diagnostic): string {
@@ -9574,6 +9589,20 @@ ${macroEnd}
                               <p>
                                 {primaryDiagnostic.detail ?? primaryDiagnostic.message}
                               </p>
+                              {diagnosticExplicitProblem(primaryDiagnostic) ? (
+                                <span className="diagnostic-explicit-problem">
+                                  <strong>Problem:</strong>
+                                  <code>
+                                    {diagnosticExplicitProblem(primaryDiagnostic)}
+                                  </code>
+                                </span>
+                              ) : null}
+                              {primaryDiagnostic.compilerExcerpt ? (
+                                <span className="diagnostic-compiler-excerpt">
+                                  <strong>Compiler excerpt</strong>
+                                  <code>{primaryDiagnostic.compilerExcerpt}</code>
+                                </span>
+                              ) : null}
                               {primaryDiagnostic.reportedLine &&
                               primaryDiagnostic.reportedLine !==
                                 primaryDiagnostic.line ? (
@@ -9617,6 +9646,7 @@ ${macroEnd}
                       ) : null}
                       {diagnostics.map((diagnostic, index) => {
                         const location = diagnosticLocationLabel(diagnostic, rootFile);
+                        const explicitProblem = diagnosticExplicitProblem(diagnostic);
                         return (
                           <article
                             className={`diagnostic-row-card ${diagnostic.severity} ${
@@ -9659,6 +9689,12 @@ ${macroEnd}
                                 {diagnostic.detail ? (
                                   <span className="diagnostic-detail">
                                     {diagnostic.detail}
+                                  </span>
+                                ) : null}
+                                {explicitProblem ? (
+                                  <span className="diagnostic-explicit-problem">
+                                    <strong>Problem:</strong>
+                                    <code>{explicitProblem}</code>
                                   </span>
                                 ) : null}
                                 {diagnostic.originReason ? (
@@ -9710,6 +9746,12 @@ ${macroEnd}
                                 ) : diagnostic.sourceLine ? (
                                   <span className="diagnostic-source-line">
                                     {diagnostic.sourceLine}
+                                  </span>
+                                ) : null}
+                                {diagnostic.compilerExcerpt ? (
+                                  <span className="diagnostic-compiler-excerpt">
+                                    <strong>Compiler excerpt</strong>
+                                    <code>{diagnostic.compilerExcerpt}</code>
                                   </span>
                                 ) : null}
                                 {diagnostic.suggestion ? (

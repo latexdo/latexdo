@@ -213,6 +213,127 @@ function warningContinuationText(line: string): string | null {
   return null;
 }
 
+function relatedProblemStartIndex(lines: string[], errorIndex: number): number {
+  for (
+    let index = errorIndex - 1;
+    index >= Math.max(0, errorIndex - 4);
+    index -= 1
+  ) {
+    const trimmed = lines[index].trim();
+    if (/^Runaway argument\??/i.test(trimmed)) {
+      return index;
+    }
+    if (trimmed && /^!\s*/.test(trimmed)) {
+      break;
+    }
+  }
+
+  return errorIndex;
+}
+
+function compilerExcerpt(
+  lines: string[],
+  startIndex: number,
+  maxLines = 10,
+): string {
+  const excerpt: string[] = [];
+  const end = Math.min(lines.length, startIndex + maxLines);
+  const startsWithRunawayArgument = /^Runaway argument\??/i.test(
+    lines[startIndex]?.trim() ?? "",
+  );
+  let includedBangLine = /^!\s*/.test(lines[startIndex]?.trim() ?? "");
+
+  for (let index = startIndex; index < end; index += 1) {
+    const line = lines[index].trimEnd();
+    if (!line.trim() && !excerpt.length) {
+      continue;
+    }
+    if (index > startIndex && /^!\s*/.test(line)) {
+      if (includedBangLine || !startsWithRunawayArgument) {
+        break;
+      }
+      includedBangLine = true;
+    }
+
+    excerpt.push(line);
+
+    if (/^\?\s*$/.test(line.trim())) {
+      break;
+    }
+  }
+
+  return excerpt.join("\n").trim();
+}
+
+function contextualErrorMessage(
+  lines: string[],
+  errorIndex: number,
+  errorText: string,
+): string {
+  const message = cleanLatexMessage(errorText);
+  const startIndex = relatedProblemStartIndex(lines, errorIndex);
+  if (startIndex === errorIndex) {
+    return message;
+  }
+
+  return `${cleanLatexMessage(lines[startIndex])} ${message}`.trim();
+}
+
+function lineLocationAfter(
+  lines: string[],
+  startIndex: number,
+): { line: number } | null {
+  for (
+    let index = startIndex + 1;
+    index < Math.min(lines.length, startIndex + 12);
+    index += 1
+  ) {
+    const lineMatch = lines[index].match(/^l\.(\d+)\s*(.*)$/);
+    if (lineMatch) {
+      return {
+        line: Number(lineMatch[1]),
+      };
+    }
+  }
+
+  return null;
+}
+
+function fallbackProblemBlock(
+  lines: string[],
+): { line: number; message: string; excerpt: string } | null {
+  for (let index = 0; index < lines.length; index += 1) {
+    const trimmed = lines[index].trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const bangMatch = trimmed.match(/^!\s*(.+)$/);
+    const explicitErrorMatch = trimmed.match(
+      /^(?:(?:LaTeX|Package\s+[^:]+|Class\s+[^:]+)\s+Error:\s*.+|Emergency stop\.|Fatal error occurred.*)$/i,
+    );
+    const isRunawayArgument = /^Runaway argument\??/i.test(trimmed);
+
+    if (!bangMatch && !explicitErrorMatch && !isRunawayArgument) {
+      continue;
+    }
+
+    const startIndex = isRunawayArgument ? index : relatedProblemStartIndex(lines, index);
+    const location = lineLocationAfter(lines, startIndex);
+    return {
+      line: location?.line ?? 1,
+      message: isRunawayArgument
+        ? cleanLatexMessage(trimmed)
+        : bangMatch
+          ? contextualErrorMessage(lines, index, bangMatch[1])
+          : cleanLatexMessage(trimmed),
+      excerpt: compilerExcerpt(lines, startIndex),
+    };
+  }
+
+  return null;
+}
+
 export function parseDiagnostics(
   output: string,
   projectPath: string,
@@ -244,6 +365,7 @@ export function parseDiagnostics(
       column: Number(match[3] ?? 1),
       severity,
       message,
+      compilerExcerpt: match[0].trim(),
       source: "latex",
     });
   }
@@ -284,6 +406,7 @@ export function parseDiagnostics(
         column: 1,
         severity: "warning",
         message,
+        compilerExcerpt: warningParts.join("\n").trim(),
         source: "latex",
       });
       continue;
@@ -300,6 +423,7 @@ export function parseDiagnostics(
         column: 1,
         severity: "warning",
         message,
+        compilerExcerpt: message,
         source: "latex",
       });
     }
@@ -310,6 +434,10 @@ export function parseDiagnostics(
     if (!errorMatch) {
       continue;
     }
+
+    const startIndex = relatedProblemStartIndex(outputLines, index);
+    const excerpt = compilerExcerpt(outputLines, startIndex);
+    const message = contextualErrorMessage(outputLines, index, errorMatch[1]);
 
     for (
       let contextIndex = index + 1;
@@ -326,10 +454,30 @@ export function parseDiagnostics(
         line: Number(lineMatch[1]),
         column: 1,
         severity: "error",
-        message: cleanLatexMessage(errorMatch[1]),
+        message,
+        compilerExcerpt: excerpt,
         source: "latex",
       });
       break;
+    }
+  }
+
+  if (!diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
+    const fallback = fallbackProblemBlock(outputLines);
+    if (fallback) {
+      addDiagnostic({
+        file: normalizeDiagnosticFile(projectPath, rootFile),
+        line: fallback.line,
+        column: 1,
+        severity: "error",
+        message: fallback.message,
+        detail:
+          "LaTeX did not report a precise source line for this failure, so LatexDo is showing the first explicit compiler problem.",
+        compilerExcerpt: fallback.excerpt,
+        source: "latex",
+        locationAccuracy: "inferred",
+        locationConfidence: 20,
+      });
     }
   }
 

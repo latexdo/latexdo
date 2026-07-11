@@ -69,4 +69,49 @@ describe("compiler diagnostics", () => {
       ]),
     );
   });
+
+  it("keeps the explicit compiler excerpt for source-line errors", () => {
+    const diagnostics = parseDiagnostics(
+      "! Undefined control sequence.\nl.12 Text before \\badmacro\n?",
+      projectPath,
+      "main.tex",
+    );
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        file: "main.tex",
+        line: 12,
+        severity: "error",
+        message: "Undefined control sequence.",
+        compilerExcerpt: expect.stringContaining("l.12 Text before \\badmacro"),
+      }),
+    );
+  });
+
+  it("creates a fallback diagnostic for explicit LaTeX errors without source lines", () => {
+    const diagnostics = parseDiagnostics(
+      [
+        "Runaway argument?",
+        "{This bold text never closes",
+        "! File ended while scanning use of \\textbf.",
+        "<inserted text>",
+        "                \\par",
+        "<*> main.tex",
+      ].join("\n"),
+      projectPath,
+      "main.tex",
+    );
+
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        file: "main.tex",
+        line: 1,
+        severity: "error",
+        message: "Runaway argument?",
+        compilerExcerpt: expect.stringContaining(
+          "! File ended while scanning use of \\textbf.",
+        ),
+      }),
+    );
+  });
 });

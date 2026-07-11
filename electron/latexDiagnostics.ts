@@ -991,14 +991,20 @@ export function analyzeLatexDiagnostic(
     column,
     endLine: analyzedLine,
     endColumn,
-    locationAccuracy: token?.accuracy ?? (diagnostic.column > 1 ? "exact" : "line"),
+    locationAccuracy:
+      token?.accuracy ??
+      diagnostic.locationAccuracy ??
+      (diagnostic.column > 1 ? "exact" : "line"),
     highlightText: token?.text,
     sourceLine: analyzedSourceLine,
     sourceContext: lines.length ? buildContext(lines, analyzedLine) : undefined,
     reportedLine: diagnostic.line,
     reportedColumn: Math.max(1, diagnostic.column),
     originReason: token?.reason,
-    locationConfidence: token?.confidence ?? (diagnostic.column > 1 ? 95 : 45),
+    locationConfidence:
+      token?.confidence ??
+      diagnostic.locationConfidence ??
+      (diagnostic.column > 1 ? 95 : 45),
     fixes: buildQuickFixes(diagnostic, token),
   };
 }
