@@ -59,6 +59,34 @@ vi.mock("./monaco", () => ({
   },
 }));
 
+vi.mock("./collaboration/MonacoCollaborationBinding", () => ({
+  MonacoCollaborationBinding: class {
+    readonly key: string;
+
+    constructor(options: {
+      projectId: string;
+      relativePath: string;
+      shareToken?: string;
+    }) {
+      this.key = `${options.projectId}:${options.relativePath}:${options.shareToken ?? ""}`;
+    }
+
+    destroy() {
+      // Collaboration transport is outside the App UI tests.
+    }
+  },
+}));
+
+vi.mock("./collaboration/CollaborationContext", () => ({
+  useCollaborationContext: () => ({
+    apiBaseUrl: "https://collaborations.latexdo.org",
+    sessionId: "session-test",
+    clientId: "client-test",
+    clientName: "",
+    color: "#2f6fdb",
+  }),
+}));
+
 vi.mock("./PdfPreview", () => ({
   default: ({
     onNavigate,
