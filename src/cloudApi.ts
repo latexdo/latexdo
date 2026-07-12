@@ -241,7 +241,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
         body: JSON.stringify(options ?? {}),
       }),
 
-    listProject: (projectId) =>
+    listProject: (projectId, _options) =>
       requestJson(
         `/api/projects/${projectId}/files`,
         {},

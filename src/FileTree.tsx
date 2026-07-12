@@ -166,6 +166,21 @@ function TreeRow({
     [depth, entry.type],
   );
 
+  if (entry.limited) {
+    return (
+      <div className="tree-file-row tree-limit-row">
+        <div
+          className="tree-row tree-limit-message"
+          style={{ paddingLeft: rowPadding }}
+          title={entry.name}
+        >
+          <File size={15} className="file-icon" />
+          <span>{entry.name}</span>
+        </div>
+      </div>
+    );
+  }
+
   if (entry.type === "directory") {
     return (
       <div className="tree-directory-row">

@@ -22,6 +22,7 @@ import type {
   ProofreadingRequestOptions,
   ProofreadingSettings,
   ProjectEntry,
+  ProjectListOptions,
   SpellCheckerSettings,
   SyncTexPdfLocation,
   SyncTexSourceLocation,
@@ -35,8 +36,13 @@ const api = {
     options === undefined
       ? ipcRenderer.invoke("project:create")
       : ipcRenderer.invoke("project:create", options),
-  listProject: (projectId: string): Promise<ProjectEntry[]> =>
-    ipcRenderer.invoke("project:list", projectId),
+  listProject: (
+    projectId: string,
+    options?: ProjectListOptions,
+  ): Promise<ProjectEntry[]> =>
+    options === undefined
+      ? ipcRenderer.invoke("project:list", projectId)
+      : ipcRenderer.invoke("project:list", projectId, options),
   readFile: (projectId: string, relativePath: string): Promise<string> =>
     ipcRenderer.invoke("file:read", projectId, relativePath),
   readAsset: (projectId: string, relativePath: string): Promise<Uint8Array> =>

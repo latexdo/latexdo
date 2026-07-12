@@ -4,6 +4,13 @@ export interface ProjectEntry {
   relativePath: string;
   type: "file" | "directory";
   children?: ProjectEntry[];
+  limited?: boolean;
+}
+
+export interface ProjectListOptions {
+  ignoredNames?: string[];
+  maxDepth?: number;
+  maxEntries?: number;
 }
 
 export type ProjectId = string;
