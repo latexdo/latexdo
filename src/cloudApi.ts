@@ -1,6 +1,9 @@
 import type { LatexDoApi } from "../electron/preload.cjs";
 import type {
   CollaborationState,
+  CollaboratorPermission,
+  CollaboratorRole,
+  PermissionUpdate,
   GitDiffSession,
   GitDiffPreview,
   GitDiscardResult,
@@ -19,6 +22,7 @@ const cloudSessionKey = "latexdo.cloud.session";
 const cloudClientKey = "latexdo.cloud.client";
 const cloudClientNameKey = "latexdo.cloud.clientName";
 const cloudShareTokensKey = "latexdo.cloud.shareTokens";
+const cloudShareAdminsKey = "latexdo.cloud.shareAdmins";
 const cloudSpellCheckerSettingsKey = "latexdo.cloud.spellchecker";
 const cloudProofreadingSettingsKey = "latexdo.cloud.proofreading";
 const extensionStoreCatalogUrl = "https://store.latexdo.org/extensions/catalog.json";
@@ -143,6 +147,24 @@ function rememberShareToken(projectId: string, token: string): void {
   window.localStorage.setItem(
     cloudShareTokensKey,
     JSON.stringify({ ...shareTokens(), [projectId]: token }),
+  );
+}
+
+function shareAdmins(): Record<string, string> {
+  return readLocalSetting<Record<string, string>>(cloudShareAdminsKey, {});
+}
+
+function isAdminForProject(projectId: string): boolean {
+  const admins = shareAdmins();
+  const token = shareTokenForProject(projectId);
+  if (!token) return false;
+  return admins[token] === clientId();
+}
+
+function rememberShareAdmin(token: string, adminClientId: string): void {
+  window.localStorage.setItem(
+    cloudShareAdminsKey,
+    JSON.stringify({ ...shareAdmins(), [token]: adminClientId }),
   );
 }
 
@@ -377,6 +399,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       );
       if (state.token) {
         rememberShareToken(projectId, state.token);
+        rememberShareAdmin(state.token, clientId());
       }
       return normalizeCollaborationState(projectId, state);
     },
@@ -399,6 +422,59 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
         },
         token,
       ).then((state) => normalizeCollaborationState(projectId, state));
+    },
+
+    getCollaborationPermissions: async (projectId) => {
+      const token = shareTokenForProject(projectId);
+      if (!token) {
+        return { permissions: [], isAdmin: false, currentUserRole: "viewer" as const };
+      }
+
+      try {
+        const result = await requestJson<{
+          permissions: CollaboratorPermission[];
+          isAdmin: boolean;
+          currentUserRole: CollaboratorRole;
+        }>(`/api/shares/${encodeURIComponent(token)}/permissions`, {}, token);
+        return result;
+      } catch {
+        return { permissions: [], isAdmin: isAdminForProject(projectId), currentUserRole: "viewer" as const };
+      }
+    },
+
+    updateCollaborationPermission: async (projectId, update: PermissionUpdate) => {
+      const token = shareTokenForProject(projectId);
+      if (!token) {
+        throw new Error("No share token for this project");
+      }
+
+      return requestJson<CollaboratorPermission>(
+        `/api/shares/${encodeURIComponent(token)}/permissions`,
+        {
+          method: "PUT",
+          body: JSON.stringify(update),
+        },
+        token,
+      );
+    },
+
+    removeCollaborator: async (projectId, clientIdToRemove: string) => {
+      const token = shareTokenForProject(projectId);
+      if (!token) {
+        throw new Error("No share token for this project");
+      }
+
+      return requestJson<void>(
+        `/api/shares/${encodeURIComponent(token)}/collaborators/${encodeURIComponent(clientIdToRemove)}`,
+        {
+          method: "DELETE",
+        },
+        token,
+      );
+    },
+
+    isProjectAdmin: async (projectId) => {
+      return isAdminForProject(projectId);
     },
 
     stageGitFile: async () => {

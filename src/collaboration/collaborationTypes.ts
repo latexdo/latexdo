@@ -8,6 +8,8 @@ export type CollaborationConnectionStatus =
   | "disconnected"
   | "error";
 
+export type CollaboratorRole = "admin" | "editor" | "viewer";
+
 export interface CollaborationIdentity {
   sessionId: string;
   clientId: string;

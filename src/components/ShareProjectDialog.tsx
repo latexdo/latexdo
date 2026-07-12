@@ -1,6 +1,7 @@
 import { Check, Copy, KeyRound, Link, LogIn, X } from "lucide-react";
 import { CollaboratorsList } from "./CollaboratorsList";
-import type { CollaborationState } from "../types";
+import { PermissionManagement } from "./PermissionManagement";
+import type { CollaborationState, CollaboratorPermission, PermissionUpdate } from "../types";
 
 export interface ShareProjectDialogProps {
   open: boolean;
@@ -10,10 +11,16 @@ export interface ShareProjectDialogProps {
   joinToken: string;
   joining: boolean;
   joinError: string;
+  permissions: CollaboratorPermission[];
+  isAdmin: boolean;
+  currentUserRole: string;
   onCopy: (value: string) => void;
   onJoinTokenChange: (value: string) => void;
   onJoin: () => void;
   onClose: () => void;
+  onUpdatePermission?: (update: PermissionUpdate) => Promise<void>;
+  onRemoveCollaborator?: (clientId: string) => Promise<void>;
+  onRefreshPermissions?: () => Promise<void>;
 }
 
 export function ShareProjectDialog({
@@ -24,10 +31,16 @@ export function ShareProjectDialog({
   joinToken,
   joining,
   joinError,
+  permissions,
+  isAdmin,
+  currentUserRole,
   onCopy,
   onJoinTokenChange,
   onJoin,
   onClose,
+  onUpdatePermission,
+  onRemoveCollaborator,
+  onRefreshPermissions,
 }: ShareProjectDialogProps) {
   if (!open) {
     return null;
@@ -103,6 +116,17 @@ export function ShareProjectDialog({
           {joinError ? <div className="share-error">{joinError}</div> : null}
         </form>
         <CollaboratorsList users={state.users} />
+        {onUpdatePermission && onRemoveCollaborator && onRefreshPermissions ? (
+          <PermissionManagement
+            projectId={state.projectId ?? ""}
+            permissions={permissions}
+            isAdmin={isAdmin}
+            currentUserRole={currentUserRole as "admin" | "editor" | "viewer"}
+            onUpdatePermission={onUpdatePermission}
+            onRemoveCollaborator={onRemoveCollaborator}
+            onRefresh={onRefreshPermissions}
+          />
+        ) : null}
       </section>
     </div>
   );

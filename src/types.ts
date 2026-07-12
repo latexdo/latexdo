@@ -21,11 +21,14 @@ export interface OpenProject {
   name: string;
 }
 
+export type CollaboratorRole = "admin" | "editor" | "viewer";
+
 export interface CollaboratorPresence {
   clientId: string;
   name: string;
   currentFile: string | null;
   lastSeen: number;
+  role?: CollaboratorRole;
 }
 
 export interface CollaborationState {
@@ -35,6 +38,8 @@ export interface CollaborationState {
   projectId?: string;
   projectName?: string;
   users: CollaboratorPresence[];
+  currentUserRole?: CollaboratorRole;
+  isAdmin?: boolean;
 }
 
 export interface OpenDocument {
@@ -510,4 +515,15 @@ export interface PdfComplianceSettings {
   checkType3Fonts: boolean;
   checkAbstractWordCount: boolean;
   maxAbstractWords: number;
+}
+
+export interface CollaboratorPermission {
+  clientId: string;
+  name: string;
+  role: CollaboratorRole;
+}
+
+export interface PermissionUpdate {
+  clientId: string;
+  role: CollaboratorRole;
 }

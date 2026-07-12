@@ -5,6 +5,8 @@ import type {
   CompileRequest,
   CompileResult,
   CollaborationState,
+  CollaboratorPermission,
+  CollaboratorRole,
   CreateProjectOptions,
   DocxImportResult,
   MarkdownImportResult,
@@ -19,6 +21,7 @@ import type {
   GitStatusSummary,
   ImportedProjectEntry,
   OpenProject,
+  PermissionUpdate,
   ProofreadingResult,
   ProofreadingRequestOptions,
   ProofreadingSettings,
@@ -38,6 +41,7 @@ const cloudSessionKey = "latexdo.cloud.session";
 const cloudClientKey = "latexdo.cloud.client";
 const cloudClientNameKey = "latexdo.cloud.clientName";
 const cloudShareTokensKey = "latexdo.cloud.shareTokens";
+const cloudShareAdminsKey = "latexdo.cloud.shareAdmins";
 const cloudProjectIds = new Set<string>();
 
 function storageGet(key: string): string | null {
@@ -98,6 +102,28 @@ function rememberCloudShareToken(projectId: string, token: string): void {
     cloudShareTokensKey,
     JSON.stringify({ ...cloudShareTokens(), [projectId]: token }),
   );
+}
+
+function cloudShareAdmins(): Record<string, string> {
+  try {
+    const parsed = JSON.parse(storageGet(cloudShareAdminsKey) ?? "{}") as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, string>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function rememberCloudShareAdmin(token: string, adminClientId: string): void {
+  storageSet(
+    cloudShareAdminsKey,
+    JSON.stringify({ ...cloudShareAdmins(), [token]: adminClientId }),
+  );
+}
+
+function isCloudShareAdmin(token: string): boolean {
+  return cloudShareAdmins()[token] === cloudClientId();
 }
 
 function markCloudProject(projectId: string, token?: string): void {
@@ -229,6 +255,7 @@ async function cloudCreateShare(projectId: string): Promise<CollaborationState> 
   );
   if (state.token) {
     markCloudProject(projectId, state.token);
+    rememberCloudShareAdmin(state.token, cloudClientId());
   }
   return normalizeCloudState(projectId, state);
 }
@@ -508,6 +535,68 @@ const api = {
       },
       token,
     ).then((state) => normalizeCloudState(projectId, state));
+  },
+  getCollaborationPermissions: async (
+    projectId: string,
+  ): Promise<{
+    permissions: CollaboratorPermission[];
+    isAdmin: boolean;
+    currentUserRole: CollaboratorRole;
+  }> => {
+    const token = cloudShareTokenForProject(projectId);
+    if (!isCloudProject(projectId) || !token) {
+      return { permissions: [], isAdmin: false, currentUserRole: "viewer" };
+    }
+
+    try {
+      const result = await cloudRequestJson<{
+        permissions: CollaboratorPermission[];
+        isAdmin: boolean;
+        currentUserRole: CollaboratorRole;
+      }>(`/api/shares/${encodeURIComponent(token)}/permissions`, {}, token);
+      return result;
+    } catch {
+      return { permissions: [], isAdmin: isCloudShareAdmin(token), currentUserRole: "viewer" };
+    }
+  },
+  updateCollaborationPermission: async (
+    projectId: string,
+    update: PermissionUpdate,
+  ): Promise<CollaboratorPermission> => {
+    const token = cloudShareTokenForProject(projectId);
+    if (!isCloudProject(projectId) || !token) {
+      throw new Error("No share token for this project");
+    }
+
+    return cloudRequestJson<CollaboratorPermission>(
+      `/api/shares/${encodeURIComponent(token)}/permissions`,
+      {
+        method: "PUT",
+        body: JSON.stringify(update),
+      },
+      token,
+    );
+  },
+  removeCollaborator: async (projectId: string, clientIdToRemove: string): Promise<void> => {
+    const token = cloudShareTokenForProject(projectId);
+    if (!isCloudProject(projectId) || !token) {
+      throw new Error("No share token for this project");
+    }
+
+    await cloudRequestJson<void>(
+      `/api/shares/${encodeURIComponent(token)}/collaborators/${encodeURIComponent(clientIdToRemove)}`,
+      {
+        method: "DELETE",
+      },
+      token,
+    );
+  },
+  isProjectAdmin: async (projectId: string): Promise<boolean> => {
+    const token = cloudShareTokenForProject(projectId);
+    if (!isCloudProject(projectId) || !token) {
+      return false;
+    }
+    return isCloudShareAdmin(token);
   },
   stageGitFile: (projectId: string, relativePath: string): Promise<void> =>
     isCloudProject(projectId)
