@@ -207,6 +207,7 @@ function installLatexDoMock(options?: {
     createFolder: vi.fn().mockResolvedValue("chapters"),
     getDroppedFilePaths: vi.fn().mockReturnValue([]),
     importExternalFiles: vi.fn().mockResolvedValue([]),
+    chooseImportExternalFiles: vi.fn().mockResolvedValue([]),
     importDocx: vi.fn().mockResolvedValue(null),
     importMarkdown: vi.fn().mockResolvedValue(null),
     moveEntry: vi.fn().mockResolvedValue("main.tex"),
@@ -521,6 +522,59 @@ describe("App critical UI controls", () => {
         maxEntries: 5000,
       }),
     );
+  });
+
+  it("imports files from the project tree through the native import dialog", async () => {
+    const api = installLatexDoMock();
+    const treeEntries: ProjectEntry[] = [
+      {
+        name: "figures",
+        path: "/Users/omar/project/figures",
+        relativePath: "figures",
+        type: "directory",
+        children: [],
+      },
+      ...entries,
+    ];
+    api.listProject.mockResolvedValue(treeEntries);
+    api.chooseImportExternalFiles.mockResolvedValue([
+      {
+        sourcePath: "/Users/omar/Desktop/chart.png",
+        relativePath: "figures/chart.png",
+        type: "file",
+      },
+    ]);
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    fireEvent.click(screen.getByTitle("Actions for figures"));
+    fireEvent.click(await screen.findByRole("button", { name: "Import files here" }));
+
+    await waitFor(() => {
+      expect(api.chooseImportExternalFiles).toHaveBeenCalledWith(project.id, "figures");
+    });
+    expect(await screen.findByText("Imported figures/chart.png")).toBeVisible();
+  });
+
+  it("decodes encoded spaces in project tree labels", async () => {
+    const api = installLatexDoMock();
+    api.listProject.mockResolvedValue([
+      {
+        name: "My%20Draft.tex",
+        path: "/Users/omar/project/My%20Draft.tex",
+        relativePath: "My%20Draft.tex",
+        type: "file",
+      },
+    ]);
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    expect((await screen.findAllByText("My Draft.tex")).length).toBeGreaterThanOrEqual(
+      1,
+    );
+    expect(screen.queryByText("My%20Draft.tex")).not.toBeInTheDocument();
   });
 
   it("opens the converted TeX file after importing DOCX into a new project", async () => {

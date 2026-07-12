@@ -145,6 +145,7 @@ import {
   type ProjectSearchFile,
   type ProjectSearchMatch,
 } from "./search/projectSearch";
+import { fileNameForDisplay, pathForDisplay } from "./pathDisplay";
 import {
   figureBytesToDataUrl,
   figureCanRenderInline,
@@ -1384,13 +1385,14 @@ const maxHistorySnapshotsInHotIndex = 5000;
 const historyAutoCaptureDelayMs = 5000;
 
 function fileName(filePath: string): string {
-  return filePath.split(/[/\\]/).pop() ?? filePath;
+  return fileNameForDisplay(filePath);
 }
 
 function gitDisplayPath(filePath: string): string {
-  return filePath.includes(" -> ")
+  const displayPath = filePath.includes(" -> ")
     ? (filePath.split(" -> ").pop() ?? filePath)
     : filePath;
+  return pathForDisplay(displayPath);
 }
 
 function fileDirectory(filePath: string): string {
@@ -2327,8 +2329,6 @@ export default function App() {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const editorMouseDisposableRef = useRef<monaco.IDisposable | null>(null);
   const editorActionDisposablesRef = useRef<monaco.IDisposable[]>([]);
-  const importFileInputRef = useRef<HTMLInputElement | null>(null);
-  const pendingImportDestinationRef = useRef<ProjectEntry | null>(null);
   const documentsRef = useRef<OpenDocument[]>([]);
   const documentHistoryRef = useRef<DocumentHistorySnapshot[]>([]);
   const projectEntriesRef = useRef<ProjectEntry[]>([]);
@@ -2778,8 +2778,8 @@ export default function App() {
                 file: null,
                 error:
                   error instanceof Error
-                    ? `${entry.relativePath}: ${error.message}`
-                    : entry.relativePath,
+                    ? `${pathForDisplay(entry.relativePath)}: ${error.message}`
+                    : pathForDisplay(entry.relativePath),
               };
             }
           }),
@@ -2861,7 +2861,7 @@ export default function App() {
 
       const extension = entry.name.split(".").pop()?.toLowerCase() ?? "";
       if (!supportedExtensions.has(extension)) {
-        setStatusMessage(`${entry.name} is not an editable text file`);
+        setStatusMessage(`${pathForDisplay(entry.name)} is not an editable text file`);
         return;
       }
 
@@ -2881,7 +2881,7 @@ export default function App() {
         setStatusMessage(
           error instanceof Error
             ? error.message
-            : `Could not open ${entry.relativePath}`,
+            : `Could not open ${pathForDisplay(entry.relativePath)}`,
         );
         return;
       }
@@ -2895,7 +2895,7 @@ export default function App() {
       setDocuments((current) => [...current, document]);
       setActivePath(entry.path);
       activePathRef.current = entry.path;
-      setStatusMessage(`Opened ${entry.relativePath}`);
+      setStatusMessage(`Opened ${pathForDisplay(entry.relativePath)}`);
     },
     [],
   );
@@ -3322,7 +3322,9 @@ ${macroEnd}
       }
       addHistorySnapshot(buildHistorySnapshot(document, source));
       if (source === "manual") {
-        setStatusMessage(`Captured history state for ${document.relativePath}`);
+        setStatusMessage(
+          `Captured history state for ${pathForDisplay(document.relativePath)}`,
+        );
       }
     },
     [addHistorySnapshot],
@@ -3590,7 +3592,7 @@ ${macroEnd}
         return nextDocuments;
       });
       scheduleGitRefreshRef.current();
-      setStatusMessage(`Saved ${document.relativePath}`);
+      setStatusMessage(`Saved ${pathForDisplay(document.relativePath)}`);
     },
     [addHistorySnapshot],
   );
@@ -3620,8 +3622,8 @@ ${macroEnd}
     setCompileJobCount((count) => count + 1);
     setStatusMessage(
       asymptoteDocument
-        ? `Compiling ${asymptoteDocument.relativePath} with Asymptote...`
-        : `Compiling ${rootFileRef.current} in the background...`,
+        ? `Compiling ${pathForDisplay(asymptoteDocument.relativePath)} with Asymptote...`
+        : `Compiling ${pathForDisplay(rootFileRef.current)} in the background...`,
     );
     try {
       const result = asymptoteDocument
@@ -3675,7 +3677,7 @@ ${macroEnd}
           setPreviewVisible(true);
           setStatusMessage(
             asymptoteDocument
-              ? `Built ${asymptoteDocument.relativePath} in ${formatDuration(
+              ? `Built ${pathForDisplay(asymptoteDocument.relativePath)} in ${formatDuration(
                   result.durationMs,
                 )}`
               : `Built successfully in ${formatDuration(result.durationMs)}`,
@@ -3794,7 +3796,7 @@ ${macroEnd}
       setRootFile(entry.relativePath);
       rootFileRef.current = entry.relativePath;
       setWelcomeOpen(false);
-      setStatusMessage(`Using ${entry.relativePath} as the main file`);
+      setStatusMessage(`Using ${pathForDisplay(entry.relativePath)} as the main file`);
       await compile();
     },
     [compile],
@@ -4281,7 +4283,9 @@ ${macroEnd}
 
         setPreviewVisible(true);
         setPdfTarget({ ...location, word });
-        setStatusMessage(`Showing ${document.name}:${position.lineNumber} in PDF`);
+        setStatusMessage(
+          `Showing ${pathForDisplay(document.name)}:${position.lineNumber} in PDF`,
+        );
       } catch (error) {
         setStatusMessage(
           error instanceof Error ? error.message : "Could not synchronize PDF",
@@ -4368,8 +4372,8 @@ ${macroEnd}
         });
         setStatusMessage(
           sourceIsDirty
-            ? `Opened ${entry.relativePath}:${location.line} from PDF. Compile if the jump looks stale.`
-            : `Opened ${entry.relativePath}:${location.line} from PDF`,
+            ? `Opened ${pathForDisplay(entry.relativePath)}:${location.line} from PDF. Compile if the jump looks stale.`
+            : `Opened ${pathForDisplay(entry.relativePath)}:${location.line} from PDF`,
         );
       } catch (error) {
         if (syncRunId !== backwardSyncRunIdRef.current) {
@@ -5651,7 +5655,9 @@ ${macroEnd}
         color: collaboration.color,
         onStatusChange: (status) => {
           if (status === "connected") {
-            setStatusMessage(`Live collaboration connected: ${document.relativePath}`);
+            setStatusMessage(
+              `Live collaboration connected: ${pathForDisplay(document.relativePath)}`,
+            );
           } else if (status === "error") {
             setStatusMessage("Live collaboration connection failed.");
           }
@@ -6249,10 +6255,12 @@ ${macroEnd}
             return nextDocuments;
           });
           void refreshProject(projectId);
-          setStatusMessage(`Synced collaborator changes in ${current.relativePath}`);
+          setStatusMessage(
+            `Synced collaborator changes in ${pathForDisplay(current.relativePath)}`,
+          );
         } else {
           setStatusMessage(
-            `Collaborator updated ${current.relativePath}; save or reopen to reconcile.`,
+            `Collaborator updated ${pathForDisplay(current.relativePath)}; save or reopen to reconcile.`,
           );
         }
       } catch {
@@ -6343,11 +6351,11 @@ ${macroEnd}
           throw new Error("The file was created but could not be opened.");
         }
         await openDocument(entry);
-        setStatusMessage(`Created ${relativePath}`);
+        setStatusMessage(`Created ${pathForDisplay(relativePath)}`);
       } else {
         await window.latexdo.createFolder(projectId, relativePath);
         await refreshProject(projectId);
-        setStatusMessage(`Created folder ${relativePath}`);
+        setStatusMessage(`Created folder ${pathForDisplay(relativePath)}`);
       }
       setCreateDialog(null);
     } catch (error) {
@@ -6384,7 +6392,7 @@ ${macroEnd}
         await refreshProject(currentProject);
         setStatusMessage(
           imported.length === 1
-            ? `Imported ${imported[0].relativePath}`
+            ? `Imported ${pathForDisplay(imported[0].relativePath)}`
             : `Imported ${imported.length} items`,
         );
         return imported;
@@ -6409,25 +6417,39 @@ ${macroEnd}
     [importExternalFilePaths],
   );
 
-  const chooseImportFiles = useCallback((destination: ProjectEntry | null) => {
-    pendingImportDestinationRef.current = destination;
-    if (importFileInputRef.current) {
-      importFileInputRef.current.value = "";
-      importFileInputRef.current.click();
-    }
-  }, []);
+  const chooseImportFiles = useCallback(
+    async (destination: ProjectEntry | null) => {
+      const currentProject = projectIdRef.current;
+      if (!currentProject) {
+        setStatusMessage("Open a project before importing files.");
+        return;
+      }
 
-  const handleImportFileInputChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(event.currentTarget.files ?? []);
-      const destination = pendingImportDestinationRef.current;
-      pendingImportDestinationRef.current = null;
-      event.currentTarget.value = "";
-      if (files.length > 0) {
-        void importExternalFiles(files, destination);
+      const destinationDirectory = normalizeRelativePath(
+        destination?.relativePath ?? "",
+      ).replace(/\/+$/, "");
+
+      try {
+        const imported = await window.latexdo.chooseImportExternalFiles(
+          currentProject,
+          destinationDirectory,
+        );
+        if (imported.length === 0) {
+          return;
+        }
+        await refreshProject(currentProject);
+        setStatusMessage(
+          imported.length === 1
+            ? `Imported ${pathForDisplay(imported[0].relativePath)}`
+            : `Imported ${imported.length} items`,
+        );
+      } catch (error) {
+        setStatusMessage(
+          error instanceof Error ? error.message : "Could not import files.",
+        );
       }
     },
-    [importExternalFiles],
+    [refreshProject],
   );
 
   const insertImageReference = useCallback(
@@ -6444,7 +6466,9 @@ ${macroEnd}
         latexFigureCode(entry.relativePath),
       );
       if (inserted) {
-        setStatusMessage(`Inserted image code for ${entry.relativePath}`);
+        setStatusMessage(
+          `Inserted image code for ${pathForDisplay(entry.relativePath)}`,
+        );
       }
     },
     [activeDocumentIsLatex, insertLatexBlockAtEditorPosition],
@@ -6453,7 +6477,7 @@ ${macroEnd}
   const copyRelativePath = useCallback(async (entry: ProjectEntry) => {
     try {
       await navigator.clipboard.writeText(entry.relativePath);
-      setStatusMessage(`Copied ${entry.relativePath}`);
+      setStatusMessage(`Copied ${pathForDisplay(entry.relativePath)}`);
     } catch {
       setStatusMessage("Could not copy the relative path.");
     }
@@ -6482,11 +6506,15 @@ ${macroEnd}
       );
 
       if (!importedEntry) {
-        throw new Error(`Imported file ${result.relativePath} was not found.`);
+        throw new Error(
+          `Imported file ${pathForDisplay(result.relativePath)} was not found.`,
+        );
       }
 
       if (!importedEntry.name.toLowerCase().endsWith(".tex")) {
-        throw new Error(`Imported file ${result.relativePath} is not a TeX file.`);
+        throw new Error(
+          `Imported file ${pathForDisplay(result.relativePath)} is not a TeX file.`,
+        );
       }
 
       await openDocument(importedEntry, targetProject);
@@ -6546,7 +6574,7 @@ ${macroEnd}
       if (insertLatexBlockAtEditorPosition(code, dropPosition)) {
         setStatusMessage(
           importedImages.length === 1
-            ? `Inserted image code for ${importedImages[0].relativePath}`
+            ? `Inserted image code for ${pathForDisplay(importedImages[0].relativePath)}`
             : `Inserted ${importedImages.length} image figures`,
         );
       }
@@ -6588,7 +6616,7 @@ ${macroEnd}
         : "";
       const warningSummary = result.warnings.length ? ` ${result.warnings[0]}` : "";
       setStatusMessage(
-        `Imported ${fileName(result.sourcePath)} to ${result.relativePath} via ${converterName}${mediaSummary}.${warningSummary}`,
+        `Imported ${fileName(result.sourcePath)} to ${pathForDisplay(result.relativePath)} via ${converterName}${mediaSummary}.${warningSummary}`,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not import DOCX.";
@@ -6632,7 +6660,7 @@ ${macroEnd}
         result.converter === "pandoc" ? "Pandoc" : "built-in converter";
       const warningSummary = result.warnings.length ? ` ${result.warnings[0]}` : "";
       setStatusMessage(
-        `Imported ${fileName(result.sourcePath)} to ${result.relativePath} via ${converterName}.${warningSummary}`,
+        `Imported ${fileName(result.sourcePath)} to ${pathForDisplay(result.relativePath)} via ${converterName}.${warningSummary}`,
       );
     } catch (error) {
       const message =
@@ -7233,7 +7261,7 @@ ${macroEnd}
           closeGitDiffSession();
         }
         await refreshGitData();
-        setStatusMessage(`Staged ${relativePath}`);
+        setStatusMessage(`Staged ${pathForDisplay(relativePath)}`);
       } finally {
         setGitActionBusy(null);
       }
@@ -7256,7 +7284,7 @@ ${macroEnd}
           closeGitDiffSession();
         }
         await refreshGitData();
-        setStatusMessage(`Unstaged ${relativePath}`);
+        setStatusMessage(`Unstaged ${pathForDisplay(relativePath)}`);
       } finally {
         setGitActionBusy(null);
       }
@@ -7305,7 +7333,10 @@ ${macroEnd}
         }
         await refreshGitData();
         setStatusMessage(
-          gitDiscardStatusMessage(result, `Discarded changes in ${relativePath}`),
+          gitDiscardStatusMessage(
+            result,
+            `Discarded changes in ${pathForDisplay(relativePath)}`,
+          ),
         );
       } finally {
         setGitActionBusy(null);
@@ -7395,7 +7426,9 @@ ${macroEnd}
           parentHash || undefined,
         );
         await activateGitDiffSession(snapshot);
-        setStatusMessage(`Opened ${relativePath} at ${hash.slice(0, 7)}`);
+        setStatusMessage(
+          `Opened ${pathForDisplay(relativePath)} at ${hash.slice(0, 7)}`,
+        );
       } finally {
         setGitActionBusy(null);
       }
@@ -7588,7 +7621,9 @@ ${macroEnd}
         );
       }
       if (!entry) {
-        setStatusMessage(`${relativePath} is not present in the working tree.`);
+        setStatusMessage(
+          `${pathForDisplay(relativePath)} is not present in the working tree.`,
+        );
         return;
       }
       await openDocument(entry);
@@ -7624,16 +7659,16 @@ ${macroEnd}
     if (!currentProject) return;
     try {
       await window.latexdo.revealGitFile(currentProject, relativePath);
-      setStatusMessage(`Revealed ${relativePath}`);
+      setStatusMessage(`Revealed ${pathForDisplay(relativePath)}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setStatusMessage(`Could not reveal ${relativePath}: ${message}`);
+      setStatusMessage(`Could not reveal ${pathForDisplay(relativePath)}: ${message}`);
     }
   }, []);
 
   const copyGitPath = useCallback(async (relativePath: string) => {
     await navigator.clipboard?.writeText(relativePath);
-    setStatusMessage(`Copied ${relativePath}`);
+    setStatusMessage(`Copied ${pathForDisplay(relativePath)}`);
   }, []);
 
   const openGitFileHistory = useCallback(async (relativePath: string) => {
@@ -8268,7 +8303,7 @@ ${macroEnd}
         });
 
         await refreshProject(currentProject);
-        setStatusMessage(`Added BibTeX stub to ${entry.relativePath}`);
+        setStatusMessage(`Added BibTeX stub to ${pathForDisplay(entry.relativePath)}`);
       } catch (error) {
         setStatusMessage(
           error instanceof Error ? error.message : "Could not update BibTeX file",
@@ -8583,14 +8618,6 @@ ${macroEnd}
 
   return (
     <div className="app-shell" data-theme={settings.colorTheme}>
-      <input
-        ref={importFileInputRef}
-        type="file"
-        multiple
-        className="visually-hidden-file-input"
-        tabIndex={-1}
-        onChange={handleImportFileInputChange}
-      />
       <header className="titlebar">
         <div className="titlebar-drag">
           <AppIcon className="app-mark" />
@@ -8913,7 +8940,9 @@ ${macroEnd}
                       onSetRootFile={(entry) => {
                         setRootFile(entry.relativePath);
                         rootFileRef.current = entry.relativePath;
-                        setStatusMessage(`Main file set to ${entry.relativePath}`);
+                        setStatusMessage(
+                          `Main file set to ${pathForDisplay(entry.relativePath)}`,
+                        );
                       }}
                       onMoveEntry={(sourcePath, destination) =>
                         void moveEntry(sourcePath, destination)
@@ -9448,7 +9477,7 @@ ${macroEnd}
                   }}
                 >
                   <Code2 size={14} className="tab-file-icon" />
-                  <span>{document.name}</span>
+                  <span>{pathForDisplay(document.name)}</span>
                   <span
                     className={`tab-close ${dirty ? "dirty" : ""}`}
                     onClick={(event) => {
@@ -9487,7 +9516,7 @@ ${macroEnd}
                       >
                         {texFiles.map((entry) => (
                           <option key={entry.path} value={entry.relativePath}>
-                            {entry.relativePath}
+                            {pathForDisplay(entry.relativePath)}
                           </option>
                         ))}
                       </select>

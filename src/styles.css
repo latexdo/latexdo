@@ -3127,15 +3127,6 @@ button {
   min-height: 0;
 }
 
-.visually-hidden-file-input {
-  position: fixed;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-}
-
 .editor-drop-zone {
   display: grid;
   min-width: 0;

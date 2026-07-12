@@ -490,6 +490,10 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       throw browserUnavailable("File drop import");
     },
 
+    async chooseImportExternalFiles() {
+      throw browserUnavailable("Tree file import");
+    },
+
     async importDocx() {
       throw browserUnavailable("DOCX import");
     },

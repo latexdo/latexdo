@@ -430,6 +430,11 @@ const api = {
       destinationDirectory,
       filePaths,
     ),
+  chooseImportExternalFiles: (
+    projectId: string,
+    destinationDirectory: string,
+  ): Promise<ImportedProjectEntry[]> =>
+    ipcRenderer.invoke("file:choose-import-external", projectId, destinationDirectory),
   importDocx: (projectId?: string): Promise<DocxImportResult | null> =>
     ipcRenderer.invoke("docx:import", projectId ?? ""),
   importMarkdown: (projectId?: string): Promise<MarkdownImportResult | null> =>

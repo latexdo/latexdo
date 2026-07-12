@@ -315,6 +315,10 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       throw cloudUnavailable("File drop import");
     },
 
+    chooseImportExternalFiles: async () => {
+      throw cloudUnavailable("Tree file import");
+    },
+
     importDocx: async () => {
       throw cloudUnavailable("DOCX import");
     },
