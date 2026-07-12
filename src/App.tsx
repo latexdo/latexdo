@@ -8246,6 +8246,37 @@ ${macroEnd}
           <span>LatexDo</span>
         </div>
         <div className="title-actions">
+          {collaborationAvailable ? (
+            <button
+              type="button"
+              className={`title-history-button title-share-button ${
+                collaborationState.enabled ? "active" : ""
+              }`}
+              onClick={() => void createCollaborationLink()}
+              disabled={!projectId || collaborationBusy}
+              title={
+                collaborationState.enabled
+                  ? "Copy collaboration link"
+                  : "Create collaboration link"
+              }
+              aria-label={
+                collaborationState.enabled
+                  ? "Copy collaboration link"
+                  : "Create collaboration link"
+              }
+            >
+              <Link size={15} />
+              <span>
+                {collaborationBusy
+                  ? "Sharing..."
+                  : collaborationCopied
+                    ? "Copied"
+                    : collaborationState.enabled
+                      ? `${Math.max(collaboratorCount, 1)} live`
+                      : "Share"}
+              </span>
+            </button>
+          ) : null}
           <button
             type="button"
             className={`title-history-button ${

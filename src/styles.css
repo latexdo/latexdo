@@ -529,10 +529,19 @@ button {
   color: var(--text-primary);
 }
 
+.title-history-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .title-history-button.active {
   border-color: color-mix(in srgb, var(--accent) 54%, var(--border-hover));
   background: var(--accent-bg);
   color: var(--text-on-accent);
+}
+
+.title-share-button {
+  max-width: 132px;
 }
 
 .title-history-count {
