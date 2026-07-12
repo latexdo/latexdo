@@ -8,6 +8,7 @@ import {
   type ProjectSearchMatch,
   type ProjectSearchOptions,
 } from "../search/projectSearch";
+import { fileNameForDisplay, pathForDisplay } from "../pathDisplay";
 
 interface ProjectSearchPanelProps {
   files: ProjectSearchFile[];
@@ -39,7 +40,7 @@ function HighlightedLine({ match }: { match: ProjectSearchMatch }) {
 }
 
 function fileName(filePath: string): string {
-  return filePath.split("/").pop() ?? filePath;
+  return fileNameForDisplay(filePath);
 }
 
 export function ProjectSearchPanel({
@@ -255,7 +256,7 @@ export function ProjectSearchPanel({
               <div className="project-search-file-heading">
                 <div>
                   <strong>{fileName(file.path)}</strong>
-                  <span>{file.path}</span>
+                  <span>{pathForDisplay(file.path)}</span>
                 </div>
                 <b>{file.matches.length}</b>
               </div>

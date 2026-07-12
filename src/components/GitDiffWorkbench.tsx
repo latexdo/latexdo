@@ -7,6 +7,7 @@ import { Binary, ExternalLink, GitCompareArrows, X } from "lucide-react";
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import type { editor as MonacoEditor, IDisposable } from "monaco-editor";
 import type { GitBlameLine, GitDiffSession, GitRevisionRef } from "../types";
+import { fileNameForDisplay, pathForDisplay } from "../pathDisplay";
 
 export interface GitDiffWorkbenchProps {
   session: GitDiffSession;
@@ -31,7 +32,7 @@ interface GitRevisionHeadingProps {
 }
 
 function baseName(filePath: string): string {
-  return filePath.split(/[/\\]/).pop() ?? filePath;
+  return fileNameForDisplay(filePath);
 }
 
 function relativeDate(value: string): string {
@@ -285,7 +286,7 @@ export function GitDiffWorkbench({
               className="git-diff-toolbar-button"
               onClick={() => onOpenFile(session.relativePath)}
               title="Open working-tree file"
-              aria-label={`Open ${session.relativePath}`}
+              aria-label={`Open ${pathForDisplay(session.relativePath)}`}
             >
               <ExternalLink size={14} />
             </button>
@@ -326,7 +327,7 @@ export function GitDiffWorkbench({
           <div className="git-diff-binary-state git-diff-unrenderable" role="status">
             <Binary size={22} aria-hidden="true" />
             <strong>{fallbackMessage}</strong>
-            <span>{session.relativePath}</span>
+            <span>{pathForDisplay(session.relativePath)}</span>
           </div>
         ) : (
           <DiffEditor
@@ -364,7 +365,9 @@ export function GitDiffWorkbench({
               maxComputationTime: 5_000,
               maxFileSize: 20,
               originalAriaLabel: `${session.originalLabel}: ${originalPath}`,
-              modifiedAriaLabel: `${session.modifiedLabel}: ${session.relativePath}`,
+              modifiedAriaLabel: `${session.modifiedLabel}: ${pathForDisplay(
+                session.relativePath,
+              )}`,
             }}
           />
         )}

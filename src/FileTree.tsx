@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import type { ProjectEntry } from "./types";
+import { pathForDisplay } from "./pathDisplay";
 
 interface FileTreeProps {
   entries: ProjectEntry[];
@@ -135,6 +136,8 @@ function TreeRow({
     ["png", "jpg", "jpeg", "pdf", "svg"].includes(
       entry.name.split(".").pop()?.toLowerCase() ?? "",
     );
+  const displayName = pathForDisplay(entry.name);
+  const displayRelativePath = pathForDisplay(entry.relativePath);
 
   const droppedFiles = (event: DragEvent<HTMLElement>): File[] =>
     Array.from(event.dataTransfer.files ?? []);
@@ -188,7 +191,7 @@ function TreeRow({
           className={`tree-row ${dropActive ? "drop-target" : ""}`}
           style={{ paddingLeft: rowPadding }}
           onClick={() => setExpanded((current) => !current)}
-          title={entry.relativePath}
+          title={displayRelativePath}
           onContextMenu={(event) => {
             event.preventDefault();
             toggleMenu(menuOpen ? null : entry.path);
@@ -276,19 +279,24 @@ function TreeRow({
           ) : (
             <Folder size={15} className="folder-icon" />
           )}
-          <span>{entry.name}</span>
+          <span>{displayName}</span>
         </button>
         <div className="tree-row-actions">
           <button
+            type="button"
             className={`tree-row-menu-button ${menuOpen ? "active" : ""}`}
-            onClick={() => toggleMenu(menuOpen ? null : entry.path)}
-            title={`Actions for ${entry.name}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              toggleMenu(menuOpen ? null : entry.path);
+            }}
+            title={`Actions for ${displayName}`}
           >
             <MoreHorizontal size={14} />
           </button>
           {menuOpen ? (
-            <div className="tree-row-menu">
+            <div className="tree-row-menu" onClick={(event) => event.stopPropagation()}>
               <button
+                type="button"
                 className="tree-row-menu-item"
                 onClick={() => {
                   toggleMenu(null);
@@ -298,6 +306,7 @@ function TreeRow({
                 {expanded ? "Collapse folder" : "Expand folder"}
               </button>
               <button
+                type="button"
                 className="tree-row-menu-item"
                 onClick={() => {
                   toggleMenu(null);
@@ -307,6 +316,7 @@ function TreeRow({
                 New file
               </button>
               <button
+                type="button"
                 className="tree-row-menu-item"
                 onClick={() => {
                   toggleMenu(null);
@@ -316,6 +326,7 @@ function TreeRow({
                 New folder
               </button>
               <button
+                type="button"
                 className="tree-row-menu-item"
                 onClick={() => {
                   toggleMenu(null);
@@ -359,7 +370,7 @@ function TreeRow({
         className={`tree-row ${activePath === entry.path ? "active" : ""}`}
         style={{ paddingLeft: rowPadding }}
         onClick={() => onOpen(entry)}
-        title={entry.relativePath}
+        title={displayRelativePath}
         draggable
         onDragStart={(event) => {
           event.dataTransfer.effectAllowed = "move";
@@ -380,27 +391,32 @@ function TreeRow({
               event.stopPropagation();
               onRevealFile(entry);
             }}
-            title={`Reveal ${entry.name} in file manager`}
-            aria-label={`Reveal ${entry.name} in file manager`}
+            title={`Reveal ${displayName} in file manager`}
+            aria-label={`Reveal ${displayName} in file manager`}
           >
             <FileIcon name={entry.name} />
           </button>
         ) : (
           <FileIcon name={entry.name} />
         )}
-        <span>{entry.name}</span>
+        <span>{displayName}</span>
       </div>
       <div className="tree-row-actions">
         <button
+          type="button"
           className={`tree-row-menu-button ${menuOpen ? "active" : ""}`}
-          onClick={() => toggleMenu(menuOpen ? null : entry.path)}
-          title={`Actions for ${entry.name}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            toggleMenu(menuOpen ? null : entry.path);
+          }}
+          title={`Actions for ${displayName}`}
         >
           <MoreHorizontal size={14} />
         </button>
         {menuOpen ? (
-          <div className="tree-row-menu">
+          <div className="tree-row-menu" onClick={(event) => event.stopPropagation()}>
             <button
+              type="button"
               className="tree-row-menu-item"
               onClick={() => {
                 toggleMenu(null);
@@ -412,6 +428,7 @@ function TreeRow({
             {isTexFile(entry) ? (
               <>
                 <button
+                  type="button"
                   className="tree-row-menu-item"
                   onClick={() => {
                     toggleMenu(null);
@@ -421,6 +438,7 @@ function TreeRow({
                   Generate PDF
                 </button>
                 <button
+                  type="button"
                   className="tree-row-menu-item"
                   onClick={() => {
                     toggleMenu(null);
@@ -434,6 +452,7 @@ function TreeRow({
             {isImageFile ? (
               <>
                 <button
+                  type="button"
                   className="tree-row-menu-item"
                   onClick={() => {
                     toggleMenu(null);
@@ -443,6 +462,7 @@ function TreeRow({
                   Reveal in File Manager
                 </button>
                 <button
+                  type="button"
                   className="tree-row-menu-item"
                   onClick={() => {
                     toggleMenu(null);
@@ -454,6 +474,7 @@ function TreeRow({
               </>
             ) : null}
             <button
+              type="button"
               className="tree-row-menu-item"
               onClick={() => {
                 toggleMenu(null);

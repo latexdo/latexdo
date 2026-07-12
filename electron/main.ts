@@ -3249,6 +3249,47 @@ app.whenReady().then(async () => {
       sourcePaths,
     );
   });
+  ipcMain.handle(
+    "file:choose-import-external",
+    async (event, ...rawArgs: unknown[]) => {
+      const channel = "file:choose-import-external";
+      const [rawProjectId, rawDestinationDirectory] = expectIpcArgs(
+        channel,
+        rawArgs,
+        2,
+      );
+      const projectId = parseProjectId(channel, rawProjectId);
+      const destinationDirectory = parseOptionalImportDestination(
+        channel,
+        rawDestinationDirectory,
+      );
+      const projectPath = getProjectRoot(projectId);
+      const destinationRoot = destinationDirectory
+        ? resolveProjectPath(projectPath, destinationDirectory)
+        : projectPath;
+      const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+      const dialogOptions = {
+        properties: ["openFile", "multiSelections"],
+        title: "Import files into project",
+        buttonLabel: "Import",
+        defaultPath: destinationRoot,
+      } satisfies Electron.OpenDialogOptions;
+      const result = window
+        ? await dialog.showOpenDialog(window, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions);
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return [];
+      }
+
+      return importExternalFilesIntoProject(
+        channel,
+        projectPath,
+        destinationDirectory,
+        parseExternalSourcePaths(channel, result.filePaths),
+      );
+    },
+  );
   ipcMain.handle("entry:move", async (_event, ...rawArgs: unknown[]) => {
     const channel = "entry:move";
     const [rawProjectId, rawFromRelativePath, rawToRelativePath] = expectIpcArgs(
