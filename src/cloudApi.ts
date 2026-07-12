@@ -22,6 +22,7 @@ const cloudShareTokensKey = "latexdo.cloud.shareTokens";
 const cloudSpellCheckerSettingsKey = "latexdo.cloud.spellchecker";
 const cloudProofreadingSettingsKey = "latexdo.cloud.proofreading";
 const extensionStoreCatalogUrl = "https://store.latexdo.org/extensions/catalog.json";
+const defaultCollaborationApiBaseUrl = "https://collaborations.latexdo.org";
 
 const defaultProofreadingSettings: ProofreadingSettings = {
   enabled: false,
@@ -40,7 +41,7 @@ const defaultSpellCheckerSettings: SpellCheckerSettings = {
 };
 
 function apiBaseUrl(): string {
-  return import.meta.env.VITE_LATEXDO_API_BASE_URL || "";
+  return import.meta.env.VITE_LATEXDO_API_BASE_URL || defaultCollaborationApiBaseUrl;
 }
 
 function sessionId(): string {

@@ -1,8 +1,10 @@
 import { collaborationIdentity, shareTokenForProject } from "./collaborationStorage";
 import type { CollaborationRoomOptions } from "./collaborationTypes";
 
+const defaultCollaborationApiBaseUrl = "https://collaborations.latexdo.org";
+
 export function collaborationApiBaseUrl(): string {
-  return import.meta.env.VITE_LATEXDO_API_BASE_URL || window.location.origin;
+  return import.meta.env.VITE_LATEXDO_API_BASE_URL || defaultCollaborationApiBaseUrl;
 }
 
 export function collaborationHeaders(shareToken?: string): Record<string, string> {
@@ -19,7 +21,10 @@ export function collaborationShareUrl(token: string): string {
   return `${window.location.origin}${window.location.pathname}?share=${encodeURIComponent(token)}`;
 }
 
-export function projectShareToken(projectId: string, explicitToken?: string): string | undefined {
+export function projectShareToken(
+  projectId: string,
+  explicitToken?: string,
+): string | undefined {
   return explicitToken || shareTokenForProject(projectId);
 }
 
