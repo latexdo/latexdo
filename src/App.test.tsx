@@ -417,6 +417,23 @@ describe("App critical UI controls", () => {
     ).toContain("Unsaved draft");
   });
 
+  it("shows the main-process read refusal when opening an unsafe text file", async () => {
+    const api = installLatexDoMock();
+    api.readFile.mockRejectedValue(new Error("File is too large."));
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    const fileRow = document.querySelector(
+      '.tree-row[title="main.tex"]',
+    ) as HTMLButtonElement | null;
+    expect(fileRow).not.toBeNull();
+    fireEvent.click(fileRow as HTMLButtonElement);
+
+    expect(await screen.findByText("File is too large.")).toBeVisible();
+    expect(screen.queryByLabelText("mock editor")).not.toBeInTheDocument();
+  });
+
   it("opens the converted TeX file after importing DOCX into a new project", async () => {
     const api = installLatexDoMock();
     const importedProject: OpenProject = {
