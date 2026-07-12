@@ -686,6 +686,10 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       };
     },
 
+    onUpdateProgress() {
+      return () => {};
+    },
+
     async openReleasesPage(releaseUrl) {
       window.open(
         releaseUrl || "https://latexdo.org/downloads/",

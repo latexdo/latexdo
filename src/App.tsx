@@ -122,6 +122,7 @@ import type {
   SyncTexPdfLocation,
   SyncTexSourceLocation,
   UpdateCheckResult,
+  UpdateDownloadProgress,
 } from "./types";
 import { runConferenceChecks } from "./checks/conferenceChecker";
 import { runCitationChecks } from "./checks/citationAssistant";
@@ -2146,6 +2147,42 @@ function formatUpdateDate(value?: string | null): string | null {
   });
 }
 
+function formatUpdateBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const precision = Number.isInteger(value) || value >= 10 || unitIndex === 0 ? 0 : 1;
+  return `${value.toFixed(precision)} ${units[unitIndex]}`;
+}
+
+function formatUpdateProgress(progress: UpdateDownloadProgress): string {
+  const fallback = progress.message ?? "Preparing update";
+  if (progress.status !== "downloading") {
+    return fallback;
+  }
+
+  const parts: string[] = [];
+  if (progress.percent !== null) {
+    parts.push(`${Math.round(progress.percent)}%`);
+  }
+  if (progress.totalBytes !== null) {
+    parts.push(
+      `${formatUpdateBytes(progress.transferredBytes)} of ${formatUpdateBytes(
+        progress.totalBytes,
+      )}`,
+    );
+  } else if (progress.transferredBytes > 0) {
+    parts.push(formatUpdateBytes(progress.transferredBytes));
+  }
+
+  return parts.length ? `${fallback} (${parts.join(", ")})` : fallback;
+}
+
 export default function App() {
   const collaboration = useCollaborationContext();
   const [projectId, setProjectId] = useState("");
@@ -2232,6 +2269,9 @@ export default function App() {
   );
   const [documentHistory, setDocumentHistory] = useState<DocumentHistorySnapshot[]>([]);
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
+  const [updateProgress, setUpdateProgress] = useState<UpdateDownloadProgress | null>(
+    null,
+  );
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [updatingNow, setUpdatingNow] = useState(false);
   const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(
@@ -7037,6 +7077,7 @@ ${macroEnd}
   const checkForUpdates = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) {
       setCheckingUpdates(true);
+      setUpdateProgress(null);
     }
     try {
       const result = await window.latexdo.checkForUpdates();
@@ -7070,33 +7111,112 @@ ${macroEnd}
 
   const updateNow = useCallback(async () => {
     setUpdatingNow(true);
+    setUpdateProgress((current) => ({
+      status: "checking",
+      currentVersion:
+        updateInfo?.currentVersion ?? current?.currentVersion ?? "Unknown",
+      latestVersion: updateInfo?.latestVersion ?? current?.latestVersion ?? null,
+      fileName: null,
+      fileLabel: null,
+      transferredBytes: 0,
+      totalBytes: null,
+      percent: null,
+      message: "Checking for the latest build",
+    }));
     try {
       const result = await window.latexdo.updateNow();
       setUpdateInfo(result);
 
       if (result.error) {
+        setUpdateProgress((current) =>
+          current
+            ? { ...current, status: "error", message: result.error }
+            : {
+                status: "error",
+                currentVersion: result.currentVersion,
+                latestVersion: result.latestVersion,
+                fileName: null,
+                fileLabel: null,
+                transferredBytes: 0,
+                totalBytes: null,
+                percent: null,
+                message: result.error,
+              },
+        );
         setStatusMessage(result.error);
         return;
       }
 
       if (!result.updateAvailable) {
+        setUpdateProgress({
+          status: "done",
+          currentVersion: result.currentVersion,
+          latestVersion: result.latestVersion,
+          fileName: null,
+          fileLabel: null,
+          transferredBytes: 0,
+          totalBytes: null,
+          percent: null,
+          message: `Current build ${result.currentVersion} is up to date.`,
+        });
         setStatusMessage(`LatexDo ${result.currentVersion} is up to date.`);
         return;
       }
 
       if (result.opened && result.latestVersion) {
-        setStatusMessage(`Opened LatexDo ${result.latestVersion} installer.`);
+        setUpdateProgress((current) => ({
+          status: result.restartScheduled ? "restarting" : "opening",
+          currentVersion: result.currentVersion,
+          latestVersion: result.latestVersion,
+          fileName: current?.fileName ?? null,
+          fileLabel: current?.fileLabel ?? null,
+          transferredBytes: current?.transferredBytes ?? 1,
+          totalBytes: current?.totalBytes ?? 1,
+          percent: current?.percent ?? 100,
+          message: result.restartScheduled ? "Restarting LatexDo" : "Opened installer",
+        }));
+        setStatusMessage(
+          result.restartScheduled
+            ? `Restarting LatexDo to finish ${result.latestVersion}.`
+            : `Opened LatexDo ${result.latestVersion} installer.`,
+        );
       } else if (result.latestVersion) {
+        setUpdateProgress((current) => ({
+          status: "done",
+          currentVersion: result.currentVersion,
+          latestVersion: result.latestVersion,
+          fileName: current?.fileName ?? null,
+          fileLabel: current?.fileLabel ?? null,
+          transferredBytes: current?.transferredBytes ?? 1,
+          totalBytes: current?.totalBytes ?? 1,
+          percent: current?.percent ?? 100,
+          message: `LatexDo ${result.latestVersion} update is ready.`,
+        }));
         setStatusMessage(`LatexDo ${result.latestVersion} update is ready.`);
       }
     } catch (error) {
-      setStatusMessage(
-        error instanceof Error ? error.message : "Could not start the update.",
+      const message =
+        error instanceof Error ? error.message : "Could not start the update.";
+      setUpdateProgress((current) =>
+        current
+          ? { ...current, status: "error", message }
+          : {
+              status: "error",
+              currentVersion: updateInfo?.currentVersion ?? "Unknown",
+              latestVersion: updateInfo?.latestVersion ?? null,
+              fileName: null,
+              fileLabel: null,
+              transferredBytes: 0,
+              totalBytes: null,
+              percent: null,
+              message,
+            },
       );
+      setStatusMessage(message);
     } finally {
       setUpdatingNow(false);
     }
-  }, []);
+  }, [updateInfo?.currentVersion, updateInfo?.latestVersion]);
 
   const stageGitEntry = useCallback(
     async (relativePath: string) => {
@@ -7341,6 +7461,29 @@ ${macroEnd}
       window.removeEventListener("keydown", closeContextMenuFromKey);
     };
   }, [gitContextMenu]);
+
+  useEffect(() => {
+    return window.latexdo.onUpdateProgress((progress) => {
+      setUpdateProgress(progress);
+      setUpdateInfo((current) => ({
+        currentVersion: progress.currentVersion,
+        latestVersion: progress.latestVersion ?? current?.latestVersion ?? null,
+        releaseUrl: current?.releaseUrl ?? null,
+        updateAvailable:
+          progress.status === "done" ? false : (current?.updateAvailable ?? false),
+        publishedAt: current?.publishedAt,
+        channel: current?.channel,
+        manifestUrl: current?.manifestUrl,
+        checkedAt: current?.checkedAt,
+        error: progress.status === "error" ? progress.message : current?.error,
+      }));
+      if (progress.status === "restarting") {
+        setStatusMessage("Restarting LatexDo to finish the update.");
+      } else if (progress.status === "error" && progress.message) {
+        setStatusMessage(progress.message);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     void checkForUpdates({ silent: true });
@@ -8418,6 +8561,25 @@ ${macroEnd}
   );
   const updatePublishedLabel = formatUpdateDate(updateInfo?.publishedAt);
   const updateCheckedLabel = formatUpdateDate(updateInfo?.checkedAt);
+  const currentBuildVersion =
+    updateProgress?.currentVersion ?? updateInfo?.currentVersion ?? "Unknown";
+  const latestBuildVersion =
+    updateProgress?.latestVersion ?? updateInfo?.latestVersion ?? null;
+  const updateBuildSummary = latestBuildVersion
+    ? `Current build ${currentBuildVersion}. Available build ${latestBuildVersion}.`
+    : `Current build ${currentBuildVersion}.`;
+  const updateProgressLabel = updateProgress
+    ? formatUpdateProgress(updateProgress)
+    : null;
+  const updateProgressPercent =
+    updateProgress?.percent === null || updateProgress?.percent === undefined
+      ? null
+      : Math.max(0, Math.min(100, updateProgress.percent));
+  const updateProgressActive = Boolean(
+    updateProgress &&
+    updateProgress.status !== "done" &&
+    (updatingNow || updateProgress.status !== "checking"),
+  );
 
   return (
     <div className="app-shell" data-theme={settings.colorTheme}>
@@ -10751,10 +10913,37 @@ ${macroEnd}
             <span>
               <strong>LatexDo {availableUpdateVersion} is available</strong>
               <small>
-                {updatePublishedLabel
-                  ? `Published ${updatePublishedLabel}. Update now or open downloads from Settings.`
-                  : "Update now or open downloads from Settings."}
+                {updateProgressActive && updateProgressLabel
+                  ? updateProgressLabel
+                  : updatePublishedLabel
+                    ? `Published ${updatePublishedLabel}. Update now or open downloads from Settings.`
+                    : "Update now or open downloads from Settings."}
               </small>
+              <small className="update-build-meta">{updateBuildSummary}</small>
+              {updateProgressActive ? (
+                <div
+                  className={`update-progress-bar ${
+                    updateProgressPercent === null ? "is-indeterminate" : ""
+                  }`}
+                  role="progressbar"
+                  aria-label="Update download progress"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={
+                    updateProgressPercent === null
+                      ? undefined
+                      : Math.round(updateProgressPercent)
+                  }
+                >
+                  <span
+                    style={
+                      updateProgressPercent === null
+                        ? undefined
+                        : { width: `${updateProgressPercent}%` }
+                    }
+                  />
+                </div>
+              ) : null}
             </span>
           </div>
           <div className="update-banner-actions">
@@ -10790,7 +10979,11 @@ ${macroEnd}
             LatexDo
           </span>
           {updateInfo?.updateAvailable ? (
-            <button onClick={() => void updateNow()} disabled={updatingNow}>
+            <button
+              onClick={() => void updateNow()}
+              disabled={updatingNow}
+              title={updateBuildSummary}
+            >
               {updatingNow ? (
                 <LoaderCircle size={13} className="spin" />
               ) : (
@@ -12652,24 +12845,29 @@ ${macroEnd}
                 <>
                   <div className="settings-section-heading">
                     <strong>Updates</strong>
-                    <span>Check, download, and install LatexDo releases manually.</span>
+                    <span>Check, download, install, and restart LatexDo releases.</span>
                   </div>
 
                   <div className="settings-row update-row">
                     <span>
-                      <strong>Manual updates</strong>
+                      <strong>Application updates</strong>
                       <small>
-                        {updatingNow
-                          ? "Preparing the updater and installer…"
-                          : checkingUpdates
-                            ? "Checking for the latest release…"
-                            : updateInfo?.error
-                              ? updateInfo.error
-                              : updateInfo?.updateAvailable
-                                ? `Version ${updateInfo.latestVersion} is available. You are on ${updateInfo.currentVersion}.`
-                                : updateInfo?.latestVersion
-                                  ? `You are up to date on version ${updateInfo.currentVersion}.`
-                                  : "No manual check has been run in this session."}
+                        {updateProgressActive && updateProgressLabel
+                          ? updateProgressLabel
+                          : updatingNow
+                            ? "Preparing the updater and installer…"
+                            : checkingUpdates
+                              ? "Checking for the latest release…"
+                              : updateInfo?.error
+                                ? updateInfo.error
+                                : updateInfo?.updateAvailable
+                                  ? `Version ${updateInfo.latestVersion} is available. You are on ${updateInfo.currentVersion}.`
+                                  : updateInfo?.latestVersion
+                                    ? `You are up to date on version ${updateInfo.currentVersion}.`
+                                    : "No manual check has been run in this session."}
+                      </small>
+                      <small className="settings-update-meta">
+                        {updateBuildSummary}
                       </small>
                       {updateCheckedLabel || updatePublishedLabel ? (
                         <small className="settings-update-meta">
@@ -12677,6 +12875,30 @@ ${macroEnd}
                             ? `Last checked ${updateCheckedLabel}`
                             : `Published ${updatePublishedLabel}`}
                         </small>
+                      ) : null}
+                      {updateProgressActive ? (
+                        <div
+                          className={`update-progress-bar settings-update-progress ${
+                            updateProgressPercent === null ? "is-indeterminate" : ""
+                          }`}
+                          role="progressbar"
+                          aria-label="Update download progress"
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={
+                            updateProgressPercent === null
+                              ? undefined
+                              : Math.round(updateProgressPercent)
+                          }
+                        >
+                          <span
+                            style={
+                              updateProgressPercent === null
+                                ? undefined
+                                : { width: `${updateProgressPercent}%` }
+                            }
+                          />
+                        </div>
                       ) : null}
                     </span>
                     <div className="settings-update-actions">

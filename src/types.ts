@@ -298,6 +298,26 @@ export interface UpdateCheckResult {
 export interface UpdateInstallResult extends UpdateCheckResult {
   installerPath: string | null;
   opened: boolean;
+  restartScheduled?: boolean;
+}
+
+export interface UpdateDownloadProgress {
+  status:
+    | "checking"
+    | "downloading"
+    | "verifying"
+    | "opening"
+    | "restarting"
+    | "done"
+    | "error";
+  currentVersion: string;
+  latestVersion: string | null;
+  fileName: string | null;
+  fileLabel: string | null;
+  transferredBytes: number;
+  totalBytes: number | null;
+  percent: number | null;
+  message?: string;
 }
 
 export interface SpellCheckerSettings {

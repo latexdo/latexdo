@@ -11,6 +11,7 @@ import type {
   ProofreadingSettings,
   SpellCheckerSettings,
   UpdateCheckResult,
+  UpdateDownloadProgress,
   UpdateInstallResult,
 } from "./types";
 
@@ -261,6 +262,9 @@ function installLatexDoMock(options?: {
     onGitChanged: vi.fn(() => vi.fn()),
     checkForUpdates: vi.fn().mockResolvedValue(updateResult),
     updateNow: vi.fn().mockResolvedValue(updateNowResult),
+    onUpdateProgress: vi.fn((_callback: (progress: UpdateDownloadProgress) => void) =>
+      vi.fn(),
+    ),
     openReleasesPage: vi.fn().mockResolvedValue(undefined),
     getSpellCheckerSettings: vi.fn().mockResolvedValue(defaultSpellCheckerSettings),
     fetchExtensionCatalog: vi.fn().mockResolvedValue(fallbackExtensionCatalog),
@@ -590,6 +594,52 @@ describe("App critical UI controls", () => {
     await waitFor(() => {
       expect(api.updateNow).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("shows update download progress and current build details", async () => {
+    const updateResult: UpdateCheckResult = {
+      currentVersion: "0.1.0",
+      latestVersion: "0.2.0",
+      releaseUrl: "https://latexdo.org/downloads/v0.2.0/",
+      updateAvailable: true,
+    };
+    const api = installLatexDoMock({ updateResult });
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: /update now/i });
+    await waitFor(() => {
+      expect(api.onUpdateProgress).toHaveBeenCalledTimes(1);
+    });
+
+    const progressListener = api.onUpdateProgress.mock.calls[0]?.[0] as
+      | ((progress: UpdateDownloadProgress) => void)
+      | undefined;
+    expect(progressListener).toBeDefined();
+
+    act(() => {
+      progressListener?.({
+        status: "downloading",
+        currentVersion: "0.1.0",
+        latestVersion: "0.2.0",
+        fileName: "LatexDo-macos-arm64.dmg",
+        fileLabel: "macOS Apple Silicon",
+        transferredBytes: 5 * 1024 * 1024,
+        totalBytes: 10 * 1024 * 1024,
+        percent: 50,
+        message: "Downloading macOS Apple Silicon",
+      });
+    });
+
+    expect(
+      screen.getByText("Current build 0.1.0. Available build 0.2.0."),
+    ).toBeVisible();
+    expect(
+      screen.getByText("Downloading macOS Apple Silicon (50%, 5 MB of 10 MB)"),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("progressbar", { name: /update download progress/i }),
+    ).toHaveAttribute("aria-valuenow", "50");
   });
 
   it("shows a manual update button in settings", async () => {

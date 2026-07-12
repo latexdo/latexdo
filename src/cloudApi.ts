@@ -538,6 +538,8 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       };
     },
 
+    onUpdateProgress: () => () => {},
+
     async openReleasesPage(releaseUrl) {
       window.open(
         releaseUrl || "https://latexdo.org/downloads/",
