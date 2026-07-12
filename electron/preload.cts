@@ -551,7 +551,10 @@ const api = {
       token,
     );
   },
-  removeCollaborator: async (projectId: string, clientIdToRemove: string): Promise<void> => {
+  removeCollaborator: async (
+    projectId: string,
+    clientIdToRemove: string,
+  ): Promise<void> => {
     const token = cloudShareTokenForProject(projectId);
     if (!isCloudProject(projectId) || !token) {
       throw new Error("No share token for this project");

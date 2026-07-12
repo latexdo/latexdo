@@ -6,3 +6,4 @@ package-lock.json
 release
 out
 *.tsbuildinfo
+.claude/

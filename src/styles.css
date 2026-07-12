@@ -3768,7 +3768,9 @@ button {
   color: var(--text-muted);
   cursor: pointer;
   place-items: center;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .remove-btn:hover {
@@ -3792,9 +3794,6 @@ button {
   to {
     transform: rotate(360deg);
   }
-}
-  color: var(--text-secondary);
-  font-size: 11px;
 }
 
 .share-link-row button {
