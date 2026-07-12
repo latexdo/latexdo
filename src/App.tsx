@@ -6526,6 +6526,9 @@ ${macroEnd}
       projectIdRef.current && !hideProjectEntriesRef.current
         ? projectIdRef.current
         : undefined;
+    if (!currentProject) {
+      setWelcomeOpen(true);
+    }
 
     setDocxImporting(true);
     try {
@@ -6574,6 +6577,9 @@ ${macroEnd}
       projectIdRef.current && !hideProjectEntriesRef.current
         ? projectIdRef.current
         : undefined;
+    if (!currentProject) {
+      setWelcomeOpen(true);
+    }
 
     setMarkdownImporting(true);
     try {
