@@ -499,6 +499,17 @@ describe("App critical UI controls", () => {
     expect(screen.queryByLabelText("mock editor")).not.toBeInTheDocument();
   });
 
+  it("shows an error when opening a folder fails", async () => {
+    const api = installLatexDoMock();
+    api.openProject.mockRejectedValue(new Error("Folder picker failed."));
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /open folder/i }));
+
+    expect(await screen.findByText("Folder picker failed.")).toBeVisible();
+  });
+
   it("passes project tree settings when listing a project", async () => {
     const api = installLatexDoMock();
 

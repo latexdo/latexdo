@@ -2991,15 +2991,20 @@ app.whenReady().then(async () => {
   ipcMain.handle("project:open", async (event, ...rawArgs: unknown[]) => {
     const channel = "project:open";
     expectIpcArgs(channel, rawArgs, 0);
-    const window = BrowserWindow.fromWebContents(event.sender);
-    const result = await dialog.showOpenDialog({
-      properties: ["openDirectory", "createDirectory"],
+    const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const dialogOptions = {
+      properties: ["openDirectory"],
       title: "Open LaTeX project",
-    });
+      buttonLabel: "Open Folder",
+      defaultPath: app.getPath("documents"),
+    } satisfies Electron.OpenDialogOptions;
+    const result = window
+      ? await dialog.showOpenDialog(window, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
     if (result.canceled || !result.filePaths[0]) {
       return null;
     }
-    return registerProjectIfTrusted(window, result.filePaths[0]);
+    return registerProjectIfTrusted(window ?? null, result.filePaths[0]);
   });
   ipcMain.handle("project:create", async (_event, ...rawArgs: unknown[]) => {
     const channel = "project:create";
@@ -3269,8 +3274,8 @@ app.whenReady().then(async () => {
         : projectPath;
       const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
       const dialogOptions = {
-        properties: ["openFile", "multiSelections"],
-        title: "Import files into project",
+        properties: ["openFile", "openDirectory", "multiSelections"],
+        title: "Import files or folders into project",
         buttonLabel: "Import",
         defaultPath: destinationRoot,
       } satisfies Electron.OpenDialogOptions;
