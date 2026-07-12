@@ -2661,7 +2661,17 @@ export default function App() {
         return;
       }
 
-      const content = await window.latexdo.readFile(targetProject, entry.relativePath);
+      let content: string;
+      try {
+        content = await window.latexdo.readFile(targetProject, entry.relativePath);
+      } catch (error) {
+        setStatusMessage(
+          error instanceof Error
+            ? error.message
+            : `Could not open ${entry.relativePath}`,
+        );
+        return;
+      }
       const document: OpenDocument = {
         path: entry.path,
         relativePath: entry.relativePath,

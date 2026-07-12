@@ -33,6 +33,7 @@ import { compileAsymptote, compileLatex } from "./compiler.js";
 import { importDocxIntoProject } from "./docxImport.js";
 import { importMarkdown } from "./markdownImport.js";
 import { backwardSyncTex, forwardSyncTex } from "./synctex.js";
+import { editableTextFileExtensions, readSafeTextFile } from "./textFile.js";
 import type {
   Diagnostic,
   DocxImportResult,
@@ -2917,10 +2918,12 @@ app.whenReady().then(async () => {
     const channel = "file:read";
     const [rawProjectId, rawFilePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
-    const filePath = parseRelativePath(channel, rawFilePath);
+    const filePath = parseRelativePath(channel, rawFilePath, {
+      extensions: [...editableTextFileExtensions],
+    });
     const projectPath = getProjectRoot(projectId);
     const resolvedPath = resolveProjectPath(projectPath, filePath);
-    return readFile(resolvedPath, "utf8");
+    return readSafeTextFile(projectPath, resolvedPath, filePath);
   });
   ipcMain.handle("asset:read", async (_event, ...rawArgs: unknown[]) => {
     const channel = "asset:read";
