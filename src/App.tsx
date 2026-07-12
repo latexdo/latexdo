@@ -5888,9 +5888,15 @@ ${macroEnd}
   );
 
   const openProject = async () => {
-    const project = await window.latexdo.openProject();
-    if (project) {
-      await loadProject(project, true, false);
+    try {
+      const project = await window.latexdo.openProject();
+      if (project) {
+        await loadProject(project, true, false);
+      }
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Could not open folder.",
+      );
     }
   };
 
