@@ -311,6 +311,13 @@ export interface ProofreadingResult {
   error?: string;
 }
 
+export interface ProofreadingRequestOptions {
+  baseLine?: number;
+  baseColumn?: number;
+  originalTextLength?: number;
+  truncated?: boolean;
+}
+
 export type Engine = "pdflatex" | "xelatex" | "lualatex";
 
 export type EditorMode = "author" | "rebuttal" | "reviewer";

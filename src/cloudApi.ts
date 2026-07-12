@@ -514,7 +514,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       return settings;
     },
 
-    async proofreadDocument(_relativePath, content) {
+    async proofreadDocument(_relativePath, content, _options) {
       return {
         diagnostics: [],
         output: "Proofreading is not enabled in the hosted editor yet.",

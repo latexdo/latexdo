@@ -19,6 +19,7 @@ import type {
   ImportedProjectEntry,
   OpenProject,
   ProofreadingResult,
+  ProofreadingRequestOptions,
   ProofreadingSettings,
   ProjectEntry,
   SpellCheckerSettings,
@@ -185,8 +186,11 @@ const api = {
   proofreadDocument: (
     relativePath: string,
     content: string,
+    options?: ProofreadingRequestOptions,
   ): Promise<ProofreadingResult> =>
-    ipcRenderer.invoke("proofread:check", relativePath, content),
+    options === undefined
+      ? ipcRenderer.invoke("proofread:check", relativePath, content)
+      : ipcRenderer.invoke("proofread:check", relativePath, content, options),
   compile: (request: CompileRequest): Promise<CompileResult> =>
     ipcRenderer.invoke("latex:compile", request),
   cancelCompile: (projectId: string): Promise<boolean> =>
