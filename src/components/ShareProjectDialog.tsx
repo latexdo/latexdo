@@ -1,7 +1,11 @@
 import { Check, Copy, KeyRound, Link, LogIn, UserRound, X } from "lucide-react";
 import { CollaboratorsList } from "./CollaboratorsList";
 import { PermissionManagement } from "./PermissionManagement";
-import type { CollaborationState, CollaboratorPermission, PermissionUpdate } from "../types";
+import type {
+  CollaborationState,
+  CollaboratorPermission,
+  PermissionUpdate,
+} from "../types";
 
 export interface ShareProjectDialogProps {
   open: boolean;

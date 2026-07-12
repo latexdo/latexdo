@@ -8,7 +8,9 @@ export const CollaborationContext = createContext<CollaborationProviderState | n
 export function useCollaborationContext(): CollaborationProviderState {
   const context = useContext(CollaborationContext);
   if (!context) {
-    throw new Error("useCollaborationContext must be used inside CollaborationProvider");
+    throw new Error(
+      "useCollaborationContext must be used inside CollaborationProvider",
+    );
   }
   return context;
 }

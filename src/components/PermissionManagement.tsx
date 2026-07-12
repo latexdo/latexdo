@@ -1,6 +1,10 @@
 import { useState, useCallback } from "react";
 import { Crown, User, Pencil, Eye, Trash2, Loader2 } from "lucide-react";
-import type { CollaboratorPermission, CollaboratorRole, PermissionUpdate } from "../types";
+import type {
+  CollaboratorPermission,
+  CollaboratorRole,
+  PermissionUpdate,
+} from "../types";
 
 export interface PermissionManagementProps {
   permissions: CollaboratorPermission[];
@@ -126,12 +130,12 @@ export function PermissionManagement({
         <Crown size={14} /> Project Permissions
       </h4>
 
-      {error ? (
-        <div className="permission-error">{error}</div>
-      ) : null}
+      {error ? <div className="permission-error">{error}</div> : null}
 
       {permissions.length === 0 ? (
-        <p className="permission-empty">No collaborators yet. Share the project to add some.</p>
+        <p className="permission-empty">
+          No collaborators yet. Share the project to add some.
+        </p>
       ) : (
         <table className="permission-table">
           <thead>
@@ -154,9 +158,15 @@ export function PermissionManagement({
                       <select
                         value={perm.role}
                         onChange={(e) => {
-                          void handleRoleChange(perm.clientId, e.target.value as CollaboratorRole);
+                          void handleRoleChange(
+                            perm.clientId,
+                            e.target.value as CollaboratorRole,
+                          );
                         }}
-                        disabled={loading?.action === "update" && loading.clientId === perm.clientId}
+                        disabled={
+                          loading?.action === "update" &&
+                          loading.clientId === perm.clientId
+                        }
                       >
                         {getAvailableRoles(isCurrent).map((role) => (
                           <option key={role} value={role}>
@@ -179,11 +189,15 @@ export function PermissionManagement({
                       <button
                         type="button"
                         onClick={() => void handleRemove(perm.clientId)}
-                        disabled={loading?.action === "remove" && loading.clientId === perm.clientId}
+                        disabled={
+                          loading?.action === "remove" &&
+                          loading.clientId === perm.clientId
+                        }
                         title="Remove collaborator"
                         className="remove-btn"
                       >
-                        {loading?.action === "remove" && loading.clientId === perm.clientId ? (
+                        {loading?.action === "remove" &&
+                        loading.clientId === perm.clientId ? (
                           <Loader2 size={14} className="spin" />
                         ) : (
                           <Trash2 size={14} />

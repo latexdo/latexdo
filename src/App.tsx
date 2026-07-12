@@ -2257,9 +2257,13 @@ export default function App() {
     enabled: false,
     users: [],
   });
-  const [collaborationPermissions, setCollaborationPermissions] = useState<CollaboratorPermission[]>([]);
+  const [collaborationPermissions, setCollaborationPermissions] = useState<
+    CollaboratorPermission[]
+  >([]);
   const [isProjectAdmin, setIsProjectAdmin] = useState(false);
-  const [currentUserRole, setCurrentUserRole] = useState<"admin" | "editor" | "viewer">("viewer");
+  const [currentUserRole, setCurrentUserRole] = useState<"admin" | "editor" | "viewer">(
+    "viewer",
+  );
   const [collaborationDisplayName, setCollaborationDisplayName] = useState(
     loadCollaborationDisplayName,
   );
