@@ -113,6 +113,7 @@ import type {
   ProofreadingResult,
   ProofreadingSettings,
   ProjectEntry,
+  ProjectListOptions,
   RebuttalItem,
   ReviewChat,
   SpellCheckerSettings,
@@ -588,6 +589,9 @@ interface AppSettings {
   wordWrap: boolean;
   minimap: boolean;
   showRawLatex: boolean;
+  projectTreeIgnoredNames: string[];
+  projectTreeMaxDepth: number;
+  projectTreeMaxEntries: number;
 
   // Conference Checker
   conferenceCheckerEnabled: boolean;
@@ -688,6 +692,21 @@ interface AppSettings {
 
 const settingsStorageKey = "latexdo.settings";
 const installedExtensionsStorageKey = "latexdo.extensions.installed.v1";
+const defaultProjectTreeIgnoredNames = [
+  ".git",
+  ".latexdo",
+  "node_modules",
+  "dist",
+  "dist-electron",
+  "release",
+  "coverage",
+  "out",
+  ".cache",
+];
+const minProjectTreeDepth = 1;
+const maxProjectTreeDepth = 50;
+const minProjectTreeEntries = 100;
+const maxProjectTreeEntries = 100_000;
 const defaultSettings: AppSettings = {
   colorTheme: "graphite",
   defaultEngine: "pdflatex",
@@ -695,6 +714,9 @@ const defaultSettings: AppSettings = {
   wordWrap: true,
   minimap: true,
   showRawLatex: true,
+  projectTreeIgnoredNames: defaultProjectTreeIgnoredNames,
+  projectTreeMaxDepth: 8,
+  projectTreeMaxEntries: 5000,
 
   conferenceCheckerEnabled: true,
   conferenceTemplate: "ieee",
@@ -841,6 +863,73 @@ function loadInstalledExtensionIds(): string[] {
   }
 }
 
+function hasInvalidProjectTreeIgnoreNameCharacter(value: string): boolean {
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    if (character === "/" || character === "\\" || code < 32 || code === 127) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function normalizeProjectTreeIgnoredNames(value: unknown): string[] {
+  const values =
+    typeof value === "string"
+      ? value.split(/\r?\n|,/)
+      : Array.isArray(value)
+        ? value
+        : defaultProjectTreeIgnoredNames;
+  return [
+    ...new Set(
+      values
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter(
+          (entry) =>
+            entry.length > 0 &&
+            entry.length <= 128 &&
+            entry !== "." &&
+            entry !== ".." &&
+            !hasInvalidProjectTreeIgnoreNameCharacter(entry),
+        )
+        .slice(0, 256),
+    ),
+  ];
+}
+
+function parseProjectTreeIgnoredNamesText(value: string): string[] {
+  return normalizeProjectTreeIgnoredNames(value);
+}
+
+function boundedInteger(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function projectListOptionsFromSettings(settings: AppSettings): ProjectListOptions {
+  return {
+    ignoredNames: settings.projectTreeIgnoredNames,
+    maxDepth: settings.projectTreeMaxDepth,
+    maxEntries: settings.projectTreeMaxEntries,
+  };
+}
+
+function hasProjectTreeLimitEntry(entries: ProjectEntry[]): boolean {
+  return entries.some(
+    (entry) =>
+      entry.limited ||
+      (entry.children ? hasProjectTreeLimitEntry(entry.children) : false),
+  );
+}
+
 function matchesExtensionQuery(
   extension: LatexDoExtensionManifest,
   query: string,
@@ -924,6 +1013,21 @@ function loadSettings(): AppSettings {
         typeof saved.showRawLatex === "boolean"
           ? saved.showRawLatex
           : defaultSettings.showRawLatex,
+      projectTreeIgnoredNames: normalizeProjectTreeIgnoredNames(
+        saved.projectTreeIgnoredNames,
+      ),
+      projectTreeMaxDepth: boundedInteger(
+        saved.projectTreeMaxDepth,
+        defaultSettings.projectTreeMaxDepth,
+        minProjectTreeDepth,
+        maxProjectTreeDepth,
+      ),
+      projectTreeMaxEntries: boundedInteger(
+        saved.projectTreeMaxEntries,
+        defaultSettings.projectTreeMaxEntries,
+        minProjectTreeEntries,
+        maxProjectTreeEntries,
+      ),
 
       conferenceCheckerEnabled:
         typeof saved.conferenceCheckerEnabled === "boolean"
@@ -2163,6 +2267,7 @@ export default function App() {
   const hideProjectEntriesRef = useRef(true);
   const activePathRef = useRef("");
   const editorPathBeforeWelcomeRef = useRef("");
+  const settingsRef = useRef(settings);
   const rootFileRef = useRef(rootFile);
   const engineRef = useRef(engine);
   const pdfPathRef = useRef("");
@@ -2452,6 +2557,10 @@ export default function App() {
   }, [engine]);
 
   useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  useEffect(() => {
     window.localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
   }, [settings]);
 
@@ -2635,10 +2744,30 @@ export default function App() {
     if (!id) {
       return [];
     }
-    const entries = await window.latexdo.listProject(id);
+    const entries = await window.latexdo.listProject(
+      id,
+      projectListOptionsFromSettings(settingsRef.current),
+    );
     setProjectEntries(entries);
+    if (hasProjectTreeLimitEntry(entries)) {
+      setStatusMessage("Project tree was limited. Adjust tree limits in Settings.");
+    }
     return entries;
   }, []);
+
+  useEffect(() => {
+    if (!projectId || hideProjectEntries) {
+      return;
+    }
+    void refreshProject(projectId);
+  }, [
+    hideProjectEntries,
+    projectId,
+    refreshProject,
+    settings.projectTreeIgnoredNames,
+    settings.projectTreeMaxDepth,
+    settings.projectTreeMaxEntries,
+  ]);
 
   const openDocument = useCallback(
     async (entry: ProjectEntry, targetProject = projectIdRef.current) => {
@@ -3297,8 +3426,15 @@ ${macroEnd}
       pdfPathRef.current = "";
       lastAutoCompileSignatureRef.current = "";
 
-      const entries = await window.latexdo.listProject(project.id);
+      const entries = await window.latexdo.listProject(
+        project.id,
+        projectListOptionsFromSettings(settingsRef.current),
+      );
       setProjectEntries(entries);
+      const treeLimited = hasProjectTreeLimitEntry(entries);
+      if (treeLimited) {
+        setStatusMessage("Project tree was limited. Adjust tree limits in Settings.");
+      }
       await loadReviewData(project.id);
       await loadHistoryData(project.id);
       const allFiles = flattenEntries(entries);
@@ -3315,7 +3451,11 @@ ${macroEnd}
           await openDocument(main, project.id);
         }
       }
-      setStatusMessage("Ready");
+      setStatusMessage(
+        treeLimited
+          ? "Project tree was limited. Adjust tree limits in Settings."
+          : "Ready",
+      );
     },
     [loadHistoryData, loadReviewData, openDocument],
   );
@@ -10779,6 +10919,90 @@ ${macroEnd}
                       }
                     />
                   </label>
+
+                  <div className="settings-section-heading">
+                    <strong>Project tree</strong>
+                    <span>
+                      Control which folders are scanned when opening projects.
+                    </span>
+                  </div>
+
+                  <div className="settings-row settings-row-stack">
+                    <span>
+                      <strong>Ignored folders and files</strong>
+                      <small>
+                        One name per line. Names apply anywhere in the project tree.
+                      </small>
+                    </span>
+                    <textarea
+                      className="settings-textarea project-tree-ignore-input"
+                      value={settings.projectTreeIgnoredNames.join("\n")}
+                      onChange={(event) =>
+                        setSettings((current) => ({
+                          ...current,
+                          projectTreeIgnoredNames: parseProjectTreeIgnoredNamesText(
+                            event.target.value,
+                          ),
+                        }))
+                      }
+                      spellCheck={false}
+                      aria-label="Ignored project tree names"
+                    />
+                  </div>
+
+                  <div className="settings-row settings-row-stack">
+                    <span>
+                      <strong>Tree limits</strong>
+                      <small>
+                        Caps prevent huge folders from blocking project listing.
+                      </small>
+                    </span>
+                    <div className="project-tree-limit-grid">
+                      <label>
+                        <span>Max depth</span>
+                        <input
+                          type="number"
+                          className="settings-number-input"
+                          min={minProjectTreeDepth}
+                          max={maxProjectTreeDepth}
+                          value={settings.projectTreeMaxDepth}
+                          onChange={(event) =>
+                            setSettings((current) => ({
+                              ...current,
+                              projectTreeMaxDepth: boundedInteger(
+                                Number(event.target.value),
+                                defaultSettings.projectTreeMaxDepth,
+                                minProjectTreeDepth,
+                                maxProjectTreeDepth,
+                              ),
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        <span>Max entries</span>
+                        <input
+                          type="number"
+                          className="settings-number-input settings-wide-number-input"
+                          min={minProjectTreeEntries}
+                          max={maxProjectTreeEntries}
+                          step={100}
+                          value={settings.projectTreeMaxEntries}
+                          onChange={(event) =>
+                            setSettings((current) => ({
+                              ...current,
+                              projectTreeMaxEntries: boundedInteger(
+                                Number(event.target.value),
+                                defaultSettings.projectTreeMaxEntries,
+                                minProjectTreeEntries,
+                                maxProjectTreeEntries,
+                              ),
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                  </div>
                 </>
               ) : null}
 

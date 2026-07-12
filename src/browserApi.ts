@@ -416,7 +416,7 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       return projectToOpenProject(project);
     },
 
-    async listProject(projectId) {
+    async listProject(projectId, _options) {
       const store = readStore();
       return listProjectEntries(findProject(store, projectId));
     },

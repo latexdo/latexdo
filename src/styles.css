@@ -2362,6 +2362,15 @@ button {
   background: var(--bg-row-hover);
 }
 
+.tree-limit-row .tree-row {
+  cursor: default;
+}
+
+.tree-limit-message {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .folder-icon {
   color: var(--accent);
 }
@@ -3681,6 +3690,46 @@ button {
 
 .settings-row select:focus {
   border-color: var(--border-focus);
+}
+
+.settings-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 112px;
+  resize: vertical;
+  padding: 10px 11px;
+  border: 1px solid var(--border-input);
+  border-radius: 5px;
+  outline: none;
+  background: var(--bg-select);
+  color: var(--text-secondary);
+  font-family: "SFMono-Regular", "Cascadia Code", "Fira Code", Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.settings-textarea:focus {
+  border-color: var(--border-focus);
+}
+
+.project-tree-ignore-input {
+  max-height: 190px;
+}
+
+.project-tree-limit-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.project-tree-limit-grid label {
+  display: grid;
+  gap: 7px;
+}
+
+.project-tree-limit-grid span {
+  color: var(--text-muted);
+  font-size: 10px;
 }
 
 .settings-row input[type="range"] {
@@ -6941,6 +6990,10 @@ button {
   font-size: 13px;
   text-align: center;
   outline: none;
+}
+
+.settings-wide-number-input {
+  width: 110px;
 }
 
 .settings-number-input:focus {

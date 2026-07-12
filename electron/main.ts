@@ -47,7 +47,7 @@ import type {
   ProofreadingResult,
   ProofreadingRequestOptions,
   ProofreadingSettings,
-  ProjectEntry,
+  ProjectListOptions,
   SpellCheckerSettings,
   UpdateCheckResult,
   UpdateInstallResult,
@@ -66,6 +66,7 @@ import {
   runGitText,
 } from "./git.js";
 import { registerTerminalIpc } from "./terminal.js";
+import { listProject } from "./projectTree.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -715,6 +716,10 @@ const maxProofreadingContentLength = 5 * 1024 * 1024;
 const MAX_PROOFREAD_CHARS = 20_000;
 const maxGitCommitMessageLength = 20_000;
 const maxSettingsStringLength = 2048;
+const maxProjectTreeIgnoredNames = 256;
+const maxProjectTreeIgnoreNameLength = 128;
+const maxProjectTreeDepth = 50;
+const maxProjectTreeEntries = 100_000;
 const maxSyncTexNumber = 1_000_000;
 const reservedProjectPathSegments = new Set([".git", "node_modules"]);
 const compileEngines = new Set(["pdflatex", "xelatex", "lualatex"]);
@@ -957,6 +962,39 @@ function parseOptionalRelativePath(
     return undefined;
   }
   return parseRelativePath(channel, value);
+}
+
+function parseProjectListOptions(channel: string, value: unknown): ProjectListOptions {
+  if (value === undefined) {
+    return {};
+  }
+  if (!isRecord(value)) {
+    invalidIpcInput(channel);
+  }
+
+  const ignoredNames =
+    value.ignoredNames === undefined
+      ? undefined
+      : parseStringArray(channel, value.ignoredNames, {
+          maxItems: maxProjectTreeIgnoredNames,
+          maxItemLength: maxProjectTreeIgnoreNameLength,
+          pattern: /^[^/\\]+$/,
+        });
+  if (ignoredNames?.some((name) => name === "." || name === "..")) {
+    invalidIpcInput(channel);
+  }
+
+  return {
+    ignoredNames,
+    maxDepth:
+      value.maxDepth === undefined
+        ? undefined
+        : parseInteger(channel, value.maxDepth, 1, maxProjectTreeDepth),
+    maxEntries:
+      value.maxEntries === undefined
+        ? undefined
+        : parseInteger(channel, value.maxEntries, 100, maxProjectTreeEntries),
+  };
 }
 
 function parseTextContent(
@@ -2681,48 +2719,6 @@ async function gitDiscardAll(projectPath: string): Promise<GitDiscardResult> {
   };
 }
 
-async function listProject(
-  projectPath: string,
-  directory = projectPath,
-): Promise<ProjectEntry[]> {
-  const hidden = new Set([".git", ".latexdo", "node_modules", "dist"]);
-  const entries = await readdir(directory, { withFileTypes: true });
-  const result: ProjectEntry[] = [];
-
-  for (const entry of entries) {
-    if (hidden.has(entry.name) || entry.name === ".DS_Store") {
-      continue;
-    }
-
-    const absolutePath = path.join(directory, entry.name);
-    const relativePath = path.relative(projectPath, absolutePath);
-
-    if (entry.isDirectory()) {
-      result.push({
-        name: entry.name,
-        path: absolutePath,
-        relativePath,
-        type: "directory",
-        children: await listProject(projectPath, absolutePath),
-      });
-    } else {
-      result.push({
-        name: entry.name,
-        path: absolutePath,
-        relativePath,
-        type: "file",
-      });
-    }
-  }
-
-  return result.sort((left, right) => {
-    if (left.type !== right.type) {
-      return left.type === "directory" ? -1 : 1;
-    }
-    return left.name.localeCompare(right.name);
-  });
-}
-
 function createWindow(): BrowserWindow {
   console.log("[latexdo] createWindow:start");
   nativeTheme.themeSource = "dark";
@@ -2895,10 +2891,11 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("project:list", async (_event, ...rawArgs: unknown[]) => {
     const channel = "project:list";
-    const [rawProjectId] = expectIpcArgs(channel, rawArgs, 1);
+    const [rawProjectId, rawOptions] = expectIpcArgRange(channel, rawArgs, 1, 2);
     const projectId = parseProjectId(channel, rawProjectId);
+    const options = parseProjectListOptions(channel, rawOptions);
     const projectPath = getProjectRoot(projectId);
-    return listProject(projectPath);
+    return listProject(projectPath, options);
   });
   ipcMain.handle("file:exists", async (_event, ...rawArgs: unknown[]) => {
     const channel = "file:exists";

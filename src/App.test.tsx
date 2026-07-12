@@ -434,6 +434,31 @@ describe("App critical UI controls", () => {
     expect(screen.queryByLabelText("mock editor")).not.toBeInTheDocument();
   });
 
+  it("passes project tree settings when listing a project", async () => {
+    const api = installLatexDoMock();
+
+    render(<App />);
+
+    fireEvent.click(screen.getByLabelText(/open settings/i));
+    const ignoredNames = screen.getByLabelText("Ignored project tree names");
+    fireEvent.change(ignoredNames, {
+      target: { value: "vendor\nbuild-cache" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /open folder/i }));
+
+    await waitFor(() => {
+      expect(api.listProject).toHaveBeenCalled();
+    });
+    expect(api.listProject).toHaveBeenLastCalledWith(
+      "project-1",
+      expect.objectContaining({
+        ignoredNames: ["vendor", "build-cache"],
+        maxDepth: 8,
+        maxEntries: 5000,
+      }),
+    );
+  });
+
   it("opens the converted TeX file after importing DOCX into a new project", async () => {
     const api = installLatexDoMock();
     const importedProject: OpenProject = {
