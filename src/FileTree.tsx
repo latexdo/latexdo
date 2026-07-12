@@ -25,6 +25,7 @@ interface FileTreeProps {
   onCreateFolderInDirectory?: (entry: ProjectEntry) => void;
   onCopyRelativePath?: (entry: ProjectEntry) => void;
   onInsertFileReference?: (entry: ProjectEntry) => void;
+  onRevealFile?: (entry: ProjectEntry) => void;
   menuPath?: string | null;
   onToggleMenu?: (path: string | null) => void;
   draggedPath?: string | null;
@@ -116,6 +117,7 @@ function TreeRow({
   onCreateFolderInDirectory,
   onCopyRelativePath,
   onInsertFileReference,
+  onRevealFile,
   menuPath,
   onToggleMenu,
   draggedPath,
@@ -325,6 +327,7 @@ function TreeRow({
             onCreateFolderInDirectory={onCreateFolderInDirectory}
             onCopyRelativePath={onCopyRelativePath}
             onInsertFileReference={onInsertFileReference}
+            onRevealFile={onRevealFile}
             menuPath={menuPath}
             onToggleMenu={onToggleMenu}
             draggedPath={draggedPath}
@@ -337,7 +340,7 @@ function TreeRow({
 
   return (
     <div className="tree-file-row">
-      <button
+      <div
         className={`tree-row ${activePath === entry.path ? "active" : ""}`}
         style={{ paddingLeft: rowPadding }}
         onClick={() => onOpen(entry)}
@@ -354,9 +357,24 @@ function TreeRow({
           toggleMenu(menuOpen ? null : entry.path);
         }}
       >
-        <FileIcon name={entry.name} />
+        {isImageFile && onRevealFile ? (
+          <button
+            type="button"
+            className="tree-file-icon-button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRevealFile(entry);
+            }}
+            title={`Reveal ${entry.name} in file manager`}
+            aria-label={`Reveal ${entry.name} in file manager`}
+          >
+            <FileIcon name={entry.name} />
+          </button>
+        ) : (
+          <FileIcon name={entry.name} />
+        )}
         <span>{entry.name}</span>
-      </button>
+      </div>
       <div className="tree-row-actions">
         <button
           className={`tree-row-menu-button ${menuOpen ? "active" : ""}`}
@@ -399,15 +417,26 @@ function TreeRow({
               </>
             ) : null}
             {isImageFile ? (
-              <button
-                className="tree-row-menu-item"
-                onClick={() => {
-                  toggleMenu(null);
-                  onInsertFileReference?.(entry);
-                }}
-              >
-                Insert image code
-              </button>
+              <>
+                <button
+                  className="tree-row-menu-item"
+                  onClick={() => {
+                    toggleMenu(null);
+                    onRevealFile?.(entry);
+                  }}
+                >
+                  Reveal in File Manager
+                </button>
+                <button
+                  className="tree-row-menu-item"
+                  onClick={() => {
+                    toggleMenu(null);
+                    onInsertFileReference?.(entry);
+                  }}
+                >
+                  Insert image code
+                </button>
+              </>
             ) : null}
             <button
               className="tree-row-menu-item"
@@ -439,6 +468,7 @@ export default function FileTree({
   onCreateFolderInDirectory,
   onCopyRelativePath,
   onInsertFileReference,
+  onRevealFile,
   menuPath: controlledMenuPath,
   onToggleMenu: controlledToggleMenu,
   draggedPath: controlledDraggedPath,
@@ -487,6 +517,7 @@ export default function FileTree({
           onCreateFolderInDirectory={onCreateFolderInDirectory}
           onCopyRelativePath={onCopyRelativePath}
           onInsertFileReference={onInsertFileReference}
+          onRevealFile={onRevealFile}
           menuPath={menuPath}
           onToggleMenu={toggleMenu}
           draggedPath={draggedPath}

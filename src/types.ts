@@ -355,6 +355,7 @@ export interface RebuttalItem {
   id: string;
   originalText?: string;
   revisedText?: string;
+  insertedInTex?: boolean;
   reviewerComment: string;
   authorComment: string;
   modificationMade: string;

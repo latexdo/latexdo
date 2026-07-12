@@ -10,6 +10,7 @@ const item: RebuttalItem = {
   authorComment: "We added the requested explanation.",
   modificationMade: "Revised manuscript sentence.",
   revisedText: "Revised manuscript sentence.",
+  insertedInTex: false,
 };
 
 describe("RebuttalSidebar", () => {
@@ -30,8 +31,8 @@ describe("RebuttalSidebar", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /new rebuttal item/i }));
-    fireEvent.click(screen.getByRole("button", { name: /insert in source/i }));
-    fireEvent.click(screen.getByRole("button", { name: /generate letter/i }));
+    fireEvent.click(screen.getByRole("button", { name: /insert selection in tex/i }));
+    fireEvent.click(screen.getByRole("button", { name: /export response/i }));
 
     expect(onAddItem).toHaveBeenCalledTimes(1);
     expect(onAddRebuttalToSource).toHaveBeenCalledTimes(1);
@@ -55,11 +56,13 @@ describe("RebuttalSidebar", () => {
 
     const [textField, reviewerField, authorField, changesField] =
       screen.getAllByRole("textbox");
+    const sourceToggle = screen.getByRole("checkbox", { name: /in tex/i });
 
     fireEvent.change(textField, { target: { value: "Updated source text." } });
     fireEvent.change(reviewerField, { target: { value: "Updated review." } });
     fireEvent.change(authorField, { target: { value: "Updated answer." } });
     fireEvent.change(changesField, { target: { value: "Updated diff." } });
+    fireEvent.click(sourceToggle);
 
     expect(onUpdateItem).toHaveBeenCalledWith("item-1", {
       originalText: "Updated source text.",
@@ -73,6 +76,9 @@ describe("RebuttalSidebar", () => {
     expect(onUpdateItem).toHaveBeenCalledWith("item-1", {
       revisedText: "Updated diff.",
       modificationMade: "Updated diff.",
+    });
+    expect(onUpdateItem).toHaveBeenCalledWith("item-1", {
+      insertedInTex: true,
     });
 
     fireEvent.click(screen.getByRole("button", { name: /delete rebuttal item/i }));
