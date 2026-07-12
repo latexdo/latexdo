@@ -131,6 +131,8 @@ import type { ErrorDoctorResult } from "./checks/errorDoctor";
 import { runNotationChecks } from "./checks/notationManager";
 import { runPdfComplianceChecks } from "./checks/pdfCompliance";
 import { NotationManager } from "./components/NotationManager";
+import { useCollaborationContext } from "./collaboration/CollaborationContext";
+import { MonacoCollaborationBinding } from "./collaboration/MonacoCollaborationBinding";
 import {
   analyzeCitationLibrary,
   type CitationProjectFile,
@@ -2132,6 +2134,7 @@ function formatUpdateDate(value?: string | null): string | null {
 }
 
 export default function App() {
+  const collaboration = useCollaborationContext();
   const [projectId, setProjectId] = useState("");
   const [projectPath, setProjectPath] = useState("");
   const [projectEntries, setProjectEntries] = useState<ProjectEntry[]>([]);
@@ -2299,6 +2302,7 @@ export default function App() {
   const gitFileHistoryPathRef = useRef("");
   const gitRefreshTimerRef = useRef<number | null>(null);
   const gitRowClickTimerRef = useRef<number | null>(null);
+  const collaborationBindingRef = useRef<MonacoCollaborationBinding | null>(null);
   const scheduleGitRefreshRef = useRef<() => void>(() => {});
   const installedExtensionSnippetsRef = useRef<LatexDoExtensionSnippet[]>([]);
   const runtime = (window.latexdo as typeof window.latexdo & { runtime?: string })
@@ -5525,6 +5529,80 @@ ${macroEnd}
     }
   };
 
+  const disposeCollaborationBinding = useCallback(() => {
+    collaborationBindingRef.current?.destroy();
+    collaborationBindingRef.current = null;
+  }, []);
+
+  const connectCollaborationBinding = useCallback(
+    (editor = editorRef.current) => {
+      const document = documentsRef.current.find(
+        (item) => item.path === activePathRef.current,
+      );
+      const token = collaborationState.token;
+
+      if (
+        !editor ||
+        !document ||
+        !projectIdRef.current ||
+        !collaborationAvailable ||
+        !collaborationState.enabled ||
+        !token
+      ) {
+        disposeCollaborationBinding();
+        return;
+      }
+
+      const bindingKey = `${projectIdRef.current}:${document.relativePath}:${token}`;
+      if (collaborationBindingRef.current?.key === bindingKey) {
+        return;
+      }
+
+      disposeCollaborationBinding();
+      collaborationBindingRef.current = new MonacoCollaborationBinding({
+        editor,
+        projectId: projectIdRef.current,
+        relativePath: document.relativePath,
+        shareToken: token,
+        apiBaseUrl: collaboration.apiBaseUrl,
+        sessionId: collaboration.sessionId,
+        clientId: collaboration.clientId,
+        clientName: collaboration.clientName,
+        color: collaboration.color,
+        onStatusChange: (status) => {
+          if (status === "connected") {
+            setStatusMessage(`Live collaboration connected: ${document.relativePath}`);
+          } else if (status === "error") {
+            setStatusMessage("Live collaboration connection failed.");
+          }
+        },
+      });
+    },
+    [
+      collaboration.apiBaseUrl,
+      collaboration.clientId,
+      collaboration.clientName,
+      collaboration.color,
+      collaboration.sessionId,
+      collaborationAvailable,
+      collaborationState.enabled,
+      collaborationState.token,
+      disposeCollaborationBinding,
+    ],
+  );
+
+  useEffect(() => {
+    connectCollaborationBinding();
+  }, [
+    activePath,
+    collaborationState.enabled,
+    collaborationState.token,
+    connectCollaborationBinding,
+    projectId,
+  ]);
+
+  useEffect(() => disposeCollaborationBinding, [disposeCollaborationBinding]);
+
   const handleEditorMount: OnMount = (editor) => {
     editorRef.current = editor;
     editorMouseDisposableRef.current?.dispose();
@@ -5630,6 +5708,7 @@ ${macroEnd}
     requestAnimationFrame(() => {
       revealPendingSource();
     });
+    connectCollaborationBinding(editor);
     editor.focus();
   };
 
@@ -5911,6 +5990,22 @@ ${macroEnd}
           current.relativePath,
         );
         if (cancelled || remoteContent === current.savedContent) {
+          return;
+        }
+
+        if (remoteContent === current.content) {
+          setDocuments((openDocuments) => {
+            const nextDocuments = openDocuments.map((document) =>
+              document.path === current.path
+                ? {
+                    ...document,
+                    savedContent: remoteContent,
+                  }
+                : document,
+            );
+            documentsRef.current = nextDocuments;
+            return nextDocuments;
+          });
           return;
         }
 

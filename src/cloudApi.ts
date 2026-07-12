@@ -172,6 +172,24 @@ function localShareState(projectId: string): CollaborationState {
       };
 }
 
+function shareUrlForToken(token: string): string {
+  return `${window.location.origin}${window.location.pathname}?share=${encodeURIComponent(token)}`;
+}
+
+function normalizeCollaborationState(
+  projectId: string,
+  state: CollaborationState,
+): CollaborationState {
+  if (!state.token) {
+    return state;
+  }
+  return {
+    ...state,
+    shareUrl: state.shareUrl ?? shareUrlForToken(state.token),
+    projectId: state.projectId ?? projectId,
+  };
+}
+
 function emptyGitStatus(): GitStatusSummary {
   return {
     isRepo: false,
@@ -217,6 +235,10 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
     if (body.collaboration.token) {
       rememberShareToken(body.project.id, body.collaboration.token);
     }
+    body.collaboration = normalizeCollaborationState(
+      body.project.id,
+      body.collaboration,
+    );
     return body;
   };
 
@@ -338,7 +360,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
         if (state.token) {
           rememberShareToken(projectId, state.token);
         }
-        return state;
+        return normalizeCollaborationState(projectId, state);
       } catch {
         return localShareState(projectId);
       }
@@ -355,7 +377,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       if (state.token) {
         rememberShareToken(projectId, state.token);
       }
-      return state;
+      return normalizeCollaborationState(projectId, state);
     },
 
     joinCollaboration,
@@ -375,7 +397,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
           }),
         },
         token,
-      );
+      ).then((state) => normalizeCollaborationState(projectId, state));
     },
 
     stageGitFile: async () => {

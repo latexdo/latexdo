@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import appIconUrl from "../build/icon.svg";
 import App from "./App";
 import { installBrowserApis } from "./browserApi";
+import { CollaborationProvider } from "./collaboration/CollaborationProvider";
 import "./styles.css";
 
 const favicon =
@@ -20,6 +21,8 @@ installBrowserApis();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <CollaborationProvider>
+      <App />
+    </CollaborationProvider>
   </StrictMode>,
 );

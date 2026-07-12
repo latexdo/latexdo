@@ -13,6 +13,7 @@ coverage/
 .vite/
 .cache/
 .latexdo/
+.wrangler/
 
 # Environment files
 .env
