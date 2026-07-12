@@ -2127,6 +2127,7 @@ export default function App() {
   const hasVisibleProject = Boolean(projectId) && !hideProjectEntries;
   const showWelcome = welcomeOpen && !activePath;
   const showBlankWorkspace = hideProjectEntries && !welcomeOpen && !activePath;
+  const showEmptyEditor = !showWelcome && !activeDocument && !gitDiffSession;
   const previewShown =
     previewVisible && !showWelcome && !showBlankWorkspace && !gitDiffSession;
   const projectName = hasVisibleProject
@@ -7259,9 +7260,7 @@ ${macroEnd}
 
       const tex = generateRebuttalLetter(rebuttalItems, rebuttalSettings);
       if (!tex || tex.length < 50) {
-        setStatusMessage(
-          "Generated response is empty — check items and settings.",
-        );
+        setStatusMessage("Generated response is empty — check items and settings.");
         return;
       }
       const outName = "rebuttal-letter.tex";
@@ -8750,9 +8749,9 @@ ${macroEnd}
             }
           >
             <section
-              className={`source-pane ${showWelcome ? "welcome-only" : ""} ${gitDiffSession ? "git-diff-active" : ""}`}
+              className={`source-pane ${showWelcome ? "welcome-only" : ""} ${showEmptyEditor ? "empty-only" : ""} ${gitDiffSession ? "git-diff-active" : ""}`}
             >
-              {!showWelcome && !showBlankWorkspace && !gitDiffSession ? (
+              {activeDocument && !showWelcome && !gitDiffSession ? (
                 <div className="source-toolbar">
                   <div className="root-control">
                     <span className="control-label">ROOT</span>
