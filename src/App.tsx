@@ -70,6 +70,7 @@ import { TerminalPanel } from "./components/TerminalPanel";
 import { ReviewSidebar } from "./components/ReviewSidebar";
 import { RebuttalSidebar } from "./components/RebuttalSidebar";
 import { HistorySidebar } from "./components/HistorySidebar";
+import { ShareProjectDialog } from "./components/ShareProjectDialog";
 import { GitGraph } from "./components/GitGraph";
 import { GitDiffWorkbench } from "./components/GitDiffWorkbench";
 import {
@@ -2246,6 +2247,10 @@ export default function App() {
   });
   const [collaborationBusy, setCollaborationBusy] = useState(false);
   const [collaborationCopied, setCollaborationCopied] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [joinTokenDraft, setJoinTokenDraft] = useState("");
+  const [joinCollaborationBusy, setJoinCollaborationBusy] = useState(false);
+  const [joinCollaborationError, setJoinCollaborationError] = useState("");
   const [statusMessage, setStatusMessage] = useState("Welcome to LatexDo");
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
   const [pdfTarget, setPdfTarget] = useState<SyncTexPdfLocation | null>(null);
@@ -2307,7 +2312,7 @@ export default function App() {
   const installedExtensionSnippetsRef = useRef<LatexDoExtensionSnippet[]>([]);
   const runtime = (window.latexdo as typeof window.latexdo & { runtime?: string })
     .runtime;
-  const collaborationAvailable = runtime === "cloud";
+  const collaborationAvailable = runtime === "cloud" || runtime === "desktop";
 
   const activeDocument = documents.find((document) => document.path === activePath);
   const activeDocumentIsLatex = activeDocument
@@ -2347,6 +2352,19 @@ export default function App() {
     : 0;
   const activeCollaborators = collaborationState.users;
   const collaboratorCount = activeCollaborators.length;
+  const shareButtonLabel = collaborationBusy
+    ? "Sharing..."
+    : collaborationCopied
+      ? "Copied"
+      : collaborationState.enabled
+        ? `${Math.max(collaboratorCount, 1)} live`
+        : "Share";
+  const shareButtonTitle = collaborationState.enabled
+    ? "Open sharing"
+    : projectId
+      ? "Share project"
+      : "Join shared project";
+  const shareButtonDisabled = collaborationBusy || joinCollaborationBusy;
   const diagnostics = useMemo(
     () => [
       ...(compileResult?.diagnostics ?? []),
@@ -5843,23 +5861,44 @@ ${macroEnd}
   );
 
   const createCollaborationLink = async () => {
+    setShareDialogOpen(true);
+    setJoinCollaborationError("");
     const currentProject = projectIdRef.current;
-    if (!currentProject || !collaborationAvailable) {
-      setStatusMessage("Collaboration links are available in the hosted editor.");
+    if (!currentProject) {
+      setStatusMessage("Paste a collaboration token or open a project to share.");
+      return;
+    }
+
+    if (!collaborationAvailable) {
+      setStatusMessage("Cloud collaboration is not available in this runtime.");
       return;
     }
 
     setCollaborationBusy(true);
     try {
+      const dirtyDocuments = documentsRef.current.filter(
+        (document) => document.content !== document.savedContent,
+      );
+      await Promise.all(dirtyDocuments.map((document) => saveDocument(document)));
+
       const state = await window.latexdo.createCollaborationLink(currentProject);
-      setCollaborationState(state);
-      if (state.shareUrl) {
-        await copyToClipboard(state.shareUrl);
+      let activeState = state;
+
+      if (state.token && state.projectId && state.projectId !== currentProject) {
+        const opened = await window.latexdo.joinCollaboration(state.token);
+        activeState = opened.collaboration;
+        await loadProject(opened.project, true, false);
+      }
+
+      setCollaborationState(activeState);
+      const tokenOrUrl = activeState.token ?? activeState.shareUrl;
+      if (tokenOrUrl) {
+        await copyToClipboard(tokenOrUrl);
         setCollaborationCopied(true);
         window.setTimeout(() => setCollaborationCopied(false), 1800);
-        setStatusMessage("Collaboration link copied");
+        setStatusMessage("Collaboration token copied");
       } else {
-        setStatusMessage("Collaboration link ready");
+        setStatusMessage("Collaboration token ready");
       }
     } catch (error) {
       setStatusMessage(
@@ -5867,6 +5906,32 @@ ${macroEnd}
       );
     } finally {
       setCollaborationBusy(false);
+    }
+  };
+
+  const joinCollaborationFromDialog = async () => {
+    const token = joinTokenDraft.trim();
+    if (!token || joinCollaborationBusy) {
+      return;
+    }
+
+    setJoinCollaborationBusy(true);
+    setJoinCollaborationError("");
+    setStatusMessage("Joining collaboration...");
+    try {
+      const opened = await window.latexdo.joinCollaboration(token);
+      setCollaborationState(opened.collaboration);
+      setJoinTokenDraft("");
+      await loadProject(opened.project, true, false);
+      setShareDialogOpen(false);
+      setStatusMessage("Joined shared project");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not join collaboration";
+      setJoinCollaborationError(message);
+      setStatusMessage(message);
+    } finally {
+      setJoinCollaborationBusy(false);
     }
   };
 
@@ -8246,37 +8311,19 @@ ${macroEnd}
           <span>LatexDo</span>
         </div>
         <div className="title-actions">
-          {collaborationAvailable ? (
-            <button
-              type="button"
-              className={`title-history-button title-share-button ${
-                collaborationState.enabled ? "active" : ""
-              }`}
-              onClick={() => void createCollaborationLink()}
-              disabled={!projectId || collaborationBusy}
-              title={
-                collaborationState.enabled
-                  ? "Copy collaboration link"
-                  : "Create collaboration link"
-              }
-              aria-label={
-                collaborationState.enabled
-                  ? "Copy collaboration link"
-                  : "Create collaboration link"
-              }
-            >
-              <Link size={15} />
-              <span>
-                {collaborationBusy
-                  ? "Sharing..."
-                  : collaborationCopied
-                    ? "Copied"
-                    : collaborationState.enabled
-                      ? `${Math.max(collaboratorCount, 1)} live`
-                      : "Share"}
-              </span>
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className={`title-history-button title-share-button ${
+              collaborationState.enabled ? "active" : ""
+            }`}
+            onClick={() => void createCollaborationLink()}
+            disabled={shareButtonDisabled}
+            title={shareButtonTitle}
+            aria-label={shareButtonTitle}
+          >
+            <Link size={15} />
+            <span>{shareButtonLabel}</span>
+          </button>
           <button
             type="button"
             className={`title-history-button ${
@@ -9219,32 +9266,19 @@ ${macroEnd}
                     </div>
                   </div>
 
-                  {collaborationAvailable ? (
-                    <div className="collaboration-control">
-                      <button
-                        type="button"
-                        className={`collaboration-button ${collaborationState.enabled ? "active" : ""}`}
-                        onClick={() => void createCollaborationLink()}
-                        disabled={collaborationBusy}
-                        title={
-                          collaborationState.enabled
-                            ? "Copy collaboration link"
-                            : "Create collaboration link"
-                        }
-                      >
-                        <Link size={14} />
-                        <span>
-                          {collaborationBusy
-                            ? "Sharing..."
-                            : collaborationCopied
-                              ? "Copied"
-                              : collaborationState.enabled
-                                ? `${Math.max(collaboratorCount, 1)} live`
-                                : "Share"}
-                        </span>
-                      </button>
-                    </div>
-                  ) : null}
+                  <div className="collaboration-control">
+                    <button
+                      type="button"
+                      className={`collaboration-button ${collaborationState.enabled ? "active" : ""}`}
+                      onClick={() => void createCollaborationLink()}
+                      disabled={shareButtonDisabled}
+                      title={shareButtonTitle}
+                      aria-label={shareButtonTitle}
+                    >
+                      <Link size={14} />
+                      <span>{shareButtonLabel}</span>
+                    </button>
+                  </div>
 
                   {activeDocumentIsLatex ? (
                     <div
@@ -10726,6 +10760,36 @@ ${macroEnd}
           <span>Spaces: 2</span>
         </div>
       </footer>
+
+      <ShareProjectDialog
+        open={shareDialogOpen}
+        state={collaborationState}
+        copied={collaborationCopied}
+        busy={collaborationBusy}
+        joinToken={joinTokenDraft}
+        joining={joinCollaborationBusy}
+        joinError={joinCollaborationError}
+        onCopy={(text) => {
+          void (async () => {
+            await copyToClipboard(text);
+            setCollaborationCopied(true);
+            window.setTimeout(() => setCollaborationCopied(false), 1800);
+            setStatusMessage(
+              text === collaborationState.shareUrl
+                ? "Collaboration link copied"
+                : "Collaboration token copied",
+            );
+          })();
+        }}
+        onJoinTokenChange={(value) => {
+          setJoinTokenDraft(value);
+          if (joinCollaborationError) {
+            setJoinCollaborationError("");
+          }
+        }}
+        onJoin={() => void joinCollaborationFromDialog()}
+        onClose={() => setShareDialogOpen(false)}
+      />
 
       {createDialog ? (
         <div

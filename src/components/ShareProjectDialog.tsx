@@ -1,4 +1,4 @@
-import { Check, Copy, Link, X } from "lucide-react";
+import { Check, Copy, KeyRound, Link, LogIn, X } from "lucide-react";
 import { CollaboratorsList } from "./CollaboratorsList";
 import type { CollaborationState } from "../types";
 
@@ -7,7 +7,12 @@ export interface ShareProjectDialogProps {
   state: CollaborationState;
   copied: boolean;
   busy: boolean;
-  onCopy: () => void;
+  joinToken: string;
+  joining: boolean;
+  joinError: string;
+  onCopy: (value: string) => void;
+  onJoinTokenChange: (value: string) => void;
+  onJoin: () => void;
   onClose: () => void;
 }
 
@@ -16,7 +21,12 @@ export function ShareProjectDialog({
   state,
   copied,
   busy,
+  joinToken,
+  joining,
+  joinError,
   onCopy,
+  onJoinTokenChange,
+  onJoin,
   onClose,
 }: ShareProjectDialogProps) {
   if (!open) {
@@ -38,13 +48,60 @@ export function ShareProjectDialog({
           </button>
         </header>
         <div className="share-link-row">
-          <Link size={15} />
-          <input readOnly value={state.shareUrl ?? ""} aria-label="Share link" />
-          <button type="button" onClick={onCopy} disabled={busy || !state.shareUrl}>
+          <KeyRound size={15} />
+          <input
+            readOnly
+            value={state.token ?? ""}
+            placeholder={busy ? "Generating token..." : "Open a project to generate"}
+            aria-label="Collaboration token"
+          />
+          <button
+            type="button"
+            onClick={() => state.token && onCopy(state.token)}
+            disabled={busy || !state.token}
+          >
             {copied ? <Check size={15} /> : <Copy size={15} />}
             {copied ? "Copied" : "Copy"}
           </button>
         </div>
+        <div className="share-link-row">
+          <Link size={15} />
+          <input
+            readOnly
+            value={state.shareUrl ?? ""}
+            placeholder="Share link"
+            aria-label="Share link"
+          />
+          <button
+            type="button"
+            onClick={() => state.shareUrl && onCopy(state.shareUrl)}
+            disabled={busy || !state.shareUrl}
+          >
+            {copied ? <Check size={15} /> : <Copy size={15} />}
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
+        <form
+          className="share-token-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onJoin();
+          }}
+        >
+          <div className="share-link-row">
+            <LogIn size={15} />
+            <input
+              value={joinToken}
+              placeholder="Paste token or share link"
+              aria-label="Join collaboration token"
+              onChange={(event) => onJoinTokenChange(event.target.value)}
+            />
+            <button type="submit" disabled={joining || !joinToken.trim()}>
+              {joining ? "Joining..." : "Join"}
+            </button>
+          </div>
+          {joinError ? <div className="share-error">{joinError}</div> : null}
+        </form>
         <CollaboratorsList users={state.users} />
       </section>
     </div>
