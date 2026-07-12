@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { fallbackExtensionCatalog } from "./extensions";
@@ -293,7 +293,7 @@ function installLatexDoMock(options?: {
     onOpenProjectMenu: vi.fn(() => vi.fn()),
     onCreateFileMenu: vi.fn(() => vi.fn()),
     onCreateFolderMenu: vi.fn(() => vi.fn()),
-    onImportDocxMenu: vi.fn(() => vi.fn()),
+    onImportDocxMenu: vi.fn((_callback: () => void) => vi.fn()),
     onImportMarkdownMenu: vi.fn(() => vi.fn()),
   };
 
@@ -397,6 +397,38 @@ describe("App critical UI controls", () => {
     await waitFor(() => {
       expect(api.importDocx).toHaveBeenCalledWith(undefined);
     });
+  });
+
+  it("keeps the welcome page visible when DOCX import is launched from a blank workspace", async () => {
+    const api = installLatexDoMock();
+    api.importDocx.mockResolvedValue(null);
+
+    render(<App />);
+
+    const closeWelcome = document.querySelector(
+      ".welcome-tab .tab-close",
+    ) as HTMLElement | null;
+    expect(closeWelcome).not.toBeNull();
+    fireEvent.click(closeWelcome as HTMLElement);
+
+    expect(screen.getByText("No project is open")).toBeVisible();
+
+    await waitFor(() => {
+      expect(api.onImportDocxMenu).toHaveBeenCalled();
+    });
+    const importDocxCallback = api.onImportDocxMenu.mock.calls.at(-1)?.[0];
+    expect(importDocxCallback).toEqual(expect.any(Function));
+
+    await act(async () => {
+      importDocxCallback?.();
+    });
+
+    await waitFor(() => {
+      expect(api.importDocx).toHaveBeenCalledWith(undefined);
+    });
+    expect(screen.getByText("Start")).toBeVisible();
+    expect(screen.getByText("Import DOCX")).toBeVisible();
+    expect(screen.queryByText("No project is open")).not.toBeInTheDocument();
   });
 
   it("centers the empty page state after closing the welcome tab", () => {
