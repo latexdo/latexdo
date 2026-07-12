@@ -44,6 +44,7 @@ import type {
   ImportedProjectEntry,
   OpenProject,
   ProofreadingResult,
+  ProofreadingRequestOptions,
   ProofreadingSettings,
   ProjectEntry,
   SpellCheckerSettings,
@@ -710,6 +711,7 @@ const maxProjectIdLength = 128;
 const maxRelativePathLength = 4096;
 const maxTextContentLength = 20 * 1024 * 1024;
 const maxProofreadingContentLength = 5 * 1024 * 1024;
+const MAX_PROOFREAD_CHARS = 20_000;
 const maxGitCommitMessageLength = 20_000;
 const maxSettingsStringLength = 2048;
 const maxSyncTexNumber = 1_000_000;
@@ -1096,6 +1098,37 @@ function parseProofreadingSettingsInput(
     language,
     picky: parseBoolean(channel, value.picky),
     motherTongue,
+  };
+}
+
+function parseProofreadingRequestOptions(
+  channel: string,
+  value: unknown,
+): ProofreadingRequestOptions {
+  if (value === undefined) {
+    return {};
+  }
+  if (!isRecord(value)) {
+    invalidIpcInput(channel);
+  }
+
+  return {
+    baseLine:
+      value.baseLine === undefined
+        ? undefined
+        : parseInteger(channel, value.baseLine, 1, maxTextContentLength),
+    baseColumn:
+      value.baseColumn === undefined
+        ? undefined
+        : parseInteger(channel, value.baseColumn, 1, maxTextContentLength),
+    originalTextLength:
+      value.originalTextLength === undefined
+        ? undefined
+        : parseInteger(channel, value.originalTextLength, 0, maxTextContentLength),
+    truncated:
+      value.truncated === undefined
+        ? undefined
+        : parseBoolean(channel, value.truncated),
   };
 }
 
@@ -1642,12 +1675,14 @@ function sanitizeLatexForProofreading(source: string): string {
 function offsetToLocation(
   source: string,
   offset: number,
+  baseLine = 1,
+  baseColumn = 1,
 ): {
   line: number;
   column: number;
 } {
-  let line = 1;
-  let column = 1;
+  let line = baseLine;
+  let column = baseColumn;
 
   for (let index = 0; index < offset; index += 1) {
     if (source[index] === "\n") {
@@ -1665,6 +1700,7 @@ function mapProofreadingMatch(
   relativePath: string,
   source: string,
   match: ProofreadingMatch,
+  options: ProofreadingRequestOptions = {},
 ): Diagnostic | null {
   const offset = typeof match.offset === "number" ? match.offset : -1;
   const length = typeof match.length === "number" ? Math.max(1, match.length) : 1;
@@ -1672,8 +1708,15 @@ function mapProofreadingMatch(
     return null;
   }
 
-  const start = offsetToLocation(source, offset);
-  const end = offsetToLocation(source, Math.min(source.length, offset + length));
+  const baseLine = options.baseLine ?? 1;
+  const baseColumn = options.baseColumn ?? 1;
+  const start = offsetToLocation(source, offset, baseLine, baseColumn);
+  const end = offsetToLocation(
+    source,
+    Math.min(source.length, offset + length),
+    baseLine,
+    baseColumn,
+  );
   const replacements = uniqueStrings(
     (match.replacements ?? [])
       .map((replacement) => replacement.value ?? "")
@@ -1701,6 +1744,7 @@ function mapProofreadingMatch(
 async function proofreadDocument(
   relativePath: string,
   content: string,
+  options: ProofreadingRequestOptions = {},
 ): Promise<ProofreadingResult> {
   const settings = await getProofreadingSettings();
   if (!settings.enabled) {
@@ -1714,7 +1758,13 @@ async function proofreadDocument(
   const sanitizedText = relativePath.endsWith(".tex")
     ? sanitizeLatexForProofreading(content)
     : content;
-  const textForCheck = sanitizedText.replace(/[ \t]+\n/g, "\n");
+  const payloadWasLimited =
+    sanitizedText.length > MAX_PROOFREAD_CHARS || Boolean(options.truncated);
+  const limitedText =
+    sanitizedText.length > MAX_PROOFREAD_CHARS
+      ? sanitizedText.slice(0, MAX_PROOFREAD_CHARS)
+      : sanitizedText;
+  const textForCheck = limitedText.replace(/[ \t]+\n/g, "\n");
   if (!textForCheck.trim()) {
     return {
       diagnostics: [],
@@ -1724,7 +1774,7 @@ async function proofreadDocument(
   }
 
   const payload = new URLSearchParams();
-  payload.set("text", sanitizedText);
+  payload.set("text", limitedText);
   payload.set("language", settings.language || "auto");
   if (settings.motherTongue) {
     payload.set("motherTongue", settings.motherTongue);
@@ -1749,21 +1799,26 @@ async function proofreadDocument(
 
     const result = (await response.json()) as { matches?: ProofreadingMatch[] };
     const diagnostics = (result.matches ?? [])
-      .map((match) => mapProofreadingMatch(relativePath, content, match))
+      .map((match) => mapProofreadingMatch(relativePath, content, match, options))
       .filter((diagnostic): diagnostic is Diagnostic => diagnostic !== null);
+    const checkedTextLength = limitedText.trim().length;
+    const limitMessage = payloadWasLimited
+      ? ` Checked ${checkedTextLength.toLocaleString()} characters from the current document chunk (limit ${MAX_PROOFREAD_CHARS.toLocaleString()}).`
+      : "";
+    const baseOutput = diagnostics.length
+      ? `Found ${diagnostics.length} writing suggestion${diagnostics.length === 1 ? "" : "s"}.`
+      : "No grammar or style suggestions found.";
 
     return {
       diagnostics,
-      output: diagnostics.length
-        ? `Found ${diagnostics.length} writing suggestion${diagnostics.length === 1 ? "" : "s"}.`
-        : "No grammar or style suggestions found.",
-      checkedTextLength: sanitizedText.trim().length,
+      output: `${baseOutput}${limitMessage}`,
+      checkedTextLength,
     };
   } catch (error) {
     return {
       diagnostics: [],
       output: "Proofreading could not reach the grammar service.",
-      checkedTextLength: sanitizedText.trim().length,
+      checkedTextLength: limitedText.trim().length,
       error: error instanceof Error ? error.message : "Proofreading failed",
     };
   }
@@ -3308,12 +3363,18 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("proofread:check", async (_event, ...rawArgs: unknown[]) => {
     const channel = "proofread:check";
-    const [rawRelativePath, rawContent] = expectIpcArgs(channel, rawArgs, 2);
+    const [rawRelativePath, rawContent, rawOptions] = expectIpcArgRange(
+      channel,
+      rawArgs,
+      2,
+      3,
+    );
     const relativePath = parseRelativePath(channel, rawRelativePath, {
       extensions: [".tex", ".md", ".txt"],
     });
     const content = parseTextContent(channel, rawContent, maxProofreadingContentLength);
-    return proofreadDocument(relativePath, content);
+    const options = parseProofreadingRequestOptions(channel, rawOptions);
+    return proofreadDocument(relativePath, content, options);
   });
   ipcMain.handle("latex:compile", async (_event, ...rawArgs: unknown[]) => {
     const channel = "latex:compile";

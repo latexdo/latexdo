@@ -717,7 +717,7 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       return settings;
     },
 
-    async proofreadDocument(_relativePath, content) {
+    async proofreadDocument(_relativePath, content, _options) {
       return {
         diagnostics: [],
         output:

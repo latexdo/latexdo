@@ -331,6 +331,32 @@ describe("App critical UI controls", () => {
     });
   });
 
+  it("limits proofreading requests to the current 20k character chunk", async () => {
+    const api = installLatexDoMock();
+    api.readFile.mockResolvedValue("A".repeat(25_000));
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    fireEvent.click(screen.getByLabelText(/open settings/i));
+    fireEvent.click(screen.getByRole("button", { name: "Language" }));
+    fireEvent.click(await screen.findByRole("button", { name: /proofread now/i }));
+
+    await waitFor(() => {
+      expect(api.proofreadDocument).toHaveBeenCalled();
+    });
+    const [, sentContent, options] = api.proofreadDocument.mock.calls.at(-1)!;
+    expect(sentContent).toHaveLength(20_000);
+    expect(options).toEqual(
+      expect.objectContaining({
+        baseLine: 1,
+        baseColumn: 1,
+        originalTextLength: 25_000,
+        truncated: true,
+      }),
+    );
+  });
+
   it("opens DOCX import from the welcome screen without an open project", async () => {
     const api = installLatexDoMock();
 

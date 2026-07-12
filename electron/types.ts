@@ -330,3 +330,10 @@ export interface ProofreadingResult {
   checkedTextLength: number;
   error?: string;
 }
+
+export interface ProofreadingRequestOptions {
+  baseLine?: number;
+  baseColumn?: number;
+  originalTextLength?: number;
+  truncated?: boolean;
+}
