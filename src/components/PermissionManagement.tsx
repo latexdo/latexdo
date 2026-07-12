@@ -1,9 +1,8 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { Crown, User, Pencil, Eye, Trash2, Loader2 } from "lucide-react";
 import type { CollaboratorPermission, CollaboratorRole, PermissionUpdate } from "../types";
 
 export interface PermissionManagementProps {
-  projectId: string;
   permissions: CollaboratorPermission[];
   isAdmin: boolean;
   currentUserRole: CollaboratorRole;
@@ -31,7 +30,6 @@ const roleColors: Record<CollaboratorRole, string> = {
 };
 
 export function PermissionManagement({
-  projectId,
   permissions,
   isAdmin,
   currentUserRole,
@@ -98,13 +96,12 @@ export function PermissionManagement({
   );
 
   const getAvailableRoles = useCallback(
-    (clientId: string): CollaboratorRole[] => {
+    (isCurrent: boolean): CollaboratorRole[] => {
       if (!isAdmin) {
         return [];
       }
 
-      const isCurrentUser = clientId === "current";
-      if (isCurrentUser) {
+      if (isCurrent) {
         return ["admin"];
       }
 
@@ -145,55 +142,58 @@ export function PermissionManagement({
             </tr>
           </thead>
           <tbody>
-            {permissions.map((perm) => (
-              <tr key={perm.clientId}>
-                <td>
-                  <span className="collaborator-name">{perm.name}</span>
-                </td>
-                <td>
-                  {isAdmin && perm.clientId !== "current" ? (
-                    <select
-                      value={perm.role}
-                      onChange={(e) => {
-                        void handleRoleChange(perm.clientId, e.target.value as CollaboratorRole);
-                      }}
-                      disabled={loading?.action === "update" && loading.clientId === perm.clientId}
-                    >
-                      {getAvailableRoles(perm.clientId).map((role) => (
-                        <option key={role} value={role}>
-                          {roleLabels[role]}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span
-                      className="role-badge"
-                      style={{ color: roleColors[perm.role] }}
-                    >
-                      {roleIcons[perm.role]}
-                      {roleLabels[perm.role]}
-                    </span>
-                  )}
-                </td>
-                {isAdmin && perm.clientId !== "current" ? (
+            {permissions.map((perm) => {
+              const isCurrent = perm.isCurrent === true;
+              return (
+                <tr key={perm.clientId}>
                   <td>
-                    <button
-                      type="button"
-                      onClick={() => void handleRemove(perm.clientId)}
-                      disabled={loading?.action === "remove" && loading.clientId === perm.clientId}
-                      title="Remove collaborator"
-                      className="remove-btn"
-                    >
-                      {loading?.action === "remove" && loading.clientId === perm.clientId ? (
-                        <Loader2 size={14} className="spin" />
-                      ) : (
-                        <Trash2 size={14} />
-                      )}
-                    </button>
+                    <span className="collaborator-name">{perm.name}</span>
                   </td>
-                ) : null}
-              </tr>
-            ))}
+                  <td>
+                    {isAdmin && !isCurrent ? (
+                      <select
+                        value={perm.role}
+                        onChange={(e) => {
+                          void handleRoleChange(perm.clientId, e.target.value as CollaboratorRole);
+                        }}
+                        disabled={loading?.action === "update" && loading.clientId === perm.clientId}
+                      >
+                        {getAvailableRoles(isCurrent).map((role) => (
+                          <option key={role} value={role}>
+                            {roleLabels[role]}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span
+                        className="role-badge"
+                        style={{ color: roleColors[perm.role] }}
+                      >
+                        {roleIcons[perm.role]}
+                        {roleLabels[perm.role]}
+                      </span>
+                    )}
+                  </td>
+                  {isAdmin && !isCurrent ? (
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => void handleRemove(perm.clientId)}
+                        disabled={loading?.action === "remove" && loading.clientId === perm.clientId}
+                        title="Remove collaborator"
+                        className="remove-btn"
+                      >
+                        {loading?.action === "remove" && loading.clientId === perm.clientId ? (
+                          <Loader2 size={14} className="spin" />
+                        ) : (
+                          <Trash2 size={14} />
+                        )}
+                      </button>
+                    </td>
+                  ) : null}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

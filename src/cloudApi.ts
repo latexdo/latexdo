@@ -22,7 +22,6 @@ const cloudSessionKey = "latexdo.cloud.session";
 const cloudClientKey = "latexdo.cloud.client";
 const cloudClientNameKey = "latexdo.cloud.clientName";
 const cloudShareTokensKey = "latexdo.cloud.shareTokens";
-const cloudShareAdminsKey = "latexdo.cloud.shareAdmins";
 const cloudSpellCheckerSettingsKey = "latexdo.cloud.spellchecker";
 const cloudProofreadingSettingsKey = "latexdo.cloud.proofreading";
 const extensionStoreCatalogUrl = "https://store.latexdo.org/extensions/catalog.json";
@@ -69,16 +68,7 @@ function clientId(): string {
 }
 
 function clientName(): string {
-  const existing = window.localStorage.getItem(cloudClientNameKey);
-  if (existing) return existing;
-
-  const userAgentData = (
-    navigator as Navigator & { userAgentData?: { platform?: string } }
-  ).userAgentData;
-  const platform = userAgentData?.platform || navigator.platform || "this device";
-  const created = `LatexDo on ${platform}`.slice(0, 64);
-  window.localStorage.setItem(cloudClientNameKey, created);
-  return created;
+  return (window.localStorage.getItem(cloudClientNameKey) ?? "").trim().slice(0, 80);
 }
 
 function apiUrl(path: string): string {
@@ -147,24 +137,6 @@ function rememberShareToken(projectId: string, token: string): void {
   window.localStorage.setItem(
     cloudShareTokensKey,
     JSON.stringify({ ...shareTokens(), [projectId]: token }),
-  );
-}
-
-function shareAdmins(): Record<string, string> {
-  return readLocalSetting<Record<string, string>>(cloudShareAdminsKey, {});
-}
-
-function isAdminForProject(projectId: string): boolean {
-  const admins = shareAdmins();
-  const token = shareTokenForProject(projectId);
-  if (!token) return false;
-  return admins[token] === clientId();
-}
-
-function rememberShareAdmin(token: string, adminClientId: string): void {
-  window.localStorage.setItem(
-    cloudShareAdminsKey,
-    JSON.stringify({ ...shareAdmins(), [token]: adminClientId }),
   );
 }
 
@@ -373,7 +345,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
             body: JSON.stringify({ clientId: clientId(), name: clientName() }),
           },
           token,
-        );
+        ).then((state) => normalizeCollaborationState(projectId, state));
       }
 
       try {
@@ -399,7 +371,6 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       );
       if (state.token) {
         rememberShareToken(projectId, state.token);
-        rememberShareAdmin(state.token, clientId());
       }
       return normalizeCollaborationState(projectId, state);
     },
@@ -438,7 +409,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
         }>(`/api/shares/${encodeURIComponent(token)}/permissions`, {}, token);
         return result;
       } catch {
-        return { permissions: [], isAdmin: isAdminForProject(projectId), currentUserRole: "viewer" as const };
+        return { permissions: [], isAdmin: false, currentUserRole: "viewer" as const };
       }
     },
 
@@ -474,7 +445,16 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
     },
 
     isProjectAdmin: async (projectId) => {
-      return isAdminForProject(projectId);
+      const token = shareTokenForProject(projectId);
+      if (!token) return false;
+      try {
+        const result = await requestJson<{
+          isAdmin: boolean;
+        }>(`/api/shares/${encodeURIComponent(token)}/permissions`, {}, token);
+        return result.isAdmin;
+      } catch {
+        return false;
+      }
     },
 
     stageGitFile: async () => {

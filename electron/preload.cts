@@ -41,7 +41,6 @@ const cloudSessionKey = "latexdo.cloud.session";
 const cloudClientKey = "latexdo.cloud.client";
 const cloudClientNameKey = "latexdo.cloud.clientName";
 const cloudShareTokensKey = "latexdo.cloud.shareTokens";
-const cloudShareAdminsKey = "latexdo.cloud.shareAdmins";
 const cloudProjectIds = new Set<string>();
 
 function storageGet(key: string): string | null {
@@ -77,9 +76,7 @@ function cloudClientId(): string {
 }
 
 function cloudClientName(): string {
-  return readOrCreateStorage(cloudClientNameKey, () =>
-    `LatexDo Desktop on ${process.platform}`.slice(0, 64),
-  );
+  return (storageGet(cloudClientNameKey) ?? "").trim().slice(0, 80);
 }
 
 function cloudShareTokens(): Record<string, string> {
@@ -102,28 +99,6 @@ function rememberCloudShareToken(projectId: string, token: string): void {
     cloudShareTokensKey,
     JSON.stringify({ ...cloudShareTokens(), [projectId]: token }),
   );
-}
-
-function cloudShareAdmins(): Record<string, string> {
-  try {
-    const parsed = JSON.parse(storageGet(cloudShareAdminsKey) ?? "{}") as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, string>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function rememberCloudShareAdmin(token: string, adminClientId: string): void {
-  storageSet(
-    cloudShareAdminsKey,
-    JSON.stringify({ ...cloudShareAdmins(), [token]: adminClientId }),
-  );
-}
-
-function isCloudShareAdmin(token: string): boolean {
-  return cloudShareAdmins()[token] === cloudClientId();
 }
 
 function markCloudProject(projectId: string, token?: string): void {
@@ -255,7 +230,6 @@ async function cloudCreateShare(projectId: string): Promise<CollaborationState> 
   );
   if (state.token) {
     markCloudProject(projectId, state.token);
-    rememberCloudShareAdmin(state.token, cloudClientId());
   }
   return normalizeCloudState(projectId, state);
 }
@@ -556,7 +530,7 @@ const api = {
       }>(`/api/shares/${encodeURIComponent(token)}/permissions`, {}, token);
       return result;
     } catch {
-      return { permissions: [], isAdmin: isCloudShareAdmin(token), currentUserRole: "viewer" };
+      return { permissions: [], isAdmin: false, currentUserRole: "viewer" };
     }
   },
   updateCollaborationPermission: async (
@@ -596,7 +570,14 @@ const api = {
     if (!isCloudProject(projectId) || !token) {
       return false;
     }
-    return isCloudShareAdmin(token);
+    try {
+      const result = await cloudRequestJson<{
+        isAdmin: boolean;
+      }>(`/api/shares/${encodeURIComponent(token)}/permissions`, {}, token);
+      return result.isAdmin;
+    } catch {
+      return false;
+    }
   },
   stageGitFile: (projectId: string, relativePath: string): Promise<void> =>
     isCloudProject(projectId)

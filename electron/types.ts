@@ -50,6 +50,7 @@ export interface CollaboratorPermission {
   clientId: string;
   name: string;
   role: CollaboratorRole;
+  isCurrent?: boolean;
 }
 
 export interface PermissionUpdate {
