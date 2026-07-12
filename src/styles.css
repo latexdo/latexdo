@@ -2282,6 +2282,24 @@ button {
   white-space: nowrap;
 }
 
+.tree-file-icon-button {
+  display: grid;
+  width: 17px;
+  height: 20px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.tree-file-icon-button:hover {
+  background: var(--bg-row-hover);
+}
+
 .tree-row-actions {
   position: absolute;
   top: 2px;
@@ -6125,6 +6143,9 @@ button {
 }
 
 .sidebar-header-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 12px;
 }
 
@@ -6192,7 +6213,51 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   margin-bottom: 8px;
+}
+
+.rebuttal-item-title {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rebuttal-item-title strong,
+.rebuttal-item-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rebuttal-item-title span {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.rebuttal-item-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.rebuttal-source-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.rebuttal-source-toggle input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 .review-chat-selection {
@@ -6312,6 +6377,13 @@ button {
   line-height: 1.4;
 }
 
+.comment-input-area {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 6px;
+  align-items: stretch;
+}
+
 .comment-input-area textarea,
 .rebuttal-field textarea {
   width: 100%;
@@ -6326,6 +6398,29 @@ button {
 
 .comment-input-area textarea {
   height: 40px;
+}
+
+.comment-send-button {
+  display: grid;
+  width: 28px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid var(--border-card);
+  border-radius: 4px;
+  background: var(--bg-button-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.comment-send-button:hover:not(:disabled) {
+  border-color: var(--border-hover);
+  background: var(--bg-row-hover);
+  color: var(--text-primary);
+}
+
+.comment-send-button:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .rebuttal-field {

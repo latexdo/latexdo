@@ -1,6 +1,6 @@
 import React from "react";
-import { MessageSquare, Plus, Trash2, User } from "lucide-react";
-import type { ReviewChat, ReviewChatComment } from "../types";
+import { MessageSquare, Plus, Send, Trash2, User } from "lucide-react";
+import type { ReviewChat } from "../types";
 
 interface ReviewSidebarProps {
   chats: ReviewChat[];
@@ -18,6 +18,13 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
   onJumpToSelection,
 }) => {
   const [commentTexts, setCommentTexts] = React.useState<Record<string, string>>({});
+
+  const submitComment = (chatId: string) => {
+    const text = commentTexts[chatId]?.trim();
+    if (!text) return;
+    onAddComment(chatId, text);
+    setCommentTexts((prev) => ({ ...prev, [chatId]: "" }));
+  };
 
   return (
     <div className="review-sidebar">
@@ -90,13 +97,20 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
-                      if (commentTexts[chat.id]?.trim()) {
-                        onAddComment(chat.id, commentTexts[chat.id]);
-                        setCommentTexts((prev) => ({ ...prev, [chat.id]: "" }));
-                      }
+                      submitComment(chat.id);
                     }
                   }}
                 />
+                <button
+                  type="button"
+                  className="comment-send-button"
+                  onClick={() => submitComment(chat.id)}
+                  disabled={!commentTexts[chat.id]?.trim()}
+                  title="Send review message"
+                  aria-label="Send review message"
+                >
+                  <Send size={13} />
+                </button>
               </div>
             </div>
           ))

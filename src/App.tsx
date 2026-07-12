@@ -115,7 +115,6 @@ import type {
   ProjectEntry,
   RebuttalItem,
   ReviewChat,
-  ReviewChatComment,
   SpellCheckerSettings,
   SyncTexPdfLocation,
   SyncTexSourceLocation,
@@ -1810,6 +1809,13 @@ function removeLegacyReviewPlaceholders(chats: ReviewChat[]): {
   return { chats: cleaned, changed };
 }
 
+function normalizeRebuttalItem(item: RebuttalItem): RebuttalItem {
+  return {
+    ...item,
+    insertedInTex: Boolean(item.insertedInTex),
+  };
+}
+
 function buildHistorySnapshot(
   document: OpenDocument,
   source: DocumentHistorySnapshot["source"],
@@ -2839,7 +2845,7 @@ ${macroEnd}
           chats: ReviewChat[];
           items: RebuttalItem[];
         };
-        const nextItems = items || [];
+        const nextItems = (items || []).map(normalizeRebuttalItem);
         const normalizedChats = removeLegacyReviewPlaceholders(chats || []);
         setReviewChats(normalizedChats.chats);
         setRebuttalItems(nextItems);
@@ -2955,6 +2961,9 @@ ${macroEnd}
   const addHistorySnapshot = useCallback(
     (snapshot: DocumentHistorySnapshot) => {
       updateDocumentHistory((current) => {
+        if (snapshot.source !== "auto") {
+          return [snapshot, ...current];
+        }
         const nextContentKey = snapshotContentKey(snapshot);
         const snapshotsForFile = current.filter(
           (item) => item.filePath === snapshot.filePath,
@@ -2989,19 +2998,9 @@ ${macroEnd}
         setStatusMessage("Open a document before capturing history.");
         return;
       }
-      const contentHash = textHash(document.content);
-      const added = !documentHistoryRef.current.some(
-        (item) =>
-          item.filePath === document.relativePath &&
-          snapshotContentKey(item) === contentHash,
-      );
       addHistorySnapshot(buildHistorySnapshot(document, source));
       if (source === "manual") {
-        setStatusMessage(
-          added
-            ? `Captured history state for ${document.relativePath}`
-            : `No changes to capture for ${document.relativePath}`,
-        );
+        setStatusMessage(`Captured history state for ${document.relativePath}`);
       }
     },
     [addHistorySnapshot],
@@ -5882,6 +5881,44 @@ ${macroEnd}
     }
   }, []);
 
+  const openImportedTexDocument = useCallback(
+    async (
+      result: { relativePath: string; project?: OpenProject },
+      currentProject?: string,
+    ) => {
+      const targetProject = result.project?.id ?? currentProject;
+      if (!targetProject) {
+        throw new Error("Import did not return a project.");
+      }
+
+      if (result.project && result.project.id !== currentProject) {
+        await loadProject(result.project, false, false);
+      }
+
+      const entries = await refreshProject(targetProject);
+      const importedEntry = flattenEntries(entries).find(
+        (entry) =>
+          entry.type === "file" &&
+          normalizeRelativePath(entry.relativePath) ===
+            normalizeRelativePath(result.relativePath),
+      );
+
+      if (!importedEntry) {
+        throw new Error(`Imported file ${result.relativePath} was not found.`);
+      }
+
+      if (!importedEntry.name.toLowerCase().endsWith(".tex")) {
+        throw new Error(`Imported file ${result.relativePath} is not a TeX file.`);
+      }
+
+      await openDocument(importedEntry, targetProject);
+      setWelcomeOpen(false);
+      setRootFile(importedEntry.relativePath);
+      rootFileRef.current = importedEntry.relativePath;
+    },
+    [loadProject, openDocument, refreshProject],
+  );
+
   const handleEditorFileDrop = useCallback(
     async (event: React.DragEvent<HTMLDivElement>) => {
       const files = Array.from(event.dataTransfer.files ?? []);
@@ -5959,29 +5996,7 @@ ${macroEnd}
         return;
       }
 
-      const targetProject = result.project?.id ?? currentProject;
-      if (!targetProject) {
-        throw new Error("DOCX import did not return a project.");
-      }
-
-      if (result.project && result.project.id !== currentProject) {
-        await loadProject(result.project, false, false);
-      }
-
-      const entries = await refreshProject(targetProject);
-      const importedEntry = flattenEntries(entries).find(
-        (entry) =>
-          entry.type === "file" &&
-          normalizeRelativePath(entry.relativePath) ===
-            normalizeRelativePath(result.relativePath),
-      );
-
-      if (importedEntry) {
-        setWelcomeOpen(false);
-        await openDocument(importedEntry, targetProject);
-        setRootFile(importedEntry.relativePath);
-        rootFileRef.current = importedEntry.relativePath;
-      }
+      await openImportedTexDocument(result, currentProject);
 
       const converterName =
         result.converter === "pandoc" ? "Pandoc" : "built-in importer";
@@ -6007,7 +6022,7 @@ ${macroEnd}
     } finally {
       setDocxImporting(false);
     }
-  }, [loadProject, openDocument, refreshProject]);
+  }, [openImportedTexDocument]);
 
   const importMarkdown = useCallback(async () => {
     if (typeof window.latexdo.importMarkdown !== "function") {
@@ -6027,29 +6042,7 @@ ${macroEnd}
       const result = await window.latexdo.importMarkdown(currentProject);
       if (!result) return;
 
-      const targetProject = result.project?.id ?? currentProject;
-      if (!targetProject) {
-        throw new Error("Markdown import did not return a project.");
-      }
-
-      if (result.project && result.project.id !== currentProject) {
-        await loadProject(result.project, false, false);
-      }
-
-      const entries = await refreshProject(targetProject);
-      const importedEntry = flattenEntries(entries).find(
-        (entry) =>
-          entry.type === "file" &&
-          normalizeRelativePath(entry.relativePath) ===
-            normalizeRelativePath(result.relativePath),
-      );
-
-      if (importedEntry) {
-        setWelcomeOpen(false);
-        await openDocument(importedEntry, targetProject);
-        setRootFile(importedEntry.relativePath);
-        rootFileRef.current = importedEntry.relativePath;
-      }
+      await openImportedTexDocument(result, currentProject);
 
       const converterName =
         result.converter === "pandoc" ? "Pandoc" : "built-in converter";
@@ -6071,7 +6064,7 @@ ${macroEnd}
     } finally {
       setMarkdownImporting(false);
     }
-  }, [loadProject, openDocument, refreshProject]);
+  }, [openImportedTexDocument]);
 
   const closeDocument = (path: string) => {
     const target = documents.find((document) => document.path === path);
@@ -6935,7 +6928,13 @@ ${macroEnd}
   const revealGitFile = useCallback(async (relativePath: string) => {
     const currentProject = projectIdRef.current;
     if (!currentProject) return;
-    await window.latexdo.revealGitFile(currentProject, relativePath);
+    try {
+      await window.latexdo.revealGitFile(currentProject, relativePath);
+      setStatusMessage(`Revealed ${relativePath}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setStatusMessage(`Could not reveal ${relativePath}: ${message}`);
+    }
   }, []);
 
   const copyGitPath = useCallback(async (relativePath: string) => {
@@ -7141,13 +7140,22 @@ ${macroEnd}
   const handleAddReviewChat = useCallback(() => {
     const editor = editorRef.current;
     const document = documentsRef.current.find((d) => d.path === activePathRef.current);
-    if (!editor || !document) return;
+    if (!editor || !document) {
+      setStatusMessage("Open a document before starting a review thread.");
+      return;
+    }
 
     const selection = editor.getSelection();
-    if (!selection || selection.isEmpty()) return;
+    if (!selection || selection.isEmpty()) {
+      setStatusMessage("Select text before starting a review thread.");
+      return;
+    }
 
     const model = editor.getModel();
-    if (!model) return;
+    if (!model) {
+      setStatusMessage("Could not read the active editor selection.");
+      return;
+    }
 
     const selectedText = model.getValueInRange(selection);
     if (!selectedText.trim()) {
@@ -7210,6 +7218,7 @@ ${macroEnd}
       id: Date.now().toString(),
       originalText: selectedText,
       revisedText,
+      insertedInTex: true,
       reviewerComment,
       authorComment: authorAnswer,
       modificationMade: revisedText,
@@ -7251,13 +7260,13 @@ ${macroEnd}
       const tex = generateRebuttalLetter(rebuttalItems, rebuttalSettings);
       if (!tex || tex.length < 50) {
         setStatusMessage(
-          "Generated rebuttal letter is empty — check items and settings.",
+          "Generated response is empty — check items and settings.",
         );
         return;
       }
       const outName = "rebuttal-letter.tex";
       await window.latexdo.writeFile(currentProject, outName, tex);
-      setStatusMessage(`Generated ${outName} — open to compile.`);
+      setStatusMessage(`Generated response file ${outName} — open to compile.`);
       await refreshProject(currentProject);
     } catch (e) {
       const err = e instanceof Error ? e.message : String(e);
@@ -7327,6 +7336,7 @@ ${macroEnd}
       id: Date.now().toString(),
       originalText: "",
       revisedText: "",
+      insertedInTex: false,
       reviewerComment: "",
       authorComment: "",
       modificationMade: "",
@@ -8196,6 +8206,7 @@ ${macroEnd}
                       }
                       onCopyRelativePath={(entry) => void copyRelativePath(entry)}
                       onInsertFileReference={insertImageReference}
+                      onRevealFile={(entry) => void revealGitFile(entry.relativePath)}
                     />
                   ) : mode === "reviewer" ? (
                     <ReviewSidebar

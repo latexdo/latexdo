@@ -28,12 +28,12 @@ export const RebuttalSidebar: React.FC<RebuttalSidebarProps> = ({
         </button>
         <button className="sidebar-primary-action" onClick={onAddRebuttalToSource}>
           <Plus size={14} />
-          <span>Insert in Source</span>
+          <span>Insert Selection in TeX</span>
         </button>
         {onGenerateLetter && (
           <button className="sidebar-primary-action" onClick={onGenerateLetter}>
             <FileText size={14} />
-            <span>Generate Letter</span>
+            <span>Export Response</span>
           </button>
         )}
       </div>
@@ -44,22 +44,37 @@ export const RebuttalSidebar: React.FC<RebuttalSidebarProps> = ({
             <History size={32} />
             <p>No rebuttal items yet.</p>
             <p className="sub-text">
-              Click "New Rebuttal Item" to track your responses to reviewer comments.
+              Track reviewer responses as notes or TeX source changes.
             </p>
           </div>
         ) : (
           items.map((item) => (
             <div key={item.id} className="sidebar-item-card rebuttal-item-card">
               <div className="rebuttal-item-header">
-                <strong>Rebuttal Item</strong>
-                <button
-                  className="small-icon delete-button"
-                  onClick={() => onDeleteItem(item.id)}
-                  title="Delete rebuttal item"
-                  aria-label="Delete rebuttal item"
-                >
-                  <Trash2 size={13} />
-                </button>
+                <div className="rebuttal-item-title">
+                  <strong>Rebuttal Item</strong>
+                  <span>{item.insertedInTex ? "In TeX source" : "Notes only"}</span>
+                </div>
+                <div className="rebuttal-item-controls">
+                  <label className="rebuttal-source-toggle">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(item.insertedInTex)}
+                      onChange={(e) =>
+                        onUpdateItem(item.id, { insertedInTex: e.target.checked })
+                      }
+                    />
+                    <span>In TeX</span>
+                  </label>
+                  <button
+                    className="small-icon delete-button"
+                    onClick={() => onDeleteItem(item.id)}
+                    title="Delete rebuttal item"
+                    aria-label="Delete rebuttal item"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </div>
 
               <div className="rebuttal-field">
