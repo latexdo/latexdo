@@ -4186,6 +4186,11 @@ button {
   color: var(--text-subtle);
 }
 
+.settings-update-progress {
+  margin-top: 8px;
+  max-width: 360px;
+}
+
 .extension-store-toolbar {
   display: grid;
   align-items: center;
@@ -5597,6 +5602,44 @@ button {
 .update-banner-main small {
   color: var(--text-muted);
   font-size: 10.5px;
+}
+
+.update-banner-main .update-build-meta {
+  color: var(--text-subtle);
+}
+
+.update-progress-bar {
+  position: relative;
+  overflow: hidden;
+  width: min(360px, 100%);
+  height: 5px;
+  border-radius: 999px;
+  background: var(--bg-input);
+}
+
+.update-progress-bar span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 140ms ease;
+}
+
+.update-progress-bar.is-indeterminate span {
+  position: absolute;
+  width: 38%;
+  animation: update-progress-indeterminate 1.1s ease-in-out infinite;
+}
+
+@keyframes update-progress-indeterminate {
+  from {
+    transform: translateX(-115%);
+  }
+
+  to {
+    transform: translateX(280%);
+  }
 }
 
 .update-banner-actions {

@@ -24,7 +24,7 @@ import {
   stat,
   unlink,
 } from "node:fs/promises";
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import path from "node:path";
@@ -50,6 +50,7 @@ import type {
   ProjectListOptions,
   SpellCheckerSettings,
   UpdateCheckResult,
+  UpdateDownloadProgress,
   UpdateInstallResult,
   CreateProjectOptions,
 } from "./types.js";
@@ -2234,6 +2235,21 @@ function selectUpdateFile(files: WebsiteUpdateFile[]): WebsiteUpdateFile | null 
   );
 }
 
+type UpdateProgressSink = (progress: UpdateDownloadProgress) => void;
+
+function updateProgressPayload(
+  progress: Omit<UpdateDownloadProgress, "percent">,
+): UpdateDownloadProgress {
+  const percent =
+    progress.totalBytes && progress.totalBytes > 0
+      ? Math.min(100, (progress.transferredBytes / progress.totalBytes) * 100)
+      : null;
+  return {
+    ...progress,
+    percent,
+  };
+}
+
 function updateResultFromWebsitePayload(
   payload: WebsiteUpdatePayload,
   currentVersion: string,
@@ -2370,6 +2386,8 @@ async function uniqueDownloadPath(filename: string): Promise<string> {
 async function downloadUpdateInstaller(
   file: WebsiteUpdateFile,
   currentVersion: string,
+  latestVersion: string | null,
+  onProgress?: UpdateProgressSink,
 ): Promise<string> {
   const response = await fetch(file.url, {
     headers: {
@@ -2384,18 +2402,69 @@ async function downloadUpdateInstaller(
     throw new Error("Update installer download did not include a response body.");
   }
 
+  const contentLength = response.headers.get("content-length");
+  const parsedContentLength = contentLength ? Number.parseInt(contentLength, 10) : NaN;
+  const totalBytes =
+    Number.isFinite(parsedContentLength) && parsedContentLength > 0
+      ? parsedContentLength
+      : null;
+  let transferredBytes = 0;
+  let lastProgressSentAt = 0;
+  const emitDownloadProgress = (force = false) => {
+    if (!onProgress) return;
+    const now = Date.now();
+    if (!force && now - lastProgressSentAt < 120) return;
+    lastProgressSentAt = now;
+    onProgress(
+      updateProgressPayload({
+        status: "downloading",
+        currentVersion,
+        latestVersion,
+        fileName: file.filename,
+        fileLabel: file.label,
+        transferredBytes,
+        totalBytes,
+        message: `Downloading ${file.label}`,
+      }),
+    );
+  };
+
   const temporaryPath = path.join(
     app.getPath("temp"),
     `latexdo-update-${randomUUID()}-${file.filename}.download`,
   );
 
   try {
+    emitDownloadProgress(true);
     await pipeline(
       Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>),
+      new Transform({
+        transform(chunk, _encoding, callback) {
+          transferredBytes +=
+            typeof chunk === "string"
+              ? Buffer.byteLength(chunk)
+              : (chunk as Uint8Array).byteLength;
+          emitDownloadProgress();
+          callback(null, chunk);
+        },
+      }),
       createWriteStream(temporaryPath, { flags: "wx" }),
     );
+    emitDownloadProgress(true);
 
     if (file.sha256) {
+      onProgress?.(
+        updateProgressPayload({
+          status: "verifying",
+          currentVersion,
+          latestVersion,
+          fileName: file.filename,
+          fileLabel: file.label,
+          transferredBytes,
+          totalBytes: totalBytes ?? transferredBytes,
+          message: "Verifying downloaded installer",
+        }),
+      );
       const actualSha256 = await sha256File(temporaryPath);
       if (actualSha256 !== file.sha256) {
         throw new Error("Downloaded update installer failed checksum verification.");
@@ -2411,7 +2480,16 @@ async function downloadUpdateInstaller(
   }
 }
 
-async function updateNow(): Promise<UpdateInstallResult> {
+function scheduleApplicationRestart(): void {
+  setTimeout(() => {
+    app.relaunch();
+    app.exit(0);
+  }, 1200).unref();
+}
+
+async function updateNow(
+  onProgress?: UpdateProgressSink,
+): Promise<UpdateInstallResult> {
   const currentVersion = app.getVersion();
   const requestHeaders = {
     Accept: "application/json",
@@ -2419,16 +2497,42 @@ async function updateNow(): Promise<UpdateInstallResult> {
   };
   const errors: string[] = [];
 
+  onProgress?.(
+    updateProgressPayload({
+      status: "checking",
+      currentVersion,
+      latestVersion: null,
+      fileName: null,
+      fileLabel: null,
+      transferredBytes: 0,
+      totalBytes: null,
+      message: "Checking for the latest build",
+    }),
+  );
+
   for (const url of [updatesFeedUrl, downloadsManifestUrl]) {
     try {
       const payload = await fetchWebsiteUpdateJson(url, requestHeaders);
       const result = updateResultFromWebsitePayload(payload, currentVersion);
 
       if (!result.updateAvailable) {
+        onProgress?.(
+          updateProgressPayload({
+            status: "done",
+            currentVersion,
+            latestVersion: result.latestVersion,
+            fileName: null,
+            fileLabel: null,
+            transferredBytes: 0,
+            totalBytes: null,
+            message: `Current build ${currentVersion} is up to date.`,
+          }),
+        );
         return {
           ...result,
           installerPath: null,
           opened: false,
+          restartScheduled: false,
         };
       }
 
@@ -2439,24 +2543,67 @@ async function updateNow(): Promise<UpdateInstallResult> {
         );
       }
 
-      const installerPath = await downloadUpdateInstaller(updateFile, currentVersion);
+      const installerPath = await downloadUpdateInstaller(
+        updateFile,
+        currentVersion,
+        result.latestVersion,
+        onProgress,
+      );
+      onProgress?.(
+        updateProgressPayload({
+          status: "opening",
+          currentVersion,
+          latestVersion: result.latestVersion,
+          fileName: updateFile.filename,
+          fileLabel: updateFile.label,
+          transferredBytes: 1,
+          totalBytes: 1,
+          message: "Opening installer",
+        }),
+      );
       const openError = await shell.openPath(installerPath);
       if (openError) {
         throw new Error(
           `Downloaded update installer but could not open it: ${openError}`,
         );
       }
+      onProgress?.(
+        updateProgressPayload({
+          status: "restarting",
+          currentVersion,
+          latestVersion: result.latestVersion,
+          fileName: updateFile.filename,
+          fileLabel: updateFile.label,
+          transferredBytes: 1,
+          totalBytes: 1,
+          message: "Restarting LatexDo",
+        }),
+      );
+      scheduleApplicationRestart();
 
       return {
         ...result,
         installerPath,
         opened: true,
+        restartScheduled: true,
       };
     } catch (error) {
       errors.push(error instanceof Error ? error.message : String(error));
     }
   }
 
+  onProgress?.(
+    updateProgressPayload({
+      status: "error",
+      currentVersion,
+      latestVersion: null,
+      fileName: null,
+      fileLabel: null,
+      transferredBytes: 0,
+      totalBytes: null,
+      message: errors.join(" ") || "Update failed.",
+    }),
+  );
   throw new Error(errors.join(" ") || "Update failed.");
 }
 
@@ -3312,10 +3459,12 @@ app.whenReady().then(async () => {
     expectIpcArgs(channel, rawArgs, 0);
     return checkForUpdates();
   });
-  ipcMain.handle("app:update-now", async (_event, ...rawArgs: unknown[]) => {
+  ipcMain.handle("app:update-now", async (event, ...rawArgs: unknown[]) => {
     const channel = "app:update-now";
     expectIpcArgs(channel, rawArgs, 0);
-    return updateNow();
+    return updateNow((progress) => {
+      event.sender.send("app:update-progress", progress);
+    });
   });
   ipcMain.handle("app:open-releases", async (_event, ...rawArgs: unknown[]) => {
     const channel = "app:open-releases";

@@ -31,6 +31,7 @@ import type {
   SyncTexPdfLocation,
   SyncTexSourceLocation,
   UpdateCheckResult,
+  UpdateDownloadProgress,
   UpdateInstallResult,
 } from "./types.js" with { "resolution-mode": "import" };
 
@@ -696,6 +697,14 @@ const api = {
   checkForUpdates: (): Promise<UpdateCheckResult> =>
     ipcRenderer.invoke("app:check-updates"),
   updateNow: (): Promise<UpdateInstallResult> => ipcRenderer.invoke("app:update-now"),
+  onUpdateProgress: (callback: (progress: UpdateDownloadProgress) => void) => {
+    const listener = (_event: unknown, payload: UpdateDownloadProgress) =>
+      callback(payload);
+    ipcRenderer.on("app:update-progress", listener);
+    return () => {
+      ipcRenderer.removeListener("app:update-progress", listener);
+    };
+  },
   openReleasesPage: (releaseUrl?: string): Promise<void> =>
     ipcRenderer.invoke("app:open-releases", releaseUrl),
   openExternalUrl: (url: string): Promise<void> =>
