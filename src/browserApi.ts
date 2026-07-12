@@ -560,6 +560,22 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       };
     },
 
+    async getCollaborationPermissions() {
+      throw browserUnavailable("Cloud collaboration permissions");
+    },
+
+    async updateCollaborationPermission() {
+      throw browserUnavailable("Cloud collaboration permissions");
+    },
+
+    async removeCollaborator() {
+      throw browserUnavailable("Cloud collaboration permissions");
+    },
+
+    async isProjectAdmin() {
+      return false;
+    },
+
     async stageGitFile() {
       throw browserUnavailable("Git staging");
     },

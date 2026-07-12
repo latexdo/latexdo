@@ -85,6 +85,7 @@ import { monaco } from "./monaco";
 import type {
   CompileResult,
   CollaborationState,
+  CollaboratorPermission,
   ConferenceCheckerSettings,
   CitationAssistantSettings,
   StructureAssistantSettings,
@@ -2245,6 +2246,9 @@ export default function App() {
     enabled: false,
     users: [],
   });
+  const [collaborationPermissions, setCollaborationPermissions] = useState<CollaboratorPermission[]>([]);
+  const [isProjectAdmin, setIsProjectAdmin] = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState<"admin" | "editor" | "viewer">("viewer");
   const [collaborationBusy, setCollaborationBusy] = useState(false);
   const [collaborationCopied, setCollaborationCopied] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
@@ -5891,6 +5895,9 @@ ${macroEnd}
       }
 
       setCollaborationState(activeState);
+      if (currentProject) {
+        await loadCollaborationPermissions(currentProject);
+      }
       const tokenOrUrl = activeState.token ?? activeState.shareUrl;
       if (tokenOrUrl) {
         await copyToClipboard(tokenOrUrl);
@@ -5925,6 +5932,7 @@ ${macroEnd}
       await loadProject(opened.project, true, false);
       setShareDialogOpen(false);
       setStatusMessage("Joined shared project");
+      await loadCollaborationPermissions(opened.project.id);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Could not join collaboration";
@@ -5934,6 +5942,58 @@ ${macroEnd}
       setJoinCollaborationBusy(false);
     }
   };
+
+  const loadCollaborationPermissions = useCallback(
+    async (projectId: string) => {
+      if (!collaborationAvailable) return;
+
+      try {
+        const result = await window.latexdo.getCollaborationPermissions(projectId);
+        setCollaborationPermissions(result.permissions);
+        setIsProjectAdmin(result.isAdmin);
+        setCurrentUserRole(result.currentUserRole as "admin" | "editor" | "viewer");
+      } catch {
+        setCollaborationPermissions([]);
+        setIsProjectAdmin(false);
+        setCurrentUserRole("viewer");
+      }
+    },
+    [collaborationAvailable],
+  );
+
+  const handleUpdatePermission = useCallback(
+    async (update: { clientId: string; role: "admin" | "editor" | "viewer" }) => {
+      const currentProject = projectIdRef.current;
+      if (!currentProject || !collaborationAvailable) return;
+
+      try {
+        await window.latexdo.updateCollaborationPermission(currentProject, update);
+        await loadCollaborationPermissions(currentProject);
+      } catch (error) {
+        setStatusMessage(
+          error instanceof Error ? error.message : "Failed to update permission",
+        );
+      }
+    },
+    [collaborationAvailable, loadCollaborationPermissions],
+  );
+
+  const handleRemoveCollaborator = useCallback(
+    async (clientId: string) => {
+      const currentProject = projectIdRef.current;
+      if (!currentProject || !collaborationAvailable) return;
+
+      try {
+        await window.latexdo.removeCollaborator(currentProject, clientId);
+        await loadCollaborationPermissions(currentProject);
+      } catch (error) {
+        setStatusMessage(
+          error instanceof Error ? error.message : "Failed to remove collaborator",
+        );
+      }
+    },
+    [collaborationAvailable, loadCollaborationPermissions],
+  );
 
   const createProject = async () => {
     try {
@@ -10769,6 +10829,9 @@ ${macroEnd}
         joinToken={joinTokenDraft}
         joining={joinCollaborationBusy}
         joinError={joinCollaborationError}
+        permissions={collaborationPermissions}
+        isAdmin={isProjectAdmin}
+        currentUserRole={currentUserRole}
         onCopy={(text) => {
           void (async () => {
             await copyToClipboard(text);
@@ -10789,6 +10852,14 @@ ${macroEnd}
         }}
         onJoin={() => void joinCollaborationFromDialog()}
         onClose={() => setShareDialogOpen(false)}
+        onUpdatePermission={handleUpdatePermission}
+        onRemoveCollaborator={handleRemoveCollaborator}
+        onRefreshPermissions={async () => {
+          const currentProject = projectIdRef.current;
+          if (currentProject) {
+            await loadCollaborationPermissions(currentProject);
+          }
+        }}
       />
 
       {createDialog ? (
