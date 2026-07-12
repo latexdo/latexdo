@@ -345,6 +345,22 @@ describe("App critical UI controls", () => {
     });
   });
 
+  it("centers the empty page state after closing the welcome tab", () => {
+    installLatexDoMock();
+
+    render(<App />);
+
+    const closeWelcome = document.querySelector(
+      ".welcome-tab .tab-close",
+    ) as HTMLElement | null;
+    expect(closeWelcome).not.toBeNull();
+    fireEvent.click(closeWelcome as HTMLElement);
+
+    expect(screen.getByText("No project is open")).toBeVisible();
+    expect(document.querySelector(".source-pane")).toHaveClass("empty-only");
+    expect(document.querySelector(".source-toolbar")).not.toBeInTheDocument();
+  });
+
   it("opens the converted TeX file after importing DOCX into a new project", async () => {
     const api = installLatexDoMock();
     const importedProject: OpenProject = {
@@ -385,7 +401,7 @@ describe("App critical UI controls", () => {
       expect(api.readFile).toHaveBeenCalledWith(importedProject.id, "paper.tex");
     });
     expect(
-      (await screen.findByLabelText("mock editor") as HTMLTextAreaElement).value,
+      ((await screen.findByLabelText("mock editor")) as HTMLTextAreaElement).value,
     ).toContain("Imported");
     expect(screen.getByText(/Imported paper\.docx to paper\.tex/i)).toBeVisible();
   });
