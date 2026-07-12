@@ -36,11 +36,8 @@ function readOrCreate(key: string, create: () => string): string {
   return created;
 }
 
-function platformName(): string {
-  const navigatorWithUaData = navigator as Navigator & {
-    userAgentData?: { platform?: string };
-  };
-  return navigatorWithUaData.userAgentData?.platform || navigator.platform || "this device";
+function storedClientName(): string {
+  return (window.localStorage.getItem(cloudClientNameKey) ?? "").trim().slice(0, 80);
 }
 
 function colorFromClientId(clientId: string): string {
@@ -54,10 +51,7 @@ function colorFromClientId(clientId: string): string {
 export function collaborationIdentity(): CollaborationIdentity {
   const sessionId = readOrCreate(cloudSessionKey, () => randomId("session"));
   const clientId = readOrCreate(cloudClientKey, () => randomId("client"));
-  const clientName = readOrCreate(
-    cloudClientNameKey,
-    () => `LatexDo on ${platformName()}`.slice(0, 64),
-  );
+  const clientName = storedClientName();
   const color = readOrCreate(cloudClientColorKey, () => colorFromClientId(clientId));
   return { sessionId, clientId, clientName, color };
 }

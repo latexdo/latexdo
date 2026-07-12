@@ -3649,7 +3649,16 @@ button {
   grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
-.share-link-row input {
+.share-name-row {
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.share-link-row input,
+.share-name-row input {
   min-width: 0;
   height: 32px;
   padding: 0 9px;

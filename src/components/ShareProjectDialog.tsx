@@ -1,4 +1,4 @@
-import { Check, Copy, KeyRound, Link, LogIn, X } from "lucide-react";
+import { Check, Copy, KeyRound, Link, LogIn, UserRound, X } from "lucide-react";
 import { CollaboratorsList } from "./CollaboratorsList";
 import { PermissionManagement } from "./PermissionManagement";
 import type { CollaborationState, CollaboratorPermission, PermissionUpdate } from "../types";
@@ -11,11 +11,13 @@ export interface ShareProjectDialogProps {
   joinToken: string;
   joining: boolean;
   joinError: string;
+  displayName: string;
   permissions: CollaboratorPermission[];
   isAdmin: boolean;
   currentUserRole: string;
   onCopy: (value: string) => void;
   onJoinTokenChange: (value: string) => void;
+  onDisplayNameChange: (value: string) => void;
   onJoin: () => void;
   onClose: () => void;
   onUpdatePermission?: (update: PermissionUpdate) => Promise<void>;
@@ -31,11 +33,13 @@ export function ShareProjectDialog({
   joinToken,
   joining,
   joinError,
+  displayName,
   permissions,
   isAdmin,
   currentUserRole,
   onCopy,
   onJoinTokenChange,
+  onDisplayNameChange,
   onJoin,
   onClose,
   onUpdatePermission,
@@ -76,6 +80,16 @@ export function ShareProjectDialog({
             {copied ? <Check size={15} /> : <Copy size={15} />}
             {copied ? "Copied" : "Copy"}
           </button>
+        </div>
+        <div className="share-name-row">
+          <UserRound size={15} />
+          <input
+            value={displayName}
+            placeholder="Anonymous until you enter a name"
+            aria-label="Collaboration display name"
+            onChange={(event) => onDisplayNameChange(event.target.value)}
+            maxLength={80}
+          />
         </div>
         <div className="share-link-row">
           <Link size={15} />
@@ -118,7 +132,6 @@ export function ShareProjectDialog({
         <CollaboratorsList users={state.users} />
         {onUpdatePermission && onRemoveCollaborator && onRefreshPermissions ? (
           <PermissionManagement
-            projectId={state.projectId ?? ""}
             permissions={permissions}
             isAdmin={isAdmin}
             currentUserRole={currentUserRole as "admin" | "editor" | "viewer"}

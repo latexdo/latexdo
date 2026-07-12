@@ -696,6 +696,7 @@ interface AppSettings {
 
 const settingsStorageKey = "latexdo.settings";
 const installedExtensionsStorageKey = "latexdo.extensions.installed.v1";
+const cloudClientNameKey = "latexdo.cloud.clientName";
 const defaultProjectTreeIgnoredNames = [
   ".git",
   ".latexdo",
@@ -840,6 +841,16 @@ function loadBookmarkStore(): BookmarkStore {
   } catch {
     return {};
   }
+}
+
+function loadCollaborationDisplayName(): string {
+  return (window.localStorage.getItem(cloudClientNameKey) ?? "").slice(0, 80);
+}
+
+function storeCollaborationDisplayName(value: string): string {
+  const normalized = value.slice(0, 80);
+  window.localStorage.setItem(cloudClientNameKey, normalized);
+  return normalized;
 }
 
 function bookmarkKey(projectKey: string, relativePath: string): string {
@@ -2249,6 +2260,9 @@ export default function App() {
   const [collaborationPermissions, setCollaborationPermissions] = useState<CollaboratorPermission[]>([]);
   const [isProjectAdmin, setIsProjectAdmin] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<"admin" | "editor" | "viewer">("viewer");
+  const [collaborationDisplayName, setCollaborationDisplayName] = useState(
+    loadCollaborationDisplayName,
+  );
   const [collaborationBusy, setCollaborationBusy] = useState(false);
   const [collaborationCopied, setCollaborationCopied] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
@@ -5575,7 +5589,7 @@ ${macroEnd}
         return;
       }
 
-      const bindingKey = `${projectIdRef.current}:${document.relativePath}:${token}`;
+      const bindingKey = `${projectIdRef.current}:${document.relativePath}:${token}:${collaborationDisplayName}`;
       if (collaborationBindingRef.current?.key === bindingKey) {
         return;
       }
@@ -5589,7 +5603,7 @@ ${macroEnd}
         apiBaseUrl: collaboration.apiBaseUrl,
         sessionId: collaboration.sessionId,
         clientId: collaboration.clientId,
-        clientName: collaboration.clientName,
+        clientName: collaborationDisplayName,
         color: collaboration.color,
         onStatusChange: (status) => {
           if (status === "connected") {
@@ -5603,7 +5617,7 @@ ${macroEnd}
     [
       collaboration.apiBaseUrl,
       collaboration.clientId,
-      collaboration.clientName,
+      collaborationDisplayName,
       collaboration.color,
       collaboration.sessionId,
       collaborationAvailable,
@@ -5857,6 +5871,12 @@ ${macroEnd}
       try {
         const state = await window.latexdo.getCollaborationState(currentProject);
         setCollaborationState(state);
+        if (state.currentUserRole) {
+          setCurrentUserRole(state.currentUserRole);
+        }
+        if (typeof state.isAdmin === "boolean") {
+          setIsProjectAdmin(state.isAdmin);
+        }
       } catch {
         setCollaborationState({ enabled: false, users: [] });
       }
@@ -5895,8 +5915,9 @@ ${macroEnd}
       }
 
       setCollaborationState(activeState);
-      if (currentProject) {
-        await loadCollaborationPermissions(currentProject);
+      const activeProjectId = activeState.projectId ?? projectIdRef.current;
+      if (activeProjectId) {
+        await loadCollaborationPermissions(activeProjectId);
       }
       const tokenOrUrl = activeState.token ?? activeState.shareUrl;
       if (tokenOrUrl) {
@@ -5995,6 +6016,35 @@ ${macroEnd}
     [collaborationAvailable, loadCollaborationPermissions],
   );
 
+  const handleCollaborationDisplayNameChange = useCallback(
+    (value: string) => {
+      const nextName = storeCollaborationDisplayName(value);
+      setCollaborationDisplayName(nextName);
+
+      const currentProject = projectIdRef.current;
+      if (!currentProject || !collaborationAvailable || !collaborationState.enabled) {
+        return;
+      }
+
+      void (async () => {
+        try {
+          const active = documentsRef.current.find(
+            (document) => document.path === activePathRef.current,
+          );
+          const state = await window.latexdo.updateCollaborationPresence(
+            currentProject,
+            active?.relativePath ?? null,
+          );
+          setCollaborationState(state);
+          await loadCollaborationPermissions(currentProject);
+        } catch {
+          // The next presence heartbeat will retry.
+        }
+      })();
+    },
+    [collaborationAvailable, collaborationState.enabled, loadCollaborationPermissions],
+  );
+
   const createProject = async () => {
     try {
       const project = await window.latexdo.createProject();
@@ -6071,6 +6121,12 @@ ${macroEnd}
         );
         if (!cancelled) {
           setCollaborationState(state);
+          if (state.currentUserRole) {
+            setCurrentUserRole(state.currentUserRole);
+          }
+          if (typeof state.isAdmin === "boolean") {
+            setIsProjectAdmin(state.isAdmin);
+          }
         }
       } catch {
         // Presence is opportunistic; editing should keep working offline.
@@ -10829,6 +10885,7 @@ ${macroEnd}
         joinToken={joinTokenDraft}
         joining={joinCollaborationBusy}
         joinError={joinCollaborationError}
+        displayName={collaborationDisplayName}
         permissions={collaborationPermissions}
         isAdmin={isProjectAdmin}
         currentUserRole={currentUserRole}
@@ -10850,6 +10907,7 @@ ${macroEnd}
             setJoinCollaborationError("");
           }
         }}
+        onDisplayNameChange={handleCollaborationDisplayNameChange}
         onJoin={() => void joinCollaborationFromDialog()}
         onClose={() => setShareDialogOpen(false)}
         onUpdatePermission={handleUpdatePermission}
