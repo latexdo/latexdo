@@ -361,6 +361,36 @@ describe("App critical UI controls", () => {
     expect(document.querySelector(".source-toolbar")).not.toBeInTheDocument();
   });
 
+  it("restores the active editor without losing unsaved text after showing welcome", async () => {
+    installLatexDoMock();
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    const editor = await screen.findByLabelText("mock editor");
+    fireEvent.change(editor, {
+      target: {
+        value:
+          "\\documentclass{article}\n\\begin{document}\nUnsaved draft\n\\end{document}\n",
+      },
+    });
+
+    const welcomeTab = document.querySelector(".welcome-tab") as HTMLElement | null;
+    expect(welcomeTab).not.toBeNull();
+    fireEvent.click(welcomeTab as HTMLElement);
+    expect(screen.getByText("Start")).toBeVisible();
+
+    const closeWelcome = document.querySelector(
+      ".welcome-tab .tab-close",
+    ) as HTMLElement | null;
+    expect(closeWelcome).not.toBeNull();
+    fireEvent.click(closeWelcome as HTMLElement);
+
+    expect(
+      ((await screen.findByLabelText("mock editor")) as HTMLTextAreaElement).value,
+    ).toContain("Unsaved draft");
+  });
+
   it("opens the converted TeX file after importing DOCX into a new project", async () => {
     const api = installLatexDoMock();
     const importedProject: OpenProject = {

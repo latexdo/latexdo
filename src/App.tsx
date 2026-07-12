@@ -2065,6 +2065,7 @@ export default function App() {
   const projectPathRef = useRef("");
   const hideProjectEntriesRef = useRef(true);
   const activePathRef = useRef("");
+  const editorPathBeforeWelcomeRef = useRef("");
   const rootFileRef = useRef(rootFile);
   const engineRef = useRef(engine);
   const pdfPathRef = useRef("");
@@ -6088,6 +6089,9 @@ ${macroEnd}
   };
 
   const showWelcomePage = () => {
+    if (activePathRef.current) {
+      editorPathBeforeWelcomeRef.current = activePathRef.current;
+    }
     setWelcomeOpen(true);
     setActivePath("");
     activePathRef.current = "";
@@ -6840,7 +6844,11 @@ ${macroEnd}
       return;
     }
     if (!activePath) {
-      const nextPath = documents[0]?.path ?? "";
+      const previousEditorPath = editorPathBeforeWelcomeRef.current;
+      const nextPath =
+        documents.find((document) => document.path === previousEditorPath)?.path ??
+        documents[0]?.path ??
+        "";
       setActivePath(nextPath);
       activePathRef.current = nextPath;
     }
