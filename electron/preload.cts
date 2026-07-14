@@ -305,6 +305,35 @@ async function uploadLocalProjectToCloud(localProjectId: string): Promise<OpenPr
   return cloudProject;
 }
 
+async function compileCloudProject(request: CompileRequest): Promise<CompileResult> {
+  const token = cloudShareTokenForProject(request.projectId);
+  const entries = flattenProjectEntries(
+    await cloudRequestJson<ProjectEntry[]>(
+      `/api/projects/${encodeURIComponent(request.projectId)}/files`,
+      {},
+      token,
+    ),
+  );
+
+  const files: { relativePath: string; content: string }[] = [];
+  for (const entry of entries) {
+    if (entry.type !== "file") continue;
+    const body = await cloudRequestJson<{ content: string }>(
+      `/api/projects/${encodeURIComponent(request.projectId)}/files/content?${filePathQuery(entry.relativePath)}`,
+      {},
+      token,
+    );
+    files.push({ relativePath: entry.relativePath, content: body.content });
+  }
+
+  return ipcRenderer.invoke("latex:compile-cloud", {
+    projectId: request.projectId,
+    rootFile: request.rootFile,
+    engine: request.engine,
+    files,
+  }) as Promise<CompileResult>;
+}
+
 function cloudUnsupportedCompile(request: CompileRequest): CompileResult {
   return {
     ok: false,
@@ -738,11 +767,19 @@ const api = {
       : ipcRenderer.invoke("proofread:check", relativePath, content, options),
   compile: (request: CompileRequest): Promise<CompileResult> =>
     isCloudProject(request.projectId)
-      ? Promise.resolve(cloudUnsupportedCompile(request))
+      ? compileCloudProject(request).catch((error) => ({
+          ...cloudUnsupportedCompile(request),
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not compile the shared project locally.",
+        }))
       : ipcRenderer.invoke("latex:compile", request),
   cancelCompile: (projectId: string): Promise<boolean> =>
     isCloudProject(projectId)
-      ? Promise.resolve(false)
+      ? (ipcRenderer.invoke("latex:compile-cancel", projectId) as Promise<boolean>).catch(
+          () => false,
+        )
       : ipcRenderer.invoke("latex:compile-cancel", projectId),
   compileAsymptote: (request: AsymptoteCompileRequest): Promise<CompileResult> =>
     isCloudProject(request.projectId)
@@ -768,11 +805,7 @@ const api = {
         })
       : ipcRenderer.invoke("asymptote:compile", request),
   readPdf: (projectId: string, pdfRelativePath: string): Promise<Uint8Array> =>
-    isCloudProject(projectId)
-      ? Promise.reject(
-          new Error("PDF preview is not available for cloud collaboration projects."),
-        )
-      : ipcRenderer.invoke("pdf:read", projectId, pdfRelativePath),
+    ipcRenderer.invoke("pdf:read", projectId, pdfRelativePath),
   forwardSyncTex: (
     projectId: string,
     pdfRelativePath: string,
