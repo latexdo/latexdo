@@ -4,6 +4,7 @@ interface DiagnosticAnalysis {
   title: string;
   detail: string;
   suggestion?: string;
+  message?: string;
   line: number;
   column: number;
   endLine: number;
@@ -206,6 +207,88 @@ function quotedValue(message: string, label: string): string | null {
 
 function missingFileName(message: string): string | null {
   return message.match(/file\s+[`']([^`']+)[`']\s+not found/i)?.[1] ?? null;
+}
+
+const lowInformationMessagePattern =
+  /^(?:emergency stop|fatal error occurred|==>\s*fatal error|interruption|job aborted|runaway argument\??$)/i;
+
+/**
+ * Messages like "Emergency stop." carry no information about the actual
+ * problem. The real cause is almost always an explicit error earlier in the
+ * compiler log, so surface that instead.
+ */
+function resolveUnderlyingErrorMessage(message: string, output: string): string | null {
+  if (!lowInformationMessagePattern.test(message.trim())) {
+    return null;
+  }
+
+  for (const line of output.split(/\r?\n/)) {
+    const bangMatch = line.match(/^!\s*(.+)$/);
+    const fileLineMatch = line.match(
+      /^[^\s:]+:\d+:\s*((?:LaTeX|Package\s+\S+|Class\s+\S+)\s+Error:.+)$/,
+    );
+    const candidate = (bangMatch?.[1] ?? fileLineMatch?.[1])?.trim();
+    if (candidate && !lowInformationMessagePattern.test(candidate)) {
+      return candidate.replace(/\s+/g, " ");
+    }
+  }
+  return null;
+}
+
+function runawayCommandName(message: string): string | null {
+  return (
+    message.match(/(?:while scanning use of|use of)\s+(\\[a-zA-Z@]+)/)?.[1] ??
+    message.match(/paragraph ended before\s+(\\[a-zA-Z@]+)\s+was complete/i)?.[1] ??
+    null
+  );
+}
+
+function findFileReference(
+  lines: string[],
+  fileName: string,
+  throughLine: number,
+): LocatedToken | null {
+  const baseName = fileName.replace(/\.[a-z0-9]+$/i, "");
+  const candidates = fileName === baseName ? [fileName] : [fileName, baseName];
+
+  for (const candidate of candidates) {
+    const located =
+      findLiteralBeforeLine(lines, candidate, throughLine) ??
+      findLiteralBeforeLine(lines, candidate, lines.length);
+    if (located) {
+      return {
+        ...located,
+        accuracy: "exact",
+        reason: `This is where the missing file ${fileName} is referenced.`,
+        confidence: 96,
+      };
+    }
+  }
+  return null;
+}
+
+function findSecondScriptCharacter(
+  line: string,
+  character: string,
+): LocatedToken | null {
+  let seen = 0;
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] !== character || isEscaped(line, index)) {
+      continue;
+    }
+    seen += 1;
+    if (seen === 2) {
+      return {
+        start: index,
+        end: index + 1,
+        text: character,
+        accuracy: "exact",
+        reason: `This is the second ${character} applied to the same expression.`,
+        confidence: 95,
+      };
+    }
+  }
+  return null;
 }
 
 function environmentName(message: string): string | null {
@@ -567,11 +650,61 @@ function locateToken(
 
   if (
     normalized.includes("missing } inserted") ||
-    normalized.includes("runaway argument")
+    normalized.includes("runaway argument") ||
+    normalized.includes("file ended while scanning") ||
+    normalized.includes("paragraph ended before")
   ) {
+    // "File ended" means the argument stayed open until EOF, so the reported
+    // line (often line 1 or the last line) says nothing — scan everything.
+    const scanLimit = normalized.includes("file ended")
+      ? lines.length
+      : diagnostic.line;
     return (
-      findUnclosedBrace(lines, diagnostic.line) ?? lastUnmatchedOpeningBrace(sourceLine)
+      findUnclosedBrace(lines, scanLimit) ?? lastUnmatchedOpeningBrace(sourceLine)
     );
+  }
+
+  if (normalized.includes("double superscript")) {
+    return findSecondScriptCharacter(sourceLine, "^");
+  }
+
+  if (normalized.includes("double subscript")) {
+    return findSecondScriptCharacter(sourceLine, "_");
+  }
+
+  if (normalized.includes("missing \\begin{document}")) {
+    const leadingText = sourceLine.match(/\S.*$/);
+    return leadingText
+      ? {
+          start: leadingText.index ?? 0,
+          end: (leadingText.index ?? 0) + leadingText[0].trimEnd().length,
+          text: leadingText[0].trimEnd(),
+          accuracy: "inferred",
+          reason: "This is the content LaTeX found before \\begin{document}.",
+          confidence: 92,
+        }
+      : null;
+  }
+
+  if (normalized.includes("\\caption outside float")) {
+    return (
+      findPattern(sourceLine, /\\caption\b/) ??
+      findLiteralBeforeLine(lines, "\\caption", diagnostic.line)
+    );
+  }
+
+  const fragileArgument = normalized.match(/argument of \\@?sect|argument of \\@caption/);
+  if (fragileArgument) {
+    const fragile = findLiteralBeforeLine(lines, "\\footnote", diagnostic.line);
+    if (fragile) {
+      return {
+        ...fragile,
+        accuracy: "inferred",
+        reason:
+          "A fragile command inside a sectioning or caption argument usually causes this failure.",
+        confidence: 85,
+      };
+    }
   }
 
   if (normalized.includes("misplaced alignment tab character")) {
@@ -599,7 +732,10 @@ function locateToken(
 
   const missingFile = missingFileName(message);
   if (missingFile) {
-    return findLiteral(sourceLine, missingFile);
+    return (
+      findLiteral(sourceLine, missingFile) ??
+      findFileReference(lines, missingFile, diagnostic.line)
+    );
   }
 
   const environment = environmentName(message);
@@ -843,6 +979,24 @@ function explainDiagnostic(
     };
   }
 
+  if (
+    normalized.includes("file ended while scanning") ||
+    normalized.includes("paragraph ended before")
+  ) {
+    const command = runawayCommandName(diagnostic.message);
+    return {
+      title: command
+        ? `Argument of ${command} was never closed`
+        : "Command argument was never closed",
+      detail: command
+        ? `LaTeX read to the end of the input while still inside the argument of ${command}. The opening brace highlighted here was never closed.`
+        : `LaTeX read to the end of the input while an argument or group opened at ${location} was still open.`,
+      suggestion: command
+        ? `Add the missing } that closes the argument of ${command}.`
+        : "Add the missing } or \\end{...} that closes the highlighted group.",
+    };
+  }
+
   if (normalized.includes("runaway argument")) {
     return {
       title: "Command argument was never closed",
@@ -854,6 +1008,29 @@ function explainDiagnostic(
 
   if (normalized.includes("file") && normalized.includes("not found")) {
     const file = missingFileName(diagnostic.message);
+    if (file?.toLowerCase().endsWith(".sty")) {
+      const packageName = file.slice(0, -4);
+      return {
+        title: `LaTeX package "${packageName}" is not installed`,
+        detail: `The document loads the package ${packageName}, but ${file} is not available in the local TeX installation.`,
+        suggestion: `Install it (TeX Live: "tlmgr install ${packageName}", MiKTeX installs on demand), fix the package name if it is misspelled, or remove the \\usepackage{${packageName}} line.`,
+      };
+    }
+    if (file?.toLowerCase().endsWith(".cls")) {
+      const className = file.slice(0, -4);
+      return {
+        title: `Document class "${className}" is not installed`,
+        detail: `The \\documentclass{${className}} at ${location} refers to ${file}, which is not available in the local TeX installation.`,
+        suggestion: `Install the class (TeX Live: "tlmgr install ${className}"), fix the class name, or place ${file} next to the document.`,
+      };
+    }
+    if (file?.toLowerCase().endsWith(".bib")) {
+      return {
+        title: "Bibliography file not found",
+        detail: `The bibliography file ${file} referenced at ${location} does not exist in the project.`,
+        suggestion: `Create ${file}, fix the \\bibliography or \\addbibresource path, or remove the reference.`,
+      };
+    }
     return {
       title: "Required file not found",
       detail: file
@@ -861,6 +1038,55 @@ function explainDiagnostic(
         : `LaTeX could not load a required file referenced at ${location}.`,
       suggestion:
         "Check the relative path, filename capitalization, and extension. For packages, verify that the package is installed.",
+    };
+  }
+
+  if (
+    normalized.includes("double superscript") ||
+    normalized.includes("double subscript")
+  ) {
+    const script = normalized.includes("superscript") ? "superscript" : "subscript";
+    const character = script === "superscript" ? "^" : "_";
+    return {
+      title: `Two ${script}s on the same expression`,
+      detail: `The highlighted ${character} at ${location} applies a second ${script} to something that already has one, which LaTeX does not allow.`,
+      suggestion: `Group the scripts with braces: write x${character}{a${character}b} for nesting, or {x${character}a}${character}b to apply the second ${script} to the whole expression.`,
+    };
+  }
+
+  if (normalized.includes("missing \\begin{document}")) {
+    return {
+      title: "Content appears before \\begin{document}",
+      detail: `LaTeX found printable content at ${location}, but the preamble may only contain setup commands such as \\usepackage and \\newcommand.`,
+      suggestion:
+        "Move the highlighted content after \\begin{document}, or remove it. A stray character in the preamble (often from a bad paste) also triggers this.",
+    };
+  }
+
+  if (normalized.includes("\\caption outside float")) {
+    return {
+      title: "\\caption is outside a figure or table",
+      detail: `The \\caption command at ${location} only works inside a floating environment.`,
+      suggestion:
+        "Wrap it in \\begin{figure}...\\end{figure} or \\begin{table}...\\end{table}, or use \\captionof{figure}{...} from the caption package.",
+    };
+  }
+
+  if (/argument of \\@sect|argument of \\@caption/.test(normalized)) {
+    return {
+      title: "Fragile command inside a section or caption",
+      detail: `A fragile command (usually \\footnote) inside a \\section, \\subsection, or \\caption argument breaks at ${location} when LaTeX writes it to the table of contents or list of figures.`,
+      suggestion:
+        "Prefix the command with \\protect (e.g. \\section{Title\\protect\\footnote{...}}), or move the footnote out of the heading.",
+    };
+  }
+
+  const extraBraceArgument = normalized.match(/argument of (\\[a-z@]+) has an extra \}/i);
+  if (extraBraceArgument) {
+    return {
+      title: `Unbalanced braces in the argument of ${extraBraceArgument[1]}`,
+      detail: `The argument of ${extraBraceArgument[1]} near ${location} contains a } without a matching {, or a fragile command that breaks the argument apart.`,
+      suggestion: `Balance the braces inside the argument of ${extraBraceArgument[1]}, and \\protect any fragile commands used inside it.`,
     };
   }
 
@@ -969,13 +1195,22 @@ export function analyzeLatexDiagnostic(
   content: string | undefined,
   output: string,
 ): DiagnosticAnalysis {
+  const resolvedMessage = resolveUnderlyingErrorMessage(diagnostic.message, output);
+  const effectiveDiagnostic = resolvedMessage
+    ? { ...diagnostic, message: resolvedMessage }
+    : diagnostic;
   const lines = content?.split(/\r?\n/) ?? [];
-  const sourceLine = lines[diagnostic.line - 1];
-  const token = sourceLine ? locateToken(diagnostic, sourceLine, lines, output) : null;
-  const analyzedLine = token?.line ?? diagnostic.line;
+  const sourceLine = lines[effectiveDiagnostic.line - 1];
+  // The reported line may be blank (e.g. errors triggered by a paragraph
+  // break), so only skip token location when there is no content at all.
+  const token =
+    sourceLine !== undefined
+      ? locateToken(effectiveDiagnostic, sourceLine, lines, output)
+      : null;
+  const analyzedLine = token?.line ?? effectiveDiagnostic.line;
   const analyzedSourceLine = lines[analyzedLine - 1] ?? sourceLine;
   const analyzedDiagnostic = {
-    ...diagnostic,
+    ...effectiveDiagnostic,
     line: analyzedLine,
   };
   const explanation = explainDiagnostic(analyzedDiagnostic, analyzedSourceLine, token);
@@ -987,6 +1222,7 @@ export function analyzeLatexDiagnostic(
 
   return {
     ...explanation,
+    ...(resolvedMessage ? { message: resolvedMessage } : {}),
     line: analyzedLine,
     column,
     endLine: analyzedLine,
@@ -1005,7 +1241,7 @@ export function analyzeLatexDiagnostic(
       token?.confidence ??
       diagnostic.locationConfidence ??
       (diagnostic.column > 1 ? 95 : 45),
-    fixes: buildQuickFixes(diagnostic, token),
+    fixes: buildQuickFixes(analyzedDiagnostic, token),
   };
 }
 

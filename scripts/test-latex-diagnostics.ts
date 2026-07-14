@@ -125,6 +125,79 @@ const environmentFix = analyzeLatexDiagnostic(
 assert.equal(environmentFix.fixes?.[0]?.replacement, "\\end{itemize}");
 assert.equal(environmentFix.fixes?.[0]?.confidence, 100);
 
+const missingPackage = analyzeLatexDiagnostic(
+  diagnostic("Emergency stop.", 3),
+  "\\documentclass{article}\n\\usepackage{doesnotexist123}\n\\begin{document}\nHi\n\\end{document}\n",
+  "! LaTeX Error: File `doesnotexist123.sty' not found.\n./main.tex:3: Emergency stop.\nl.3 \\begin",
+);
+assert.equal(missingPackage.title, 'LaTeX package "doesnotexist123" is not installed');
+assert.equal(missingPackage.message, "LaTeX Error: File `doesnotexist123.sty' not found.");
+assert.equal(missingPackage.line, 2);
+assert.equal(missingPackage.column, 13);
+assert.equal(missingPackage.highlightText, "doesnotexist123");
+assert.match(missingPackage.suggestion ?? "", /tlmgr install doesnotexist123/);
+
+const fileEndedScanning = analyzeLatexDiagnostic(
+  diagnostic("Runaway argument?", 1),
+  "\\documentclass{article}\n\\begin{document}\n\\textbf{bold text\nmore text here\n\\end{document}\n",
+  "Runaway argument?\n! File ended while scanning use of \\textbf .\n<inserted text>",
+);
+assert.equal(fileEndedScanning.title, "Argument of \\textbf was never closed");
+assert.equal(fileEndedScanning.line, 3);
+assert.equal(fileEndedScanning.column, 8);
+assert.equal(fileEndedScanning.highlightText, "{");
+assert.equal(fileEndedScanning.locationConfidence, 99);
+
+const unclosedMathBlankLine = analyzeLatexDiagnostic(
+  diagnostic("Missing $ inserted.", 4),
+  "\\documentclass{article}\n\\begin{document}\nValue $x+1 is nice\n\nNext paragraph\n\\end{document}\n",
+  "./main.tex:4: Missing $ inserted.\nl.4",
+);
+assert.equal(unclosedMathBlankLine.title, "Math mode was opened but never closed");
+assert.equal(unclosedMathBlankLine.line, 3);
+assert.equal(unclosedMathBlankLine.column, 7);
+assert.equal(unclosedMathBlankLine.highlightText, "$");
+
+const doubleSuperscript = analyzeLatexDiagnostic(
+  diagnostic("Double superscript.", 3),
+  "\\documentclass{article}\n\\begin{document}\n$x^2^3$\n\\end{document}\n",
+  "",
+);
+assert.equal(doubleSuperscript.title, "Two superscripts on the same expression");
+assert.equal(doubleSuperscript.line, 3);
+assert.equal(doubleSuperscript.column, 5);
+assert.equal(doubleSuperscript.highlightText, "^");
+assert.match(doubleSuperscript.suggestion ?? "", /x\^\{a\^b\}/);
+
+const missingBeginDocument = analyzeLatexDiagnostic(
+  diagnostic("LaTeX Error: Missing \\begin{document}.", 2),
+  "\\documentclass{article}\nHello world\n\\begin{document}\nHi\n\\end{document}\n",
+  "",
+);
+assert.equal(missingBeginDocument.title, "Content appears before \\begin{document}");
+assert.equal(missingBeginDocument.line, 2);
+assert.equal(missingBeginDocument.highlightText, "Hello world");
+
+const captionOutsideFloat = analyzeLatexDiagnostic(
+  diagnostic("LaTeX Error: \\caption outside float.", 3),
+  "\\documentclass{article}\n\\begin{document}\n\\caption{orphan}\n\\end{document}\n",
+  "",
+);
+assert.equal(captionOutsideFloat.title, "\\caption is outside a figure or table");
+assert.equal(captionOutsideFloat.line, 3);
+assert.equal(captionOutsideFloat.highlightText, "\\caption");
+assert.match(captionOutsideFloat.suggestion ?? "", /figure/);
+
+const fragileFootnote = analyzeLatexDiagnostic(
+  diagnostic("Argument of \\@sect has an extra }.", 3),
+  "\\documentclass{article}\n\\begin{document}\n\\section{Intro \\footnote{bad}}\ntext\n\\end{document}\n",
+  "",
+);
+assert.equal(fragileFootnote.title, "Fragile command inside a section or caption");
+assert.equal(fragileFootnote.line, 3);
+assert.equal(fragileFootnote.highlightText, "\\footnote");
+assert.match(fragileFootnote.suggestion ?? "", /\\protect/);
+
 const ranked = rankLatexDiagnostics([
   {
     ...diagnostic("Runaway argument?", 5),
