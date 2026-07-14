@@ -30,26 +30,63 @@ const requiredDownloadIds = [
   "linux-x64",
 ] as const;
 
+function splitVersionString(value: string): { core: string[]; prerelease: string[] } {
+  const normalized = value.trim().replace(/^v/i, "");
+  const hyphenIndex = normalized.indexOf("-");
+  const corePart = hyphenIndex === -1 ? normalized : normalized.slice(0, hyphenIndex);
+  const prereleasePart = hyphenIndex === -1 ? "" : normalized.slice(hyphenIndex + 1);
+  return {
+    core: corePart.split(".").filter(Boolean),
+    prerelease: prereleasePart.split(/[.-]/).filter(Boolean),
+  };
+}
+
+function compareVersionIdentifiers(left: string, right: string): number {
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  const bothNumeric = Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
+
+  if (bothNumeric) {
+    return leftNumber === rightNumber ? 0 : leftNumber > rightNumber ? 1 : -1;
+  }
+
+  const comparison = left.localeCompare(right);
+  return comparison === 0 ? 0 : comparison > 0 ? 1 : -1;
+}
+
 export function compareVersionStrings(left: string, right: string): number {
-  const leftParts = left.trim().replace(/^v/i, "").split(/[.-]/).filter(Boolean);
-  const rightParts = right.trim().replace(/^v/i, "").split(/[.-]/).filter(Boolean);
-  const length = Math.max(leftParts.length, rightParts.length);
+  const leftVersion = splitVersionString(left);
+  const rightVersion = splitVersionString(right);
+  const coreLength = Math.max(leftVersion.core.length, rightVersion.core.length);
 
-  for (let index = 0; index < length; index += 1) {
-    const leftPart = leftParts[index] ?? "0";
-    const rightPart = rightParts[index] ?? "0";
-    const leftNumber = Number(leftPart);
-    const rightNumber = Number(rightPart);
-    const bothNumeric = Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
-
-    if (bothNumeric) {
-      if (leftNumber !== rightNumber) {
-        return leftNumber > rightNumber ? 1 : -1;
-      }
-      continue;
+  for (let index = 0; index < coreLength; index += 1) {
+    const comparison = compareVersionIdentifiers(
+      leftVersion.core[index] ?? "0",
+      rightVersion.core[index] ?? "0",
+    );
+    if (comparison !== 0) {
+      return comparison;
     }
+  }
 
-    const comparison = leftPart.localeCompare(rightPart);
+  // A release outranks any pre-release of the same version (semver rule).
+  if (!leftVersion.prerelease.length || !rightVersion.prerelease.length) {
+    return (
+      Number(Boolean(rightVersion.prerelease.length)) -
+      Number(Boolean(leftVersion.prerelease.length))
+    );
+  }
+
+  const prereleaseLength = Math.max(
+    leftVersion.prerelease.length,
+    rightVersion.prerelease.length,
+  );
+  for (let index = 0; index < prereleaseLength; index += 1) {
+    const leftPart = leftVersion.prerelease[index];
+    const rightPart = rightVersion.prerelease[index];
+    if (leftPart === undefined) return -1;
+    if (rightPart === undefined) return 1;
+    const comparison = compareVersionIdentifiers(leftPart, rightPart);
     if (comparison !== 0) {
       return comparison;
     }

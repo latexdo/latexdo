@@ -327,7 +327,7 @@ interface WebsiteUpdateFile {
   arch: string;
   filename: string;
   url: string;
-  sha256: string | null;
+  sha256: string;
 }
 
 interface StoredPrivacyConsent {
@@ -1250,31 +1250,64 @@ function starterContent(relativePath: string): string {
   return "";
 }
 
-function normalizeVersion(version: string): string[] {
-  return version.trim().replace(/^v/i, "").split(/[.-]/).filter(Boolean);
+function normalizeVersion(version: string): { core: string[]; prerelease: string[] } {
+  const normalized = version.trim().replace(/^v/i, "");
+  const hyphenIndex = normalized.indexOf("-");
+  const corePart = hyphenIndex === -1 ? normalized : normalized.slice(0, hyphenIndex);
+  const prereleasePart = hyphenIndex === -1 ? "" : normalized.slice(hyphenIndex + 1);
+  return {
+    core: corePart.split(".").filter(Boolean),
+    prerelease: prereleasePart.split(/[.-]/).filter(Boolean),
+  };
+}
+
+function compareVersionParts(left: string, right: string): number {
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  const bothNumeric = Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
+
+  if (bothNumeric) {
+    return leftNumber === rightNumber ? 0 : leftNumber > rightNumber ? 1 : -1;
+  }
+
+  return left === right ? 0 : left > right ? 1 : -1;
 }
 
 function compareVersions(left: string, right: string): number {
-  const leftParts = normalizeVersion(left);
-  const rightParts = normalizeVersion(right);
-  const length = Math.max(leftParts.length, rightParts.length);
+  const leftVersion = normalizeVersion(left);
+  const rightVersion = normalizeVersion(right);
+  const coreLength = Math.max(leftVersion.core.length, rightVersion.core.length);
 
-  for (let index = 0; index < length; index += 1) {
-    const leftPart = leftParts[index] ?? "0";
-    const rightPart = rightParts[index] ?? "0";
-    const leftNumber = Number(leftPart);
-    const rightNumber = Number(rightPart);
-    const bothNumeric = Number.isFinite(leftNumber) && Number.isFinite(rightNumber);
-
-    if (bothNumeric) {
-      if (leftNumber !== rightNumber) {
-        return leftNumber > rightNumber ? 1 : -1;
-      }
-      continue;
+  for (let index = 0; index < coreLength; index += 1) {
+    const comparison = compareVersionParts(
+      leftVersion.core[index] ?? "0",
+      rightVersion.core[index] ?? "0",
+    );
+    if (comparison !== 0) {
+      return comparison;
     }
+  }
 
-    if (leftPart !== rightPart) {
-      return leftPart > rightPart ? 1 : -1;
+  // A release outranks any pre-release of the same version (semver rule).
+  if (!leftVersion.prerelease.length || !rightVersion.prerelease.length) {
+    return (
+      Number(Boolean(rightVersion.prerelease.length)) -
+      Number(Boolean(leftVersion.prerelease.length))
+    );
+  }
+
+  const prereleaseLength = Math.max(
+    leftVersion.prerelease.length,
+    rightVersion.prerelease.length,
+  );
+  for (let index = 0; index < prereleaseLength; index += 1) {
+    const leftPart = leftVersion.prerelease[index];
+    const rightPart = rightVersion.prerelease[index];
+    if (leftPart === undefined) return -1;
+    if (rightPart === undefined) return 1;
+    const comparison = compareVersionParts(leftPart, rightPart);
+    if (comparison !== 0) {
+      return comparison;
     }
   }
 
@@ -2185,7 +2218,18 @@ function updateFileFromPayload(value: unknown): WebsiteUpdateFile | null {
   const url = safeUpdateDownloadUrl(record.url);
   const sha256 = payloadString(record.sha256);
 
-  if (!id || !label || !platform || !arch || !filename || !url) {
+  // Installers are executed after download, so a file without a valid
+  // checksum must be rejected outright rather than installed unverified.
+  if (
+    !id ||
+    !label ||
+    !platform ||
+    !arch ||
+    !filename ||
+    !url ||
+    !sha256 ||
+    !/^[a-f0-9]{64}$/i.test(sha256)
+  ) {
     return null;
   }
 
@@ -2196,7 +2240,7 @@ function updateFileFromPayload(value: unknown): WebsiteUpdateFile | null {
     arch,
     filename,
     url,
-    sha256: sha256 && /^[a-f0-9]{64}$/i.test(sha256) ? sha256.toLowerCase() : null,
+    sha256: sha256.toLowerCase(),
   };
 }
 
@@ -2279,17 +2323,37 @@ function updateResultFromWebsitePayload(
   };
 }
 
+const updateFeedFetchTimeoutMs = 15_000;
+const maxUpdateFeedBytes = 1024 * 1024;
+
 async function fetchWebsiteUpdateJson(
   url: string,
   headers: Record<string, string>,
 ): Promise<WebsiteUpdatePayload> {
-  const response = await fetch(url, { headers });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), updateFeedFetchTimeoutMs);
 
-  if (!response.ok) {
-    throw new Error(`${url} returned ${response.status}`);
+  try {
+    const response = await fetch(url, { headers, signal: controller.signal });
+
+    if (!response.ok) {
+      throw new Error(`${url} returned ${response.status}`);
+    }
+
+    const body = await response.text();
+    if (body.length > maxUpdateFeedBytes) {
+      throw new Error(`${url} returned an update feed that is too large.`);
+    }
+
+    return JSON.parse(body) as WebsiteUpdatePayload;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`${url} timed out while checking for updates.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return (await response.json()) as WebsiteUpdatePayload;
 }
 
 async function fetchExtensionStoreCatalogJson(): Promise<unknown> {
@@ -2452,23 +2516,21 @@ async function downloadUpdateInstaller(
     );
     emitDownloadProgress(true);
 
-    if (file.sha256) {
-      onProgress?.(
-        updateProgressPayload({
-          status: "verifying",
-          currentVersion,
-          latestVersion,
-          fileName: file.filename,
-          fileLabel: file.label,
-          transferredBytes,
-          totalBytes: totalBytes ?? transferredBytes,
-          message: "Verifying downloaded installer",
-        }),
-      );
-      const actualSha256 = await sha256File(temporaryPath);
-      if (actualSha256 !== file.sha256) {
-        throw new Error("Downloaded update installer failed checksum verification.");
-      }
+    onProgress?.(
+      updateProgressPayload({
+        status: "verifying",
+        currentVersion,
+        latestVersion,
+        fileName: file.filename,
+        fileLabel: file.label,
+        transferredBytes,
+        totalBytes: totalBytes ?? transferredBytes,
+        message: "Verifying downloaded installer",
+      }),
+    );
+    const actualSha256 = await sha256File(temporaryPath);
+    if (actualSha256 !== file.sha256) {
+      throw new Error("Downloaded update installer failed checksum verification.");
     }
 
     const installerPath = await uniqueDownloadPath(file.filename);
@@ -2978,6 +3040,24 @@ async function runStartupSmokeTest(window: BrowserWindow): Promise<void> {
 
   console.log("[latexdo] packaged startup smoke test passed", result);
 }
+
+// Concurrent instances race on the settings store, trusted-workspace
+// registry, and history snapshots, so a second launch focuses the
+// existing window instead.
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0);
+}
+
+app.on("second-instance", () => {
+  const [window] = BrowserWindow.getAllWindows();
+  if (!window) {
+    return;
+  }
+  if (window.isMinimized()) {
+    window.restore();
+  }
+  window.focus();
+});
 
 app.whenReady().then(async () => {
   console.log("[latexdo] app:ready");
