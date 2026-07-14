@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { access, mkdir, readFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { analyzeLatexDiagnostic, rankLatexDiagnostics } from "./latexDiagnostics.js";
 import type { CompileResult, Diagnostic } from "./types.js";
@@ -522,6 +522,93 @@ export function parseDiagnostics(
   }
 
   return diagnostics.slice(0, 100);
+}
+
+export interface CloudCompileFile {
+  relativePath: string;
+  content: string;
+}
+
+export const maxCloudCompileFiles = 2000;
+export const maxCloudCompileFileBytes = 8 * 1024 * 1024;
+export const maxCloudCompileTotalBytes = 64 * 1024 * 1024;
+
+const preservedScratchEntries = new Set([".latexdo"]);
+
+function safeCloudRelativePath(relativePath: string): string {
+  const normalized = relativePath.replaceAll("\\", "/");
+  if (
+    !normalized ||
+    normalized.length > 1024 ||
+    path.isAbsolute(normalized) ||
+    /^[A-Za-z]:/.test(normalized) ||
+    [...normalized].some((character) => character.charCodeAt(0) < 32)
+  ) {
+    throw new Error(`Unsafe project path: ${relativePath}`);
+  }
+
+  const segments = normalized.split("/");
+  if (
+    segments.some(
+      (segment) => !segment || segment === "." || segment === ".." || segment.endsWith(":"),
+    )
+  ) {
+    throw new Error(`Unsafe project path: ${relativePath}`);
+  }
+
+  return segments.join("/");
+}
+
+/**
+ * Mirrors a cloud collaboration project into a local scratch folder so the
+ * desktop TeX toolchain can compile it. Existing scratch content is replaced
+ * (except cached build artifacts under .latexdo) so deletions in the shared
+ * project do not leave stale inputs behind.
+ */
+export async function materializeCloudCompileFiles(
+  projectRoot: string,
+  files: CloudCompileFile[],
+): Promise<void> {
+  if (files.length > maxCloudCompileFiles) {
+    throw new Error(
+      `Shared project has too many files to compile locally (limit ${maxCloudCompileFiles}).`,
+    );
+  }
+
+  let totalBytes = 0;
+  const validated = files.map((file) => {
+    const relativePath = safeCloudRelativePath(file.relativePath);
+    const content = String(file.content ?? "");
+    const bytes = Buffer.byteLength(content, "utf8");
+    if (bytes > maxCloudCompileFileBytes) {
+      throw new Error(`${relativePath} is too large to compile locally.`);
+    }
+    totalBytes += bytes;
+    return { relativePath, content };
+  });
+  if (totalBytes > maxCloudCompileTotalBytes) {
+    throw new Error("Shared project is too large to compile locally.");
+  }
+
+  await mkdir(projectRoot, { recursive: true });
+  const existingEntries = await readdir(projectRoot);
+  await Promise.all(
+    existingEntries
+      .filter((entry) => !preservedScratchEntries.has(entry))
+      .map((entry) =>
+        rm(path.join(projectRoot, entry), { recursive: true, force: true }),
+      ),
+  );
+
+  for (const file of validated) {
+    const targetPath = path.join(projectRoot, file.relativePath);
+    const relative = path.relative(projectRoot, targetPath);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new Error(`Unsafe project path: ${file.relativePath}`);
+    }
+    await mkdir(path.dirname(targetPath), { recursive: true });
+    await writeFile(targetPath, file.content, "utf8");
+  }
 }
 
 export async function compileLatex(
