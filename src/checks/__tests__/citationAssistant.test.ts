@@ -105,6 +105,26 @@ describe("runCitationChecks", () => {
       expect(result.some((d) => d.message.includes("Duplicate"))).toBe(true);
     });
 
+    it("reports the duplicate bibitem at the line of the repeated entry", () => {
+      const doc = makeDoc(
+        [
+          "\\begin{thebibliography}{9}",
+          "\\bibitem{ref1} First entry.",
+          "\\bibitem{ref2} Second entry.",
+          "\\bibitem{ref1} Duplicate entry.",
+          "\\end{thebibliography}",
+        ].join("\n"),
+      );
+      const duplicate = runCitationChecks(doc, defaultSettings).find((d) =>
+        d.message.includes("Duplicate"),
+      );
+      const expectedLine =
+        doc.split("\n").findIndex((line) => line.includes("Duplicate entry")) + 1;
+
+      expect(duplicate).toBeDefined();
+      expect(duplicate?.line).toBe(expectedLine);
+    });
+
     it("detects similar citation keys", () => {
       const doc = makeDoc("\\cite{kingma2014adam}. \\cite{kingma2015adam}.");
       const result = runCitationChecks(doc, defaultSettings);
@@ -233,6 +253,23 @@ describe("runCitationChecks", () => {
         warnOldCitations: false,
       });
       expect(result.some((d) => d.message.includes("Old citation"))).toBe(false);
+    });
+
+    it("summarizes with the newest citation year even when it is not last", () => {
+      const doc = makeDoc(
+        [
+          "\\begin{thebibliography}{9}",
+          "\\bibitem{newer} Author, 2015.",
+          "\\bibitem{older} Author, 2001.",
+          "\\end{thebibliography}",
+        ].join("\n"),
+      );
+      const summary = runCitationChecks(doc, defaultSettings).find((d) =>
+        d.message.startsWith("All citations are from"),
+      );
+
+      expect(summary).toBeDefined();
+      expect(summary?.message).toContain("2015");
     });
   });
 

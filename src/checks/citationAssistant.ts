@@ -148,19 +148,16 @@ function detectDuplicateReferencesImpl(content: string): Diagnostic[] {
   }
 
   const bibitemRegex = /\\bibitem\s*(?:\[[^\]]*\])?\s*\{([^}]+)\}/g;
-  const bibitemKeys: string[] = [];
+  const bibitemEntries: { key: string; index: number }[] = [];
   while ((match = bibitemRegex.exec(content)) !== null) {
-    bibitemKeys.push(match[1].trim());
+    bibitemEntries.push({ key: match[1].trim(), index: match.index });
   }
 
   const seenBibitem = new Map<string, number>();
-  for (let i = 0; i < bibitemKeys.length; i++) {
-    const key = bibitemKeys[i];
+  for (let i = 0; i < bibitemEntries.length; i++) {
+    const { key, index } = bibitemEntries[i];
     if (seenBibitem.has(key)) {
-      const line = findLine(
-        content,
-        content.indexOf(`\\bibitem` + (i > 0 ? `[${key}]` : `{${key}}`)),
-      );
+      const line = findLine(content, index);
       diagnostics.push(
         makeDiagnostic(
           line,
@@ -451,7 +448,7 @@ function warnOldCitationsImpl(content: string): Diagnostic[] {
   if (years.length > 0) {
     const allOld = years.every((y) => y.year < new Date().getFullYear() - 5);
     if (allOld) {
-      const lastYear = years[years.length - 1].year;
+      const lastYear = Math.max(...years.map((y) => y.year));
       diagnostics.push(
         makeDiagnostic(
           1,
