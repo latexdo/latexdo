@@ -1,0 +1,1149 @@
+import {
+  categoryLabel,
+  type LatexDoExtensionManifest,
+  type LatexDoExtensionTemplate,
+} from "../../extensions";
+import type {
+  Engine,
+  OpenDocument,
+  ProjectEntry,
+  ProjectListOptions,
+} from "../../types";
+import { normalizeRelativePath } from "../project/projectUtils";
+
+export type ColorTheme =
+  | "graphite"
+  | "midnight"
+  | "forest"
+  | "sepia"
+  | "studio"
+  | "paper";
+export type BookmarkStore = Record<string, number[]>;
+
+export interface WelcomeTemplate {
+  id: string;
+  name: string;
+  summary: string;
+  files: string;
+  mainTex: string;
+  bibTex?: string;
+}
+
+export const colorThemeOptions: {
+  id: ColorTheme;
+  name: string;
+  description: string;
+  swatches: [string, string, string];
+}[] = [
+  {
+    id: "graphite",
+    name: "Graphite Pro",
+    description: "Neutral dark theme with crisp blue accents.",
+    swatches: ["#111318", "#729bf0", "#e0e4eb"],
+  },
+  {
+    id: "midnight",
+    name: "Midnight Blue",
+    description: "Deep navy workspace tuned for long writing sessions.",
+    swatches: ["#08111f", "#5fa8ff", "#dce8f8"],
+  },
+  {
+    id: "forest",
+    name: "Scholarly Forest",
+    description: "Calm green palette with strong text contrast.",
+    swatches: ["#0d1512", "#65c28f", "#e1ebe5"],
+  },
+  {
+    id: "sepia",
+    name: "Warm Sepia Dark",
+    description: "Warm low-glare theme for reading dense drafts.",
+    swatches: ["#17120d", "#d69a5b", "#eee4d4"],
+  },
+  {
+    id: "studio",
+    name: "Studio White",
+    description: "Clean white workspace with quiet graphite contrast.",
+    swatches: ["#f7f9fc", "#2f6fdb", "#1f2937"],
+  },
+  {
+    id: "paper",
+    name: "Paper White",
+    description: "Soft white theme with ink-like text and green accents.",
+    swatches: ["#fbfbf8", "#2f8f6b", "#252a31"],
+  },
+];
+
+export const welcomeTemplates: WelcomeTemplate[] = [
+  {
+    id: "article",
+    name: "Clean Article",
+    summary: "A minimal paper with title, abstract, sections, and conclusion.",
+    files: "main.tex",
+    mainTex: String.raw`\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{hyperref}
+
+\title{Untitled Article}
+\author{Your Name}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Write a one-paragraph summary of the work here.
+\end{abstract}
+
+\section{Introduction}
+
+Start with the problem, context, and main claim.
+
+\section{Main Result}
+
+Develop the argument or result.
+
+\section{Conclusion}
+
+Close with the key takeaway.
+
+\end{document}
+`,
+  },
+  {
+    id: "research",
+    name: "Research Paper",
+    summary: "Structured manuscript with figures, tables, and bibliography.",
+    files: "main.tex + references.bib",
+    mainTex: String.raw`\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{microtype}
+\usepackage{hyperref}
+
+\title{Research Paper Title}
+\author{Your Name}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Summarize the question, approach, result, and implication.
+\end{abstract}
+
+\section{Introduction}
+
+State the problem and why it matters. Cite the closest related work here \cite{latexdo2026}.
+
+\section{Method}
+
+Describe the setup, assumptions, and procedure.
+
+\section{Results}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrr}
+\toprule
+Condition & Baseline & Ours \\
+\midrule
+Example & 0.72 & 0.84 \\
+\bottomrule
+\end{tabular}
+\caption{Replace this table with your main result.}
+\end{table}
+
+\section{Discussion}
+
+Explain what changed, what stayed uncertain, and what follows next.
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}
+`,
+    bibTex: String.raw`@misc{latexdo2026,
+  author = {LatexDo},
+  title = {A Local LaTeX Writing Workflow},
+  year = {2026},
+  note = {Starter reference}
+}
+`,
+  },
+  {
+    id: "notes",
+    name: "Lecture Notes",
+    summary: "Definitions, theorem blocks, examples, and exercises.",
+    files: "main.tex",
+    mainTex: String.raw`\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{microtype}
+\usepackage{hyperref}
+
+\newtheorem{definition}{Definition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{example}{Example}
+
+\title{Lecture Notes}
+\author{Course or Topic}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Topic}
+
+\begin{definition}
+Write the main definition here.
+\end{definition}
+
+\begin{theorem}
+State the main claim.
+\end{theorem}
+
+\begin{proof}
+Add the proof or derivation.
+\end{proof}
+
+\begin{example}
+Work through a concrete example.
+\end{example}
+
+\section{Exercises}
+
+\begin{enumerate}
+  \item Add the first exercise.
+  \item Add a follow-up exercise.
+\end{enumerate}
+
+\end{document}
+`,
+  },
+  {
+    id: "beamer",
+    name: "Beamer Presentation",
+    summary: "A presentation with title slide, outline, theorem, and closing slide.",
+    files: "main.tex",
+    mainTex: String.raw`\documentclass{beamer}
+
+\usetheme{Madrid}
+\usepackage{amsmath}
+\usepackage{graphicx}
+
+\title{Presentation Title}
+\author{Your Name}
+\date{\today}
+
+\begin{document}
+
+\frame{\titlepage}
+
+\begin{frame}{Outline}
+\tableofcontents
+\end{frame}
+
+\section{Motivation}
+
+\begin{frame}{Motivation}
+\begin{itemize}
+  \item State the problem.
+  \item Explain why it matters.
+  \item Preview the contribution.
+\end{itemize}
+\end{frame}
+
+\section{Result}
+
+\begin{frame}{Main Result}
+\begin{theorem}
+State the main result here.
+\end{theorem}
+\end{frame}
+
+\begin{frame}{Conclusion}
+Summarize the takeaway and next steps.
+\end{frame}
+
+\end{document}
+`,
+  },
+  {
+    id: "letter",
+    name: "Letter",
+    summary: "A formal letter template with address, opening, and closing.",
+    files: "main.tex",
+    mainTex: String.raw`\documentclass{letter}
+
+\signature{Your Name}
+\address{Your Address \\ City, Country}
+\date{\today}
+
+\begin{document}
+
+\begin{letter}{Recipient Name \\ Recipient Address}
+
+\opening{Dear Recipient,}
+
+Write the body of the letter here.
+
+\closing{Sincerely,}
+
+\end{letter}
+
+\end{document}
+`,
+  },
+  {
+    id: "response",
+    name: "Review Response",
+    summary: "A concise rebuttal letter with reviewer-by-reviewer sections.",
+    files: "main.tex",
+    mainTex: String.raw`\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{hyperref}
+
+\newcommand{\reviewer}[1]{\section*{Reviewer #1}}
+\newcommand{\comment}[1]{\paragraph{Comment.}\emph{#1}}
+\newcommand{\response}[1]{\paragraph{Response.}#1}
+
+\title{Response to Reviewers}
+\author{Paper ID or Title}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+We thank the reviewers for their careful reading and constructive feedback.
+
+\reviewer{1}
+
+\comment{Summarize the first reviewer comment.}
+
+\response{Describe the change made in the manuscript and point to the relevant section, figure, or line.}
+
+\reviewer{2}
+
+\comment{Summarize the second reviewer comment.}
+
+\response{Explain the clarification, added experiment, or limitation.}
+
+\section*{Summary of Changes}
+
+\begin{itemize}[leftmargin=*]
+  \item Added or revised the main contribution.
+  \item Clarified the experimental setup.
+  \item Updated the discussion of limitations.
+\end{itemize}
+
+\end{document}
+`,
+  },
+];
+
+function isColorTheme(value: unknown): value is ColorTheme {
+  return colorThemeOptions.some((theme) => theme.id === value);
+}
+
+export function monacoThemeFor(theme: ColorTheme): string {
+  return `latexdo-${theme}`;
+}
+
+export interface AppSettings {
+  colorTheme: ColorTheme;
+  defaultEngine: Engine;
+  editorFontSize: number;
+  wordWrap: boolean;
+  minimap: boolean;
+  showRawLatex: boolean;
+  projectTreeIgnoredNames: string[];
+  projectTreeMaxDepth: number;
+  projectTreeMaxEntries: number;
+
+  // Conference Checker
+  conferenceCheckerEnabled: boolean;
+  conferenceTemplate: string;
+  conferenceChecker_customTemplate: string;
+  checkMargins: boolean;
+  checkFontSize: boolean;
+  checkAbstractLength: boolean;
+  checkKeywords: boolean;
+  checkFigureReferences: boolean;
+  checkTableReferences: boolean;
+  checkBibliographyStyle: boolean;
+  checkPageLimit: boolean;
+  checkAuthorInfo: boolean;
+  checkAnonymousReview: boolean;
+  checkFigureResolution: boolean;
+  checkEmbeddedFonts: boolean;
+  checkCompiler: boolean;
+
+  // Citation Assistant
+  citationAssistantEnabled: boolean;
+  detectMissingCitations: boolean;
+  detectUnusedEntries: boolean;
+  detectDuplicateReferences: boolean;
+  detectBrokenLinks: boolean;
+  suggestCitationKeys: boolean;
+  importMetadataSources: boolean;
+  warnOldCitations: boolean;
+
+  // Structure Assistant
+  structureAssistantEnabled: boolean;
+  checkAbstractStructure: boolean;
+  checkIntroductionStructure: boolean;
+  checkRelatedWorkLength: boolean;
+  checkMethodReproducibility: boolean;
+  checkResultsDiscussion: boolean;
+  checkConclusionClaims: boolean;
+
+  // Reproducibility Checklist
+  reproducibilityEnabled: boolean;
+  checkCodeLink: boolean;
+  checkDatasetLink: boolean;
+  checkLicenseMentioned: boolean;
+  checkHyperparameters: boolean;
+  checkHardwareDetails: boolean;
+  checkRandomSeeds: boolean;
+  checkEvaluationMetrics: boolean;
+
+  // Acronym Manager
+  acronymManagerEnabled: boolean;
+  checkUndefinedAcronym: boolean;
+  checkDuplicateDefinition: boolean;
+  checkUnusedAcronym: boolean;
+  checkConflictingDefinitions: boolean;
+
+  // Error Doctor
+  errorDoctorEnabled: boolean;
+  explainErrors: boolean;
+  suggestFixes: boolean;
+  autoFixCommon: boolean;
+
+  // TikZ Converter
+  tikzConverterEnabled: boolean;
+  tikzConverterAutoOpen: boolean;
+
+  // Notation Manager
+  notationManagerEnabled: boolean;
+  detectNotation: boolean;
+  detectNotationConflicts: boolean;
+  detectUndefinedNotation: boolean;
+
+  // PDF Compliance
+  pdfComplianceEnabled: boolean;
+  checkPageCount: boolean;
+  maxPages: number;
+  checkUnreferencedFigures: boolean;
+  checkUncitedCitations: boolean;
+  checkSectionsWithNoCitations: boolean;
+  checkType3Fonts: boolean;
+  checkAbstractWordCount: boolean;
+  maxAbstractWords: number;
+
+  // Rebuttal Generator
+  rebuttalManuscriptId: string;
+  rebuttalManuscriptTitle: string;
+  rebuttalFontSize: string;
+  rebuttalPaperSize: string;
+  rebuttalFontFamily: string;
+  rebuttalIncludeDiff: boolean;
+  rebuttalDiffOldFile: string;
+  rebuttalDiffNewFile: string;
+  rebuttalDiffOutput: string;
+  rebuttalSummary: string;
+  rebuttalSpacing: boolean;
+  rebuttalColorPrimary: string;
+  rebuttalColorAccent: string;
+}
+
+export const settingsStorageKey = "latexdo.settings";
+export const installedExtensionsStorageKey = "latexdo.extensions.installed.v1";
+const cloudClientNameKey = "latexdo.cloud.clientName";
+const defaultProjectTreeIgnoredNames = [
+  ".git",
+  ".latexdo",
+  "node_modules",
+  "dist",
+  "dist-electron",
+  "release",
+  "coverage",
+  "out",
+  ".cache",
+];
+export const minProjectTreeDepth = 1;
+export const maxProjectTreeDepth = 50;
+export const minProjectTreeEntries = 100;
+export const maxProjectTreeEntries = 100_000;
+export const defaultSettings: AppSettings = {
+  colorTheme: "graphite",
+  defaultEngine: "pdflatex",
+  editorFontSize: 13.5,
+  wordWrap: true,
+  minimap: true,
+  showRawLatex: true,
+  projectTreeIgnoredNames: defaultProjectTreeIgnoredNames,
+  projectTreeMaxDepth: 8,
+  projectTreeMaxEntries: 5000,
+
+  conferenceCheckerEnabled: true,
+  conferenceTemplate: "ieee",
+  conferenceChecker_customTemplate: "",
+  checkMargins: true,
+  checkFontSize: true,
+  checkAbstractLength: true,
+  checkKeywords: true,
+  checkFigureReferences: true,
+  checkTableReferences: true,
+  checkBibliographyStyle: true,
+  checkPageLimit: true,
+  checkAuthorInfo: true,
+  checkAnonymousReview: true,
+  checkFigureResolution: true,
+  checkEmbeddedFonts: true,
+  checkCompiler: true,
+
+  citationAssistantEnabled: true,
+  detectMissingCitations: true,
+  detectUnusedEntries: true,
+  detectDuplicateReferences: true,
+  detectBrokenLinks: true,
+  suggestCitationKeys: true,
+  importMetadataSources: true,
+  warnOldCitations: true,
+
+  structureAssistantEnabled: true,
+  checkAbstractStructure: true,
+  checkIntroductionStructure: true,
+  checkRelatedWorkLength: true,
+  checkMethodReproducibility: true,
+  checkResultsDiscussion: true,
+  checkConclusionClaims: true,
+
+  reproducibilityEnabled: true,
+  checkCodeLink: true,
+  checkDatasetLink: true,
+  checkLicenseMentioned: true,
+  checkHyperparameters: true,
+  checkHardwareDetails: true,
+  checkRandomSeeds: true,
+  checkEvaluationMetrics: true,
+
+  acronymManagerEnabled: true,
+  checkUndefinedAcronym: true,
+  checkDuplicateDefinition: true,
+  checkUnusedAcronym: true,
+  checkConflictingDefinitions: true,
+
+  errorDoctorEnabled: true,
+  explainErrors: true,
+  suggestFixes: true,
+  autoFixCommon: true,
+
+  tikzConverterEnabled: true,
+  tikzConverterAutoOpen: true,
+
+  notationManagerEnabled: true,
+  detectNotation: true,
+  detectNotationConflicts: true,
+  detectUndefinedNotation: true,
+
+  pdfComplianceEnabled: true,
+  checkPageCount: true,
+  maxPages: 8,
+  checkUnreferencedFigures: true,
+  checkUncitedCitations: true,
+  checkSectionsWithNoCitations: true,
+  checkType3Fonts: true,
+  checkAbstractWordCount: true,
+  maxAbstractWords: 250,
+
+  rebuttalManuscriptId: "COLA-D-26-00101",
+  rebuttalManuscriptTitle:
+    "Evaluating Package-Level Scoping Strategies for Repository-Level Code Completion in Pharo",
+  rebuttalFontSize: "11pt",
+  rebuttalPaperSize: "a4paper",
+  rebuttalFontFamily: "newpx",
+  rebuttalIncludeDiff: true,
+  rebuttalDiffOldFile: "oldfile.tex",
+  rebuttalDiffNewFile: "newfile.tex",
+  rebuttalDiffOutput: "diff.tex",
+  rebuttalSummary:
+    "We revised the manuscript substantially in response to the reviewers' comments.",
+  rebuttalSpacing: true,
+  rebuttalColorPrimary: "1E1E1E",
+  rebuttalColorAccent: "D9D9D9",
+};
+
+export function normalizeBookmarkLines(lines: unknown): number[] {
+  if (!Array.isArray(lines)) {
+    return [];
+  }
+  return [
+    ...new Set(
+      lines
+        .filter((line): line is number => Number.isInteger(line) && line > 0)
+        .sort((left, right) => left - right),
+    ),
+  ];
+}
+
+export function loadBookmarkStore(): BookmarkStore {
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(bookmarksStorageKey) ?? "{}",
+    ) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .map(([key, lines]) => [key, normalizeBookmarkLines(lines)] as const)
+        .filter(([, lines]) => lines.length > 0),
+    );
+  } catch {
+    return {};
+  }
+}
+
+export function loadCollaborationDisplayName(): string {
+  return (window.localStorage.getItem(cloudClientNameKey) ?? "").slice(0, 80);
+}
+
+export function storeCollaborationDisplayName(value: string): string {
+  const normalized = value.slice(0, 80);
+  window.localStorage.setItem(cloudClientNameKey, normalized);
+  return normalized;
+}
+
+export function bookmarkKey(projectKey: string, relativePath: string): string {
+  return `${projectKey || "workspace"}:${normalizeRelativePath(relativePath)}`;
+}
+
+export function loadInstalledExtensionIds(): string[] {
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(installedExtensionsStorageKey) ?? "[]",
+    ) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return [
+      ...new Set(
+        parsed.filter(
+          (value): value is string =>
+            typeof value === "string" && /^[a-z0-9][a-z0-9.-]{2,80}$/.test(value),
+        ),
+      ),
+    ];
+  } catch {
+    return [];
+  }
+}
+
+function hasInvalidProjectTreeIgnoreNameCharacter(value: string): boolean {
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    if (character === "/" || character === "\\" || code < 32 || code === 127) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function normalizeProjectTreeIgnoredNames(value: unknown): string[] {
+  const values =
+    typeof value === "string"
+      ? value.split(/\r?\n|,/)
+      : Array.isArray(value)
+        ? value
+        : defaultProjectTreeIgnoredNames;
+  return [
+    ...new Set(
+      values
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter(
+          (entry) =>
+            entry.length > 0 &&
+            entry.length <= 128 &&
+            entry !== "." &&
+            entry !== ".." &&
+            !hasInvalidProjectTreeIgnoreNameCharacter(entry),
+        )
+        .slice(0, 256),
+    ),
+  ];
+}
+
+export function parseProjectTreeIgnoredNamesText(value: string): string[] {
+  return normalizeProjectTreeIgnoredNames(value);
+}
+
+export function boundedInteger(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+export function projectListOptionsFromSettings(
+  settings: AppSettings,
+): ProjectListOptions {
+  return {
+    ignoredNames: settings.projectTreeIgnoredNames,
+    maxDepth: settings.projectTreeMaxDepth,
+    maxEntries: settings.projectTreeMaxEntries,
+  };
+}
+
+export function hasProjectTreeLimitEntry(entries: ProjectEntry[]): boolean {
+  return entries.some(
+    (entry) =>
+      entry.limited ||
+      (entry.children ? hasProjectTreeLimitEntry(entry.children) : false),
+  );
+}
+
+export function matchesExtensionQuery(
+  extension: LatexDoExtensionManifest,
+  query: string,
+): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  return [
+    extension.name,
+    extension.description,
+    extension.author,
+    categoryLabel(extension.category),
+    ...extension.tags,
+  ]
+    .join(" ")
+    .toLowerCase()
+    .includes(normalizedQuery);
+}
+
+export function extensionTemplateToWelcomeTemplate(
+  extension: LatexDoExtensionManifest,
+  template: LatexDoExtensionTemplate,
+): WelcomeTemplate {
+  return {
+    id: `${extension.id}:${template.id}`,
+    name: template.name,
+    summary: template.summary,
+    files: template.files,
+    mainTex: template.mainTex,
+    bibTex: template.bibTex,
+  };
+}
+
+export function buildAutoCompileSignature(
+  documents: OpenDocument[],
+  projectId: string,
+  rootFile: string,
+  engine: Engine,
+): string {
+  return JSON.stringify({
+    projectId,
+    rootFile,
+    engine,
+    dirtyDocuments: documents
+      .filter((document) => document.content !== document.savedContent)
+      .map((document) => ({
+        relativePath: document.relativePath,
+        content: document.content,
+      })),
+  });
+}
+
+export function loadSettings(): AppSettings {
+  try {
+    const saved = JSON.parse(
+      window.localStorage.getItem(settingsStorageKey) ?? "{}",
+    ) as Partial<AppSettings>;
+    const defaultEngine =
+      saved.defaultEngine === "xelatex" || saved.defaultEngine === "lualatex"
+        ? saved.defaultEngine
+        : "pdflatex";
+
+    return {
+      colorTheme: isColorTheme(saved.colorTheme)
+        ? saved.colorTheme
+        : defaultSettings.colorTheme,
+      defaultEngine,
+      editorFontSize:
+        typeof saved.editorFontSize === "number" &&
+        saved.editorFontSize >= 11 &&
+        saved.editorFontSize <= 22
+          ? saved.editorFontSize
+          : defaultSettings.editorFontSize,
+      wordWrap:
+        typeof saved.wordWrap === "boolean" ? saved.wordWrap : defaultSettings.wordWrap,
+      minimap:
+        typeof saved.minimap === "boolean" ? saved.minimap : defaultSettings.minimap,
+      showRawLatex:
+        typeof saved.showRawLatex === "boolean"
+          ? saved.showRawLatex
+          : defaultSettings.showRawLatex,
+      projectTreeIgnoredNames: normalizeProjectTreeIgnoredNames(
+        saved.projectTreeIgnoredNames,
+      ),
+      projectTreeMaxDepth: boundedInteger(
+        saved.projectTreeMaxDepth,
+        defaultSettings.projectTreeMaxDepth,
+        minProjectTreeDepth,
+        maxProjectTreeDepth,
+      ),
+      projectTreeMaxEntries: boundedInteger(
+        saved.projectTreeMaxEntries,
+        defaultSettings.projectTreeMaxEntries,
+        minProjectTreeEntries,
+        maxProjectTreeEntries,
+      ),
+
+      conferenceCheckerEnabled:
+        typeof saved.conferenceCheckerEnabled === "boolean"
+          ? saved.conferenceCheckerEnabled
+          : defaultSettings.conferenceCheckerEnabled,
+      conferenceTemplate:
+        typeof saved.conferenceTemplate === "string"
+          ? saved.conferenceTemplate
+          : defaultSettings.conferenceTemplate,
+      conferenceChecker_customTemplate:
+        typeof saved.conferenceChecker_customTemplate === "string"
+          ? saved.conferenceChecker_customTemplate
+          : defaultSettings.conferenceChecker_customTemplate,
+      checkMargins:
+        typeof saved.checkMargins === "boolean"
+          ? saved.checkMargins
+          : defaultSettings.checkMargins,
+      checkFontSize:
+        typeof saved.checkFontSize === "boolean"
+          ? saved.checkFontSize
+          : defaultSettings.checkFontSize,
+      checkAbstractLength:
+        typeof saved.checkAbstractLength === "boolean"
+          ? saved.checkAbstractLength
+          : defaultSettings.checkAbstractLength,
+      checkKeywords:
+        typeof saved.checkKeywords === "boolean"
+          ? saved.checkKeywords
+          : defaultSettings.checkKeywords,
+      checkFigureReferences:
+        typeof saved.checkFigureReferences === "boolean"
+          ? saved.checkFigureReferences
+          : defaultSettings.checkFigureReferences,
+      checkTableReferences:
+        typeof saved.checkTableReferences === "boolean"
+          ? saved.checkTableReferences
+          : defaultSettings.checkTableReferences,
+      checkBibliographyStyle:
+        typeof saved.checkBibliographyStyle === "boolean"
+          ? saved.checkBibliographyStyle
+          : defaultSettings.checkBibliographyStyle,
+      checkPageLimit:
+        typeof saved.checkPageLimit === "boolean"
+          ? saved.checkPageLimit
+          : defaultSettings.checkPageLimit,
+      checkAuthorInfo:
+        typeof saved.checkAuthorInfo === "boolean"
+          ? saved.checkAuthorInfo
+          : defaultSettings.checkAuthorInfo,
+      checkAnonymousReview:
+        typeof saved.checkAnonymousReview === "boolean"
+          ? saved.checkAnonymousReview
+          : defaultSettings.checkAnonymousReview,
+      checkFigureResolution:
+        typeof saved.checkFigureResolution === "boolean"
+          ? saved.checkFigureResolution
+          : defaultSettings.checkFigureResolution,
+      checkEmbeddedFonts:
+        typeof saved.checkEmbeddedFonts === "boolean"
+          ? saved.checkEmbeddedFonts
+          : defaultSettings.checkEmbeddedFonts,
+      checkCompiler:
+        typeof saved.checkCompiler === "boolean"
+          ? saved.checkCompiler
+          : defaultSettings.checkCompiler,
+
+      citationAssistantEnabled:
+        typeof saved.citationAssistantEnabled === "boolean"
+          ? saved.citationAssistantEnabled
+          : defaultSettings.citationAssistantEnabled,
+      detectMissingCitations:
+        typeof saved.detectMissingCitations === "boolean"
+          ? saved.detectMissingCitations
+          : defaultSettings.detectMissingCitations,
+      detectUnusedEntries:
+        typeof saved.detectUnusedEntries === "boolean"
+          ? saved.detectUnusedEntries
+          : defaultSettings.detectUnusedEntries,
+      detectDuplicateReferences:
+        typeof saved.detectDuplicateReferences === "boolean"
+          ? saved.detectDuplicateReferences
+          : defaultSettings.detectDuplicateReferences,
+      detectBrokenLinks:
+        typeof saved.detectBrokenLinks === "boolean"
+          ? saved.detectBrokenLinks
+          : defaultSettings.detectBrokenLinks,
+      suggestCitationKeys:
+        typeof saved.suggestCitationKeys === "boolean"
+          ? saved.suggestCitationKeys
+          : defaultSettings.suggestCitationKeys,
+      importMetadataSources:
+        typeof saved.importMetadataSources === "boolean"
+          ? saved.importMetadataSources
+          : defaultSettings.importMetadataSources,
+      warnOldCitations:
+        typeof saved.warnOldCitations === "boolean"
+          ? saved.warnOldCitations
+          : defaultSettings.warnOldCitations,
+
+      structureAssistantEnabled:
+        typeof saved.structureAssistantEnabled === "boolean"
+          ? saved.structureAssistantEnabled
+          : defaultSettings.structureAssistantEnabled,
+      checkAbstractStructure:
+        typeof saved.checkAbstractStructure === "boolean"
+          ? saved.checkAbstractStructure
+          : defaultSettings.checkAbstractStructure,
+      checkIntroductionStructure:
+        typeof saved.checkIntroductionStructure === "boolean"
+          ? saved.checkIntroductionStructure
+          : defaultSettings.checkIntroductionStructure,
+      checkRelatedWorkLength:
+        typeof saved.checkRelatedWorkLength === "boolean"
+          ? saved.checkRelatedWorkLength
+          : defaultSettings.checkRelatedWorkLength,
+      checkMethodReproducibility:
+        typeof saved.checkMethodReproducibility === "boolean"
+          ? saved.checkMethodReproducibility
+          : defaultSettings.checkMethodReproducibility,
+      checkResultsDiscussion:
+        typeof saved.checkResultsDiscussion === "boolean"
+          ? saved.checkResultsDiscussion
+          : defaultSettings.checkResultsDiscussion,
+      checkConclusionClaims:
+        typeof saved.checkConclusionClaims === "boolean"
+          ? saved.checkConclusionClaims
+          : defaultSettings.checkConclusionClaims,
+
+      reproducibilityEnabled:
+        typeof saved.reproducibilityEnabled === "boolean"
+          ? saved.reproducibilityEnabled
+          : defaultSettings.reproducibilityEnabled,
+      checkCodeLink:
+        typeof saved.checkCodeLink === "boolean"
+          ? saved.checkCodeLink
+          : defaultSettings.checkCodeLink,
+      checkDatasetLink:
+        typeof saved.checkDatasetLink === "boolean"
+          ? saved.checkDatasetLink
+          : defaultSettings.checkDatasetLink,
+      checkLicenseMentioned:
+        typeof saved.checkLicenseMentioned === "boolean"
+          ? saved.checkLicenseMentioned
+          : defaultSettings.checkLicenseMentioned,
+      checkHyperparameters:
+        typeof saved.checkHyperparameters === "boolean"
+          ? saved.checkHyperparameters
+          : defaultSettings.checkHyperparameters,
+      checkHardwareDetails:
+        typeof saved.checkHardwareDetails === "boolean"
+          ? saved.checkHardwareDetails
+          : defaultSettings.checkHardwareDetails,
+      checkRandomSeeds:
+        typeof saved.checkRandomSeeds === "boolean"
+          ? saved.checkRandomSeeds
+          : defaultSettings.checkRandomSeeds,
+      checkEvaluationMetrics:
+        typeof saved.checkEvaluationMetrics === "boolean"
+          ? saved.checkEvaluationMetrics
+          : defaultSettings.checkEvaluationMetrics,
+
+      acronymManagerEnabled:
+        typeof saved.acronymManagerEnabled === "boolean"
+          ? saved.acronymManagerEnabled
+          : defaultSettings.acronymManagerEnabled,
+      checkUndefinedAcronym:
+        typeof saved.checkUndefinedAcronym === "boolean"
+          ? saved.checkUndefinedAcronym
+          : defaultSettings.checkUndefinedAcronym,
+      checkDuplicateDefinition:
+        typeof saved.checkDuplicateDefinition === "boolean"
+          ? saved.checkDuplicateDefinition
+          : defaultSettings.checkDuplicateDefinition,
+      checkUnusedAcronym:
+        typeof saved.checkUnusedAcronym === "boolean"
+          ? saved.checkUnusedAcronym
+          : defaultSettings.checkUnusedAcronym,
+      checkConflictingDefinitions:
+        typeof saved.checkConflictingDefinitions === "boolean"
+          ? saved.checkConflictingDefinitions
+          : defaultSettings.checkConflictingDefinitions,
+
+      errorDoctorEnabled:
+        typeof saved.errorDoctorEnabled === "boolean"
+          ? saved.errorDoctorEnabled
+          : defaultSettings.errorDoctorEnabled,
+      explainErrors:
+        typeof saved.explainErrors === "boolean"
+          ? saved.explainErrors
+          : defaultSettings.explainErrors,
+      suggestFixes:
+        typeof saved.suggestFixes === "boolean"
+          ? saved.suggestFixes
+          : defaultSettings.suggestFixes,
+      autoFixCommon:
+        typeof saved.autoFixCommon === "boolean"
+          ? saved.autoFixCommon
+          : defaultSettings.autoFixCommon,
+
+      tikzConverterEnabled:
+        typeof saved.tikzConverterEnabled === "boolean"
+          ? saved.tikzConverterEnabled
+          : defaultSettings.tikzConverterEnabled,
+      tikzConverterAutoOpen:
+        typeof saved.tikzConverterAutoOpen === "boolean"
+          ? saved.tikzConverterAutoOpen
+          : defaultSettings.tikzConverterAutoOpen,
+
+      notationManagerEnabled:
+        typeof saved.notationManagerEnabled === "boolean"
+          ? saved.notationManagerEnabled
+          : defaultSettings.notationManagerEnabled,
+      detectNotation:
+        typeof saved.detectNotation === "boolean"
+          ? saved.detectNotation
+          : defaultSettings.detectNotation,
+      detectNotationConflicts:
+        typeof saved.detectNotationConflicts === "boolean"
+          ? saved.detectNotationConflicts
+          : defaultSettings.detectNotationConflicts,
+      detectUndefinedNotation:
+        typeof saved.detectUndefinedNotation === "boolean"
+          ? saved.detectUndefinedNotation
+          : defaultSettings.detectUndefinedNotation,
+
+      pdfComplianceEnabled:
+        typeof saved.pdfComplianceEnabled === "boolean"
+          ? saved.pdfComplianceEnabled
+          : defaultSettings.pdfComplianceEnabled,
+      checkPageCount:
+        typeof saved.checkPageCount === "boolean"
+          ? saved.checkPageCount
+          : defaultSettings.checkPageCount,
+      maxPages:
+        typeof saved.maxPages === "number" ? saved.maxPages : defaultSettings.maxPages,
+      checkUnreferencedFigures:
+        typeof saved.checkUnreferencedFigures === "boolean"
+          ? saved.checkUnreferencedFigures
+          : defaultSettings.checkUnreferencedFigures,
+      checkUncitedCitations:
+        typeof saved.checkUncitedCitations === "boolean"
+          ? saved.checkUncitedCitations
+          : defaultSettings.checkUncitedCitations,
+      checkSectionsWithNoCitations:
+        typeof saved.checkSectionsWithNoCitations === "boolean"
+          ? saved.checkSectionsWithNoCitations
+          : defaultSettings.checkSectionsWithNoCitations,
+      checkType3Fonts:
+        typeof saved.checkType3Fonts === "boolean"
+          ? saved.checkType3Fonts
+          : defaultSettings.checkType3Fonts,
+      checkAbstractWordCount:
+        typeof saved.checkAbstractWordCount === "boolean"
+          ? saved.checkAbstractWordCount
+          : defaultSettings.checkAbstractWordCount,
+      maxAbstractWords:
+        typeof saved.maxAbstractWords === "number"
+          ? saved.maxAbstractWords
+          : defaultSettings.maxAbstractWords,
+
+      rebuttalManuscriptId:
+        typeof saved.rebuttalManuscriptId === "string"
+          ? saved.rebuttalManuscriptId
+          : defaultSettings.rebuttalManuscriptId,
+      rebuttalManuscriptTitle:
+        typeof saved.rebuttalManuscriptTitle === "string"
+          ? saved.rebuttalManuscriptTitle
+          : defaultSettings.rebuttalManuscriptTitle,
+      rebuttalFontSize:
+        typeof saved.rebuttalFontSize === "string"
+          ? saved.rebuttalFontSize
+          : defaultSettings.rebuttalFontSize,
+      rebuttalPaperSize:
+        typeof saved.rebuttalPaperSize === "string"
+          ? saved.rebuttalPaperSize
+          : defaultSettings.rebuttalPaperSize,
+      rebuttalFontFamily:
+        typeof saved.rebuttalFontFamily === "string"
+          ? saved.rebuttalFontFamily
+          : defaultSettings.rebuttalFontFamily,
+      rebuttalIncludeDiff:
+        typeof saved.rebuttalIncludeDiff === "boolean"
+          ? saved.rebuttalIncludeDiff
+          : defaultSettings.rebuttalIncludeDiff,
+      rebuttalDiffOldFile:
+        typeof saved.rebuttalDiffOldFile === "string"
+          ? saved.rebuttalDiffOldFile
+          : defaultSettings.rebuttalDiffOldFile,
+      rebuttalDiffNewFile:
+        typeof saved.rebuttalDiffNewFile === "string"
+          ? saved.rebuttalDiffNewFile
+          : defaultSettings.rebuttalDiffNewFile,
+      rebuttalDiffOutput:
+        typeof saved.rebuttalDiffOutput === "string"
+          ? saved.rebuttalDiffOutput
+          : defaultSettings.rebuttalDiffOutput,
+      rebuttalSummary:
+        typeof saved.rebuttalSummary === "string"
+          ? saved.rebuttalSummary
+          : defaultSettings.rebuttalSummary,
+      rebuttalSpacing:
+        typeof saved.rebuttalSpacing === "boolean"
+          ? saved.rebuttalSpacing
+          : defaultSettings.rebuttalSpacing,
+      rebuttalColorPrimary:
+        typeof saved.rebuttalColorPrimary === "string"
+          ? saved.rebuttalColorPrimary
+          : defaultSettings.rebuttalColorPrimary,
+      rebuttalColorAccent:
+        typeof saved.rebuttalColorAccent === "string"
+          ? saved.rebuttalColorAccent
+          : defaultSettings.rebuttalColorAccent,
+    };
+  } catch {
+    return defaultSettings;
+  }
+}
+
+export const bookmarksStorageKey = "latexdo.bookmarks.v1";
+
+export function getSetting(key: string, settings: AppSettings): boolean {
+  return (settings as unknown as Record<string, boolean>)[key] ?? true;
+}

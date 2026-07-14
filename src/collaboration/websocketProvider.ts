@@ -48,6 +48,7 @@ export class LatexDoWebsocketProvider {
 
   destroy(): void {
     this.shouldConnect = false;
+    this.synced = false;
     if (this.reconnectTimer !== null) {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -61,7 +62,16 @@ export class LatexDoWebsocketProvider {
 
   private connect(): void {
     this.reportStatus("connecting");
-    const socket = new WebSocket(this.url);
+    let socket: WebSocket;
+    try {
+      socket = new WebSocket(this.url);
+    } catch {
+      this.socket = null;
+      this.synced = false;
+      this.reportStatus("error");
+      this.scheduleReconnect();
+      return;
+    }
     socket.binaryType = "arraybuffer";
     this.socket = socket;
 
@@ -80,6 +90,7 @@ export class LatexDoWebsocketProvider {
       if (this.socket === socket) {
         this.socket = null;
       }
+      this.synced = false;
       this.reportStatus("disconnected");
       this.scheduleReconnect();
     });
@@ -108,15 +119,25 @@ export class LatexDoWebsocketProvider {
         : data instanceof Blob
           ? await data.arrayBuffer()
           : null;
-    if (!buffer) return;
+    if (!buffer || buffer.byteLength === 0) return;
 
-    const decoder = decoding.createDecoder(new Uint8Array(buffer));
-    const messageType = decoding.readVarUint(decoder);
+    let decoder: decoding.Decoder;
+    let messageType: number;
+    try {
+      decoder = decoding.createDecoder(new Uint8Array(buffer));
+      messageType = decoding.readVarUint(decoder);
+    } catch {
+      return;
+    }
 
     if (messageType === messageSync) {
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, messageSync);
-      syncProtocol.readSyncMessage(decoder, encoder, this.doc, this);
+      try {
+        syncProtocol.readSyncMessage(decoder, encoder, this.doc, this);
+      } catch {
+        return;
+      }
       if (encoding.length(encoder) > 1) {
         this.send(encoding.toUint8Array(encoder));
       }
@@ -128,11 +149,14 @@ export class LatexDoWebsocketProvider {
     }
 
     if (messageType === messageAwareness) {
-      awarenessProtocol.applyAwarenessUpdate(
-        this.awareness,
-        decoding.readVarUint8Array(decoder),
-        this,
-      );
+      try {
+        if (!decoding.hasContent(decoder)) return;
+        const update = decoding.readVarUint8Array(decoder);
+        if (!update.byteLength) return;
+        awarenessProtocol.applyAwarenessUpdate(this.awareness, update, this);
+      } catch {
+        return;
+      }
     }
   }
 
@@ -179,8 +203,9 @@ export class LatexDoWebsocketProvider {
   }
 
   private send(message: Uint8Array): void {
-    if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(message);
+    const socket = this.socket;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(message);
     }
   }
 
