@@ -371,6 +371,7 @@ export interface AppSettings {
   editorFontSize: number;
   wordWrap: boolean;
   minimap: boolean;
+  inlineBlame: boolean;
   showRawLatex: boolean;
   projectTreeIgnoredNames: string[];
   projectTreeMaxDepth: number;
@@ -497,6 +498,7 @@ export const defaultSettings: AppSettings = {
   editorFontSize: 13.5,
   wordWrap: true,
   minimap: true,
+  inlineBlame: true,
   showRawLatex: true,
   projectTreeIgnoredNames: defaultProjectTreeIgnoredNames,
   projectTreeMaxDepth: 8,
@@ -805,6 +807,10 @@ export function loadSettings(): AppSettings {
         typeof saved.wordWrap === "boolean" ? saved.wordWrap : defaultSettings.wordWrap,
       minimap:
         typeof saved.minimap === "boolean" ? saved.minimap : defaultSettings.minimap,
+      inlineBlame:
+        typeof saved.inlineBlame === "boolean"
+          ? saved.inlineBlame
+          : defaultSettings.inlineBlame,
       showRawLatex:
         typeof saved.showRawLatex === "boolean"
           ? saved.showRawLatex

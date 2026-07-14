@@ -99,6 +99,7 @@ import type {
   DocumentHistorySnapshot,
   EditorMode,
   Engine,
+  GitBlameLine,
   GitChangeEntry,
   GitChangedEvent,
   GitDiffSession,
@@ -229,6 +230,13 @@ import {
   type GitChangeArea,
   type GitChangeGroup,
 } from "./features/git/gitUi";
+import {
+  blameByLine,
+  blameHoverMarkdown,
+  buildBlameAnnotations,
+  inlineBlameText,
+  unsavedChangesBlameText,
+} from "./features/git/inlineBlame";
 import { useGit } from "./features/git/useGit";
 import {
   createPathInDirectory,
@@ -420,6 +428,8 @@ export default function App() {
     gitRepositoryCommits,
     gitFileCommits,
   } = useGit();
+  const [editorBlameLines, setEditorBlameLines] = useState<GitBlameLine[]>([]);
+  const [fileBlameEnabled, setFileBlameEnabled] = useState(false);
   const { documentHistory, setDocumentHistory } = useHistory();
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const [updateProgress, setUpdateProgress] = useState<UpdateDownloadProgress | null>(
@@ -528,6 +538,17 @@ export default function App() {
   const gitFileHistoryPathRef = useRef("");
   const gitRefreshTimerRef = useRef<number | null>(null);
   const gitRowClickTimerRef = useRef<number | null>(null);
+  const editorBlameStateRef = useRef<{
+    byLine: Map<number, GitBlameLine>;
+    dirty: boolean;
+    inlineEnabled: boolean;
+    fileBlameEnabled: boolean;
+  }>({ byLine: new Map(), dirty: false, inlineEnabled: true, fileBlameEnabled: false });
+  const inlineBlameDecorationsRef = useRef<string[]>([]);
+  const fileBlameDecorationsRef = useRef<string[]>([]);
+  const editorBlameFetchSeqRef = useRef(0);
+  const editorBlameDisposablesRef = useRef<monaco.IDisposable[]>([]);
+  const blameHoverDisposablesRef = useRef<monaco.IDisposable[]>([]);
   const collaborationBindingRef = useRef<MonacoCollaborationBinding | null>(null);
   const scheduleGitRefreshRef = useRef<() => void>(() => {});
   const installedExtensionSnippetsRef = useRef<LatexDoExtensionSnippet[]>([]);
@@ -3725,13 +3746,188 @@ ${macroEnd}
 
   useEffect(() => disposeCollaborationBinding, [disposeCollaborationBinding]);
 
+  const applyEditorBlameDecorations = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const model = editor.getModel();
+    if (!model) return;
+
+    const state = editorBlameStateRef.current;
+    const now = new Date();
+
+    const inlineDecorations: monaco.editor.IModelDeltaDecoration[] = [];
+    if (state.inlineEnabled && !state.fileBlameEnabled && state.byLine.size) {
+      const position = editor.getPosition();
+      if (position && position.lineNumber <= model.getLineCount()) {
+        const lineNumber = position.lineNumber;
+        const blame = state.byLine.get(lineNumber);
+        const text = state.dirty
+          ? unsavedChangesBlameText()
+          : blame
+            ? inlineBlameText(blame, now)
+            : "";
+        if (text) {
+          const column = model.getLineMaxColumn(lineNumber);
+          inlineDecorations.push({
+            range: new monaco.Range(lineNumber, column, lineNumber, column),
+            options: {
+              after: {
+                content: "\u00a0\u00a0\u00a0\u00a0" + text,
+                inlineClassName: "git-inline-blame",
+                cursorStops: monaco.editor.InjectedTextCursorStops.None,
+              },
+            },
+          });
+        }
+      }
+    }
+    inlineBlameDecorationsRef.current = editor.deltaDecorations(
+      inlineBlameDecorationsRef.current,
+      inlineDecorations,
+    );
+
+    const gutterDecorations: monaco.editor.IModelDeltaDecoration[] = [];
+    if (state.fileBlameEnabled && !state.dirty && state.byLine.size) {
+      const annotations = buildBlameAnnotations([...state.byLine.values()], now);
+      const lineCount = model.getLineCount();
+      for (const annotation of annotations) {
+        if (annotation.lineNumber > lineCount) continue;
+        gutterDecorations.push({
+          range: new monaco.Range(annotation.lineNumber, 1, annotation.lineNumber, 1),
+          options: {
+            before: {
+              content: annotation.gutterText + "\u2002",
+              inlineClassName: `git-blame-gutter git-blame-heat-${annotation.heatLevel}`,
+              cursorStops: monaco.editor.InjectedTextCursorStops.None,
+            },
+          },
+        });
+      }
+    }
+    fileBlameDecorationsRef.current = editor.deltaDecorations(
+      fileBlameDecorationsRef.current,
+      gutterDecorations,
+    );
+  }, []);
+
+  const refreshEditorBlame = useCallback(async () => {
+    const currentProject = projectIdRef.current;
+    const currentPath = activePathRef.current;
+    const relativePath = documentsRef.current.find(
+      (document) => document.path === currentPath,
+    )?.relativePath;
+    const sequence = ++editorBlameFetchSeqRef.current;
+    if (!currentProject || !relativePath) {
+      setEditorBlameLines([]);
+      return;
+    }
+
+    try {
+      const blame = await window.latexdo.getGitBlame(currentProject, relativePath, {
+        kind: "working-tree",
+      });
+      if (
+        sequence === editorBlameFetchSeqRef.current &&
+        currentPath === activePathRef.current
+      ) {
+        setEditorBlameLines(blame);
+      }
+    } catch {
+      if (sequence === editorBlameFetchSeqRef.current) {
+        setEditorBlameLines([]);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    setEditorBlameLines([]);
+    void refreshEditorBlame();
+  }, [activePath, projectId, refreshEditorBlame]);
+
+  useEffect(() => {
+    return window.latexdo.onGitChanged((event: GitChangedEvent) => {
+      if (event.projectId === projectIdRef.current) {
+        void refreshEditorBlame();
+      }
+    });
+  }, [refreshEditorBlame]);
+
+  useEffect(() => {
+    editorBlameStateRef.current = {
+      byLine: blameByLine(editorBlameLines),
+      dirty: activeDocument ? activeDocument.content !== activeDocument.savedContent : false,
+      inlineEnabled: settings.inlineBlame,
+      fileBlameEnabled,
+    };
+    applyEditorBlameDecorations();
+  }, [
+    editorBlameLines,
+    activeDocument,
+    settings.inlineBlame,
+    fileBlameEnabled,
+    applyEditorBlameDecorations,
+  ]);
+
   const handleEditorMount: OnMount = (editor) => {
     editorRef.current = editor;
     editorMouseDisposableRef.current?.dispose();
     for (const disposable of editorActionDisposablesRef.current) {
       disposable.dispose();
     }
+    for (const disposable of editorBlameDisposablesRef.current) {
+      disposable.dispose();
+    }
+    editorBlameDisposablesRef.current = [
+      editor.onDidChangeCursorPosition(() => {
+        applyEditorBlameDecorations();
+      }),
+      editor.onDidChangeModel(() => {
+        inlineBlameDecorationsRef.current = [];
+        fileBlameDecorationsRef.current = [];
+        applyEditorBlameDecorations();
+      }),
+    ];
+    for (const disposable of blameHoverDisposablesRef.current) {
+      disposable.dispose();
+    }
+    blameHoverDisposablesRef.current = [
+      "latex",
+      "bibtex",
+      "asymptote",
+      "markdown",
+      "json",
+      "plaintext",
+    ].map((language) =>
+      monaco.languages.registerHoverProvider(language, {
+        provideHover: (model, position) => {
+          if (editorRef.current?.getModel() !== model) return null;
+          const state = editorBlameStateRef.current;
+          if (state.dirty) return null;
+          const blame = state.byLine.get(position.lineNumber);
+          if (!blame) return null;
+          return {
+            range: new monaco.Range(
+              position.lineNumber,
+              1,
+              position.lineNumber,
+              model.getLineMaxColumn(position.lineNumber),
+            ),
+            contents: [{ value: blameHoverMarkdown(blame, new Date()) }],
+          };
+        },
+      }),
+    );
     editorActionDisposablesRef.current = [
+      editor.addAction({
+        id: "latexdo.toggleFileBlame",
+        label: "Git: Toggle File Blame Annotations",
+        keybindings: [
+          monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyB,
+        ],
+        contextMenuGroupId: "navigation",
+        contextMenuOrder: 0,
+        run: () => setFileBlameEnabled((current) => !current),
+      }),
       editor.addAction({
         id: "latexdo.toggleBookmark",
         label: "Toggle Bookmark",
@@ -9488,6 +9684,26 @@ ${macroEnd}
                         setSettings((current) => ({
                           ...current,
                           minimap: event.target.checked,
+                        }))
+                      }
+                    />
+                  </label>
+
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Inline Git blame</strong>
+                      <small>
+                        Show who last changed the current line, with commit details on
+                        hover.
+                      </small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={settings.inlineBlame}
+                      onChange={(event) =>
+                        setSettings((current) => ({
+                          ...current,
+                          inlineBlame: event.target.checked,
                         }))
                       }
                     />

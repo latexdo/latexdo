@@ -499,6 +499,25 @@ describe("App critical UI controls", () => {
     expect(screen.queryByLabelText("mock editor")).not.toBeInTheDocument();
   });
 
+  it("fetches working-tree blame for the active document", async () => {
+    const api = installLatexDoMock();
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    const fileRow = document.querySelector(
+      '.tree-row[title="main.tex"]',
+    ) as HTMLButtonElement | null;
+    expect(fileRow).not.toBeNull();
+    fireEvent.click(fileRow as HTMLButtonElement);
+
+    await waitFor(() => {
+      expect(api.getGitBlame).toHaveBeenCalledWith(project.id, "main.tex", {
+        kind: "working-tree",
+      });
+    });
+  });
+
   it("shows an error when opening a folder fails", async () => {
     const api = installLatexDoMock();
     api.openProject.mockRejectedValue(new Error("Folder picker failed."));
