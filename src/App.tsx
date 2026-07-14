@@ -99,23 +99,15 @@ import type {
   DocumentHistorySnapshot,
   EditorMode,
   Engine,
-  GitBlameLine,
   GitChangeEntry,
   GitChangedEvent,
-  GitCommitDetails,
-  GitCommitFile,
-  GitDiscardResult,
   GitDiffSession,
   GitGraphCommit,
-  GitHistorySummary,
-  GitStatusSummary,
   ImportedProjectEntry,
   OpenProject,
   OpenDocument,
-  ProofreadingResult,
   ProofreadingSettings,
   ProjectEntry,
-  ProjectListOptions,
   RebuttalItem,
   ReviewChat,
   SpellCheckerSettings,
@@ -145,7 +137,7 @@ import {
   type ProjectSearchFile,
   type ProjectSearchMatch,
 } from "./search/projectSearch";
-import { fileNameForDisplay, pathForDisplay } from "./pathDisplay";
+import { pathForDisplay } from "./pathDisplay";
 import {
   figureBytesToDataUrl,
   figureCanRenderInline,
@@ -158,12 +150,8 @@ import {
   contributionSummary,
   extensionCategories,
   extensionStoreSiteUrl,
-  fallbackExtensionCatalog,
-  fetchExtensionCatalog,
   type ExtensionCategory,
-  type LatexDoExtensionManifest,
   type LatexDoExtensionSnippet,
-  type LatexDoExtensionTemplate,
 } from "./extensions";
 import {
   getLatexCommandCompletionRange,
@@ -180,6 +168,99 @@ import {
   latexCommandSnippets,
 } from "./latex/editorFeatureSupport";
 
+import {
+  applyTextFix,
+  diagnosticAccuracyLabel,
+  diagnosticContextContent,
+  diagnosticExplicitProblem,
+  diagnosticHeadline,
+  diagnosticLocationLabel,
+  diagnosticMarkerMessage,
+} from "./features/editor/diagnostics";
+import { escapeHtml } from "./features/editor/html";
+import { useDocuments } from "./features/editor/useDocuments";
+import {
+  bookmarkKey,
+  bookmarksStorageKey,
+  boundedInteger,
+  buildAutoCompileSignature,
+  colorThemeOptions,
+  defaultSettings,
+  getSetting,
+  hasProjectTreeLimitEntry,
+  loadBookmarkStore,
+  loadCollaborationDisplayName,
+  maxProjectTreeDepth,
+  maxProjectTreeEntries,
+  minProjectTreeDepth,
+  minProjectTreeEntries,
+  monacoThemeFor,
+  normalizeBookmarkLines,
+  parseProjectTreeIgnoredNamesText,
+  projectListOptionsFromSettings,
+  storeCollaborationDisplayName,
+  type BookmarkStore,
+  type WelcomeTemplate,
+} from "./features/settings/settings";
+import { useSettings } from "./features/settings/useSettings";
+import {
+  buildHistorySnapshot,
+  historyAutoCaptureDelayMs,
+  historyContentPreview,
+  historyIndexRelativePath,
+  historySnapshotContentPath,
+  legacyHistoryStorageRelativePath,
+  maxHistorySnapshotsInHotIndex,
+  maxHistorySnapshotsPerFile,
+  normalizeHistorySnapshot,
+  pruneHistorySnapshots,
+  snapshotContentKey,
+  textHash,
+} from "./features/history/historySnapshots";
+import {
+  fileDirectory,
+  formatGitDate,
+  gitDiffStatusCode,
+  gitDiffTabLabel,
+  gitDiscardStatusMessage,
+  gitStatusClass,
+  gitStatusCode,
+  gitStatusLabel,
+  type GitChangeArea,
+  type GitChangeGroup,
+} from "./features/git/gitUi";
+import { useGit } from "./features/git/useGit";
+import {
+  createPathInDirectory,
+  fileName,
+  flattenEntries,
+  formatDuration,
+  isImagePath,
+  joinRelativePath,
+  languageFor,
+  latexFigureCode,
+  normalizeRelativePath,
+  supportedExtensions,
+} from "./features/project/projectUtils";
+import { useProject } from "./features/project/useProject";
+import { useCompile } from "./features/compile/useCompile";
+import { useHistory } from "./features/history/useHistory";
+import {
+  buildProofreadingRequest,
+  supportsProofreading,
+  uniqueWords,
+} from "./features/proofreading/proofreading";
+import { useProofreading } from "./features/proofreading/useProofreading";
+import { wordColumn } from "./features/pdf/sync";
+import {
+  formatUpdateDate,
+  formatUpdateProgress,
+  updateCheckIntervalMs,
+} from "./features/pdf/updateFormatting";
+import {
+  normalizeRebuttalItem,
+  removeLegacyReviewPlaceholders,
+} from "./features/review/reviewState";
 type PanelKind =
   | "problems"
   | "output"
@@ -188,31 +269,6 @@ type PanelKind =
   | "structureReport"
   | "pdfReport";
 type SidebarView = "explorer" | "sourceControl" | "history" | "search";
-type GitChangeArea = "staged" | "changes";
-
-interface GitContextMenuState {
-  entry: GitChangeEntry;
-  area: GitChangeArea;
-  x: number;
-  y: number;
-}
-
-interface GitChangeGroupStatus {
-  code: string;
-  label: string;
-  className: string;
-  count: number;
-}
-
-interface GitChangeGroup {
-  id: string;
-  domId: string;
-  directory: string;
-  label: string;
-  entries: GitChangeEntry[];
-  statusCounts: GitChangeGroupStatus[];
-}
-
 type LatexToolbarCommand =
   | "bold"
   | "italic"
@@ -240,1983 +296,61 @@ function AppIcon({ className }: { className?: string }) {
   );
 }
 
-type ColorTheme = "graphite" | "midnight" | "forest" | "sepia" | "studio" | "paper";
-type BookmarkStore = Record<string, number[]>;
-
-interface WelcomeTemplate {
-  id: string;
-  name: string;
-  summary: string;
-  files: string;
-  mainTex: string;
-  bibTex?: string;
-}
-
-const colorThemeOptions: {
-  id: ColorTheme;
-  name: string;
-  description: string;
-  swatches: [string, string, string];
-}[] = [
-  {
-    id: "graphite",
-    name: "Graphite Pro",
-    description: "Neutral dark theme with crisp blue accents.",
-    swatches: ["#111318", "#729bf0", "#e0e4eb"],
-  },
-  {
-    id: "midnight",
-    name: "Midnight Blue",
-    description: "Deep navy workspace tuned for long writing sessions.",
-    swatches: ["#08111f", "#5fa8ff", "#dce8f8"],
-  },
-  {
-    id: "forest",
-    name: "Scholarly Forest",
-    description: "Calm green palette with strong text contrast.",
-    swatches: ["#0d1512", "#65c28f", "#e1ebe5"],
-  },
-  {
-    id: "sepia",
-    name: "Warm Sepia Dark",
-    description: "Warm low-glare theme for reading dense drafts.",
-    swatches: ["#17120d", "#d69a5b", "#eee4d4"],
-  },
-  {
-    id: "studio",
-    name: "Studio White",
-    description: "Clean white workspace with quiet graphite contrast.",
-    swatches: ["#f7f9fc", "#2f6fdb", "#1f2937"],
-  },
-  {
-    id: "paper",
-    name: "Paper White",
-    description: "Soft white theme with ink-like text and green accents.",
-    swatches: ["#fbfbf8", "#2f8f6b", "#252a31"],
-  },
-];
-
-const welcomeTemplates: WelcomeTemplate[] = [
-  {
-    id: "article",
-    name: "Clean Article",
-    summary: "A minimal paper with title, abstract, sections, and conclusion.",
-    files: "main.tex",
-    mainTex: String.raw`\documentclass[11pt]{article}
-
-\usepackage[margin=1in]{geometry}
-\usepackage{microtype}
-\usepackage{hyperref}
-
-\title{Untitled Article}
-\author{Your Name}
-\date{\today}
-
-\begin{document}
-
-\maketitle
-
-\begin{abstract}
-Write a one-paragraph summary of the work here.
-\end{abstract}
-
-\section{Introduction}
-
-Start with the problem, context, and main claim.
-
-\section{Main Result}
-
-Develop the argument or result.
-
-\section{Conclusion}
-
-Close with the key takeaway.
-
-\end{document}
-`,
-  },
-  {
-    id: "research",
-    name: "Research Paper",
-    summary: "Structured manuscript with figures, tables, and bibliography.",
-    files: "main.tex + references.bib",
-    mainTex: String.raw`\documentclass[11pt]{article}
-
-\usepackage[margin=1in]{geometry}
-\usepackage{amsmath}
-\usepackage{booktabs}
-\usepackage{graphicx}
-\usepackage{microtype}
-\usepackage{hyperref}
-
-\title{Research Paper Title}
-\author{Your Name}
-\date{\today}
-
-\begin{document}
-
-\maketitle
-
-\begin{abstract}
-Summarize the question, approach, result, and implication.
-\end{abstract}
-
-\section{Introduction}
-
-State the problem and why it matters. Cite the closest related work here \cite{latexdo2026}.
-
-\section{Method}
-
-Describe the setup, assumptions, and procedure.
-
-\section{Results}
-
-\begin{table}[h]
-\centering
-\begin{tabular}{lrr}
-\toprule
-Condition & Baseline & Ours \\
-\midrule
-Example & 0.72 & 0.84 \\
-\bottomrule
-\end{tabular}
-\caption{Replace this table with your main result.}
-\end{table}
-
-\section{Discussion}
-
-Explain what changed, what stayed uncertain, and what follows next.
-
-\bibliographystyle{plain}
-\bibliography{references}
-
-\end{document}
-`,
-    bibTex: String.raw`@misc{latexdo2026,
-  author = {LatexDo},
-  title = {A Local LaTeX Writing Workflow},
-  year = {2026},
-  note = {Starter reference}
-}
-`,
-  },
-  {
-    id: "notes",
-    name: "Lecture Notes",
-    summary: "Definitions, theorem blocks, examples, and exercises.",
-    files: "main.tex",
-    mainTex: String.raw`\documentclass[11pt]{article}
-
-\usepackage[margin=1in]{geometry}
-\usepackage{amsmath}
-\usepackage{amssymb}
-\usepackage{amsthm}
-\usepackage{microtype}
-\usepackage{hyperref}
-
-\newtheorem{definition}{Definition}
-\newtheorem{theorem}{Theorem}
-\newtheorem{example}{Example}
-
-\title{Lecture Notes}
-\author{Course or Topic}
-\date{\today}
-
-\begin{document}
-
-\maketitle
-
-\section{Topic}
-
-\begin{definition}
-Write the main definition here.
-\end{definition}
-
-\begin{theorem}
-State the main claim.
-\end{theorem}
-
-\begin{proof}
-Add the proof or derivation.
-\end{proof}
-
-\begin{example}
-Work through a concrete example.
-\end{example}
-
-\section{Exercises}
-
-\begin{enumerate}
-  \item Add the first exercise.
-  \item Add a follow-up exercise.
-\end{enumerate}
-
-\end{document}
-`,
-  },
-  {
-    id: "beamer",
-    name: "Beamer Presentation",
-    summary: "A presentation with title slide, outline, theorem, and closing slide.",
-    files: "main.tex",
-    mainTex: String.raw`\documentclass{beamer}
-
-\usetheme{Madrid}
-\usepackage{amsmath}
-\usepackage{graphicx}
-
-\title{Presentation Title}
-\author{Your Name}
-\date{\today}
-
-\begin{document}
-
-\frame{\titlepage}
-
-\begin{frame}{Outline}
-\tableofcontents
-\end{frame}
-
-\section{Motivation}
-
-\begin{frame}{Motivation}
-\begin{itemize}
-  \item State the problem.
-  \item Explain why it matters.
-  \item Preview the contribution.
-\end{itemize}
-\end{frame}
-
-\section{Result}
-
-\begin{frame}{Main Result}
-\begin{theorem}
-State the main result here.
-\end{theorem}
-\end{frame}
-
-\begin{frame}{Conclusion}
-Summarize the takeaway and next steps.
-\end{frame}
-
-\end{document}
-`,
-  },
-  {
-    id: "letter",
-    name: "Letter",
-    summary: "A formal letter template with address, opening, and closing.",
-    files: "main.tex",
-    mainTex: String.raw`\documentclass{letter}
-
-\signature{Your Name}
-\address{Your Address \\ City, Country}
-\date{\today}
-
-\begin{document}
-
-\begin{letter}{Recipient Name \\ Recipient Address}
-
-\opening{Dear Recipient,}
-
-Write the body of the letter here.
-
-\closing{Sincerely,}
-
-\end{letter}
-
-\end{document}
-`,
-  },
-  {
-    id: "response",
-    name: "Review Response",
-    summary: "A concise rebuttal letter with reviewer-by-reviewer sections.",
-    files: "main.tex",
-    mainTex: String.raw`\documentclass[11pt]{article}
-
-\usepackage[margin=1in]{geometry}
-\usepackage{xcolor}
-\usepackage{enumitem}
-\usepackage{microtype}
-\usepackage{hyperref}
-
-\newcommand{\reviewer}[1]{\section*{Reviewer #1}}
-\newcommand{\comment}[1]{\paragraph{Comment.}\emph{#1}}
-\newcommand{\response}[1]{\paragraph{Response.}#1}
-
-\title{Response to Reviewers}
-\author{Paper ID or Title}
-\date{\today}
-
-\begin{document}
-
-\maketitle
-
-We thank the reviewers for their careful reading and constructive feedback.
-
-\reviewer{1}
-
-\comment{Summarize the first reviewer comment.}
-
-\response{Describe the change made in the manuscript and point to the relevant section, figure, or line.}
-
-\reviewer{2}
-
-\comment{Summarize the second reviewer comment.}
-
-\response{Explain the clarification, added experiment, or limitation.}
-
-\section*{Summary of Changes}
-
-\begin{itemize}[leftmargin=*]
-  \item Added or revised the main contribution.
-  \item Clarified the experimental setup.
-  \item Updated the discussion of limitations.
-\end{itemize}
-
-\end{document}
-`,
-  },
-];
-
-function isColorTheme(value: unknown): value is ColorTheme {
-  return colorThemeOptions.some((theme) => theme.id === value);
-}
-
-function monacoThemeFor(theme: ColorTheme): string {
-  return `latexdo-${theme}`;
-}
-
-interface AppSettings {
-  colorTheme: ColorTheme;
-  defaultEngine: Engine;
-  editorFontSize: number;
-  wordWrap: boolean;
-  minimap: boolean;
-  showRawLatex: boolean;
-  projectTreeIgnoredNames: string[];
-  projectTreeMaxDepth: number;
-  projectTreeMaxEntries: number;
-
-  // Conference Checker
-  conferenceCheckerEnabled: boolean;
-  conferenceTemplate: string;
-  conferenceChecker_customTemplate: string;
-  checkMargins: boolean;
-  checkFontSize: boolean;
-  checkAbstractLength: boolean;
-  checkKeywords: boolean;
-  checkFigureReferences: boolean;
-  checkTableReferences: boolean;
-  checkBibliographyStyle: boolean;
-  checkPageLimit: boolean;
-  checkAuthorInfo: boolean;
-  checkAnonymousReview: boolean;
-  checkFigureResolution: boolean;
-  checkEmbeddedFonts: boolean;
-  checkCompiler: boolean;
-
-  // Citation Assistant
-  citationAssistantEnabled: boolean;
-  detectMissingCitations: boolean;
-  detectUnusedEntries: boolean;
-  detectDuplicateReferences: boolean;
-  detectBrokenLinks: boolean;
-  suggestCitationKeys: boolean;
-  importMetadataSources: boolean;
-  warnOldCitations: boolean;
-
-  // Structure Assistant
-  structureAssistantEnabled: boolean;
-  checkAbstractStructure: boolean;
-  checkIntroductionStructure: boolean;
-  checkRelatedWorkLength: boolean;
-  checkMethodReproducibility: boolean;
-  checkResultsDiscussion: boolean;
-  checkConclusionClaims: boolean;
-
-  // Reproducibility Checklist
-  reproducibilityEnabled: boolean;
-  checkCodeLink: boolean;
-  checkDatasetLink: boolean;
-  checkLicenseMentioned: boolean;
-  checkHyperparameters: boolean;
-  checkHardwareDetails: boolean;
-  checkRandomSeeds: boolean;
-  checkEvaluationMetrics: boolean;
-
-  // Acronym Manager
-  acronymManagerEnabled: boolean;
-  checkUndefinedAcronym: boolean;
-  checkDuplicateDefinition: boolean;
-  checkUnusedAcronym: boolean;
-  checkConflictingDefinitions: boolean;
-
-  // Error Doctor
-  errorDoctorEnabled: boolean;
-  explainErrors: boolean;
-  suggestFixes: boolean;
-  autoFixCommon: boolean;
-
-  // TikZ Converter
-  tikzConverterEnabled: boolean;
-  tikzConverterAutoOpen: boolean;
-
-  // Notation Manager
-  notationManagerEnabled: boolean;
-  detectNotation: boolean;
-  detectNotationConflicts: boolean;
-  detectUndefinedNotation: boolean;
-
-  // PDF Compliance
-  pdfComplianceEnabled: boolean;
-  checkPageCount: boolean;
-  maxPages: number;
-  checkUnreferencedFigures: boolean;
-  checkUncitedCitations: boolean;
-  checkSectionsWithNoCitations: boolean;
-  checkType3Fonts: boolean;
-  checkAbstractWordCount: boolean;
-  maxAbstractWords: number;
-
-  // Rebuttal Generator
-  rebuttalManuscriptId: string;
-  rebuttalManuscriptTitle: string;
-  rebuttalFontSize: string;
-  rebuttalPaperSize: string;
-  rebuttalFontFamily: string;
-  rebuttalIncludeDiff: boolean;
-  rebuttalDiffOldFile: string;
-  rebuttalDiffNewFile: string;
-  rebuttalDiffOutput: string;
-  rebuttalSummary: string;
-  rebuttalSpacing: boolean;
-  rebuttalColorPrimary: string;
-  rebuttalColorAccent: string;
-}
-
-const settingsStorageKey = "latexdo.settings";
-const installedExtensionsStorageKey = "latexdo.extensions.installed.v1";
-const cloudClientNameKey = "latexdo.cloud.clientName";
-const defaultProjectTreeIgnoredNames = [
-  ".git",
-  ".latexdo",
-  "node_modules",
-  "dist",
-  "dist-electron",
-  "release",
-  "coverage",
-  "out",
-  ".cache",
-];
-const minProjectTreeDepth = 1;
-const maxProjectTreeDepth = 50;
-const minProjectTreeEntries = 100;
-const maxProjectTreeEntries = 100_000;
-const defaultSettings: AppSettings = {
-  colorTheme: "graphite",
-  defaultEngine: "pdflatex",
-  editorFontSize: 13.5,
-  wordWrap: true,
-  minimap: true,
-  showRawLatex: true,
-  projectTreeIgnoredNames: defaultProjectTreeIgnoredNames,
-  projectTreeMaxDepth: 8,
-  projectTreeMaxEntries: 5000,
-
-  conferenceCheckerEnabled: true,
-  conferenceTemplate: "ieee",
-  conferenceChecker_customTemplate: "",
-  checkMargins: true,
-  checkFontSize: true,
-  checkAbstractLength: true,
-  checkKeywords: true,
-  checkFigureReferences: true,
-  checkTableReferences: true,
-  checkBibliographyStyle: true,
-  checkPageLimit: true,
-  checkAuthorInfo: true,
-  checkAnonymousReview: true,
-  checkFigureResolution: true,
-  checkEmbeddedFonts: true,
-  checkCompiler: true,
-
-  citationAssistantEnabled: true,
-  detectMissingCitations: true,
-  detectUnusedEntries: true,
-  detectDuplicateReferences: true,
-  detectBrokenLinks: true,
-  suggestCitationKeys: true,
-  importMetadataSources: true,
-  warnOldCitations: true,
-
-  structureAssistantEnabled: true,
-  checkAbstractStructure: true,
-  checkIntroductionStructure: true,
-  checkRelatedWorkLength: true,
-  checkMethodReproducibility: true,
-  checkResultsDiscussion: true,
-  checkConclusionClaims: true,
-
-  reproducibilityEnabled: true,
-  checkCodeLink: true,
-  checkDatasetLink: true,
-  checkLicenseMentioned: true,
-  checkHyperparameters: true,
-  checkHardwareDetails: true,
-  checkRandomSeeds: true,
-  checkEvaluationMetrics: true,
-
-  acronymManagerEnabled: true,
-  checkUndefinedAcronym: true,
-  checkDuplicateDefinition: true,
-  checkUnusedAcronym: true,
-  checkConflictingDefinitions: true,
-
-  errorDoctorEnabled: true,
-  explainErrors: true,
-  suggestFixes: true,
-  autoFixCommon: true,
-
-  tikzConverterEnabled: true,
-  tikzConverterAutoOpen: true,
-
-  notationManagerEnabled: true,
-  detectNotation: true,
-  detectNotationConflicts: true,
-  detectUndefinedNotation: true,
-
-  pdfComplianceEnabled: true,
-  checkPageCount: true,
-  maxPages: 8,
-  checkUnreferencedFigures: true,
-  checkUncitedCitations: true,
-  checkSectionsWithNoCitations: true,
-  checkType3Fonts: true,
-  checkAbstractWordCount: true,
-  maxAbstractWords: 250,
-
-  rebuttalManuscriptId: "COLA-D-26-00101",
-  rebuttalManuscriptTitle:
-    "Evaluating Package-Level Scoping Strategies for Repository-Level Code Completion in Pharo",
-  rebuttalFontSize: "11pt",
-  rebuttalPaperSize: "a4paper",
-  rebuttalFontFamily: "newpx",
-  rebuttalIncludeDiff: true,
-  rebuttalDiffOldFile: "oldfile.tex",
-  rebuttalDiffNewFile: "newfile.tex",
-  rebuttalDiffOutput: "diff.tex",
-  rebuttalSummary:
-    "We revised the manuscript substantially in response to the reviewers' comments.",
-  rebuttalSpacing: true,
-  rebuttalColorPrimary: "1E1E1E",
-  rebuttalColorAccent: "D9D9D9",
-};
-
-function normalizeBookmarkLines(lines: unknown): number[] {
-  if (!Array.isArray(lines)) {
-    return [];
-  }
-  return [
-    ...new Set(
-      lines
-        .filter((line): line is number => Number.isInteger(line) && line > 0)
-        .sort((left, right) => left - right),
-    ),
-  ];
-}
-
-function loadBookmarkStore(): BookmarkStore {
-  try {
-    const parsed = JSON.parse(
-      window.localStorage.getItem(bookmarksStorageKey) ?? "{}",
-    ) as Record<string, unknown>;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return {};
-    }
-    return Object.fromEntries(
-      Object.entries(parsed)
-        .map(([key, lines]) => [key, normalizeBookmarkLines(lines)] as const)
-        .filter(([, lines]) => lines.length > 0),
-    );
-  } catch {
-    return {};
-  }
-}
-
-function loadCollaborationDisplayName(): string {
-  return (window.localStorage.getItem(cloudClientNameKey) ?? "").slice(0, 80);
-}
-
-function storeCollaborationDisplayName(value: string): string {
-  const normalized = value.slice(0, 80);
-  window.localStorage.setItem(cloudClientNameKey, normalized);
-  return normalized;
-}
-
-function bookmarkKey(projectKey: string, relativePath: string): string {
-  return `${projectKey || "workspace"}:${normalizeRelativePath(relativePath)}`;
-}
-
-function loadInstalledExtensionIds(): string[] {
-  try {
-    const parsed = JSON.parse(
-      window.localStorage.getItem(installedExtensionsStorageKey) ?? "[]",
-    ) as unknown;
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    return [
-      ...new Set(
-        parsed.filter(
-          (value): value is string =>
-            typeof value === "string" && /^[a-z0-9][a-z0-9.-]{2,80}$/.test(value),
-        ),
-      ),
-    ];
-  } catch {
-    return [];
-  }
-}
-
-function hasInvalidProjectTreeIgnoreNameCharacter(value: string): boolean {
-  for (const character of value) {
-    const code = character.charCodeAt(0);
-    if (character === "/" || character === "\\" || code < 32 || code === 127) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function normalizeProjectTreeIgnoredNames(value: unknown): string[] {
-  const values =
-    typeof value === "string"
-      ? value.split(/\r?\n|,/)
-      : Array.isArray(value)
-        ? value
-        : defaultProjectTreeIgnoredNames;
-  return [
-    ...new Set(
-      values
-        .filter((entry): entry is string => typeof entry === "string")
-        .map((entry) => entry.trim())
-        .filter(
-          (entry) =>
-            entry.length > 0 &&
-            entry.length <= 128 &&
-            entry !== "." &&
-            entry !== ".." &&
-            !hasInvalidProjectTreeIgnoreNameCharacter(entry),
-        )
-        .slice(0, 256),
-    ),
-  ];
-}
-
-function parseProjectTreeIgnoredNamesText(value: string): string[] {
-  return normalizeProjectTreeIgnoredNames(value);
-}
-
-function boundedInteger(
-  value: unknown,
-  fallback: number,
-  min: number,
-  max: number,
-): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return fallback;
-  }
-  return Math.min(max, Math.max(min, Math.round(value)));
-}
-
-function projectListOptionsFromSettings(settings: AppSettings): ProjectListOptions {
-  return {
-    ignoredNames: settings.projectTreeIgnoredNames,
-    maxDepth: settings.projectTreeMaxDepth,
-    maxEntries: settings.projectTreeMaxEntries,
-  };
-}
-
-function hasProjectTreeLimitEntry(entries: ProjectEntry[]): boolean {
-  return entries.some(
-    (entry) =>
-      entry.limited ||
-      (entry.children ? hasProjectTreeLimitEntry(entry.children) : false),
-  );
-}
-
-function matchesExtensionQuery(
-  extension: LatexDoExtensionManifest,
-  query: string,
-): boolean {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return true;
-  }
-
-  return [
-    extension.name,
-    extension.description,
-    extension.author,
-    categoryLabel(extension.category),
-    ...extension.tags,
-  ]
-    .join(" ")
-    .toLowerCase()
-    .includes(normalizedQuery);
-}
-
-function extensionTemplateToWelcomeTemplate(
-  extension: LatexDoExtensionManifest,
-  template: LatexDoExtensionTemplate,
-): WelcomeTemplate {
-  return {
-    id: `${extension.id}:${template.id}`,
-    name: template.name,
-    summary: template.summary,
-    files: template.files,
-    mainTex: template.mainTex,
-    bibTex: template.bibTex,
-  };
-}
-
-function buildAutoCompileSignature(
-  documents: OpenDocument[],
-  projectId: string,
-  rootFile: string,
-  engine: Engine,
-): string {
-  return JSON.stringify({
-    projectId,
-    rootFile,
-    engine,
-    dirtyDocuments: documents
-      .filter((document) => document.content !== document.savedContent)
-      .map((document) => ({
-        relativePath: document.relativePath,
-        content: document.content,
-      })),
-  });
-}
-
-function loadSettings(): AppSettings {
-  try {
-    const saved = JSON.parse(
-      window.localStorage.getItem(settingsStorageKey) ?? "{}",
-    ) as Partial<AppSettings>;
-    const defaultEngine =
-      saved.defaultEngine === "xelatex" || saved.defaultEngine === "lualatex"
-        ? saved.defaultEngine
-        : "pdflatex";
-
-    return {
-      colorTheme: isColorTheme(saved.colorTheme)
-        ? saved.colorTheme
-        : defaultSettings.colorTheme,
-      defaultEngine,
-      editorFontSize:
-        typeof saved.editorFontSize === "number" &&
-        saved.editorFontSize >= 11 &&
-        saved.editorFontSize <= 22
-          ? saved.editorFontSize
-          : defaultSettings.editorFontSize,
-      wordWrap:
-        typeof saved.wordWrap === "boolean" ? saved.wordWrap : defaultSettings.wordWrap,
-      minimap:
-        typeof saved.minimap === "boolean" ? saved.minimap : defaultSettings.minimap,
-      showRawLatex:
-        typeof saved.showRawLatex === "boolean"
-          ? saved.showRawLatex
-          : defaultSettings.showRawLatex,
-      projectTreeIgnoredNames: normalizeProjectTreeIgnoredNames(
-        saved.projectTreeIgnoredNames,
-      ),
-      projectTreeMaxDepth: boundedInteger(
-        saved.projectTreeMaxDepth,
-        defaultSettings.projectTreeMaxDepth,
-        minProjectTreeDepth,
-        maxProjectTreeDepth,
-      ),
-      projectTreeMaxEntries: boundedInteger(
-        saved.projectTreeMaxEntries,
-        defaultSettings.projectTreeMaxEntries,
-        minProjectTreeEntries,
-        maxProjectTreeEntries,
-      ),
-
-      conferenceCheckerEnabled:
-        typeof saved.conferenceCheckerEnabled === "boolean"
-          ? saved.conferenceCheckerEnabled
-          : defaultSettings.conferenceCheckerEnabled,
-      conferenceTemplate:
-        typeof saved.conferenceTemplate === "string"
-          ? saved.conferenceTemplate
-          : defaultSettings.conferenceTemplate,
-      conferenceChecker_customTemplate:
-        typeof saved.conferenceChecker_customTemplate === "string"
-          ? saved.conferenceChecker_customTemplate
-          : defaultSettings.conferenceChecker_customTemplate,
-      checkMargins:
-        typeof saved.checkMargins === "boolean"
-          ? saved.checkMargins
-          : defaultSettings.checkMargins,
-      checkFontSize:
-        typeof saved.checkFontSize === "boolean"
-          ? saved.checkFontSize
-          : defaultSettings.checkFontSize,
-      checkAbstractLength:
-        typeof saved.checkAbstractLength === "boolean"
-          ? saved.checkAbstractLength
-          : defaultSettings.checkAbstractLength,
-      checkKeywords:
-        typeof saved.checkKeywords === "boolean"
-          ? saved.checkKeywords
-          : defaultSettings.checkKeywords,
-      checkFigureReferences:
-        typeof saved.checkFigureReferences === "boolean"
-          ? saved.checkFigureReferences
-          : defaultSettings.checkFigureReferences,
-      checkTableReferences:
-        typeof saved.checkTableReferences === "boolean"
-          ? saved.checkTableReferences
-          : defaultSettings.checkTableReferences,
-      checkBibliographyStyle:
-        typeof saved.checkBibliographyStyle === "boolean"
-          ? saved.checkBibliographyStyle
-          : defaultSettings.checkBibliographyStyle,
-      checkPageLimit:
-        typeof saved.checkPageLimit === "boolean"
-          ? saved.checkPageLimit
-          : defaultSettings.checkPageLimit,
-      checkAuthorInfo:
-        typeof saved.checkAuthorInfo === "boolean"
-          ? saved.checkAuthorInfo
-          : defaultSettings.checkAuthorInfo,
-      checkAnonymousReview:
-        typeof saved.checkAnonymousReview === "boolean"
-          ? saved.checkAnonymousReview
-          : defaultSettings.checkAnonymousReview,
-      checkFigureResolution:
-        typeof saved.checkFigureResolution === "boolean"
-          ? saved.checkFigureResolution
-          : defaultSettings.checkFigureResolution,
-      checkEmbeddedFonts:
-        typeof saved.checkEmbeddedFonts === "boolean"
-          ? saved.checkEmbeddedFonts
-          : defaultSettings.checkEmbeddedFonts,
-      checkCompiler:
-        typeof saved.checkCompiler === "boolean"
-          ? saved.checkCompiler
-          : defaultSettings.checkCompiler,
-
-      citationAssistantEnabled:
-        typeof saved.citationAssistantEnabled === "boolean"
-          ? saved.citationAssistantEnabled
-          : defaultSettings.citationAssistantEnabled,
-      detectMissingCitations:
-        typeof saved.detectMissingCitations === "boolean"
-          ? saved.detectMissingCitations
-          : defaultSettings.detectMissingCitations,
-      detectUnusedEntries:
-        typeof saved.detectUnusedEntries === "boolean"
-          ? saved.detectUnusedEntries
-          : defaultSettings.detectUnusedEntries,
-      detectDuplicateReferences:
-        typeof saved.detectDuplicateReferences === "boolean"
-          ? saved.detectDuplicateReferences
-          : defaultSettings.detectDuplicateReferences,
-      detectBrokenLinks:
-        typeof saved.detectBrokenLinks === "boolean"
-          ? saved.detectBrokenLinks
-          : defaultSettings.detectBrokenLinks,
-      suggestCitationKeys:
-        typeof saved.suggestCitationKeys === "boolean"
-          ? saved.suggestCitationKeys
-          : defaultSettings.suggestCitationKeys,
-      importMetadataSources:
-        typeof saved.importMetadataSources === "boolean"
-          ? saved.importMetadataSources
-          : defaultSettings.importMetadataSources,
-      warnOldCitations:
-        typeof saved.warnOldCitations === "boolean"
-          ? saved.warnOldCitations
-          : defaultSettings.warnOldCitations,
-
-      structureAssistantEnabled:
-        typeof saved.structureAssistantEnabled === "boolean"
-          ? saved.structureAssistantEnabled
-          : defaultSettings.structureAssistantEnabled,
-      checkAbstractStructure:
-        typeof saved.checkAbstractStructure === "boolean"
-          ? saved.checkAbstractStructure
-          : defaultSettings.checkAbstractStructure,
-      checkIntroductionStructure:
-        typeof saved.checkIntroductionStructure === "boolean"
-          ? saved.checkIntroductionStructure
-          : defaultSettings.checkIntroductionStructure,
-      checkRelatedWorkLength:
-        typeof saved.checkRelatedWorkLength === "boolean"
-          ? saved.checkRelatedWorkLength
-          : defaultSettings.checkRelatedWorkLength,
-      checkMethodReproducibility:
-        typeof saved.checkMethodReproducibility === "boolean"
-          ? saved.checkMethodReproducibility
-          : defaultSettings.checkMethodReproducibility,
-      checkResultsDiscussion:
-        typeof saved.checkResultsDiscussion === "boolean"
-          ? saved.checkResultsDiscussion
-          : defaultSettings.checkResultsDiscussion,
-      checkConclusionClaims:
-        typeof saved.checkConclusionClaims === "boolean"
-          ? saved.checkConclusionClaims
-          : defaultSettings.checkConclusionClaims,
-
-      reproducibilityEnabled:
-        typeof saved.reproducibilityEnabled === "boolean"
-          ? saved.reproducibilityEnabled
-          : defaultSettings.reproducibilityEnabled,
-      checkCodeLink:
-        typeof saved.checkCodeLink === "boolean"
-          ? saved.checkCodeLink
-          : defaultSettings.checkCodeLink,
-      checkDatasetLink:
-        typeof saved.checkDatasetLink === "boolean"
-          ? saved.checkDatasetLink
-          : defaultSettings.checkDatasetLink,
-      checkLicenseMentioned:
-        typeof saved.checkLicenseMentioned === "boolean"
-          ? saved.checkLicenseMentioned
-          : defaultSettings.checkLicenseMentioned,
-      checkHyperparameters:
-        typeof saved.checkHyperparameters === "boolean"
-          ? saved.checkHyperparameters
-          : defaultSettings.checkHyperparameters,
-      checkHardwareDetails:
-        typeof saved.checkHardwareDetails === "boolean"
-          ? saved.checkHardwareDetails
-          : defaultSettings.checkHardwareDetails,
-      checkRandomSeeds:
-        typeof saved.checkRandomSeeds === "boolean"
-          ? saved.checkRandomSeeds
-          : defaultSettings.checkRandomSeeds,
-      checkEvaluationMetrics:
-        typeof saved.checkEvaluationMetrics === "boolean"
-          ? saved.checkEvaluationMetrics
-          : defaultSettings.checkEvaluationMetrics,
-
-      acronymManagerEnabled:
-        typeof saved.acronymManagerEnabled === "boolean"
-          ? saved.acronymManagerEnabled
-          : defaultSettings.acronymManagerEnabled,
-      checkUndefinedAcronym:
-        typeof saved.checkUndefinedAcronym === "boolean"
-          ? saved.checkUndefinedAcronym
-          : defaultSettings.checkUndefinedAcronym,
-      checkDuplicateDefinition:
-        typeof saved.checkDuplicateDefinition === "boolean"
-          ? saved.checkDuplicateDefinition
-          : defaultSettings.checkDuplicateDefinition,
-      checkUnusedAcronym:
-        typeof saved.checkUnusedAcronym === "boolean"
-          ? saved.checkUnusedAcronym
-          : defaultSettings.checkUnusedAcronym,
-      checkConflictingDefinitions:
-        typeof saved.checkConflictingDefinitions === "boolean"
-          ? saved.checkConflictingDefinitions
-          : defaultSettings.checkConflictingDefinitions,
-
-      errorDoctorEnabled:
-        typeof saved.errorDoctorEnabled === "boolean"
-          ? saved.errorDoctorEnabled
-          : defaultSettings.errorDoctorEnabled,
-      explainErrors:
-        typeof saved.explainErrors === "boolean"
-          ? saved.explainErrors
-          : defaultSettings.explainErrors,
-      suggestFixes:
-        typeof saved.suggestFixes === "boolean"
-          ? saved.suggestFixes
-          : defaultSettings.suggestFixes,
-      autoFixCommon:
-        typeof saved.autoFixCommon === "boolean"
-          ? saved.autoFixCommon
-          : defaultSettings.autoFixCommon,
-
-      tikzConverterEnabled:
-        typeof saved.tikzConverterEnabled === "boolean"
-          ? saved.tikzConverterEnabled
-          : defaultSettings.tikzConverterEnabled,
-      tikzConverterAutoOpen:
-        typeof saved.tikzConverterAutoOpen === "boolean"
-          ? saved.tikzConverterAutoOpen
-          : defaultSettings.tikzConverterAutoOpen,
-
-      notationManagerEnabled:
-        typeof saved.notationManagerEnabled === "boolean"
-          ? saved.notationManagerEnabled
-          : defaultSettings.notationManagerEnabled,
-      detectNotation:
-        typeof saved.detectNotation === "boolean"
-          ? saved.detectNotation
-          : defaultSettings.detectNotation,
-      detectNotationConflicts:
-        typeof saved.detectNotationConflicts === "boolean"
-          ? saved.detectNotationConflicts
-          : defaultSettings.detectNotationConflicts,
-      detectUndefinedNotation:
-        typeof saved.detectUndefinedNotation === "boolean"
-          ? saved.detectUndefinedNotation
-          : defaultSettings.detectUndefinedNotation,
-
-      pdfComplianceEnabled:
-        typeof saved.pdfComplianceEnabled === "boolean"
-          ? saved.pdfComplianceEnabled
-          : defaultSettings.pdfComplianceEnabled,
-      checkPageCount:
-        typeof saved.checkPageCount === "boolean"
-          ? saved.checkPageCount
-          : defaultSettings.checkPageCount,
-      maxPages:
-        typeof saved.maxPages === "number" ? saved.maxPages : defaultSettings.maxPages,
-      checkUnreferencedFigures:
-        typeof saved.checkUnreferencedFigures === "boolean"
-          ? saved.checkUnreferencedFigures
-          : defaultSettings.checkUnreferencedFigures,
-      checkUncitedCitations:
-        typeof saved.checkUncitedCitations === "boolean"
-          ? saved.checkUncitedCitations
-          : defaultSettings.checkUncitedCitations,
-      checkSectionsWithNoCitations:
-        typeof saved.checkSectionsWithNoCitations === "boolean"
-          ? saved.checkSectionsWithNoCitations
-          : defaultSettings.checkSectionsWithNoCitations,
-      checkType3Fonts:
-        typeof saved.checkType3Fonts === "boolean"
-          ? saved.checkType3Fonts
-          : defaultSettings.checkType3Fonts,
-      checkAbstractWordCount:
-        typeof saved.checkAbstractWordCount === "boolean"
-          ? saved.checkAbstractWordCount
-          : defaultSettings.checkAbstractWordCount,
-      maxAbstractWords:
-        typeof saved.maxAbstractWords === "number"
-          ? saved.maxAbstractWords
-          : defaultSettings.maxAbstractWords,
-
-      rebuttalManuscriptId:
-        typeof saved.rebuttalManuscriptId === "string"
-          ? saved.rebuttalManuscriptId
-          : defaultSettings.rebuttalManuscriptId,
-      rebuttalManuscriptTitle:
-        typeof saved.rebuttalManuscriptTitle === "string"
-          ? saved.rebuttalManuscriptTitle
-          : defaultSettings.rebuttalManuscriptTitle,
-      rebuttalFontSize:
-        typeof saved.rebuttalFontSize === "string"
-          ? saved.rebuttalFontSize
-          : defaultSettings.rebuttalFontSize,
-      rebuttalPaperSize:
-        typeof saved.rebuttalPaperSize === "string"
-          ? saved.rebuttalPaperSize
-          : defaultSettings.rebuttalPaperSize,
-      rebuttalFontFamily:
-        typeof saved.rebuttalFontFamily === "string"
-          ? saved.rebuttalFontFamily
-          : defaultSettings.rebuttalFontFamily,
-      rebuttalIncludeDiff:
-        typeof saved.rebuttalIncludeDiff === "boolean"
-          ? saved.rebuttalIncludeDiff
-          : defaultSettings.rebuttalIncludeDiff,
-      rebuttalDiffOldFile:
-        typeof saved.rebuttalDiffOldFile === "string"
-          ? saved.rebuttalDiffOldFile
-          : defaultSettings.rebuttalDiffOldFile,
-      rebuttalDiffNewFile:
-        typeof saved.rebuttalDiffNewFile === "string"
-          ? saved.rebuttalDiffNewFile
-          : defaultSettings.rebuttalDiffNewFile,
-      rebuttalDiffOutput:
-        typeof saved.rebuttalDiffOutput === "string"
-          ? saved.rebuttalDiffOutput
-          : defaultSettings.rebuttalDiffOutput,
-      rebuttalSummary:
-        typeof saved.rebuttalSummary === "string"
-          ? saved.rebuttalSummary
-          : defaultSettings.rebuttalSummary,
-      rebuttalSpacing:
-        typeof saved.rebuttalSpacing === "boolean"
-          ? saved.rebuttalSpacing
-          : defaultSettings.rebuttalSpacing,
-      rebuttalColorPrimary:
-        typeof saved.rebuttalColorPrimary === "string"
-          ? saved.rebuttalColorPrimary
-          : defaultSettings.rebuttalColorPrimary,
-      rebuttalColorAccent:
-        typeof saved.rebuttalColorAccent === "string"
-          ? saved.rebuttalColorAccent
-          : defaultSettings.rebuttalColorAccent,
-    };
-  } catch {
-    return defaultSettings;
-  }
-}
-
-const supportedExtensions = new Set([
-  "tex",
-  "bib",
-  "sty",
-  "cls",
-  "asy",
-  "txt",
-  "md",
-  "json",
-]);
-const MAX_PROOFREAD_CHARS = 20_000;
-
-const legacyHistoryStorageRelativePath = ".latexdo/history.json";
-const historyIndexRelativePath = ".latexdo/history/recent.json";
-const historySnapshotStorageDirectory = ".latexdo/history/snapshots";
-const bookmarksStorageKey = "latexdo.bookmarks.v1";
-const legacyReviewPlaceholderText = "Add your comment here...";
-const maxHistorySnapshotsPerFile = 500;
-const maxHistorySnapshotsInHotIndex = 5000;
-const historyAutoCaptureDelayMs = 5000;
-
-function fileName(filePath: string): string {
-  return fileNameForDisplay(filePath);
-}
-
-function gitDisplayPath(filePath: string): string {
-  const displayPath = filePath.includes(" -> ")
-    ? (filePath.split(" -> ").pop() ?? filePath)
-    : filePath;
-  return pathForDisplay(displayPath);
-}
-
-function fileDirectory(filePath: string): string {
-  const displayPath = gitDisplayPath(filePath);
-  const parts = displayPath.split(/[/\\]/);
-  parts.pop();
-  return parts.join("/") || ".";
-}
-
-function gitStatusCode(entry: GitChangeEntry, area: GitChangeArea): string {
-  const status = area === "staged" ? entry.indexStatus : entry.worktreeStatus;
-  switch (status) {
-    case "added":
-      return "A";
-    case "deleted":
-      return "D";
-    case "renamed":
-      return "R";
-    case "copied":
-      return "C";
-    case "untracked":
-      return "U";
-    case "conflicted":
-      return "!";
-    case "type-changed":
-      return "T";
-    case "modified":
-    case "unmodified":
-    default:
-      return "M";
-  }
-}
-
-function gitStatusLabel(code: string): string {
-  switch (code) {
-    case "A":
-      return "Added";
-    case "D":
-      return "Deleted";
-    case "R":
-      return "Renamed";
-    case "C":
-      return "Copied";
-    case "U":
-      return "Untracked";
-    case "!":
-      return "Conflict";
-    case "T":
-      return "Type changed";
-    case "M":
-    default:
-      return "Modified";
-  }
-}
-
-function gitDiffTabLabel(session: GitDiffSession): string {
-  const name = fileName(session.relativePath);
-  return `${name} (${session.originalLabel}) ↔ ${name} (${session.modifiedLabel})`;
-}
-
-function formatGitDate(value: string): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return value;
-  return new Intl.DateTimeFormat(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-  }).format(timestamp);
-}
-
-function gitStatusClass(code: string): string {
-  switch (code) {
-    case "A":
-      return "added";
-    case "D":
-      return "deleted";
-    case "R":
-    case "C":
-      return "renamed";
-    case "U":
-      return "untracked";
-    case "!":
-      return "conflict";
-    case "T":
-      return "type-changed";
-    case "M":
-    default:
-      return "modified";
-  }
-}
-
-const gitStatusSortOrder = new Map(
-  ["!", "M", "A", "D", "R", "C", "T", "U"].map((code, index) => [code, index]),
-);
-
-function gitChangeGroupLabel(directory: string): string {
-  return directory === "." ? "Project root" : directory;
-}
-
-function gitChangeGroupDomId(area: GitChangeArea, directory: string): string {
-  const safeDirectory = directory
-    .replace(/[^a-z0-9_-]+/gi, "-")
-    .replace(/^-+|-+$/g, "");
-  return `scm-${area}-group-${safeDirectory || "root"}`;
-}
-
-function compareGitChangeEntries(left: GitChangeEntry, right: GitChangeEntry): number {
-  return gitDisplayPath(left.path).localeCompare(
-    gitDisplayPath(right.path),
-    undefined,
-    {
-      numeric: true,
-      sensitivity: "base",
-    },
-  );
-}
-
-function compareGitChangeDirectories(left: string, right: string): number {
-  if (left === right) return 0;
-  if (left === ".") return -1;
-  if (right === ".") return 1;
-  return left.localeCompare(right, undefined, {
-    numeric: true,
-    sensitivity: "base",
-  });
-}
-
-function summarizeGitChangeStatuses(
-  entries: GitChangeEntry[],
-  area: GitChangeArea,
-): GitChangeGroupStatus[] {
-  const counts = new Map<string, number>();
-  for (const entry of entries) {
-    const code = gitStatusCode(entry, area);
-    counts.set(code, (counts.get(code) ?? 0) + 1);
-  }
-
-  return [...counts.entries()]
-    .sort(
-      ([left], [right]) =>
-        (gitStatusSortOrder.get(left) ?? 99) - (gitStatusSortOrder.get(right) ?? 99) ||
-        left.localeCompare(right),
-    )
-    .map(([code, count]) => ({
-      code,
-      count,
-      label: gitStatusLabel(code),
-      className: gitStatusClass(code),
-    }));
-}
-
-function groupGitChanges(
-  entries: GitChangeEntry[],
-  area: GitChangeArea,
-): GitChangeGroup[] {
-  const byDirectory = new Map<string, GitChangeEntry[]>();
-  for (const entry of entries) {
-    const directory = fileDirectory(entry.path);
-    const groupEntries = byDirectory.get(directory);
-    if (groupEntries) {
-      groupEntries.push(entry);
-    } else {
-      byDirectory.set(directory, [entry]);
-    }
-  }
-
-  return [...byDirectory.entries()]
-    .sort(([left], [right]) => compareGitChangeDirectories(left, right))
-    .map(([directory, groupEntries]) => ({
-      id: `${area}:${directory}`,
-      domId: gitChangeGroupDomId(area, directory),
-      directory,
-      label: gitChangeGroupLabel(directory),
-      entries: [...groupEntries].sort(compareGitChangeEntries),
-      statusCounts: summarizeGitChangeStatuses(groupEntries, area),
-    }));
-}
-
-function gitDiffStatusCode(status: GitCommitFile["status"]): string {
-  switch (status) {
-    case "added":
-      return "A";
-    case "deleted":
-      return "D";
-    case "renamed":
-      return "R";
-    case "copied":
-      return "C";
-    case "modified":
-    default:
-      return "M";
-  }
-}
-
-function getSetting(key: string, settings: AppSettings): boolean {
-  return (settings as unknown as Record<string, boolean>)[key] ?? true;
-}
-
-function languageFor(name: string): string {
-  const extension = name.split(".").pop()?.toLowerCase();
-  if (extension === "tex" || extension === "sty" || extension === "cls") {
-    return "latex";
-  }
-  if (extension === "asy") {
-    return "asymptote";
-  }
-  if (extension === "bib") {
-    return "bibtex";
-  }
-  if (extension === "json") {
-    return "json";
-  }
-  if (extension === "md") {
-    return "markdown";
-  }
-  return "plaintext";
-}
-
-function flattenEntries(entries: ProjectEntry[]): ProjectEntry[] {
-  return entries.flatMap((entry) => [
-    entry,
-    ...(entry.children ? flattenEntries(entry.children) : []),
-  ]);
-}
-
-function formatDuration(milliseconds: number): string {
-  return milliseconds < 1000
-    ? `${milliseconds} ms`
-    : `${(milliseconds / 1000).toFixed(1)} s`;
-}
-
-function normalizeRelativePath(filePath: string): string {
-  return filePath.replaceAll("\\", "/").replace(/(^|\/)\.\//g, "$1");
-}
-
-function lineColumnAtOffset(
-  content: string,
-  offset: number,
-): {
-  line: number;
-  column: number;
-} {
-  let line = 1;
-  let column = 1;
-  const safeOffset = Math.max(0, Math.min(content.length, offset));
-
-  for (let index = 0; index < safeOffset; index += 1) {
-    if (content[index] === "\n") {
-      line += 1;
-      column = 1;
-    } else {
-      column += 1;
-    }
-  }
-
-  return { line, column };
-}
-
-function findProofreadingChunkRange(
-  content: string,
-  targetOffset: number,
-  maxChars = MAX_PROOFREAD_CHARS,
-): { start: number; end: number; truncated: boolean } {
-  if (content.length <= maxChars) {
-    return { start: 0, end: content.length, truncated: false };
-  }
-
-  const safeTarget = Math.max(0, Math.min(content.length, targetOffset));
-  let start = Math.max(0, safeTarget - Math.floor(maxChars / 2));
-  let end = Math.min(content.length, start + maxChars);
-  start = Math.max(0, end - maxChars);
-
-  const earliestStart = Math.max(0, end - maxChars);
-  const paragraphStart = content.lastIndexOf("\n\n", safeTarget);
-  if (paragraphStart >= earliestStart) {
-    start = paragraphStart + 2;
-  }
-
-  const latestEnd = Math.min(content.length, start + maxChars);
-  const paragraphEnd = content.indexOf("\n\n", safeTarget);
-  if (paragraphEnd !== -1 && paragraphEnd > start && paragraphEnd <= latestEnd) {
-    end = paragraphEnd;
-  } else {
-    const newlineEnd = content.lastIndexOf("\n", latestEnd);
-    if (newlineEnd > safeTarget && newlineEnd > start) {
-      end = newlineEnd + 1;
-    } else {
-      end = latestEnd;
-    }
-  }
-
-  while (start < end && /\s/.test(content[start]!)) start += 1;
-  while (end > start && /\s/.test(content[end - 1]!)) end -= 1;
-
-  if (start >= end) {
-    start = Math.max(0, Math.min(safeTarget, content.length - maxChars));
-    end = Math.min(content.length, start + maxChars);
-  }
-
-  return { start, end, truncated: true };
-}
-
-function buildProofreadingRequest(
-  content: string,
-  targetOffset: number,
-): {
-  content: string;
-  options?: {
-    baseLine: number;
-    baseColumn: number;
-    originalTextLength: number;
-    truncated: boolean;
-  };
-} {
-  const range = findProofreadingChunkRange(content, targetOffset);
-  if (!range.truncated) {
-    return { content };
-  }
-
-  const base = lineColumnAtOffset(content, range.start);
-  return {
-    content: content.slice(range.start, range.end),
-    options: {
-      baseLine: base.line,
-      baseColumn: base.column,
-      originalTextLength: content.length,
-      truncated: true,
-    },
-  };
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => {
-    switch (character) {
-      case "&":
-        return "&amp;";
-      case "<":
-        return "&lt;";
-      case ">":
-        return "&gt;";
-      case '"':
-        return "&quot;";
-      default:
-        return "&#39;";
-    }
-  });
-}
-
-function joinRelativePath(directory: string, name: string): string {
-  return normalizeRelativePath(`${directory}/${name}`).replace(/^\/+/, "");
-}
-
-function createPathInDirectory(directory: string, name: string): string {
-  const normalizedDirectory = normalizeRelativePath(directory).replace(/\/+$/, "");
-  return normalizedDirectory ? joinRelativePath(normalizedDirectory, name) : name;
-}
-
-const imageFileExtensions = new Set(["png", "jpg", "jpeg", "pdf", "svg"]);
-
-function isImagePath(filePath: string): boolean {
-  const extension = filePath.split(".").pop()?.toLowerCase();
-  return Boolean(extension && imageFileExtensions.has(extension));
-}
-
-function latexSafeImagePath(filePath: string): string {
-  return normalizeRelativePath(filePath).replace(/^\/+/, "");
-}
-
-function latexFigureLabel(filePath: string): string {
-  const baseName = fileName(filePath)
-    .replace(/\.[^.]+$/, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return baseName || "image";
-}
-
-function latexFigureCode(filePath: string): string {
-  const imagePath = latexSafeImagePath(filePath);
-  const label = latexFigureLabel(filePath);
-  return [
-    "\\begin{figure}[ht]",
-    "\\centering",
-    `\\includegraphics[width=0.8\\textwidth]{${imagePath}}`,
-    "\\caption{}",
-    `\\label{fig:${label}}`,
-    "\\end{figure}",
-  ].join("\n");
-}
-
-function uniqueWords(values: string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
-}
-
-function supportsProofreading(name: string): boolean {
-  const extension = name.split(".").pop()?.toLowerCase();
-  return extension === "tex" || extension === "md" || extension === "txt";
-}
-
-function gitDiscardStatusMessage(
-  result: GitDiscardResult,
-  successMessage: string,
-): string {
-  if (!result.discarded) {
-    return "Discard canceled.";
-  }
-  return result.recoveryPatch
-    ? `${successMessage}. Recovery patch saved at ${result.recoveryPatch}`
-    : successMessage;
-}
-
-function wordColumn(
-  lineContent: string,
-  word: string | undefined,
-  preferredColumn: number,
-): { column: number; length: number } {
-  if (!word) {
-    return { column: Math.max(1, preferredColumn), length: 0 };
-  }
-
-  const matches: number[] = [];
-  let index = lineContent.indexOf(word);
-  while (index >= 0) {
-    matches.push(index);
-    index = lineContent.indexOf(word, index + word.length);
-  }
-  if (!matches.length) {
-    return { column: Math.max(1, preferredColumn), length: 0 };
-  }
-
-  const preferredIndex = Math.max(0, preferredColumn - 1);
-  const nearest = matches.reduce((best, candidate) =>
-    Math.abs(candidate - preferredIndex) < Math.abs(best - preferredIndex)
-      ? candidate
-      : best,
-  );
-  return { column: nearest + 1, length: word.length };
-}
-
-function diagnosticHeadline(diagnostic: Diagnostic): string {
-  if (diagnostic.title) {
-    return diagnostic.title;
-  }
-
-  const normalized = diagnostic.message.toLowerCase();
-
-  if (normalized.includes("undefined control sequence")) {
-    return "Unknown LaTeX command";
-  }
-  if (normalized.includes("missing $ inserted")) {
-    return "Math content is outside math mode";
-  }
-  if (normalized.includes("extra }, or forgotten $")) {
-    return "Unbalanced braces or math delimiters";
-  }
-  if (normalized.includes("runaway argument")) {
-    return "A command argument was never closed";
-  }
-  if (normalized.includes("file `") && normalized.includes("' not found")) {
-    return "A required file is missing";
-  }
-  if (normalized.includes("citation") && normalized.includes("undefined")) {
-    return "Citation key not found";
-  }
-  if (normalized.includes("reference") && normalized.includes("undefined")) {
-    return "Reference could not be resolved";
-  }
-  if (normalized.includes("there were undefined references")) {
-    return "Some references are unresolved";
-  }
-  if (normalized.includes("there were undefined citations")) {
-    return "Some citations are unresolved";
-  }
-
-  return diagnostic.severity === "warning" ? "LaTeX warning" : "LaTeX error";
-}
-
-function diagnosticLocationLabel(diagnostic: Diagnostic, rootFile: string): string {
-  const file = diagnostic.file || rootFile;
-  return `${file}:${diagnostic.line}:${Math.max(1, diagnostic.column)}`;
-}
-
-function diagnosticMarkerMessage(diagnostic: Diagnostic): string {
-  return [
-    diagnosticHeadline(diagnostic),
-    diagnosticExplicitProblem(diagnostic)
-      ? `Problem: ${diagnosticExplicitProblem(diagnostic)}`
-      : undefined,
-    diagnostic.detail,
-    diagnostic.originReason
-      ? `Why this location: ${diagnostic.originReason}`
-      : undefined,
-    diagnostic.reportedLine && diagnostic.reportedLine !== diagnostic.line
-      ? `LaTeX stopped later at line ${diagnostic.reportedLine}, column ${
-          diagnostic.reportedColumn ?? 1
-        }.`
-      : undefined,
-    diagnostic.suggestion ? `Suggested fix: ${diagnostic.suggestion}` : undefined,
-    diagnostic.compilerExcerpt
-      ? `Compiler excerpt:\n${diagnostic.compilerExcerpt}`
-      : undefined,
-    `Compiler message: ${diagnostic.message}`,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-}
-
-function diagnosticExplicitProblem(diagnostic: Diagnostic): string | null {
-  if (diagnostic.highlightText) {
-    return diagnostic.highlightText;
-  }
-
-  const message = diagnostic.message.trim();
-  return message ? message : null;
-}
-
-function diagnosticAccuracyLabel(diagnostic: Diagnostic): string {
-  const confidence = diagnostic.locationConfidence
-    ? ` · ${diagnostic.locationConfidence}%`
-    : "";
-  if (diagnostic.locationAccuracy === "exact") {
-    return `Exact origin${confidence}`;
-  }
-  if (diagnostic.locationAccuracy === "inferred") {
-    return `Likely origin${confidence}`;
-  }
-  return `Compiler line${confidence}`;
-}
-
-function diagnosticContextContent(
-  diagnostic: Diagnostic,
-  text: string,
-  focus: boolean,
-): React.ReactNode {
-  if (!focus) {
-    return text || " ";
-  }
-
-  const start = Math.min(text.length, Math.max(0, diagnostic.column - 1));
-  const end = Math.min(
-    text.length,
-    Math.max(start + 1, (diagnostic.endColumn ?? diagnostic.column + 1) - 1),
-  );
-
-  return (
-    <>
-      {text.slice(0, start)}
-      <mark>{text.slice(start, end) || " "}</mark>
-      {text.slice(end)}
-    </>
-  );
-}
-
-function positionOffset(content: string, line: number, column: number): number {
-  const starts = [0];
-  for (let index = 0; index < content.length; index += 1) {
-    if (content[index] === "\n") {
-      starts.push(index + 1);
-    }
-  }
-
-  const lineIndex = Math.min(starts.length - 1, Math.max(0, line - 1));
-  const lineStart = starts[lineIndex];
-  const nextLineStart = starts[lineIndex + 1] ?? content.length + 1;
-  const lineEnd = Math.max(
-    lineStart,
-    nextLineStart - (content[nextLineStart - 2] === "\r" ? 2 : 1),
-  );
-  return Math.min(lineEnd, lineStart + Math.max(0, column - 1));
-}
-
-function applyTextFix(content: string, fix: DiagnosticFix): string | null {
-  const start = positionOffset(content, fix.line, fix.column);
-  const end = positionOffset(content, fix.endLine, fix.endColumn);
-  if (content.slice(start, Math.max(start, end)) !== fix.expectedText) {
-    return null;
-  }
-  return (
-    content.slice(0, start) + fix.replacement + content.slice(Math.max(start, end))
-  );
-}
-
-function historySnapshotId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function historySnapshotContentPath(snapshotId: string): string {
-  const safeId = snapshotId.replace(/[^a-z0-9_-]+/gi, "-").slice(0, 96);
-  return `${historySnapshotStorageDirectory}/${safeId || "snapshot"}.txt`;
-}
-
-function textHash(content: string): string {
-  let hash = 2166136261;
-  for (let index = 0; index < content.length; index += 1) {
-    hash ^= content.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
-}
-
-function historyContentPreview(content: string): string {
-  const line = content
-    .split(/\r?\n/)
-    .map((part) => part.trim())
-    .find(Boolean);
-  return (line ?? "Empty document").slice(0, 240);
-}
-
-function snapshotContentKey(snapshot: Partial<DocumentHistorySnapshot>): string {
-  if (snapshot.contentHash) return snapshot.contentHash;
-  if (typeof snapshot.content === "string") return textHash(snapshot.content);
-  return "";
-}
-
-function removeLegacyReviewPlaceholders(chats: ReviewChat[]): {
-  chats: ReviewChat[];
-  changed: boolean;
-} {
-  let changed = false;
-  const cleaned = chats.map((chat) => {
-    const comments = chat.comments.filter((comment) => {
-      const keep =
-        comment.text.trim() !== legacyReviewPlaceholderText ||
-        comment.author !== "Reviewer";
-      if (!keep) {
-        changed = true;
-      }
-      return keep;
-    });
-    return comments.length === chat.comments.length ? chat : { ...chat, comments };
-  });
-
-  return { chats: cleaned, changed };
-}
-
-function normalizeRebuttalItem(item: RebuttalItem): RebuttalItem {
-  return {
-    ...item,
-    insertedInTex: Boolean(item.insertedInTex),
-  };
-}
-
-function buildHistorySnapshot(
-  document: OpenDocument,
-  source: DocumentHistorySnapshot["source"],
-): DocumentHistorySnapshot {
-  const timestamp = Date.now();
-  const sourceLabel =
-    source === "manual"
-      ? "Manual checkpoint"
-      : source === "restore"
-        ? "Before restore"
-        : "Auto checkpoint";
-  const id = historySnapshotId();
-  return {
-    id,
-    filePath: document.relativePath,
-    fileName: document.name,
-    label: sourceLabel,
-    content: document.content,
-    contentPath: historySnapshotContentPath(id),
-    contentHash: textHash(document.content),
-    contentSize: document.content.length,
-    preview: historyContentPreview(document.content),
-    timestamp,
-    source,
-  };
-}
-
-function normalizeHistorySnapshot(value: unknown): DocumentHistorySnapshot | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const item = value as Partial<DocumentHistorySnapshot>;
-  if (
-    typeof item.id !== "string" ||
-    typeof item.filePath !== "string" ||
-    (typeof item.content !== "string" && typeof item.contentPath !== "string") ||
-    typeof item.timestamp !== "number"
-  ) {
-    return null;
-  }
-  const content = typeof item.content === "string" ? item.content : undefined;
-
-  return {
-    id: item.id,
-    filePath: item.filePath,
-    fileName:
-      typeof item.fileName === "string" ? item.fileName : fileName(item.filePath),
-    label: typeof item.label === "string" ? item.label : "History state",
-    content,
-    contentPath:
-      typeof item.contentPath === "string"
-        ? item.contentPath
-        : historySnapshotContentPath(item.id),
-    contentHash:
-      typeof item.contentHash === "string"
-        ? item.contentHash
-        : content
-          ? textHash(content)
-          : undefined,
-    contentSize:
-      typeof item.contentSize === "number"
-        ? item.contentSize
-        : content
-          ? content.length
-          : undefined,
-    preview:
-      typeof item.preview === "string"
-        ? item.preview
-        : content
-          ? historyContentPreview(content)
-          : undefined,
-    timestamp: item.timestamp,
-    source:
-      item.source === "manual" || item.source === "restore" || item.source === "auto"
-        ? item.source
-        : "auto",
-  };
-}
-
-function pruneHistorySnapshots(
-  snapshots: DocumentHistorySnapshot[],
-): DocumentHistorySnapshot[] {
-  const sorted = [...snapshots].sort((a, b) => b.timestamp - a.timestamp);
-  const perFileCount = new Map<string, number>();
-  const kept: DocumentHistorySnapshot[] = [];
-
-  for (const snapshot of sorted) {
-    if (kept.length >= maxHistorySnapshotsInHotIndex) {
-      break;
-    }
-    const count = perFileCount.get(snapshot.filePath) ?? 0;
-    if (count >= maxHistorySnapshotsPerFile) {
-      continue;
-    }
-    perFileCount.set(snapshot.filePath, count + 1);
-    kept.push(snapshot);
-  }
-
-  return kept;
-}
-
-const updateCheckIntervalMs = 6 * 60 * 60 * 1000;
-
-function formatUpdateDate(value?: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function formatUpdateBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  let value = bytes;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  const precision = Number.isInteger(value) || value >= 10 || unitIndex === 0 ? 0 : 1;
-  return `${value.toFixed(precision)} ${units[unitIndex]}`;
-}
-
-function formatUpdateProgress(progress: UpdateDownloadProgress): string {
-  const fallback = progress.message ?? "Preparing update";
-  if (progress.status !== "downloading") {
-    return fallback;
-  }
-
-  const parts: string[] = [];
-  if (progress.percent !== null) {
-    parts.push(`${Math.round(progress.percent)}%`);
-  }
-  if (progress.totalBytes !== null) {
-    parts.push(
-      `${formatUpdateBytes(progress.transferredBytes)} of ${formatUpdateBytes(
-        progress.totalBytes,
-      )}`,
-    );
-  } else if (progress.transferredBytes > 0) {
-    parts.push(formatUpdateBytes(progress.transferredBytes));
-  }
-
-  return parts.length ? `${fallback} (${parts.join(", ")})` : fallback;
-}
-
 export default function App() {
   const collaboration = useCollaborationContext();
-  const [projectId, setProjectId] = useState("");
-  const [projectPath, setProjectPath] = useState("");
-  const [projectEntries, setProjectEntries] = useState<ProjectEntry[]>([]);
-  const [hideProjectEntries, setHideProjectEntries] = useState(true);
-  const [documents, setDocuments] = useState<OpenDocument[]>([]);
-  const [activePath, setActivePath] = useState("");
-  const [welcomeOpen, setWelcomeOpen] = useState(true);
-  const [createDialog, setCreateDialog] = useState<"file" | "folder" | null>(null);
-  const [createPath, setCreatePath] = useState("");
-  const [createError, setCreateError] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [docxImporting, setDocxImporting] = useState(false);
-  const [markdownImporting, setMarkdownImporting] = useState(false);
-  const [templateCreating, setTemplateCreating] = useState<string | null>(null);
-  const [settings, setSettings] = useState<AppSettings>(loadSettings);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState("editor");
-  const [extensionCatalog, setExtensionCatalog] = useState(fallbackExtensionCatalog);
-  const [extensionCatalogSource, setExtensionCatalogSource] = useState<
-    "remote" | "fallback"
-  >("fallback");
-  const [extensionCatalogLoading, setExtensionCatalogLoading] = useState(false);
-  const [extensionCatalogError, setExtensionCatalogError] = useState("");
-  const [extensionQuery, setExtensionQuery] = useState("");
-  const [extensionCategoryFilter, setExtensionCategoryFilter] = useState<
-    ExtensionCategory | "all"
-  >("all");
-  const [installedExtensionIds, setInstalledExtensionIds] = useState<string[]>(
-    loadInstalledExtensionIds,
-  );
+  const {
+    projectId,
+    setProjectId,
+    projectPath,
+    setProjectPath,
+    projectEntries,
+    setProjectEntries,
+    hideProjectEntries,
+    setHideProjectEntries,
+    welcomeOpen,
+    setWelcomeOpen,
+    createDialog,
+    setCreateDialog,
+    createPath,
+    setCreatePath,
+    createError,
+    setCreateError,
+    creating,
+    setCreating,
+    docxImporting,
+    setDocxImporting,
+    markdownImporting,
+    setMarkdownImporting,
+    templateCreating,
+    setTemplateCreating,
+  } = useProject();
+  const { documents, setDocuments, activePath, setActivePath, activeDocument } =
+    useDocuments();
+  const [statusMessage, setStatusMessage] = useState("Welcome to LatexDo");
+  const {
+    settings,
+    setSettings,
+    settingsOpen,
+    setSettingsOpen,
+    settingsTab,
+    setSettingsTab,
+    extensionCatalog,
+    extensionCatalogSource,
+    extensionCatalogLoading,
+    extensionCatalogError,
+    extensionQuery,
+    setExtensionQuery,
+    extensionCategoryFilter,
+    setExtensionCategoryFilter,
+    installedExtensionIdSet,
+    installedExtensions,
+    installedExtensionSnippets,
+    availableWelcomeTemplates,
+    filteredExtensions,
+    refreshExtensionCatalog,
+    installExtension,
+    uninstallExtension,
+  } = useSettings(setStatusMessage);
   const [activeSidebar, setActiveSidebar] = useState<SidebarView>("explorer");
   const editorPreviewRef = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<Engine>(settings.defaultEngine);
@@ -2237,39 +371,56 @@ export default function App() {
   const [projectSearchLoading, setProjectSearchLoading] = useState(false);
   const [projectSearchError, setProjectSearchError] = useState("");
   const [projectSearchRefreshNonce, setProjectSearchRefreshNonce] = useState(0);
-  const [pdfComplianceDiagnostics, setPdfComplianceDiagnostics] = useState<
-    Diagnostic[]
-  >([]);
+  const {
+    pdfComplianceDiagnostics,
+    setPdfComplianceDiagnostics,
+    compileResult,
+    setCompileResult,
+    compileJobCount,
+    setCompileJobCount,
+    compiling,
+  } = useCompile();
   const [panelVisible, setPanelVisible] = useState(false);
   const [activePanel, setActivePanel] = useState<PanelKind>("problems");
   const [terminalStarted, setTerminalStarted] = useState(false);
   const [panelHeight, setPanelHeight] = useState(200);
-  const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
-  const [compileJobCount, setCompileJobCount] = useState(0);
-  const compiling = compileJobCount > 0;
-  const [gitStatus, setGitStatus] = useState<GitStatusSummary | null>(null);
-  const [gitLoading, setGitLoading] = useState(false);
-  const [gitCommitMessage, setGitCommitMessage] = useState("");
-  const [gitActionBusy, setGitActionBusy] = useState<string | null>(null);
-  const [gitDiffSession, setGitDiffSession] = useState<GitDiffSession | null>(null);
-  const [gitBlameLines, setGitBlameLines] = useState<GitBlameLine[]>([]);
-  const [gitRepoHistory, setGitRepoHistory] = useState<GitHistorySummary | null>(null);
-  const [gitFileHistory, setGitFileHistory] = useState<GitHistorySummary | null>(null);
-  const [gitFileHistoryPath, setGitFileHistoryPath] = useState<string | null>(null);
-  const [selectedGitCommitHash, setSelectedGitCommitHash] = useState<string | null>(
-    null,
-  );
-  const [gitCommitDetails, setGitCommitDetails] = useState<GitCommitDetails | null>(
-    null,
-  );
-  const [gitCommitParentHash, setGitCommitParentHash] = useState("");
-  const [collapsedGitGroups, setCollapsedGitGroups] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [gitContextMenu, setGitContextMenu] = useState<GitContextMenuState | null>(
-    null,
-  );
-  const [documentHistory, setDocumentHistory] = useState<DocumentHistorySnapshot[]>([]);
+  const {
+    gitStatus,
+    setGitStatus,
+    gitLoading,
+    setGitLoading,
+    gitCommitMessage,
+    setGitCommitMessage,
+    gitActionBusy,
+    setGitActionBusy,
+    gitDiffSession,
+    setGitDiffSession,
+    gitBlameLines,
+    setGitBlameLines,
+    gitRepoHistory,
+    setGitRepoHistory,
+    setGitFileHistory,
+    gitFileHistoryPath,
+    setGitFileHistoryPath,
+    selectedGitCommitHash,
+    setSelectedGitCommitHash,
+    gitCommitDetails,
+    setGitCommitDetails,
+    gitCommitParentHash,
+    setGitCommitParentHash,
+    collapsedGitGroups,
+    setCollapsedGitGroups,
+    gitContextMenu,
+    setGitContextMenu,
+    modifiedFiles,
+    stagedGitEntries,
+    unstagedGitEntries,
+    stagedGitGroups,
+    unstagedGitGroups,
+    gitRepositoryCommits,
+    gitFileCommits,
+  } = useGit();
+  const { documentHistory, setDocumentHistory } = useHistory();
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const [updateProgress, setUpdateProgress] = useState<UpdateDownloadProgress | null>(
     null,
@@ -2279,18 +430,27 @@ export default function App() {
   const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(
     null,
   );
-  const [spellCheckerSettings, setSpellCheckerSettings] =
-    useState<SpellCheckerSettings | null>(null);
-  const [spellCheckerLoading, setSpellCheckerLoading] = useState(false);
-  const [spellCheckerError, setSpellCheckerError] = useState("");
-  const [spellCheckerWordDraft, setSpellCheckerWordDraft] = useState("");
-  const [spellCheckerLanguageQuery, setSpellCheckerLanguageQuery] = useState("");
-  const [proofreadingSettings, setProofreadingSettings] =
-    useState<ProofreadingSettings | null>(null);
-  const [proofreadingResult, setProofreadingResult] =
-    useState<ProofreadingResult | null>(null);
-  const [proofreadingLoading, setProofreadingLoading] = useState(false);
-  const [proofreadingError, setProofreadingError] = useState("");
+  const {
+    spellCheckerSettings,
+    setSpellCheckerSettings,
+    spellCheckerLoading,
+    setSpellCheckerLoading,
+    spellCheckerError,
+    setSpellCheckerError,
+    spellCheckerWordDraft,
+    setSpellCheckerWordDraft,
+    spellCheckerLanguageQuery,
+    setSpellCheckerLanguageQuery,
+    proofreadingSettings,
+    setProofreadingSettings,
+    proofreadingResult,
+    setProofreadingResult,
+    proofreadingLoading,
+    setProofreadingLoading,
+    proofreadingError,
+    setProofreadingError,
+    filteredSpellCheckerLanguages,
+  } = useProofreading();
   const [assistantDiagnostics, setAssistantDiagnostics] = useState<Diagnostic[]>([]);
   const [errorDoctorResult, setErrorDoctorResult] = useState<ErrorDoctorResult | null>(
     null,
@@ -2315,7 +475,6 @@ export default function App() {
   const [joinTokenDraft, setJoinTokenDraft] = useState("");
   const [joinCollaborationBusy, setJoinCollaborationBusy] = useState(false);
   const [joinCollaborationError, setJoinCollaborationError] = useState("");
-  const [statusMessage, setStatusMessage] = useState("Welcome to LatexDo");
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
   const [pdfTarget, setPdfTarget] = useState<SyncTexPdfLocation | null>(null);
   const [lastPdfLocation, setLastPdfLocation] = useState<PdfClickLocation | null>(null);
@@ -2376,7 +535,6 @@ export default function App() {
     .runtime;
   const collaborationAvailable = runtime === "cloud" || runtime === "desktop";
 
-  const activeDocument = documents.find((document) => document.path === activePath);
   const activeDocumentIsLatex = activeDocument
     ? languageFor(activeDocument.name) === "latex"
     : false;
@@ -2477,40 +635,6 @@ export default function App() {
     () => analyzeCitationLibrary(citationProjectFiles),
     [citationProjectFiles],
   );
-  const modifiedFiles = gitStatus?.entries.length ?? 0;
-  const stagedGitEntries = useMemo(
-    () => (gitStatus?.entries ?? []).filter((entry) => entry.staged),
-    [gitStatus],
-  );
-  const unstagedGitEntries = useMemo(
-    () => (gitStatus?.entries ?? []).filter((entry) => entry.unstaged),
-    [gitStatus],
-  );
-  const stagedGitGroups = useMemo(
-    () => groupGitChanges(stagedGitEntries, "staged"),
-    [stagedGitEntries],
-  );
-  const unstagedGitGroups = useMemo(
-    () => groupGitChanges(unstagedGitEntries, "changes"),
-    [unstagedGitEntries],
-  );
-  const gitRepositoryCommits = useMemo(
-    () => (Array.isArray(gitRepoHistory?.commits) ? gitRepoHistory.commits : []),
-    [gitRepoHistory],
-  );
-  const gitFileCommits = useMemo(
-    () => (Array.isArray(gitFileHistory?.commits) ? gitFileHistory.commits : []),
-    [gitFileHistory],
-  );
-  const filteredSpellCheckerLanguages = useMemo(() => {
-    const query = spellCheckerLanguageQuery.trim().toLowerCase();
-    const languages = spellCheckerSettings?.availableLanguages ?? [];
-    if (!query) {
-      return languages;
-    }
-
-    return languages.filter((language) => language.toLowerCase().includes(query));
-  }, [spellCheckerLanguageQuery, spellCheckerSettings?.availableLanguages]);
   const rootFileExists = useMemo(
     () =>
       hasVisibleProject &&
@@ -2525,79 +649,6 @@ export default function App() {
     () => buildAutoCompileSignature(documents, projectId, rootFile, engine),
     [documents, engine, projectId, rootFile],
   );
-  const installedExtensionIdSet = useMemo(
-    () => new Set(installedExtensionIds),
-    [installedExtensionIds],
-  );
-  const installedExtensions = useMemo(
-    () =>
-      extensionCatalog.extensions.filter((extension) =>
-        installedExtensionIdSet.has(extension.id),
-      ),
-    [extensionCatalog.extensions, installedExtensionIdSet],
-  );
-  const installedExtensionSnippets = useMemo(
-    () =>
-      installedExtensions.flatMap((extension) => extension.contributes.snippets ?? []),
-    [installedExtensions],
-  );
-  const installedExtensionTemplates = useMemo(
-    () =>
-      installedExtensions.flatMap((extension) =>
-        (extension.contributes.templates ?? []).map((template) =>
-          extensionTemplateToWelcomeTemplate(extension, template),
-        ),
-      ),
-    [installedExtensions],
-  );
-  const availableWelcomeTemplates = useMemo(
-    () => [...welcomeTemplates, ...installedExtensionTemplates],
-    [installedExtensionTemplates],
-  );
-  const filteredExtensions = useMemo(
-    () =>
-      extensionCatalog.extensions.filter(
-        (extension) =>
-          (extensionCategoryFilter === "all" ||
-            extension.category === extensionCategoryFilter) &&
-          matchesExtensionQuery(extension, extensionQuery),
-      ),
-    [extensionCatalog.extensions, extensionCategoryFilter, extensionQuery],
-  );
-  const refreshExtensionCatalog = useCallback(async () => {
-    setExtensionCatalogLoading(true);
-    try {
-      const result = await fetchExtensionCatalog();
-      setExtensionCatalog(result.catalog);
-      setExtensionCatalogSource(result.source);
-      setExtensionCatalogError(result.error ?? "");
-    } finally {
-      setExtensionCatalogLoading(false);
-    }
-  }, []);
-  const installExtension = useCallback((extension: LatexDoExtensionManifest) => {
-    setInstalledExtensionIds((current) =>
-      current.includes(extension.id) ? current : [...current, extension.id],
-    );
-
-    if (extension.contributes.featureFlags) {
-      setSettings(
-        (current) =>
-          ({
-            ...current,
-            ...extension.contributes.featureFlags,
-          }) as AppSettings,
-      );
-    }
-
-    setStatusMessage(`Installed ${extension.name}`);
-  }, []);
-  const uninstallExtension = useCallback((extension: LatexDoExtensionManifest) => {
-    setInstalledExtensionIds((current) =>
-      current.filter((extensionId) => extensionId !== extension.id),
-    );
-    setStatusMessage(`Uninstalled ${extension.name}`);
-  }, []);
 
   useEffect(() => {
     documentsRef.current = documents;
@@ -2645,23 +696,8 @@ export default function App() {
   }, [settings]);
 
   useEffect(() => {
-    window.localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
-  }, [settings]);
-
-  useEffect(() => {
-    window.localStorage.setItem(
-      installedExtensionsStorageKey,
-      JSON.stringify(installedExtensionIds),
-    );
-  }, [installedExtensionIds]);
-
-  useEffect(() => {
     window.localStorage.setItem(bookmarksStorageKey, JSON.stringify(bookmarkStore));
   }, [bookmarkStore]);
-
-  useEffect(() => {
-    void refreshExtensionCatalog();
-  }, [refreshExtensionCatalog]);
 
   useEffect(() => {
     if (!projectId || hideProjectEntries) {

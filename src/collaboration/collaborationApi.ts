@@ -3,8 +3,25 @@ import type { CollaborationRoomOptions } from "./collaborationTypes";
 
 const defaultCollaborationApiBaseUrl = "https://collaborations.latexdo.org";
 
+function normalizedCollaborationApiBaseUrl(value: unknown): string {
+  const candidate = typeof value === "string" ? value.trim() : "";
+  if (!candidate) {
+    return defaultCollaborationApiBaseUrl;
+  }
+
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return defaultCollaborationApiBaseUrl;
+    }
+    return url.toString();
+  } catch {
+    return defaultCollaborationApiBaseUrl;
+  }
+}
+
 export function collaborationApiBaseUrl(): string {
-  return import.meta.env.VITE_LATEXDO_API_BASE_URL || defaultCollaborationApiBaseUrl;
+  return normalizedCollaborationApiBaseUrl(import.meta.env.VITE_LATEXDO_API_BASE_URL);
 }
 
 export function collaborationHeaders(shareToken?: string): Record<string, string> {
@@ -29,7 +46,7 @@ export function projectShareToken(
 }
 
 export function collaborationWebSocketUrl(options: CollaborationRoomOptions): string {
-  const base = options.apiBaseUrl || window.location.origin;
+  const base = normalizedCollaborationApiBaseUrl(options.apiBaseUrl);
   const url = new URL(
     `/api/projects/${encodeURIComponent(options.projectId)}/files/collaborate`,
     base,
