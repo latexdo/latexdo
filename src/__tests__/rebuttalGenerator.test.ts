@@ -62,10 +62,10 @@ describe("generateRebuttalLetter", () => {
       modificationMade: "Accuracy is 95% on data_set_A & data_set_B.",
     };
 
-    const tex = generateRebuttalLetter(
-      [item],
-      { ...settings, manuscriptTitle: "neural_nets & robustness #1" },
-    );
+    const tex = generateRebuttalLetter([item], {
+      ...settings,
+      manuscriptTitle: "neural_nets & robustness #1",
+    });
 
     expect(tex).toContain("neural\\_nets \\& robustness \\#1");
     expect(tex).toContain("Accuracy is 90\\% on data\\_set\\_A.");
