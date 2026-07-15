@@ -83,6 +83,19 @@ for (const requiredReleaseControl of [
     );
   }
 }
+for (const requiredWebsiteControl of [
+  "id: deploy_mode",
+  "cloudflare_enabled=false",
+  "Direct Cloudflare deploy skipped: missing CLOUDFLARE_API_TOKEN",
+  "if: ${{ steps.deploy_mode.outputs.cloudflare_enabled == 'true' }}",
+  "npm run deploy",
+]) {
+  if (!websiteWorkflow.includes(requiredWebsiteControl)) {
+    throw new Error(
+      `Website deployment control is missing: ${requiredWebsiteControl}`,
+    );
+  }
+}
 for (const requiredRenewalControl of [
   "schedule:",
   "workflow_dispatch:",

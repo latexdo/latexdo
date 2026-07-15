@@ -133,3 +133,8 @@ and notarization secrets, `WINDOWS_CERTIFICATE_P12`,
 the base64-encoded PEM private key matching `build/update-public-key.pem`.
 Unsigned packages remain available only as short-lived CI artifacts and are
 never published by the release workflow.
+
+The standalone website workflow requires `LATEXDO_WEBSITE_TOKEN` to push the
+generated static site to `latexdo/latexdo.org`. `CLOUDFLARE_API_TOKEN` enables
+the direct Wrangler deploy in that workflow; when it is absent, Cloudflare
+Workers Builds is expected to deploy the pushed website repository commit.

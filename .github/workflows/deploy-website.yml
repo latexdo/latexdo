@@ -55,20 +55,32 @@ jobs:
           rm -rf website/node_modules website/src website/.github
           rm -f website/package.json website/package-lock.json website/tsconfig.json website/.gitignore
 
-      - name: Validate deployment credentials
+      - name: Select deploy mode
+        id: deploy_mode
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           LATEXDO_WEBSITE_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
         shell: bash
         run: |
-          missing=()
-          for name in CLOUDFLARE_API_TOKEN LATEXDO_WEBSITE_TOKEN; do
-            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
-          done
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::Refusing a partial website deployment. Missing: ${missing[*]}"
+          if [ -z "$LATEXDO_WEBSITE_TOKEN" ]; then
+            echo "::error::Missing LATEXDO_WEBSITE_TOKEN; cannot update latexdo.org."
             exit 1
           fi
+
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "cloudflare_enabled=false" >> "$GITHUB_OUTPUT"
+            cloudflare_message="Direct Cloudflare deploy skipped: missing CLOUDFLARE_API_TOKEN. Cloudflare Workers Builds should deploy the pushed latexdo.org commit."
+          else
+            echo "cloudflare_enabled=true" >> "$GITHUB_OUTPUT"
+            cloudflare_message="Direct Cloudflare deploy enabled."
+          fi
+
+          {
+            echo "### Website deploy mode"
+            echo
+            echo "- latexdo.org repo update enabled."
+            echo "- ${cloudflare_message}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Checkout latexdo.org
         uses: actions/checkout@v6
@@ -117,6 +129,7 @@ jobs:
           echo "Cloudflare Workers Builds will deploy the pushed website repo, or the next step will deploy with Wrangler when CLOUDFLARE_API_TOKEN is configured."
 
       - name: Deploy website to Cloudflare
+        if: ${{ steps.deploy_mode.outputs.cloudflare_enabled == 'true' }}
         working-directory: latexdo-org-site
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
