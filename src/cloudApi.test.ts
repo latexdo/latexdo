@@ -38,12 +38,16 @@ function installFilePicker(
 
 describe("cloud API request policies", () => {
   beforeEach(() => {
+    vi.stubEnv("VITE_LATEXDO_API_BASE_URL", "https://collaborations.latexdo.org");
+    resetCollaborationApiBaseUrlForTests();
     window.localStorage.clear();
     window.history.replaceState(null, "", "/");
     installStoredSession();
   });
 
   afterEach(() => {
+    resetCollaborationApiBaseUrlForTests();
+    vi.unstubAllEnvs();
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
