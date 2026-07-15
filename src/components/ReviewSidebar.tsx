@@ -1,5 +1,13 @@
 import React from "react";
-import { Check, FilePlus2, MessageSquare, Plus, Send, Trash2, User } from "lucide-react";
+import {
+  Check,
+  FilePlus2,
+  MessageSquare,
+  Plus,
+  Send,
+  Trash2,
+  User,
+} from "lucide-react";
 import type { ReviewChat } from "../types";
 
 interface ReviewSidebarProps {
@@ -117,7 +125,10 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
 
               <div className="review-chat-footer">
                 {chat.insertedInTex ? (
-                  <span className="review-chat-in-tex" title="This thread is in the TeX source">
+                  <span
+                    className="review-chat-in-tex"
+                    title="This thread is in the TeX source"
+                  >
                     <Check size={13} />
                     <span>In TeX source</span>
                   </span>

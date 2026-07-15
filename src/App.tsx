@@ -6473,7 +6473,9 @@ ${macroEnd}
       }
       const comments = chat.comments.filter((comment) => comment.text.trim());
       if (comments.length === 0) {
-        setStatusMessage("Write at least one message before inserting the thread into TeX.");
+        setStatusMessage(
+          "Write at least one message before inserting the thread into TeX.",
+        );
         return;
       }
 
@@ -6501,7 +6503,9 @@ ${macroEnd}
           offset += lines[line - 1].length + 1;
         }
         const candidate = offset + chat.selection.startColumn - 1;
-        if (content.slice(candidate, candidate + selectionText.length) === selectionText) {
+        if (
+          content.slice(candidate, candidate + selectionText.length) === selectionText
+        ) {
           start = candidate;
         }
       }
@@ -7483,7 +7487,9 @@ ${macroEnd}
                       onAddComment={handleAddReviewComment}
                       onDeleteChat={handleDeleteReviewChat}
                       onJumpToSelection={handleJumpToReviewSelection}
-                      onInsertIntoTex={(chat) => void handleInsertReviewChatIntoTex(chat)}
+                      onInsertIntoTex={(chat) =>
+                        void handleInsertReviewChatIntoTex(chat)
+                      }
                     />
                   ) : (
                     <RebuttalSidebar
