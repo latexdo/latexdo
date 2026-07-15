@@ -4557,6 +4557,54 @@ ${macroEnd}
     }
 
     let cancelled = false;
+    const sendPresence = async () => {
+      try {
+        const active = documentsRef.current.find(
+          (document) => document.path === activePathRef.current,
+        );
+        const state = await window.latexdo.updateCollaborationPresence(
+          projectId,
+          active?.relativePath ?? null,
+        );
+        if (!cancelled) {
+          setCollaborationState(state);
+          if (state.currentUserRole) {
+            setCurrentUserRole(state.currentUserRole);
+          }
+          if (typeof state.isAdmin === "boolean") {
+            setIsProjectAdmin(state.isAdmin);
+          }
+        }
+      } catch {
+        // Presence is opportunistic; editing should keep working offline.
+      }
+    };
+
+    void sendPresence();
+    const interval = window.setInterval(() => void sendPresence(), 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [
+    activePath,
+    collaborationAvailable,
+    collaborationState.enabled,
+    hideProjectEntries,
+    projectId,
+  ]);
+
+  useEffect(() => {
+    if (
+      !projectId ||
+      !collaborationAvailable ||
+      !collaborationState.enabled ||
+      hideProjectEntries
+    ) {
+      return;
+    }
+
+    let cancelled = false;
     let requestInFlight = false;
     const reconcileProjectTree = async () => {
       if (requestInFlight || document.visibilityState === "hidden") {

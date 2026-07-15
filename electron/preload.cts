@@ -35,44 +35,20 @@ import type {
 } from "./types.js" with { "resolution-mode": "import" };
 
 const collaborationApiBaseUrl =
-  process.env.VITE_LATEXDO_API_BASE_URL?.trim() || "https://editor.latexdo.org";
+  process.env.VITE_LATEXDO_API_BASE_URL?.trim() || "https://collaborations.latexdo.org";
 const hostedEditorUrl = "https://editor.latexdo.org/";
 const cloudSessionKey = "latexdo.cloud.session";
 const cloudClientKey = "latexdo.cloud.client";
 const cloudClientNameKey = "latexdo.cloud.clientName";
 const cloudShareTokensKey = "latexdo.cloud.shareTokens";
-const cloudSessionTokenKey = "latexdo.cloud.sessionToken";
-const cloudSessionExpiresAtKey = "latexdo.cloud.sessionExpiresAt";
-const cloudSessionRefreshTokenKey = "latexdo.cloud.sessionRefreshToken";
 const cloudActiveProjectKey = "latexdo.cloud.activeProject";
 const cloudRequestTimeoutMs = 15_000;
 const cloudUploadTimeoutMs = 60_000;
-const cloudAssetTimeoutMs = 30_000;
-const cloudImportTimeoutMs = 75_000;
 const cloudCompileTimeoutMs = 75_000;
 const maxCloudFileBytes = 2 * 1024 * 1024;
-const maxCloudPdfBytes = 25 * 1024 * 1024;
 const maxCloudProjectBytes = 20 * 1024 * 1024;
 const maxCloudProjectFiles = 500;
-const cloudSessionRefreshSkewMs = 5 * 60_000;
 const cloudProjectIds = new Set<string>();
-
-interface CloudSession {
-  token: string;
-  refreshToken: string;
-  sessionId: string;
-  clientId: string;
-  expiresAt: number;
-}
-
-interface HostedImportResponse {
-  project?: OpenProject;
-  relativePath: string;
-  sourcePath: string;
-  converter: "pandoc";
-  warnings: string[];
-  mediaFiles?: string[];
-}
 
 class CloudApiError extends Error {
   constructor(
@@ -84,8 +60,6 @@ class CloudApiError extends Error {
   }
 }
 
-let memoryCloudSession: CloudSession | null = null;
-let cloudSessionRequest: Promise<CloudSession> | null = null;
 const cloudCompileControllers = new Map<string, AbortController>();
 
 function storageGet(key: string): string | null {
@@ -114,6 +88,22 @@ function storageRemove(key: string): void {
 
 function cloudClientName(): string {
   return (storageGet(cloudClientNameKey) ?? "").trim().slice(0, 80);
+}
+
+function storageReadOrCreate(key: string, create: () => string): string {
+  const existing = storageGet(key)?.trim();
+  if (existing) return existing;
+  const created = create();
+  storageSet(key, created);
+  return created;
+}
+
+function cloudSessionId(): string {
+  return storageReadOrCreate(cloudSessionKey, () => `session-${crypto.randomUUID()}`);
+}
+
+function cloudClientId(): string {
+  return storageReadOrCreate(cloudClientKey, () => `client-${crypto.randomUUID()}`);
 }
 
 function cloudShareTokens(): Record<string, string> {
@@ -168,70 +158,6 @@ function cloudShareUrl(token: string): string {
   return url.toString();
 }
 
-function cloudSessionFromStorage(): CloudSession | null {
-  const token = storageGet(cloudSessionTokenKey)?.trim() ?? "";
-  const refreshToken = storageGet(cloudSessionRefreshTokenKey)?.trim() ?? "";
-  const sessionId = storageGet(cloudSessionKey)?.trim() ?? "";
-  const clientId = storageGet(cloudClientKey)?.trim() ?? "";
-  const expiresAt = Number(storageGet(cloudSessionExpiresAtKey));
-  if (
-    (!token && !refreshToken) ||
-    !sessionId ||
-    !clientId ||
-    !Number.isFinite(expiresAt)
-  ) {
-    return null;
-  }
-  return { token, refreshToken, sessionId, clientId, expiresAt };
-}
-
-function storeCloudSession(session: CloudSession): CloudSession {
-  memoryCloudSession = session;
-  storageSet(cloudSessionTokenKey, session.token);
-  storageSet(cloudSessionRefreshTokenKey, session.refreshToken);
-  storageSet(cloudSessionKey, session.sessionId);
-  storageSet(cloudClientKey, session.clientId);
-  storageSet(cloudSessionExpiresAtKey, String(session.expiresAt));
-  return session;
-}
-
-function clearCloudSession(): void {
-  memoryCloudSession = null;
-  storageRemove(cloudSessionTokenKey);
-  storageRemove(cloudSessionExpiresAtKey);
-}
-
-function parseCloudSession(value: unknown): CloudSession {
-  const record = value as Partial<{
-    token: string;
-    refreshToken: string;
-    sessionId: string;
-    clientId: string;
-    expiresAt: number | string;
-  }>;
-  const expiresAt =
-    typeof record.expiresAt === "number"
-      ? record.expiresAt
-      : Date.parse(record.expiresAt ?? "");
-  if (
-    !record.token?.trim() ||
-    !record.refreshToken?.trim() ||
-    !record.sessionId?.trim() ||
-    !record.clientId?.trim() ||
-    !Number.isFinite(expiresAt) ||
-    expiresAt <= Date.now()
-  ) {
-    throw new Error("Collaboration session response is invalid.");
-  }
-  return {
-    token: record.token,
-    refreshToken: record.refreshToken,
-    sessionId: record.sessionId,
-    clientId: record.clientId,
-    expiresAt,
-  };
-}
-
 async function cloudFetchJson<T>(
   path: string,
   options: RequestInit,
@@ -277,52 +203,10 @@ async function cloudFetchJson<T>(
   }
 }
 
-async function issueCloudSession(): Promise<CloudSession> {
-  return storeCloudSession(
-    parseCloudSession(
-      await cloudFetchJson("/api/sessions", {
-        method: "POST",
-        body: JSON.stringify({}),
-      }),
-    ),
-  );
-}
-
-async function refreshCloudSession(refreshToken: string): Promise<CloudSession> {
-  return storeCloudSession(
-    parseCloudSession(
-      await cloudFetchJson("/api/sessions/refresh", {
-        method: "POST",
-        body: JSON.stringify({ refreshToken }),
-      }),
-    ),
-  );
-}
-
-async function activeCloudSession(): Promise<CloudSession> {
-  const stored = memoryCloudSession ?? cloudSessionFromStorage();
-  if (stored?.token && stored.expiresAt - Date.now() > cloudSessionRefreshSkewMs) {
-    memoryCloudSession = stored;
-    return stored;
-  }
-  if (cloudSessionRequest) return cloudSessionRequest;
-  cloudSessionRequest = (async () => {
-    if (stored?.refreshToken) {
-      return refreshCloudSession(stored.refreshToken);
-    }
-    return issueCloudSession();
-  })();
-  try {
-    return await cloudSessionRequest;
-  } finally {
-    cloudSessionRequest = null;
-  }
-}
-
-async function cloudHeaders(shareToken?: string): Promise<Record<string, string>> {
-  const session = await activeCloudSession();
+function cloudHeaders(shareToken?: string): Record<string, string> {
   return {
-    authorization: `Bearer ${session.token}`,
+    "x-latexdo-session": cloudSessionId(),
+    "x-latexdo-client": cloudClientId(),
     ...(cloudClientName() ? { "x-latexdo-client-name": cloudClientName() } : {}),
     ...(shareToken ? { "x-latexdo-share-token": shareToken } : {}),
   };
@@ -334,102 +218,17 @@ async function cloudRequestJson<T>(
   shareToken?: string,
   timeoutMs = cloudRequestTimeoutMs,
 ): Promise<T> {
-  const request = async () =>
-    cloudFetchJson<T>(
-      path,
-      {
-        ...options,
-        headers: {
-          ...(await cloudHeaders(shareToken)),
-          ...options.headers,
-        },
+  return cloudFetchJson<T>(
+    path,
+    {
+      ...options,
+      headers: {
+        ...cloudHeaders(shareToken),
+        ...options.headers,
       },
-      timeoutMs,
-    );
-  try {
-    return await request();
-  } catch (error) {
-    if (!(error instanceof CloudApiError) || error.status !== 401) throw error;
-    clearCloudSession();
-    return request();
-  }
-}
-
-async function cloudFetchBytes(
-  path: string,
-  headers: Record<string, string>,
-  maxBytes = maxCloudFileBytes,
-): Promise<Uint8Array> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), cloudAssetTimeoutMs);
-  try {
-    const response = await fetch(cloudApiUrl(path), {
-      headers,
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      let message = `${response.status} ${response.statusText}`;
-      try {
-        const body = (await response.json()) as { error?: string };
-        message = body.error || message;
-      } catch {
-        // Keep the HTTP status fallback.
-      }
-      throw new CloudApiError(response.status, message);
-    }
-    const declaredLength = Number(response.headers.get("content-length") ?? "0");
-    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-      throw new Error("Cloud response exceeds its download limit.");
-    }
-    if (!response.body) {
-      throw new Error("Cloud response body is missing.");
-    }
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let totalBytes = 0;
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        totalBytes += value.byteLength;
-        if (totalBytes > maxBytes) {
-          await reader.cancel();
-          throw new Error("Cloud response exceeds its download limit.");
-        }
-        chunks.push(value);
-      }
-    } finally {
-      reader.releaseLock();
-    }
-    const bytes = new Uint8Array(totalBytes);
-    let offset = 0;
-    for (const chunk of chunks) {
-      bytes.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    return bytes;
-  } catch (error) {
-    if (controller.signal.aborted) throw new Error("Cloud asset request timed out.");
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function cloudRequestBytes(
-  path: string,
-  shareToken?: string,
-  maxBytes = maxCloudFileBytes,
-): Promise<Uint8Array> {
-  const request = async () =>
-    cloudFetchBytes(path, await cloudHeaders(shareToken), maxBytes);
-  try {
-    return await request();
-  } catch (error) {
-    if (!(error instanceof CloudApiError) || error.status !== 401) throw error;
-    clearCloudSession();
-    return request();
-  }
+    },
+    timeoutMs,
+  );
 }
 
 function filePathQuery(relativePath: string): string {
@@ -522,7 +321,7 @@ async function openCloudShare(tokenOrUrl: string): Promise<{
     project: OpenProject;
     collaboration: CollaborationState;
   }>(
-    "/api/shares/open",
+    `/api/shares/${encodeURIComponent(token)}/open`,
     {
       method: "POST",
       body: JSON.stringify({}),
@@ -540,9 +339,15 @@ async function restoreCloudProject(): Promise<OpenProject | null> {
   const activeProjectId = storageGet(cloudActiveProjectKey)?.trim() ?? "";
   if (!activeProjectId) return null;
 
-  const directory = await cloudRequestJson<{
+  let directory: {
     projects?: Array<{ id?: unknown; name?: unknown; updatedAt?: unknown }>;
-  }>("/api/projects");
+  } = {};
+  try {
+    directory = await cloudRequestJson("/api/projects");
+  } catch {
+    // The collaboration backend has no owned-project directory; fall back to
+    // reopening the project through its share token below.
+  }
   const activeProject = directory.projects?.find(
     (project) => project.id === activeProjectId && typeof project.name === "string",
   );
@@ -586,98 +391,50 @@ async function uploadLocalProjectToCloud(localProjectId: string): Promise<OpenPr
     throw new Error(`Cloud projects are limited to ${maxCloudProjectFiles} files.`);
   }
 
-  const files: { path: string; contentBase64: string }[] = [];
   let totalBytes = 0;
   for (const entry of fileEntries) {
-    const content = (await ipcRenderer.invoke(
-      "file:read-cloud-upload",
-      localProjectId,
-      entry.relativePath,
-    )) as { contentBase64?: unknown; size?: unknown };
-    if (
-      typeof content.contentBase64 !== "string" ||
-      typeof content.size !== "number" ||
-      !Number.isSafeInteger(content.size) ||
-      content.size < 0 ||
-      content.size > maxCloudFileBytes
-    ) {
-      throw new Error(`${entry.relativePath} could not be prepared for upload.`);
+    let content: string;
+    try {
+      content = (await ipcRenderer.invoke(
+        "file:read",
+        localProjectId,
+        entry.relativePath,
+      )) as string;
+    } catch (error) {
+      console.warn(
+        `Skipping non-text file while sharing: ${entry.relativePath}`,
+        error,
+      );
+      continue;
     }
-    totalBytes += content.size;
+    if (content.length > maxCloudFileBytes) {
+      throw new Error(`${entry.relativePath} exceeds the cloud file size limit.`);
+    }
+    totalBytes += content.length;
     if (totalBytes > maxCloudProjectBytes) {
       throw new Error("Cloud projects are limited to 20 MiB.");
     }
-    files.push({ path: entry.relativePath, contentBase64: content.contentBase64 });
+    await cloudRequestJson(
+      `/api/projects/${encodeURIComponent(cloudProject.id)}/files/content?${filePathQuery(entry.relativePath)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ content }),
+      },
+      undefined,
+      cloudUploadTimeoutMs,
+    );
   }
-
-  await cloudRequestJson(
-    `/api/projects/${encodeURIComponent(cloudProject.id)}/files/batch`,
-    {
-      method: "PUT",
-      body: JSON.stringify({ files, replace: true }),
-    },
-    undefined,
-    cloudUploadTimeoutMs,
-  );
 
   return cloudProject;
 }
 
 async function importCloudDocument(
-  projectId: string,
+  _projectId: string,
   kind: "docx" | "markdown",
 ): Promise<DocxImportResult | MarkdownImportResult | null> {
-  const selected = (await ipcRenderer.invoke("file:choose-hosted-import", kind)) as {
-    fileName?: unknown;
-    contentBase64?: unknown;
-  } | null;
-  if (!selected) return null;
-  if (
-    typeof selected.fileName !== "string" ||
-    !selected.fileName ||
-    typeof selected.contentBase64 !== "string"
-  ) {
-    throw new Error("The selected import could not be prepared.");
-  }
-  const imported = await cloudRequestJson<HostedImportResponse>(
-    `/api/import/${kind}`,
-    {
-      method: "POST",
-      headers: { "x-latexdo-project-id": projectId },
-      body: JSON.stringify({
-        projectId,
-        fileName: selected.fileName,
-        contentBase64: selected.contentBase64,
-      }),
-    },
-    cloudShareTokenForProject(projectId),
-    cloudImportTimeoutMs,
+  throw new Error(
+    `${kind === "docx" ? "DOCX" : "Markdown"} import is not available for shared cloud projects. Open a local folder to import documents.`,
   );
-  if (
-    !imported ||
-    typeof imported.relativePath !== "string" ||
-    typeof imported.sourcePath !== "string" ||
-    imported.converter !== "pandoc" ||
-    !Array.isArray(imported.warnings)
-  ) {
-    throw new Error("The hosted importer returned an invalid response.");
-  }
-  const warnings = imported.warnings
-    .filter((warning): warning is string => typeof warning === "string")
-    .slice(0, 20);
-  if (kind === "docx") {
-    return {
-      ...imported,
-      warnings,
-      mediaFiles: Array.isArray(imported.mediaFiles)
-        ? imported.mediaFiles.filter(
-            (relativePath): relativePath is string => typeof relativePath === "string",
-          )
-        : [],
-      assetDirectory: "media",
-    };
-  }
-  return { ...imported, warnings };
 }
 
 async function compileCloudProject(request: CompileRequest): Promise<CompileResult> {
@@ -685,16 +442,33 @@ async function compileCloudProject(request: CompileRequest): Promise<CompileResu
   const controller = new AbortController();
   cloudCompileControllers.set(request.projectId, controller);
   try {
-    return await cloudRequestJson<CompileResult>(
-      "/api/compile",
-      {
-        method: "POST",
-        body: JSON.stringify(request),
-        signal: controller.signal,
-      },
-      cloudShareTokenForProject(request.projectId),
-      cloudCompileTimeoutMs,
+    const token = cloudShareTokenForProject(request.projectId);
+    const entries = flattenProjectEntries(
+      await cloudRequestJson<ProjectEntry[]>(
+        `/api/projects/${encodeURIComponent(request.projectId)}/files`,
+        { signal: controller.signal },
+        token,
+      ),
     );
+
+    const files: { relativePath: string; content: string }[] = [];
+    for (const entry of entries) {
+      if (entry.type !== "file") continue;
+      const body = await cloudRequestJson<{ content: string }>(
+        `/api/projects/${encodeURIComponent(request.projectId)}/files/content?${filePathQuery(entry.relativePath)}`,
+        { signal: controller.signal },
+        token,
+        cloudCompileTimeoutMs,
+      );
+      files.push({ relativePath: entry.relativePath, content: body.content });
+    }
+
+    return (await ipcRenderer.invoke("latex:compile-cloud", {
+      projectId: request.projectId,
+      rootFile: request.rootFile,
+      engine: request.engine,
+      files,
+    })) as CompileResult;
   } finally {
     if (cloudCompileControllers.get(request.projectId) === controller) {
       cloudCompileControllers.delete(request.projectId);
@@ -764,10 +538,11 @@ const api = {
       : ipcRenderer.invoke("file:read", projectId, relativePath),
   readAsset: (projectId: string, relativePath: string): Promise<Uint8Array> =>
     isCloudProject(projectId)
-      ? cloudRequestBytes(
-          `/api/projects/${encodeURIComponent(projectId)}/asset?${filePathQuery(relativePath)}`,
+      ? cloudRequestJson<{ content: string }>(
+          `/api/projects/${encodeURIComponent(projectId)}/files/content?${filePathQuery(relativePath)}`,
+          {},
           cloudShareTokenForProject(projectId),
-        )
+        ).then((body) => new TextEncoder().encode(body.content))
       : ipcRenderer.invoke("asset:read", projectId, relativePath),
   writeFile: (
     projectId: string,
@@ -889,7 +664,7 @@ const api = {
     const token = cloudShareTokenForProject(projectId);
     if (token) {
       return cloudRequestJson<CollaborationState>(
-        "/api/shares/presence",
+        `/api/shares/${encodeURIComponent(token)}/presence`,
         {
           method: "POST",
           body: JSON.stringify({ currentFile: null }),
@@ -928,7 +703,7 @@ const api = {
     }
 
     return cloudRequestJson<CollaborationState>(
-      "/api/shares/presence",
+      `/api/shares/${encodeURIComponent(token)}/presence`,
       {
         method: "POST",
         body: JSON.stringify({ currentFile: currentFile ?? null }),
@@ -953,7 +728,7 @@ const api = {
         permissions: CollaboratorPermission[];
         isAdmin: boolean;
         currentUserRole: CollaboratorRole;
-      }>("/api/shares/permissions", {}, token);
+      }>(`/api/shares/${encodeURIComponent(token)}/permissions`, {}, token);
       return result;
     } catch {
       return { permissions: [], isAdmin: false, currentUserRole: "viewer" };
@@ -969,7 +744,7 @@ const api = {
     }
 
     return cloudRequestJson<CollaboratorPermission>(
-      "/api/shares/permissions",
+      `/api/shares/${encodeURIComponent(token)}/permissions`,
       {
         method: "PUT",
         body: JSON.stringify(update),
@@ -987,7 +762,7 @@ const api = {
     }
 
     await cloudRequestJson<void>(
-      `/api/shares/collaborators/${encodeURIComponent(clientIdToRemove)}`,
+      `/api/shares/${encodeURIComponent(token)}/collaborators/${encodeURIComponent(clientIdToRemove)}`,
       {
         method: "DELETE",
       },
@@ -1002,7 +777,7 @@ const api = {
     try {
       const result = await cloudRequestJson<{
         isAdmin: boolean;
-      }>("/api/shares/permissions", {}, token);
+      }>(`/api/shares/${encodeURIComponent(token)}/permissions`, {}, token);
       return result.isAdmin;
     } catch {
       return false;
@@ -1168,15 +943,17 @@ const api = {
       : ipcRenderer.invoke("latex:compile", request),
   cancelCompile: (projectId: string): Promise<boolean> =>
     isCloudProject(projectId)
-      ? Promise.resolve(
-          (() => {
-            const controller = cloudCompileControllers.get(projectId);
-            if (!controller) return false;
+      ? (async () => {
+          const controller = cloudCompileControllers.get(projectId);
+          if (controller) {
             cloudCompileControllers.delete(projectId);
             controller.abort();
-            return true;
-          })(),
-        )
+          }
+          const cancelled = await (
+            ipcRenderer.invoke("latex:compile-cancel", projectId) as Promise<boolean>
+          ).catch(() => false);
+          return Boolean(controller) || cancelled;
+        })()
       : ipcRenderer.invoke("latex:compile-cancel", projectId),
   compileAsymptote: (request: AsymptoteCompileRequest): Promise<CompileResult> =>
     isCloudProject(request.projectId)
@@ -1202,13 +979,7 @@ const api = {
         })
       : ipcRenderer.invoke("asymptote:compile", request),
   readPdf: (projectId: string, pdfRelativePath: string): Promise<Uint8Array> =>
-    isCloudProject(projectId)
-      ? cloudRequestBytes(
-          `/api/projects/${encodeURIComponent(projectId)}/pdf?${filePathQuery(pdfRelativePath)}`,
-          cloudShareTokenForProject(projectId),
-          maxCloudPdfBytes,
-        )
-      : ipcRenderer.invoke("pdf:read", projectId, pdfRelativePath),
+    ipcRenderer.invoke("pdf:read", projectId, pdfRelativePath),
   forwardSyncTex: (
     projectId: string,
     pdfRelativePath: string,

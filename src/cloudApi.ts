@@ -19,7 +19,6 @@ import {
   collaborationHeaders,
 } from "./collaboration/collaborationApi";
 import {
-  clearCollaborationSessionToken,
   rememberShareToken,
   shareTokenForProject,
 } from "./collaboration/collaborationStorage";
@@ -248,14 +247,13 @@ async function requestResponse(
   ) {
     headers.set("content-type", "application/json");
   }
-  const authenticationHeaders = await collaborationHeaders(shareToken);
+  const authenticationHeaders = collaborationHeaders(shareToken);
   for (const [key, value] of Object.entries(authenticationHeaders)) {
     if (!headers.has(key)) {
       headers.set(key, value);
     }
   }
 
-  let authenticationRetried = false;
   for (let attempt = 0; ; attempt += 1) {
     let response: Response;
     try {
@@ -273,16 +271,6 @@ async function requestResponse(
         throw error;
       }
       await waitForRetry(retryDelayMs(null, attempt), options.signal);
-      continue;
-    }
-
-    if (response.status === 401 && !authenticationRetried) {
-      authenticationRetried = true;
-      clearCollaborationSessionToken(apiBaseUrl());
-      const refreshedHeaders = await collaborationHeaders(shareToken);
-      for (const [key, value] of Object.entries(refreshedHeaders)) {
-        headers.set(key, value);
-      }
       continue;
     }
 
@@ -503,7 +491,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       project: OpenProject;
       collaboration: CollaborationState;
     }>(
-      "/api/shares/open",
+      `/api/shares/${encodeURIComponent(token)}/open`,
       {
         method: "POST",
         body: JSON.stringify({}),
@@ -528,7 +516,13 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
         return (await joinCollaboration(token)).project;
       }
 
-      const directory = await requestJson<OwnedProjectDirectory>("/api/projects");
+      let directory: OwnedProjectDirectory = { projects: [] };
+      try {
+        directory = await requestJson<OwnedProjectDirectory>("/api/projects");
+      } catch {
+        // The collaboration backend has no owned-project directory; fall back
+        // to the stored share token or a fresh session project below.
+      }
       const projects = Array.isArray(directory.projects)
         ? directory.projects.filter(
             (project) =>
@@ -700,7 +694,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       const token = shareTokenForProject(projectId);
       if (token) {
         return requestJson<CollaborationState>(
-          "/api/shares/presence",
+          `/api/shares/${encodeURIComponent(token)}/presence`,
           {
             method: "POST",
             body: JSON.stringify({ currentFile: null }),
@@ -743,7 +737,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       if (!token) return localShareState(projectId);
 
       return requestJson<CollaborationState>(
-        "/api/shares/presence",
+        `/api/shares/${encodeURIComponent(token)}/presence`,
         {
           method: "POST",
           body: JSON.stringify({
@@ -765,7 +759,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
           permissions: CollaboratorPermission[];
           isAdmin: boolean;
           currentUserRole: CollaboratorRole;
-        }>("/api/shares/permissions", {}, token);
+        }>(`/api/shares/${encodeURIComponent(token)}/permissions`, {}, token);
         return result;
       } catch {
         return { permissions: [], isAdmin: false, currentUserRole: "viewer" as const };
@@ -779,7 +773,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       }
 
       return requestJson<CollaboratorPermission>(
-        "/api/shares/permissions",
+        `/api/shares/${encodeURIComponent(token)}/permissions`,
         {
           method: "PUT",
           body: JSON.stringify(update),
@@ -795,7 +789,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       }
 
       return requestJson<void>(
-        `/api/shares/collaborators/${encodeURIComponent(clientIdToRemove)}`,
+        `/api/shares/${encodeURIComponent(token)}/collaborators/${encodeURIComponent(clientIdToRemove)}`,
         {
           method: "DELETE",
         },
@@ -809,7 +803,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       try {
         const result = await requestJson<{
           isAdmin: boolean;
-        }>("/api/shares/permissions", {}, token);
+        }>(`/api/shares/${encodeURIComponent(token)}/permissions`, {}, token);
         return result.isAdmin;
       } catch {
         return false;
