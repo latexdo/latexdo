@@ -111,10 +111,13 @@ Build local installers with:
 npm run dist
 ```
 
-CI also builds non-release smoke-test installers. Production releases run only
-from an immutable `v<package version>` tag whose version exactly matches
-`package.json`. The release workflow publishes macOS, Windows, and Linux assets
-plus the website release index at `https://latexdo.org/downloads/<release tag>/`.
+CI also builds non-release smoke-test installers. When `latexdo-ci` passes on
+`main`, the release workflow publishes a signed build release named
+`v<package version>-build.<run>.<attempt>.<sha>`. Production version tags remain
+supported: an immutable `v<package version>` tag whose version exactly matches
+`package.json` publishes the same release assets under that stable tag. The
+release workflow publishes macOS, Windows, and Linux assets plus the website
+release index at `https://latexdo.org/downloads/<release tag>/`.
 `https://latexdo.org/updates/latest.json` points the desktop app at that
 versioned release. The feed is signed with the Ed25519 key pinned into every
 desktop package; the app rejects unsigned, modified, or unknown-key feeds before

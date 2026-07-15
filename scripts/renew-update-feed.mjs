@@ -47,6 +47,18 @@ function canonicalJson(value) {
   throw new Error("Feed contains an unsupported JSON value.");
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isReleaseSlugForVersion(release, version) {
+  if (typeof release !== "string" || typeof version !== "string") return false;
+  if (release === `v${version}`) return true;
+  return new RegExp(
+    `^v${escapeRegExp(version)}-build\\.\\d+\\.\\d+\\.[a-f0-9]{12}$`,
+  ).test(release);
+}
+
 function isRecord(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -86,7 +98,7 @@ function assertFeedMetadata(feed) {
     feed.product !== "LatexDo" ||
     feed.channel !== "stable" ||
     !/^\d+\.\d+\.\d+$/.test(feed.version ?? "") ||
-    feed.release !== `v${feed.version}` ||
+    !isReleaseSlugForVersion(feed.release, feed.version) ||
     !/^[a-f0-9]{40}$/.test(feed.commit ?? "") ||
     !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(feed.repository ?? "") ||
     !Array.isArray(feed.files) ||

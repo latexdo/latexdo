@@ -135,6 +135,20 @@ function compareVersions(left, right) {
   return 0;
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isBuildReleaseSlugForVersion(release, version) {
+  return new RegExp(
+    `^v${escapeRegExp(version)}-build\\.\\d+\\.\\d+\\.[a-f0-9]{12}$`,
+  ).test(release);
+}
+
+function isReleaseSlugForVersion(release, version) {
+  return release === `v${version}` || isBuildReleaseSlugForVersion(release, version);
+}
+
 async function readRollbackState() {
   try {
     const state = JSON.parse(await readFile(stateFile, "utf8"));
@@ -161,11 +175,17 @@ async function persistRollbackState(payload, publishedAt, previousState) {
     throw new Error(`feed version ${payload.version} is older than previously trusted ${previousState.highestVersion}`);
   }
   if (previousState && versionComparison === 0) {
-    if (payload.commit !== previousState.highestCommit) {
-      throw new Error("feed changed the commit for an already trusted version");
-    }
-    if (publishedAt < Date.parse(previousState.highestPublishedAt)) {
+    const previousPublishedAt = Date.parse(previousState.highestPublishedAt);
+    if (publishedAt < previousPublishedAt) {
       throw new Error("feed publication date is older than the previously trusted feed");
+    }
+    if (payload.commit !== previousState.highestCommit) {
+      if (!isBuildReleaseSlugForVersion(payload.release, payload.version)) {
+        throw new Error("feed changed the commit for an already trusted stable version");
+      }
+      if (publishedAt === previousPublishedAt) {
+        throw new Error("feed changed the commit without a newer publication date");
+      }
     }
   }
   if (
@@ -192,6 +212,7 @@ async function persistRollbackState(payload, publishedAt, previousState) {
       `${JSON.stringify({
         schemaVersion: 1,
         highestVersion: payload.version,
+        highestRelease: payload.release,
         highestCommit: payload.commit,
         highestPublishedAt: payload.publishedAt,
         updatedAt: new Date().toISOString(),
@@ -213,7 +234,7 @@ async function persistRollbackState(payload, publishedAt, previousState) {
     payload.product !== "LatexDo" ||
     payload.channel !== "stable" ||
     !/^\d+\.\d+\.\d+$/.test(payload.version || "") ||
-    payload.release !== `v${payload.version}` ||
+    !isReleaseSlugForVersion(payload.release, payload.version) ||
     !/^[a-f0-9]{40}$/.test(payload.commit || "") ||
     signature?.algorithm !== "ed25519" ||
     !/^[a-f0-9]{16}$/.test(signature.keyId || "") ||
