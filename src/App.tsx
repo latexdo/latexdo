@@ -206,6 +206,7 @@ import {
 import { useSettings } from "./features/settings/useSettings";
 import {
   buildHistorySnapshot,
+  compactHistorySnapshots,
   historyAutoCaptureDelayMs,
   historyContentPreview,
   historyIndexRelativePath,
@@ -1301,11 +1302,20 @@ ${macroEnd}
           resolveProjectDataPath(historyIndexRelativePath),
           data,
         );
+        // Snapshot text is now on disk, so older in-memory copies can be
+        // dropped; the history sidebar lazy-loads them back on demand.
+        setDocumentHistory((current) => {
+          const compacted = compactHistorySnapshots(current);
+          if (compacted !== current) {
+            documentHistoryRef.current = compacted;
+          }
+          return compacted;
+        });
       } catch (e) {
         console.error("Failed to save document history", e);
       }
     },
-    [resolveProjectDataPath],
+    [resolveProjectDataPath, setDocumentHistory],
   );
 
   const scheduleHistorySave = useCallback(
@@ -3105,6 +3115,15 @@ ${macroEnd}
     updateLatexDecorations();
   }, [updateLatexDecorations]);
 
+  const mathPreviewForegrounds: Record<string, string> = {
+    graphite: "#d7dce5",
+    midnight: "#dce8f8",
+    forest: "#e1ebe5",
+    sepia: "#eee4d4",
+    studio: "#1f2937",
+    paper: "#252a31",
+  };
+
   const configureMonaco: BeforeMount = (instance) => {
     if (!instance.languages.getLanguages().some(({ id }) => id === "latex")) {
       instance.languages.register({
@@ -3408,6 +3427,39 @@ ${macroEnd}
     });
     instance.languages.registerHoverProvider("latex", {
       provideHover: async (model, position) => {
+        try {
+          const { parseMathAtPosition, mathPreviewDataUri } = await import(
+            "./latex/mathPreview"
+          );
+          const mathTarget = parseMathAtPosition(
+            model.getValue(),
+            position.lineNumber,
+            position.column,
+          );
+          if (mathTarget) {
+            const foreground =
+              mathPreviewForegrounds[settingsRef.current.colorTheme] ?? "#d7dce5";
+            const rendered = mathPreviewDataUri(
+              mathTarget.tex,
+              mathTarget.display,
+              foreground,
+            );
+            if (rendered) {
+              return {
+                range: new instance.Range(
+                  mathTarget.startLine,
+                  mathTarget.startColumn,
+                  mathTarget.endLine,
+                  mathTarget.endColumn,
+                ),
+                contents: [{ value: `![equation](${rendered})` }],
+              };
+            }
+          }
+        } catch {
+          // Equation preview is best-effort; fall through to other hovers.
+        }
+
         const includeTarget = parseIncludeGraphicsAtPosition(
           model.getLineContent(position.lineNumber),
           position.column,

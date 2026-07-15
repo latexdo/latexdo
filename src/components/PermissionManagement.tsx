@@ -184,25 +184,27 @@ export function PermissionManagement({
                       </span>
                     )}
                   </td>
-                  {isAdmin && !isCurrent ? (
+                  {isAdmin ? (
                     <td>
-                      <button
-                        type="button"
-                        onClick={() => void handleRemove(perm.clientId)}
-                        disabled={
-                          loading?.action === "remove" &&
-                          loading.clientId === perm.clientId
-                        }
-                        title="Remove collaborator"
-                        className="remove-btn"
-                      >
-                        {loading?.action === "remove" &&
-                        loading.clientId === perm.clientId ? (
-                          <Loader2 size={14} className="spin" />
-                        ) : (
-                          <Trash2 size={14} />
-                        )}
-                      </button>
+                      {!isCurrent ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleRemove(perm.clientId)}
+                          disabled={
+                            loading?.action === "remove" &&
+                            loading.clientId === perm.clientId
+                          }
+                          title="Remove collaborator"
+                          className="remove-btn"
+                        >
+                          {loading?.action === "remove" &&
+                          loading.clientId === perm.clientId ? (
+                            <Loader2 size={14} className="spin" />
+                          ) : (
+                            <Trash2 size={14} />
+                          )}
+                        </button>
+                      ) : null}
                     </td>
                   ) : null}
                 </tr>
