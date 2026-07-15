@@ -3246,11 +3246,7 @@ async function packagedRendererResponse(request: Request): Promise<Response> {
   // Node's URL parser treats custom schemes as opaque, so `url.origin` is the
   // literal string "null" here; compare protocol and host instead.
   const url = new URL(request.url);
-  if (
-    url.protocol !== "latexdo:" ||
-    url.host !== "app" ||
-    request.method !== "GET"
-  ) {
+  if (url.protocol !== "latexdo:" || url.host !== "app" || request.method !== "GET") {
     return new Response("Not found", { status: 404 });
   }
 
