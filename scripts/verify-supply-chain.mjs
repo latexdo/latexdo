@@ -41,7 +41,8 @@ if (cliPackage.engines?.node !== ">=22.17.0") {
 for (const requiredProtection of [
   "feed freshness window is invalid or expired",
   "feed version ${payload.version} is older than previously trusted",
-  "payload.release !== `v${payload.version}`",
+  "isReleaseSlugForVersion(payload.release, payload.version)",
+  "isBuildReleaseSlugForVersion(payload.release, payload.version)",
   "trusted_cached_checkout",
   "state.highestCommit",
   'cached_commit="$(git -C "$APP_DIR" rev-parse HEAD',
@@ -54,6 +55,8 @@ for (const requiredProtection of [
   'const updateFeedStateFile = "update-feed-state.json"',
   "Website update feed freshness window is invalid or expired.",
   "older than previously trusted version",
+  "isReleaseSlugForVersion(release, version)",
+  "isBuildReleaseSlugForVersion(release, version)",
 ]) {
   if (!electronMain.includes(requiredProtection)) {
     throw new Error(`Desktop update protection is missing: ${requiredProtection}`);
@@ -65,6 +68,20 @@ if (
   renewalWorkflow.includes("wrangler@latest")
 ) {
   throw new Error("Deployment workflows must not resolve Wrangler dynamically.");
+}
+for (const requiredReleaseControl of [
+  "workflow_run:",
+  'workflows: ["latexdo-ci"]',
+  "github.event.workflow_run.conclusion == 'success'",
+  "github.event.workflow_run.head_branch == 'main'",
+  "LATEXDO_RELEASE_TARGET_SHA",
+  "LATEXDO_RELEASE_COMMIT: ${{ needs.release_gate.outputs.target_sha }}",
+]) {
+  if (!releaseWorkflow.includes(requiredReleaseControl)) {
+    throw new Error(
+      `Release publication control is missing: ${requiredReleaseControl}`,
+    );
+  }
 }
 for (const requiredRenewalControl of [
   "schedule:",

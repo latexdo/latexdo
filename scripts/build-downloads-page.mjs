@@ -20,7 +20,7 @@ const expiresAtMs = Date.parse(expiresAt);
 if (!Number.isFinite(expiresAtMs) || expiresAtMs <= publishedAtMs) {
   throw new Error("The signed update feed expiry must follow its publication time.");
 }
-const commit = process.env.GITHUB_SHA ?? "";
+const commit = process.env.LATEXDO_RELEASE_COMMIT ?? process.env.GITHUB_SHA ?? "";
 const repository = process.env.GITHUB_REPOSITORY ?? "latexdo/latexdo";
 const siteRootDir = path.dirname(outputDir);
 const baseUrlRoot = baseUrl.replace(/\/$/, "");

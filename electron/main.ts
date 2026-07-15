@@ -388,6 +388,7 @@ interface StoredTrustedWorkspaces {
 interface StoredUpdateFeedState {
   schemaVersion?: unknown;
   highestVersion?: unknown;
+  highestRelease?: unknown;
   highestCommit?: unknown;
   highestPublishedAt?: unknown;
 }
@@ -1363,6 +1364,20 @@ function compareVersions(left: string, right: string): number {
   }
 
   return 0;
+}
+
+function escapeRegExpLiteral(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isBuildReleaseSlugForVersion(release: string, version: string): boolean {
+  return new RegExp(
+    `^v${escapeRegExpLiteral(version)}-build\\.\\d+\\.\\d+\\.[a-f0-9]{12}$`,
+  ).test(release);
+}
+
+function isReleaseSlugForVersion(release: string, version: string): boolean {
+  return release === `v${version}` || isBuildReleaseSlugForVersion(release, version);
 }
 
 interface StoredSpellCheckerSettings {
@@ -2506,7 +2521,8 @@ async function enforceUpdateFeedFreshness(
       payload.channel !== "stable" ||
       !version ||
       !/^\d+\.\d+\.\d+$/.test(version) ||
-      release !== `v${version}` ||
+      !release ||
+      !isReleaseSlugForVersion(release, version) ||
       !commit ||
       !/^[a-f0-9]{40}$/.test(commit) ||
       !publishedAtValue ||
@@ -2543,15 +2559,25 @@ async function enforceUpdateFeedFreshness(
       );
     }
     if (previousState && versionComparison === 0) {
-      if (commit !== previousState.highestCommit) {
-        throw new Error(
-          "Website update feed changed the commit for an already trusted version.",
-        );
-      }
-      if (publishedAt < Date.parse(previousState.highestPublishedAt as string)) {
+      const previousPublishedAt = Date.parse(
+        previousState.highestPublishedAt as string,
+      );
+      if (publishedAt < previousPublishedAt) {
         throw new Error(
           "Website update feed publication date is older than the previously trusted feed.",
         );
+      }
+      if (commit !== previousState.highestCommit) {
+        if (!isBuildReleaseSlugForVersion(release, version)) {
+          throw new Error(
+            "Website update feed changed the commit for an already trusted stable version.",
+          );
+        }
+        if (publishedAt === previousPublishedAt) {
+          throw new Error(
+            "Website update feed changed the commit without a newer publication date.",
+          );
+        }
       }
     }
     if (
@@ -2573,6 +2599,7 @@ async function enforceUpdateFeedFreshness(
           {
             schemaVersion: updateFeedStateSchemaVersion,
             highestVersion: version,
+            highestRelease: release,
             highestCommit: commit,
             highestPublishedAt: publishedAtValue,
             updatedAt: new Date().toISOString(),

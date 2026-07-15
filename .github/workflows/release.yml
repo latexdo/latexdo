@@ -1,25 +1,62 @@
 name: latexdo-release
 
 on:
+  workflow_run:
+    workflows: ["latexdo-ci"]
+    types:
+      - completed
   push:
     tags:
       - "v[0-9]*.[0-9]*.[0-9]*"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: latexdo-release-${{ github.ref }}
+  group: latexdo-release-${{ github.event.workflow_run.head_sha || github.ref }}
   cancel-in-progress: false
 
 jobs:
+  release_gate:
+    name: release / gate
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event == 'push') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      target_sha: ${{ steps.resolve.outputs.target_sha }}
+
+    steps:
+      - name: Resolve release target
+        id: resolve
+        shell: bash
+        env:
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "branch" ] && [ "$GITHUB_REF_NAME" != "main" ]; then
+            echo "::error::Release publication from a branch must use main, not ${GITHUB_REF_NAME}."
+            exit 1
+          fi
+
+          target_sha="${WORKFLOW_RUN_HEAD_SHA:-$GITHUB_SHA}"
+          if ! [[ "$target_sha" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::Could not resolve a full release target SHA."
+            exit 1
+          fi
+
+          echo "target_sha=${target_sha}" >> "$GITHUB_OUTPUT"
+          echo "Release target: ${target_sha}"
+
   quality:
     name: test / static analysis / audit
+    needs: release_gate
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release_gate.outputs.target_sha }}
       - uses: actions/setup-node@v6
         with:
           node-version: 22.17.0
@@ -34,7 +71,7 @@ jobs:
 
   build_macos:
     name: build / macOS (${{ matrix.label }})
-    needs: quality
+    needs: [release_gate, quality]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
@@ -54,6 +91,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release_gate.outputs.target_sha }}
       - uses: actions/setup-node@v6
         with:
           node-version: 22.17.0
@@ -168,7 +207,7 @@ jobs:
 
   build_windows:
     name: build / Windows
-    needs: quality
+    needs: [release_gate, quality]
     runs-on: windows-2022
     timeout-minutes: 30
     env:
@@ -177,6 +216,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release_gate.outputs.target_sha }}
       - uses: actions/setup-node@v6
         with:
           node-version: 22.17.0
@@ -243,12 +284,14 @@ jobs:
 
   build_linux:
     name: build / Linux AppImage
-    needs: quality
+    needs: [release_gate, quality]
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release_gate.outputs.target_sha }}
       - uses: actions/setup-node@v6
         with:
           node-version: 22.17.0
@@ -333,7 +376,7 @@ jobs:
 
   publish:
     name: publish / website downloads
-    needs: [build_macos, build_windows, build_linux]
+    needs: [release_gate, build_macos, build_windows, build_linux]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -346,6 +389,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ needs.release_gate.outputs.target_sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -393,25 +437,29 @@ jobs:
       - name: Resolve release metadata
         id: release_metadata
         shell: bash
+        env:
+          LATEXDO_RELEASE_TARGET_SHA: ${{ needs.release_gate.outputs.target_sha }}
         run: |
           version="$(node -p "require('./package.json').version")"
           version="${version#v}"
-          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
-            echo "::error::Releases must run from an immutable version tag."
-            exit 1
+          short_sha="${LATEXDO_RELEASE_TARGET_SHA::12}"
+          tag="v${version}-build.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}.${short_sha}"
+          title="LatexDo v${version} (${short_sha})"
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME}"
+            tag_version="${tag#v}"
+            if [ "$tag_version" != "$version" ]; then
+              echo "::error::Git tag $tag does not match package.json version $version."
+              exit 1
+            fi
+            tag_commit="$(git rev-list -n 1 "$tag")"
+            if [ "$tag_commit" != "$LATEXDO_RELEASE_TARGET_SHA" ]; then
+              echo "::error::Git tag $tag resolves to $tag_commit, expected $LATEXDO_RELEASE_TARGET_SHA."
+              exit 1
+            fi
+            title="LatexDo ${tag}"
           fi
-          tag="${GITHUB_REF_NAME}"
-          tag_version="${tag#v}"
-          if [ "$tag_version" != "$version" ]; then
-            echo "::error::Git tag $tag does not match package.json version $version."
-            exit 1
-          fi
-          tag_commit="$(git rev-list -n 1 "$tag")"
-          if [ "$tag_commit" != "$GITHUB_SHA" ]; then
-            echo "::error::Git tag $tag resolves to $tag_commit, expected $GITHUB_SHA."
-            exit 1
-          fi
-          title="LatexDo ${tag}"
 
           {
             echo "version=$version"
@@ -424,6 +472,7 @@ jobs:
           LATEXDO_DOWNLOAD_BASE_URL: https://latexdo.org
           LATEXDO_RELEASE_VERSION: ${{ steps.release_metadata.outputs.version }}
           LATEXDO_RELEASE_SLUG: ${{ steps.release_metadata.outputs.tag }}
+          LATEXDO_RELEASE_COMMIT: ${{ needs.release_gate.outputs.target_sha }}
           LATEXDO_RELEASE_ASSET_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.release_metadata.outputs.tag }}
           LATEXDO_UPDATE_SIGNING_KEY: ${{ secrets.LATEXDO_UPDATE_SIGNING_KEY }}
         run: node scripts/build-downloads-page.mjs artifacts public-downloads/downloads
@@ -441,6 +490,7 @@ jobs:
           RELEASE_TAG: ${{ steps.release_metadata.outputs.tag }}
           RELEASE_TITLE: ${{ steps.release_metadata.outputs.title }}
           RELEASE_VERSION: ${{ steps.release_metadata.outputs.version }}
+          LATEXDO_RELEASE_TARGET_SHA: ${{ needs.release_gate.outputs.target_sha }}
         shell: bash
         run: |
           assets=(
@@ -481,9 +531,9 @@ jobs:
           fi
 
           gh release create "$RELEASE_TAG" "${assets[@]}" \
-            --target "$GITHUB_SHA" \
+            --target "$LATEXDO_RELEASE_TARGET_SHA" \
             --title "$RELEASE_TITLE" \
-            --notes "LatexDo v${RELEASE_VERSION} desktop installers from ${GITHUB_SHA}."
+            --notes "LatexDo v${RELEASE_VERSION} desktop installers from ${LATEXDO_RELEASE_TARGET_SHA}."
 
       - name: Checkout latexdo.org
         uses: actions/checkout@v6
@@ -496,6 +546,8 @@ jobs:
       - name: Update latexdo.org downloads
         id: update_latexdo_org_downloads
         shell: bash
+        env:
+          LATEXDO_RELEASE_TARGET_SHA: ${{ needs.release_gate.outputs.target_sha }}
         run: |
           echo "updated=false" >> "$GITHUB_OUTPUT"
           echo "commit_sha=" >> "$GITHUB_OUTPUT"
@@ -508,6 +560,17 @@ jobs:
           const [currentPath, incomingPath] = process.argv.slice(2);
           const current = JSON.parse(await readFile(currentPath, "utf8"));
           const incoming = JSON.parse(await readFile(incomingPath, "utf8"));
+          const escapeRegExp = (value) =>
+            String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const isReleaseSlugForVersion = (release, version) =>
+            release === `v${version}` ||
+            new RegExp(
+              `^v${escapeRegExp(version)}-build\\.\\d+\\.\\d+\\.[a-f0-9]{12}$`,
+            ).test(release);
+          const isBuildReleaseSlugForVersion = (release, version) =>
+            new RegExp(
+              `^v${escapeRegExp(version)}-build\\.\\d+\\.\\d+\\.[a-f0-9]{12}$`,
+            ).test(release);
           if (
             current.product !== "LatexDo" ||
             ![1, 2].includes(current.schemaVersion)
@@ -528,7 +591,9 @@ jobs:
             };
             if (
               !/^\d+\.\d+\.\d+$/.test(current.version ?? "") ||
-              !/^\d+\.\d+\.\d+$/.test(incoming.version ?? "")
+              !/^\d+\.\d+\.\d+$/.test(incoming.version ?? "") ||
+              !isReleaseSlugForVersion(current.release, current.version) ||
+              !isReleaseSlugForVersion(incoming.release, incoming.version)
             ) {
               throw new Error("Cannot compare malformed website update versions.");
             }
@@ -539,9 +604,24 @@ jobs:
               );
             }
             if (comparison === 0 && current.commit !== incoming.commit) {
-              throw new Error(
-                `Refusing to change the commit for published version ${current.version}.`,
-              );
+              if (
+                !isBuildReleaseSlugForVersion(incoming.release, incoming.version)
+              ) {
+                throw new Error(
+                  `Refusing to change the commit for stable version ${current.version}.`,
+                );
+              }
+              const currentPublishedAt = Date.parse(current.publishedAt);
+              const incomingPublishedAt = Date.parse(incoming.publishedAt);
+              if (
+                !Number.isFinite(currentPublishedAt) ||
+                !Number.isFinite(incomingPublishedAt) ||
+                incomingPublishedAt <= currentPublishedAt
+              ) {
+                throw new Error(
+                  `Refusing to move ${current.version} to another build without a newer publication time.`,
+                );
+              }
             }
           }
           NODE
@@ -564,7 +644,7 @@ jobs:
             echo "No latexdo.org download changes to commit."
           else
             git -C latexdo-org-site commit \
-              -m "Publish LatexDo downloads from latexdo@${GITHUB_SHA}"
+              -m "Publish LatexDo downloads from latexdo@${LATEXDO_RELEASE_TARGET_SHA}"
             git -C latexdo-org-site push origin HEAD:main
             commit_sha="$(git -C latexdo-org-site rev-parse HEAD)"
             echo "updated=true" >> "$GITHUB_OUTPUT"
@@ -600,5 +680,6 @@ jobs:
           LATEXDO_VERIFY_RETRIES: 12
           LATEXDO_VERIFY_DELAY_MS: 5000
           LATEXDO_PUBLIC_DOWNLOADS_URL: https://latexdo.org/downloads/
+          LATEXDO_RELEASE_COMMIT: ${{ needs.release_gate.outputs.target_sha }}
           LATEXDO_RELEASE_ASSET_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.release_metadata.outputs.tag }}
         run: node scripts/verify-deployed-downloads.mjs https://raw.githubusercontent.com/latexdo/latexdo.org/main/downloads/

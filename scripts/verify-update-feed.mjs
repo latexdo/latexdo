@@ -23,6 +23,18 @@ function canonicalJson(value) {
   throw new Error("Feed contains an unsupported JSON value.");
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isReleaseSlugForVersion(release, version) {
+  if (typeof release !== "string" || typeof version !== "string") return false;
+  if (release === `v${version}`) return true;
+  return new RegExp(
+    `^v${escapeRegExp(version)}-build\\.\\d+\\.\\d+\\.[a-f0-9]{12}$`,
+  ).test(release);
+}
+
 const feedPath = path.resolve(
   process.argv[2] ?? "public-downloads/updates/latest.json",
 );
@@ -42,7 +54,7 @@ if (
   payload.product !== "LatexDo" ||
   payload.channel !== "stable" ||
   !/^\d+\.\d+\.\d+$/.test(payload.version ?? "") ||
-  payload.release !== `v${payload.version}` ||
+  !isReleaseSlugForVersion(payload.release, payload.version) ||
   !/^[a-f0-9]{40}$/.test(payload.commit ?? "") ||
   signature?.algorithm !== "ed25519" ||
   !/^[a-f0-9]{16}$/.test(signature.keyId ?? "") ||
