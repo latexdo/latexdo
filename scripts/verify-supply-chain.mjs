@@ -91,9 +91,7 @@ for (const requiredWebsiteControl of [
   "npm run deploy",
 ]) {
   if (!websiteWorkflow.includes(requiredWebsiteControl)) {
-    throw new Error(
-      `Website deployment control is missing: ${requiredWebsiteControl}`,
-    );
+    throw new Error(`Website deployment control is missing: ${requiredWebsiteControl}`);
   }
 }
 for (const requiredRenewalControl of [
