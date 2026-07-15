@@ -180,9 +180,9 @@ describe("buildBlameAnnotations", () => {
 
   it("pads gutter author names to a fixed width", () => {
     const [annotation] = buildBlameAnnotations([blame({ author: "Al" })], now);
-    expect(annotation.gutterText.startsWith("Al".padEnd(fileBlameAuthorMaxLength))).toBe(
-      true,
-    );
+    expect(
+      annotation.gutterText.startsWith("Al".padEnd(fileBlameAuthorMaxLength)),
+    ).toBe(true);
   });
 
   it("truncates long gutter author names", () => {

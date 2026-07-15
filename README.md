@@ -11,7 +11,7 @@ LatexDo is the main desktop LaTeX editor and the source of truth for the shared 
 
 ## Requirements
 
-- Node.js 20 or newer.
+- Node.js 22.17 or newer.
 - npm.
 - A TeX distribution with `latexmk` for PDF compilation:
   - macOS: MacTeX.
@@ -64,6 +64,45 @@ That refreshes:
 - `../latexdo.org` from `website/`.
 - `../editor.latexdo.org/dist` from the built editor frontend.
 
+## Hosted Production
+
+`https://editor.latexdo.org` is the only public API and WebSocket origin. The
+The `collaborations-latexdo-org-v2` Worker owns sessions, authorization, projects,
+files, shares, presence, and Yjs rooms behind a service binding. The editor
+gateway owns bounded compile/import admission, stateless compiler containers,
+and private R2 PDF artifacts.
+
+Deploy in this order:
+
+1. Deploy and verify `collaborations-latexdo-org-v2`, including its Durable
+   Object migrations and authenticated internal readiness route. Do not rename,
+   replace, or bind the legacy `collaborations-latexdo-org` Worker.
+2. Deploy `editor.latexdo.org` from a reviewed commit. Roll out a compiler image
+   only through that repository's protected manual workflow.
+3. Use this repository's `hosted-editor-candidate` workflow to validate the
+   exact frontend commit, then give that full commit SHA to the hosted editor's
+   protected deployment workflow. Only the hosted editor repository deploys the
+   production Worker.
+4. Run credentialed project, edit, WebSocket reconnect, import, compile, PDF
+   range, and rollback smoke tests before moving production traffic.
+
+The v2 Durable Object namespace starts empty by design. Production hostname
+cutover is blocked until operators have exported and migrated every retained
+legacy project, validated owner access and file hashes in v2, and recorded an
+approved disposition for any account that cannot be migrated. Keeping the
+legacy Worker available is not itself a migration: reloaded clients receive the
+new frontend. The protected editor deployment must require an explicit
+migration-complete attestation, and rollback remains open until migrated users
+have passed read, edit, compile, share, and reconnect checks.
+
+Production also requires the shared internal service token, independent session
+and compiler secrets, the private compile-artifact R2 bucket and lifecycle, paid
+Workers/Durable Objects/Containers capacity, scoped deployment credentials, and
+an account container quota matching the configured pool. One million registered
+users is not a concurrency target: launch approval requires staged distributed
+load tests against the expected active WebSocket, edit, import, and compile
+arrival rates on the actual Cloudflare account.
+
 ## Release
 
 Build local installers with:
@@ -72,15 +111,22 @@ Build local installers with:
 npm run dist
 ```
 
-CI also builds installers. The release workflow uploads macOS and Windows
-installers to a new immutable GitHub Release for each main-branch run, using a
-tag such as `v<package version>-build.<run>.<attempt>.<sha>`, and publishes the
-website release index at `https://latexdo.org/downloads/<release tag>/`.
+CI also builds non-release smoke-test installers. Production releases run only
+from an immutable `v<package version>` tag whose version exactly matches
+`package.json`. The release workflow publishes macOS, Windows, and Linux assets
+plus the website release index at `https://latexdo.org/downloads/<release tag>/`.
 `https://latexdo.org/updates/latest.json` points the desktop app at that
-versioned release manifest, whose download URLs point to the GitHub Release
-assets. The downloads page also publishes an all-release tag index at
+versioned release. The feed is signed with the Ed25519 key pinned into every
+desktop package; the app rejects unsigned, modified, or unknown-key feeds before
+downloading an installer. Signed feeds also expire, and both the desktop app and
+CLI persist the highest trusted version and publication date to reject rollbacks.
+The downloads page also publishes an all-release tag index at
 `https://latexdo.org/downloads/` and `https://latexdo.org/downloads/releases.json`.
 
-Public macOS release signing and notarization depend on the Apple and certificate
-secrets configured in GitHub Actions. Without those secrets, CI can still
-produce ad-hoc signed development builds.
+Production publication fails closed unless GitHub Actions has the Apple signing
+and notarization secrets, `WINDOWS_CERTIFICATE_P12`,
+`WINDOWS_CERTIFICATE_PASSWORD`, `LATEXDO_UPDATE_SIGNING_KEY`,
+`LATEXDO_WEBSITE_TOKEN`, and `CLOUDFLARE_API_TOKEN`. The update signing secret is
+the base64-encoded PEM private key matching `build/update-public-key.pem`.
+Unsigned packages remain available only as short-lived CI artifacts and are
+never published by the release workflow.

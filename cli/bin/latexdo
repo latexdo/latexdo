@@ -2,14 +2,15 @@
 set -eu
 
 APP_REPO_DEFAULT="https://github.com/latexdo/latexdo.git"
-APP_BRANCH_DEFAULT="main"
+UPDATE_FEED_DEFAULT="https://latexdo.org/updates/latest.json"
 HOST_DEFAULT="127.0.0.1"
 PORT_DEFAULT="5173"
 
 LATEXDO_HOME="${LATEXDO_HOME:-$HOME/.latexdo}"
 APP_DIR="${LATEXDO_APP_DIR:-$LATEXDO_HOME/app}"
 APP_REPO="${LATEXDO_APP_REPO:-$APP_REPO_DEFAULT}"
-APP_BRANCH="${LATEXDO_APP_BRANCH:-$APP_BRANCH_DEFAULT}"
+APP_REF_OVERRIDE="${LATEXDO_APP_REF:-${LATEXDO_APP_BRANCH:-}}"
+UPDATE_FEED="${LATEXDO_UPDATE_FEED:-$UPDATE_FEED_DEFAULT}"
 HOST="${LATEXDO_HOST:-$HOST_DEFAULT}"
 PORT="${LATEXDO_PORT:-$PORT_DEFAULT}"
 SKIP_UPDATE="${LATEXDO_SKIP_UPDATE:-0}"
@@ -39,6 +40,7 @@ LatexDo CLI
 Usage:
   latexdo [open] [--host HOST] [--port PORT] [--no-update]
   latexdo update
+  latexdo verify-update
   latexdo doctor
   latexdo path
   latexdo reset
@@ -47,7 +49,8 @@ Usage:
 Environment:
   LATEXDO_HOME       Cache directory. Default: ~/.latexdo
   LATEXDO_APP_REPO   Source repository. Default: https://github.com/latexdo/latexdo.git
-  LATEXDO_APP_BRANCH Source branch. Default: main
+  LATEXDO_APP_REF    Explicit source ref override (development only)
+  LATEXDO_UPDATE_FEED Signed release feed. Default: https://latexdo.org/updates/latest.json
   LATEXDO_HOST       Local bind host. Default: 127.0.0.1
   LATEXDO_PORT       Preferred local port. Default: 5173
   LATEXDO_NO_OPEN    Set to 1 to print the localhost URL without opening a browser
@@ -58,15 +61,225 @@ require_tool() {
   command_exists "$1" || die "$1 is required. Install it and run latexdo again."
 }
 
+require_node_runtime() {
+  require_tool node
+  node_supported="$(node -p "(() => { const [major, minor] = process.versions.node.split('.').map(Number); return major > 22 || (major === 22 && minor >= 17); })()" 2>/dev/null || printf 'false')"
+  if [ "$node_supported" != "true" ]; then
+    die "Node.js 22.17 or newer is required. Current version: $(node --version 2>/dev/null || printf 'unknown')"
+  fi
+}
+
 require_runtime_tools() {
   require_tool git
-  require_tool node
+  require_node_runtime
   require_tool npm
+}
 
-  node_major="$(node -p "Number(process.versions.node.split('.')[0])" 2>/dev/null || printf '0')"
-  if [ "$node_major" -lt 20 ]; then
-    die "Node.js 20 or newer is required. Current version: $(node --version 2>/dev/null || printf 'unknown')"
-  fi
+resolve_signed_release() {
+  node - "$UPDATE_FEED" "${LATEXDO_UPDATE_FEED_FILE:-}" "$LATEXDO_HOME/update-feed-state.json" <<'NODE'
+const { createHash, createPublicKey, verify } = require("node:crypto");
+const { mkdir, readFile, rename, unlink, writeFile } = require("node:fs/promises");
+const path = require("node:path");
+
+const feedUrl = process.argv[2];
+const feedFile = process.argv[3];
+const stateFile = process.argv[4];
+const publicKeyPem = `-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEA0PHk1skQkhgMUMIYhI2SEVWeZO8mESGpsOmTv+eL7Bc=
+-----END PUBLIC KEY-----`;
+
+function canonicalJson(value) {
+  if (value === null) return "null";
+  if (typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("feed contains a non-finite number");
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  }
+  throw new Error("feed contains an unsupported value");
+}
+
+async function readFeed() {
+  if (feedFile) return readFile(feedFile, "utf8");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(feedUrl, {
+      headers: { Accept: "application/json", "User-Agent": "latexdo-cli" },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`feed returned HTTP ${response.status}`);
+    const responseUrl = new URL(response.url);
+    if (responseUrl.protocol !== "https:" || !["latexdo.org", "www.latexdo.org"].includes(responseUrl.hostname)) {
+      throw new Error("feed redirected to an untrusted host");
+    }
+    const body = await response.text();
+    if (body.length > 1024 * 1024) throw new Error("feed is too large");
+    return body;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function compareVersions(left, right) {
+  const leftParts = left.split(".").map(Number);
+  const rightParts = right.split(".").map(Number);
+  for (let index = 0; index < 3; index += 1) {
+    if (leftParts[index] !== rightParts[index]) {
+      return leftParts[index] > rightParts[index] ? 1 : -1;
+    }
+  }
+  return 0;
+}
+
+async function readRollbackState() {
+  try {
+    const state = JSON.parse(await readFile(stateFile, "utf8"));
+    if (
+      state.schemaVersion !== 1 ||
+      !/^\d+\.\d+\.\d+$/.test(state.highestVersion || "") ||
+      !/^[a-f0-9]{40}$/.test(state.highestCommit || "") ||
+      !Number.isFinite(Date.parse(state.highestPublishedAt))
+    ) {
+      throw new Error("stored update rollback state is invalid");
+    }
+    return state;
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function persistRollbackState(payload, publishedAt, previousState) {
+  const versionComparison = previousState
+    ? compareVersions(payload.version, previousState.highestVersion)
+    : 1;
+  if (versionComparison < 0) {
+    throw new Error(`feed version ${payload.version} is older than previously trusted ${previousState.highestVersion}`);
+  }
+  if (previousState && versionComparison === 0) {
+    if (payload.commit !== previousState.highestCommit) {
+      throw new Error("feed changed the commit for an already trusted version");
+    }
+    if (publishedAt < Date.parse(previousState.highestPublishedAt)) {
+      throw new Error("feed publication date is older than the previously trusted feed");
+    }
+  }
+  if (
+    previousState &&
+    versionComparison > 0 &&
+    publishedAt < Date.parse(previousState.highestPublishedAt)
+  ) {
+    throw new Error("feed publication timeline moved backwards");
+  }
+
+  if (
+    previousState &&
+    versionComparison === 0 &&
+    publishedAt === Date.parse(previousState.highestPublishedAt)
+  ) {
+    return;
+  }
+
+  await mkdir(path.dirname(stateFile), { recursive: true });
+  const temporaryStateFile = `${stateFile}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    await writeFile(
+      temporaryStateFile,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        highestVersion: payload.version,
+        highestCommit: payload.commit,
+        highestPublishedAt: payload.publishedAt,
+        updatedAt: new Date().toISOString(),
+      }, null, 2)}\n`,
+      { encoding: "utf8", mode: 0o600, flag: "wx" },
+    );
+    await rename(temporaryStateFile, stateFile);
+  } catch (error) {
+    await unlink(temporaryStateFile).catch(() => undefined);
+    throw error;
+  }
+}
+
+(async () => {
+  const payload = JSON.parse(await readFeed());
+  const signature = payload.signature;
+  if (
+    payload.schemaVersion !== 2 ||
+    payload.product !== "LatexDo" ||
+    payload.channel !== "stable" ||
+    !/^\d+\.\d+\.\d+$/.test(payload.version || "") ||
+    payload.release !== `v${payload.version}` ||
+    !/^[a-f0-9]{40}$/.test(payload.commit || "") ||
+    signature?.algorithm !== "ed25519" ||
+    !/^[a-f0-9]{16}$/.test(signature.keyId || "") ||
+    !/^[A-Za-z0-9+/]{86}==$/.test(signature.value || "")
+  ) {
+    throw new Error("feed metadata is invalid");
+  }
+  delete payload.signature;
+  const publicKey = createPublicKey(publicKeyPem);
+  const keyId = createHash("sha256")
+    .update(publicKey.export({ type: "spki", format: "der" }))
+    .digest("hex")
+    .slice(0, 16);
+  if (signature.keyId !== keyId) throw new Error("feed was signed by an unknown key");
+  if (!verify(null, Buffer.from(canonicalJson(payload)), publicKey, Buffer.from(signature.value, "base64"))) {
+    throw new Error("feed signature verification failed");
+  }
+  const publishedAt = Date.parse(payload.publishedAt);
+  const expiresAt = Date.parse(payload.expiresAt);
+  const now = Date.now();
+  if (
+    typeof payload.publishedAt !== "string" ||
+    typeof payload.expiresAt !== "string" ||
+    !Number.isFinite(publishedAt) ||
+    !Number.isFinite(expiresAt) ||
+    expiresAt <= publishedAt ||
+    publishedAt > now + 10 * 60 * 1000 ||
+    expiresAt <= now
+  ) {
+    throw new Error("feed freshness window is invalid or expired");
+  }
+  await persistRollbackState(payload, publishedAt, await readRollbackState());
+  process.stdout.write(`${payload.release} ${payload.commit}\n`);
+})().catch((error) => {
+  console.error(`latexdo: could not verify release feed: ${error.message}`);
+  process.exit(1);
+});
+NODE
+}
+
+trusted_cached_checkout() {
+  [ -d "$APP_DIR/.git" ] || return 1
+  state_file="$LATEXDO_HOME/update-feed-state.json"
+  [ -f "$state_file" ] || return 1
+
+  trusted_commit="$(node - "$state_file" <<'NODE'
+const { readFileSync } = require("node:fs");
+
+try {
+  const state = JSON.parse(readFileSync(process.argv[2], "utf8"));
+  if (
+    state.schemaVersion !== 1 ||
+    !/^\d+\.\d+\.\d+$/.test(state.highestVersion || "") ||
+    !/^[a-f0-9]{40}$/.test(state.highestCommit || "") ||
+    !Number.isFinite(Date.parse(state.highestPublishedAt))
+  ) {
+    process.exit(1);
+  }
+  process.stdout.write(state.highestCommit);
+} catch {
+  process.exit(1);
+}
+NODE
+)" || return 1
+  cached_commit="$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null)" || return 1
+  [ "$cached_commit" = "$trusted_commit" ]
 }
 
 file_hash() {
@@ -165,12 +378,34 @@ open_browser() {
 sync_source() {
   mkdir -p "$LATEXDO_HOME"
 
+  if [ "$SKIP_UPDATE" = "1" ] && [ -z "$APP_REF_OVERRIDE" ]; then
+    if ! trusted_cached_checkout; then
+      die "--no-update requires a cached checkout at the last commit verified by the signed update feed."
+    fi
+    log "Using cached trusted LatexDo release at $APP_DIR"
+    return
+  fi
+
+  target_ref="$APP_REF_OVERRIDE"
+  expected_commit=""
+  if [ -z "$target_ref" ]; then
+    release_metadata="$(resolve_signed_release)" || die "Could not resolve a trusted LatexDo release."
+    target_ref="${release_metadata%% *}"
+    expected_commit="${release_metadata#* }"
+    if [ -z "$target_ref" ] || [ -z "$expected_commit" ] || [ "$target_ref" = "$expected_commit" ]; then
+      die "Signed release feed returned invalid source metadata."
+    fi
+  fi
+
   if [ ! -d "$APP_DIR/.git" ]; then
     if [ -e "$APP_DIR" ]; then
       die "$APP_DIR exists but is not a git checkout. Move it away or run: latexdo reset"
     fi
-    log "Cloning LatexDo source into $APP_DIR"
-    git clone --depth 1 --branch "$APP_BRANCH" "$APP_REPO" "$APP_DIR"
+    log "Cloning LatexDo $target_ref into $APP_DIR"
+    git clone --depth 1 --branch "$target_ref" "$APP_REPO" "$APP_DIR"
+    if [ -n "$expected_commit" ] && [ "$(git -C "$APP_DIR" rev-parse HEAD)" != "$expected_commit" ]; then
+      die "Cloned release commit does not match the signed update feed."
+    fi
     return
   fi
 
@@ -179,9 +414,12 @@ sync_source() {
   fi
 
   log "Checking for LatexDo updates"
-  if git -C "$APP_DIR" fetch --depth 1 origin "$APP_BRANCH"; then
-    git -C "$APP_DIR" checkout -q "$APP_BRANCH"
-    git -C "$APP_DIR" reset --hard "origin/$APP_BRANCH" >/dev/null
+  if git -C "$APP_DIR" fetch --depth 1 origin "$target_ref"; then
+    git -C "$APP_DIR" checkout -q --detach FETCH_HEAD
+    actual_commit="$(git -C "$APP_DIR" rev-parse HEAD)"
+    if [ -n "$expected_commit" ] && [ "$actual_commit" != "$expected_commit" ]; then
+      die "Fetched release commit does not match the signed update feed."
+    fi
   else
     warn "Could not update from $APP_REPO. Using cached source at $APP_DIR."
   fi
@@ -279,7 +517,8 @@ doctor() {
   log "LatexDo CLI doctor"
   log "home: $LATEXDO_HOME"
   log "app:  $APP_DIR"
-  log "repo: $APP_REPO#$APP_BRANCH"
+  log "repo: $APP_REPO${APP_REF_OVERRIDE:+#$APP_REF_OVERRIDE}"
+  [ -n "$APP_REF_OVERRIDE" ] || log "feed: $UPDATE_FEED"
 
   for tool in git node npm curl; do
     if command_exists "$tool"; then
@@ -310,10 +549,17 @@ reset_app() {
   fi
 }
 
+verify_update() {
+  require_node_runtime
+  mkdir -p "$LATEXDO_HOME"
+  release_metadata="$(resolve_signed_release)" || die "Could not resolve a trusted LatexDo release."
+  log "Trusted LatexDo release: $release_metadata"
+}
+
 command_name="open"
 if [ "${1:-}" != "" ]; then
   case "$1" in
-    open|serve|update|doctor|path|reset|help|--help|-h)
+    open|serve|update|verify-update|doctor|path|reset|help|--help|-h)
       command_name="$1"
       shift
       ;;
@@ -348,6 +594,9 @@ case "$command_name" in
     ;;
   update)
     update_app
+    ;;
+  verify-update)
+    verify_update
     ;;
   doctor)
     doctor

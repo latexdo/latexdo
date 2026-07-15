@@ -2,6 +2,7 @@
 set -eu
 
 CLI_URL="${LATEXDO_CLI_URL:-https://latexdo.org/bin/latexdo}"
+CLI_SHA256="${LATEXDO_CLI_SHA256:-45ddf93b9e10eef9022d68ebe451610c76f440978138f682c57e684d458638ab}"
 INSTALL_DIR="${LATEXDO_BIN_DIR:-$HOME/.local/bin}"
 TARGET="$INSTALL_DIR/latexdo"
 
@@ -71,6 +72,18 @@ download() {
   die "curl or wget is required to download LatexDo CLI."
 }
 
+sha256_file() {
+  if command_exists shasum; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command_exists sha256sum; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command_exists openssl; then
+    openssl dgst -sha256 "$1" | awk '{print $NF}'
+  else
+    die "shasum, sha256sum, or openssl is required to verify the CLI download."
+  fi
+}
+
 make_temp_file() {
   if command_exists mktemp; then
     mktemp "${TMPDIR:-/tmp}/latexdo.XXXXXX"
@@ -87,6 +100,17 @@ trap 'rm -f "$tmp_file"' EXIT INT TERM
 
 log "Downloading LatexDo CLI"
 download "$CLI_URL" "$tmp_file"
+
+if [ "${#CLI_SHA256}" -ne 64 ]; then
+  die "LATEXDO_CLI_SHA256 must be exactly 64 hexadecimal characters."
+fi
+case "$CLI_SHA256" in
+  *[!a-fA-F0-9]*) die "LATEXDO_CLI_SHA256 must contain only hexadecimal characters." ;;
+esac
+actual_sha256="$(sha256_file "$tmp_file")"
+if [ "$(printf '%s' "$actual_sha256" | tr 'A-F' 'a-f')" != "$(printf '%s' "$CLI_SHA256" | tr 'A-F' 'a-f')" ]; then
+  die "Downloaded CLI failed SHA-256 verification."
+fi
 
 chmod 0755 "$tmp_file"
 mv "$tmp_file" "$TARGET"

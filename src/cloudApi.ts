@@ -13,19 +13,59 @@ import type {
   ProofreadingSettings,
   SpellCheckerSettings,
 } from "./types";
+import { appVersion } from "./appVersion";
+import {
+  collaborationApiBaseUrl,
+  collaborationHeaders,
+} from "./collaboration/collaborationApi";
+import {
+  clearCollaborationSessionToken,
+  rememberShareToken,
+  shareTokenForProject,
+} from "./collaboration/collaborationStorage";
 
 type CloudLatexDoApi = LatexDoApi & {
   runtime: "cloud";
 };
 
-const cloudSessionKey = "latexdo.cloud.session";
-const cloudClientKey = "latexdo.cloud.client";
-const cloudClientNameKey = "latexdo.cloud.clientName";
-const cloudShareTokensKey = "latexdo.cloud.shareTokens";
 const cloudSpellCheckerSettingsKey = "latexdo.cloud.spellchecker";
 const cloudProofreadingSettingsKey = "latexdo.cloud.proofreading";
+const cloudActiveProjectKey = "latexdo.cloud.activeProject";
 const extensionStoreCatalogUrl = "https://store.latexdo.org/extensions/catalog.json";
-const defaultCollaborationApiBaseUrl = "https://collaborations.latexdo.org";
+const defaultRequestTimeoutMs = 15_000;
+const binaryRequestTimeoutMs = 30_000;
+const compileRequestTimeoutMs = 75_000;
+const importRequestTimeoutMs = 75_000;
+const hostedImportFileLimitBytes = 5 * 1024 * 1024;
+const hostedAssetLimitBytes = 2 * 1024 * 1024;
+const hostedPdfLimitBytes = 25 * 1024 * 1024;
+const maxSafeRequestRetries = 2;
+const maxRetryDelayMs = 2_000;
+
+type RequestPolicy = {
+  timeoutMs?: number;
+  retries?: number;
+};
+
+type HostedImportResponse = {
+  project?: OpenProject;
+  relativePath: string;
+  sourcePath: string;
+  converter: "pandoc";
+  warnings: string[];
+  mediaFiles?: string[];
+};
+
+type OwnedProjectDirectory = {
+  projects: Array<{ id: string; name: string; updatedAt: number }>;
+};
+
+class RequestTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Request timed out after ${Math.ceil(timeoutMs / 1000)} seconds.`);
+    this.name = "RequestTimeoutError";
+  }
+}
 
 const defaultProofreadingSettings: ProofreadingSettings = {
   enabled: false,
@@ -44,59 +84,224 @@ const defaultSpellCheckerSettings: SpellCheckerSettings = {
 };
 
 function apiBaseUrl(): string {
-  return import.meta.env.VITE_LATEXDO_API_BASE_URL || defaultCollaborationApiBaseUrl;
-}
-
-function sessionId(): string {
-  const existing = window.localStorage.getItem(cloudSessionKey);
-  if (existing) return existing;
-
-  const created =
-    crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random()}`;
-  window.localStorage.setItem(cloudSessionKey, created);
-  return created;
-}
-
-function clientId(): string {
-  const existing = window.localStorage.getItem(cloudClientKey);
-  if (existing) return existing;
-
-  const created =
-    crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random()}`;
-  window.localStorage.setItem(cloudClientKey, created);
-  return created;
-}
-
-function clientName(): string {
-  return (window.localStorage.getItem(cloudClientNameKey) ?? "").trim().slice(0, 80);
+  return collaborationApiBaseUrl().replace(/\/+$/, "");
 }
 
 function apiUrl(path: string): string {
   return `${apiBaseUrl()}${path}`;
 }
 
-function collaborationHeaders(shareToken?: string): Record<string, string> {
-  return {
-    "x-latexdo-session": sessionId(),
-    "x-latexdo-client": clientId(),
-    "x-latexdo-client-name": clientName(),
-    ...(shareToken ? { "x-latexdo-share-token": shareToken } : {}),
-  };
+function isSafeRequest(method: string): boolean {
+  return method === "GET" || method === "HEAD";
+}
+
+function isRetryableStatus(status: number): boolean {
+  return (
+    status === 408 ||
+    status === 425 ||
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504
+  );
+}
+
+function retryDelayMs(response: Response | null, attempt: number): number {
+  const retryAfter = response?.headers.get("retry-after")?.trim();
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(maxRetryDelayMs, seconds * 1000);
+    }
+
+    const date = Date.parse(retryAfter);
+    if (Number.isFinite(date)) {
+      return Math.min(maxRetryDelayMs, Math.max(0, date - Date.now()));
+    }
+  }
+
+  const ceiling = Math.min(maxRetryDelayMs, 200 * 2 ** attempt);
+  return Math.round(ceiling * (0.5 + Math.random() * 0.5));
+}
+
+function abortError(): DOMException {
+  return new DOMException("Request cancelled.", "AbortError");
+}
+
+async function boundedResponseBytes(
+  response: Response,
+  maxBytes: number,
+  label: string,
+): Promise<Uint8Array> {
+  const declaredLength = Number(response.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error(`${label} exceeds its download limit.`);
+  }
+  if (!response.body) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > maxBytes) {
+      throw new Error(`${label} exceeds its download limit.`);
+    }
+    return bytes;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        throw new Error(`${label} exceeds its download limit.`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+async function waitForRetry(delayMs: number, signal?: AbortSignal | null) {
+  if (signal?.aborted) {
+    throw abortError();
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(abortError());
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const sourceSignal = options.signal;
+  let timedOut = false;
+  const onAbort = () => controller.abort(sourceSignal?.reason);
+  if (sourceSignal?.aborted) {
+    throw abortError();
+  }
+  sourceSignal?.addEventListener("abort", onAbort, { once: true });
+  const timeout = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (timedOut) {
+      throw new RequestTimeoutError(timeoutMs);
+    }
+    if (sourceSignal?.aborted) {
+      throw abortError();
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+    sourceSignal?.removeEventListener("abort", onAbort);
+  }
+}
+
+async function requestResponse(
+  path: string,
+  options: RequestInit = {},
+  shareToken?: string,
+  policy: RequestPolicy = {},
+): Promise<Response> {
+  const method = (options.method ?? "GET").toUpperCase();
+  const safeRequest = isSafeRequest(method);
+  const retries = safeRequest
+    ? Math.max(
+        0,
+        Math.min(maxSafeRequestRetries, policy.retries ?? maxSafeRequestRetries),
+      )
+    : 0;
+  const timeoutMs = Math.max(1, policy.timeoutMs ?? defaultRequestTimeoutMs);
+  const headers = new Headers(options.headers);
+  if (
+    options.body !== undefined &&
+    options.body !== null &&
+    !headers.has("content-type")
+  ) {
+    headers.set("content-type", "application/json");
+  }
+  const authenticationHeaders = await collaborationHeaders(shareToken);
+  for (const [key, value] of Object.entries(authenticationHeaders)) {
+    if (!headers.has(key)) {
+      headers.set(key, value);
+    }
+  }
+
+  let authenticationRetried = false;
+  for (let attempt = 0; ; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetchWithTimeout(
+        apiUrl(path),
+        { ...options, method, headers },
+        timeoutMs,
+      );
+    } catch (error) {
+      if (
+        attempt >= retries ||
+        error instanceof RequestTimeoutError ||
+        options.signal?.aborted
+      ) {
+        throw error;
+      }
+      await waitForRetry(retryDelayMs(null, attempt), options.signal);
+      continue;
+    }
+
+    if (response.status === 401 && !authenticationRetried) {
+      authenticationRetried = true;
+      clearCollaborationSessionToken(apiBaseUrl());
+      const refreshedHeaders = await collaborationHeaders(shareToken);
+      for (const [key, value] of Object.entries(refreshedHeaders)) {
+        headers.set(key, value);
+      }
+      continue;
+    }
+
+    if (attempt < retries && isRetryableStatus(response.status)) {
+      await response.body?.cancel().catch(() => undefined);
+      await waitForRetry(retryDelayMs(response, attempt), options.signal);
+      continue;
+    }
+    return response;
+  }
 }
 
 async function requestJson<T>(
   path: string,
   options: RequestInit = {},
   shareToken?: string,
+  policy: RequestPolicy = {},
 ): Promise<T> {
-  const response = await fetch(apiUrl(path), {
-    ...options,
-    headers: {
-      "content-type": "application/json",
-      ...collaborationHeaders(shareToken),
-      ...options.headers,
-    },
-  });
+  const response = await requestResponse(path, options, shareToken, policy);
 
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
@@ -117,6 +322,77 @@ function filePathQuery(relativePath: string): string {
   return `path=${encodeURIComponent(relativePath)}`;
 }
 
+function chooseHostedImportFile(accept: string): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = accept;
+    input.hidden = true;
+    let settled = false;
+    const finish = (file: File | null) => {
+      if (settled) return;
+      settled = true;
+      input.remove();
+      resolve(file);
+    };
+    input.addEventListener("change", () => finish(input.files?.[0] ?? null), {
+      once: true,
+    });
+    input.addEventListener("cancel", () => finish(null), { once: true });
+    document.body.append(input);
+    input.click();
+  });
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  const chunks: string[] = [];
+  for (let offset = 0; offset < bytes.byteLength; offset += 0x8000) {
+    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)));
+  }
+  return btoa(chunks.join(""));
+}
+
+async function hostedImportPayload(
+  accept: string,
+  projectId?: string,
+): Promise<{ fileName: string; contentBase64: string; projectId?: string } | null> {
+  const file = await chooseHostedImportFile(accept);
+  if (!file) return null;
+  if (file.size > hostedImportFileLimitBytes) {
+    throw new Error("Hosted imports are limited to 5 MB per file.");
+  }
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (bytes.byteLength !== file.size || bytes.byteLength > hostedImportFileLimitBytes) {
+    throw new Error("The selected import file could not be read safely.");
+  }
+  return {
+    ...(projectId ? { projectId } : {}),
+    fileName: file.name,
+    contentBase64: bytesToBase64(bytes),
+  };
+}
+
+function normalizeHostedImport(value: HostedImportResponse): HostedImportResponse {
+  if (
+    !value ||
+    typeof value.relativePath !== "string" ||
+    typeof value.sourcePath !== "string" ||
+    value.converter !== "pandoc" ||
+    !Array.isArray(value.warnings)
+  ) {
+    throw new Error("The hosted importer returned an invalid response.");
+  }
+  return {
+    ...value,
+    warnings: value.warnings
+      .filter((warning) => typeof warning === "string")
+      .slice(0, 20),
+    mediaFiles: Array.isArray(value.mediaFiles)
+      ? value.mediaFiles.filter((path) => typeof path === "string")
+      : [],
+  };
+}
+
 function readLocalSetting<T>(key: string, fallback: T): T {
   try {
     return JSON.parse(window.localStorage.getItem(key) ?? "") as T;
@@ -125,28 +401,28 @@ function readLocalSetting<T>(key: string, fallback: T): T {
   }
 }
 
-function shareTokens(): Record<string, string> {
-  return readLocalSetting<Record<string, string>>(cloudShareTokensKey, {});
+function activeCloudProjectId(): string {
+  return (window.localStorage.getItem(cloudActiveProjectKey) ?? "").trim();
 }
 
-function shareTokenForProject(projectId: string): string | undefined {
-  return shareTokens()[projectId];
+function rememberActiveCloudProject(projectId: string): void {
+  if (projectId) window.localStorage.setItem(cloudActiveProjectKey, projectId);
 }
 
-function rememberShareToken(projectId: string, token: string): void {
-  window.localStorage.setItem(
-    cloudShareTokensKey,
-    JSON.stringify({ ...shareTokens(), [projectId]: token }),
-  );
+function openProjectFromSummary(project: { id: string; name: string }): OpenProject {
+  return { id: project.id, name: project.name, rootPath: "" };
 }
 
 function initialShareToken(): string | null {
-  const params = new URLSearchParams(window.location.search);
-  const token = params.get("share");
+  const searchParams = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const token = hashParams.get("share") ?? searchParams.get("share");
   if (!token) return null;
-  params.delete("share");
-  const nextSearch = params.toString();
-  const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
+  searchParams.delete("share");
+  hashParams.delete("share");
+  const nextSearch = searchParams.toString();
+  const nextHash = hashParams.toString();
+  const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${nextHash ? `#${nextHash}` : ""}`;
   window.history.replaceState(null, "", nextUrl);
   return token;
 }
@@ -157,7 +433,7 @@ function localShareState(projectId: string): CollaborationState {
     ? {
         enabled: true,
         token,
-        shareUrl: `${window.location.origin}${window.location.pathname}?share=${encodeURIComponent(token)}`,
+        shareUrl: `${window.location.origin}${window.location.pathname}#share=${encodeURIComponent(token)}`,
         projectId,
         users: [],
       }
@@ -168,19 +444,21 @@ function localShareState(projectId: string): CollaborationState {
 }
 
 function shareUrlForToken(token: string): string {
-  return `${window.location.origin}${window.location.pathname}?share=${encodeURIComponent(token)}`;
+  return `${window.location.origin}${window.location.pathname}#share=${encodeURIComponent(token)}`;
 }
 
 function normalizeCollaborationState(
   projectId: string,
   state: CollaborationState,
 ): CollaborationState {
-  if (!state.token) {
+  const token = state.token ?? shareTokenForProject(projectId);
+  if (!token) {
     return state;
   }
   return {
     ...state,
-    shareUrl: state.shareUrl ?? shareUrlForToken(state.token),
+    token,
+    shareUrl: state.shareUrl ?? shareUrlForToken(token),
     projectId: state.projectId ?? projectId,
   };
 }
@@ -219,17 +497,21 @@ function cloudUnavailable(feature: string): Error {
 }
 
 export function createCloudLatexDoApi(): CloudLatexDoApi {
+  const compileControllers = new Map<string, AbortController>();
   const joinCollaboration = async (token: string) => {
     const body = await requestJson<{
       project: OpenProject;
       collaboration: CollaborationState;
-    }>(`/api/shares/${encodeURIComponent(token)}/open`, {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
-    if (body.collaboration.token) {
-      rememberShareToken(body.project.id, body.collaboration.token);
-    }
+    }>(
+      "/api/shares/open",
+      {
+        method: "POST",
+        body: JSON.stringify({}),
+      },
+      token,
+    );
+    rememberShareToken(body.project.id, token);
+    rememberActiveCloudProject(body.project.id);
     body.collaboration = normalizeCollaborationState(
       body.project.id,
       body.collaboration,
@@ -246,17 +528,52 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
         return (await joinCollaboration(token)).project;
       }
 
-      return requestJson("/api/projects/open", {
+      const directory = await requestJson<OwnedProjectDirectory>("/api/projects");
+      const projects = Array.isArray(directory.projects)
+        ? directory.projects.filter(
+            (project) =>
+              project &&
+              typeof project.id === "string" &&
+              typeof project.name === "string",
+          )
+        : [];
+      const activeProjectId = activeCloudProjectId();
+      const ownedActiveProject = projects.find(
+        (project) => project.id === activeProjectId,
+      );
+      if (ownedActiveProject) return openProjectFromSummary(ownedActiveProject);
+
+      const activeShareToken = activeProjectId
+        ? shareTokenForProject(activeProjectId)
+        : undefined;
+      if (activeShareToken) {
+        return (await joinCollaboration(activeShareToken)).project;
+      }
+
+      const recentProject = projects[0];
+      if (recentProject) {
+        rememberActiveCloudProject(recentProject.id);
+        return openProjectFromSummary(recentProject);
+      }
+
+      const project = await requestJson<OpenProject>("/api/projects/open", {
         method: "POST",
         body: JSON.stringify({}),
       });
+      rememberActiveCloudProject(project.id);
+      return project;
     },
 
-    createProject: (options) =>
-      requestJson("/api/projects", {
+    restoreCloudProject: async () => null,
+
+    createProject: async (options) => {
+      const project = await requestJson<OpenProject>("/api/projects", {
         method: "POST",
         body: JSON.stringify(options ?? {}),
-      }),
+      });
+      rememberActiveCloudProject(project.id);
+      return project;
+    },
 
     listProject: (projectId, _options) =>
       requestJson(
@@ -319,12 +636,52 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       throw cloudUnavailable("Tree file import");
     },
 
-    importDocx: async () => {
-      throw cloudUnavailable("DOCX import");
+    importDocx: async (projectId) => {
+      const payload = await hostedImportPayload(
+        ".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        projectId,
+      );
+      if (!payload) return null;
+      const imported = normalizeHostedImport(
+        await requestJson<HostedImportResponse>(
+          "/api/import/docx",
+          {
+            method: "POST",
+            headers: projectId ? { "x-latexdo-project-id": projectId } : undefined,
+            body: JSON.stringify(payload),
+          },
+          projectId ? shareTokenForProject(projectId) : undefined,
+          { timeoutMs: importRequestTimeoutMs, retries: 0 },
+        ),
+      );
+      if (imported.project) rememberActiveCloudProject(imported.project.id);
+      return {
+        ...imported,
+        mediaFiles: imported.mediaFiles ?? [],
+        assetDirectory: "media",
+      };
     },
 
-    importMarkdown: async () => {
-      throw cloudUnavailable("Markdown import");
+    importMarkdown: async (projectId) => {
+      const payload = await hostedImportPayload(
+        ".md,.markdown,text/markdown,text/plain",
+        projectId,
+      );
+      if (!payload) return null;
+      const imported = normalizeHostedImport(
+        await requestJson<HostedImportResponse>(
+          "/api/import/markdown",
+          {
+            method: "POST",
+            headers: projectId ? { "x-latexdo-project-id": projectId } : undefined,
+            body: JSON.stringify(payload),
+          },
+          projectId ? shareTokenForProject(projectId) : undefined,
+          { timeoutMs: importRequestTimeoutMs, retries: 0 },
+        ),
+      );
+      if (imported.project) rememberActiveCloudProject(imported.project.id);
+      return imported;
     },
 
     moveEntry: (projectId, fromRelativePath, toRelativePath) =>
@@ -343,10 +700,10 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       const token = shareTokenForProject(projectId);
       if (token) {
         return requestJson<CollaborationState>(
-          `/api/shares/${encodeURIComponent(token)}/presence`,
+          "/api/shares/presence",
           {
             method: "POST",
-            body: JSON.stringify({ clientId: clientId(), name: clientName() }),
+            body: JSON.stringify({ currentFile: null }),
           },
           token,
         ).then((state) => normalizeCollaborationState(projectId, state));
@@ -386,12 +743,10 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       if (!token) return localShareState(projectId);
 
       return requestJson<CollaborationState>(
-        `/api/shares/${encodeURIComponent(token)}/presence`,
+        "/api/shares/presence",
         {
           method: "POST",
           body: JSON.stringify({
-            clientId: clientId(),
-            name: clientName(),
             currentFile: currentFile ?? null,
           }),
         },
@@ -410,7 +765,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
           permissions: CollaboratorPermission[];
           isAdmin: boolean;
           currentUserRole: CollaboratorRole;
-        }>(`/api/shares/${encodeURIComponent(token)}/permissions`, {}, token);
+        }>("/api/shares/permissions", {}, token);
         return result;
       } catch {
         return { permissions: [], isAdmin: false, currentUserRole: "viewer" as const };
@@ -424,7 +779,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       }
 
       return requestJson<CollaboratorPermission>(
-        `/api/shares/${encodeURIComponent(token)}/permissions`,
+        "/api/shares/permissions",
         {
           method: "PUT",
           body: JSON.stringify(update),
@@ -440,7 +795,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       }
 
       return requestJson<void>(
-        `/api/shares/${encodeURIComponent(token)}/collaborators/${encodeURIComponent(clientIdToRemove)}`,
+        `/api/shares/collaborators/${encodeURIComponent(clientIdToRemove)}`,
         {
           method: "DELETE",
         },
@@ -454,7 +809,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       try {
         const result = await requestJson<{
           isAdmin: boolean;
-        }>(`/api/shares/${encodeURIComponent(token)}/permissions`, {}, token);
+        }>("/api/shares/permissions", {}, token);
         return result.isAdmin;
       } catch {
         return false;
@@ -523,7 +878,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
     onGitChanged: () => () => {},
 
     checkForUpdates: async () => ({
-      currentVersion: "0.1.0",
+      currentVersion: appVersion,
       latestVersion: null,
       releaseUrl: "https://latexdo.org/downloads/",
       updateAvailable: false,
@@ -532,7 +887,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
     updateNow: async () => {
       window.open("https://latexdo.org/downloads/", "_blank", "noopener,noreferrer");
       return {
-        currentVersion: "0.1.0",
+        currentVersion: appVersion,
         latestVersion: null,
         releaseUrl: "https://latexdo.org/downloads/",
         updateAvailable: false,
@@ -607,18 +962,36 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       };
     },
 
-    compile: (request) =>
-      requestJson(
-        "/api/compile",
-        {
-          method: "POST",
-          body: JSON.stringify(request),
-        },
-        shareTokenForProject(request.projectId),
-      ),
+    compile: async (request) => {
+      compileControllers.get(request.projectId)?.abort();
+      const controller = new AbortController();
+      compileControllers.set(request.projectId, controller);
+      try {
+        return await requestJson(
+          "/api/compile",
+          {
+            method: "POST",
+            body: JSON.stringify(request),
+            signal: controller.signal,
+          },
+          shareTokenForProject(request.projectId),
+          { timeoutMs: compileRequestTimeoutMs, retries: 0 },
+        );
+      } finally {
+        if (compileControllers.get(request.projectId) === controller) {
+          compileControllers.delete(request.projectId);
+        }
+      }
+    },
 
-    async cancelCompile(_projectId) {
-      return false;
+    async cancelCompile(projectId) {
+      const controller = compileControllers.get(projectId);
+      if (!controller) {
+        return false;
+      }
+      compileControllers.delete(projectId);
+      controller.abort();
+      return true;
     },
 
     async compileAsymptote(request) {
@@ -643,33 +1016,29 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
     },
 
     async readPdf(projectId, pdfRelativePath) {
-      const response = await fetch(
-        apiUrl(`/api/projects/${projectId}/pdf?${filePathQuery(pdfRelativePath)}`),
-        {
-          headers: {
-            ...collaborationHeaders(shareTokenForProject(projectId)),
-          },
-        },
+      const response = await requestResponse(
+        `/api/projects/${projectId}/pdf?${filePathQuery(pdfRelativePath)}`,
+        {},
+        shareTokenForProject(projectId),
+        { timeoutMs: binaryRequestTimeoutMs },
       );
       if (!response.ok) {
         throw new Error(`${response.status} ${response.statusText}`);
       }
-      return new Uint8Array(await response.arrayBuffer());
+      return boundedResponseBytes(response, hostedPdfLimitBytes, "Hosted PDF");
     },
 
     async readAsset(projectId, relativePath) {
-      const response = await fetch(
-        apiUrl(`/api/projects/${projectId}/asset?${filePathQuery(relativePath)}`),
-        {
-          headers: {
-            ...collaborationHeaders(shareTokenForProject(projectId)),
-          },
-        },
+      const response = await requestResponse(
+        `/api/projects/${projectId}/asset?${filePathQuery(relativePath)}`,
+        {},
+        shareTokenForProject(projectId),
+        { timeoutMs: binaryRequestTimeoutMs },
       );
       if (!response.ok) {
         throw new Error(`${response.status} ${response.statusText}`);
       }
-      return new Uint8Array(await response.arrayBuffer());
+      return boundedResponseBytes(response, hostedAssetLimitBytes, "Hosted asset");
     },
 
     forwardSyncTex: async () => null,

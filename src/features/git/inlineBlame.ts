@@ -109,8 +109,10 @@ export function inlineBlameText(line: GitBlameLine, now: Date): string {
   }
 
   const relative = formatBlameRelativeTime(line.authorTime, now);
-  const summary = truncate(line.summary.trim() || "(no commit message)",
-    inlineBlameSummaryMaxLength);
+  const summary = truncate(
+    line.summary.trim() || "(no commit message)",
+    inlineBlameSummaryMaxLength,
+  );
   return `${line.author}, ${relative} • ${summary}`;
 }
 

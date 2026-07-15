@@ -1,37 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { parseBibFile } from "../parseBib";
 import { parseTexLabels } from "../parseTexLabels";
 import { buildLatexIndex } from "../buildLatexIndex";
 import type { ProjectFile } from "../buildLatexIndex";
-
-vi.mock("bibtex-parse-js", () => ({
-  default: {
-    toJSON: vi.fn((input: string) => {
-      const entries: any[] = [];
-      const lines = input.split("\n");
-      let current: any = null;
-      for (const line of lines) {
-        const match = line.match(/@(\w+)\{(\w+),/);
-        if (match) {
-          current = { citationKey: match[2], entryType: match[1], entryTags: {} };
-          entries.push(current);
-          const rest = line.slice(match[0].length, line.lastIndexOf("}"));
-          if (rest) {
-            const tagRe = /(\w+)\s*=\s*\{(.*?)\},?/g;
-            let tm;
-            while ((tm = tagRe.exec(rest)) !== null) {
-              current.entryTags[tm[1]] = tm[2];
-            }
-          }
-        } else if (current) {
-          const tag = line.match(/\s*(\w+)\s*=\s*\{(.+)\},?/);
-          if (tag) current.entryTags[tag[1]] = tag[2];
-        }
-      }
-      return entries;
-    }),
-  },
-}));
 
 // ── BibTeX entry variants ────────────────────────────────────────────────
 const bibVariants = [
@@ -107,7 +78,7 @@ const bibEdgeCases = [
   { desc: "empty content", content: "", expected: 0 },
   { desc: "only whitespace", content: "   \n\n  ", expected: 0 },
   { desc: "comment only", content: "% This is a comment", expected: 0 },
-  { desc: "malformed entry", content: "@article{key1, title={unclosed", expected: 1 },
+  { desc: "malformed entry", content: "@article{key1, title={unclosed", expected: 0 },
   { desc: "no citation key", content: '@string{foo = "bar"}', expected: 0 },
   { desc: "empty tags", content: "@article{key1,}", expected: 1 },
   {
@@ -131,6 +102,11 @@ describe("BibTeX edge cases — parameterized", () => {
     const entries = parseBibFile(content, "test.bib");
     if (expected !== undefined) expect(entries.length).toBe(expected);
     else expect(Array.isArray(entries)).toBe(true);
+  });
+
+  it("bounds oversized bibliography input before parsing", () => {
+    const oversized = `@article{k,title={${"x".repeat(2 * 1024 * 1024)}}}`;
+    expect(parseBibFile(oversized, "oversized.bib")).toEqual([]);
   });
 });
 

@@ -59,17 +59,14 @@ describe("settings round trip", () => {
     },
   );
 
-  it.each([...boundedNumericKeys])(
-    "keeps an in-range custom value for %s",
-    (key) => {
-      const custom =
-        key === "editorFontSize" ? 15 : key === "projectTreeMaxDepth" ? 6 : 4000;
-      window.localStorage.setItem(
-        settingsStorageKey,
-        JSON.stringify({ ...defaultSettings, [key]: custom }),
-      );
+  it.each([...boundedNumericKeys])("keeps an in-range custom value for %s", (key) => {
+    const custom =
+      key === "editorFontSize" ? 15 : key === "projectTreeMaxDepth" ? 6 : 4000;
+    window.localStorage.setItem(
+      settingsStorageKey,
+      JSON.stringify({ ...defaultSettings, [key]: custom }),
+    );
 
-      expect(loadSettings()[key]).toBe(custom);
-    },
-  );
+    expect(loadSettings()[key]).toBe(custom);
+  });
 });

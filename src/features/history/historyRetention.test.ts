@@ -96,9 +96,7 @@ describe("compactHistorySnapshots", () => {
     );
 
     const compacted = compactHistorySnapshots(snapshots);
-    const withContent = compacted.filter(
-      (item) => typeof item.content === "string",
-    );
+    const withContent = compacted.filter((item) => typeof item.content === "string");
 
     expect(withContent).toHaveLength(maxInMemorySnapshotContentsPerFile);
     // The newest snapshots keep their content.

@@ -34,11 +34,13 @@ export class CollaborationClient {
       this.doc,
     );
     this.provider = new LatexDoWebsocketProvider({
-      url: collaborationWebSocketUrl(options),
+      url: () => collaborationWebSocketUrl(options),
       doc: this.doc,
       awareness: this.awareness,
       onStatusChange: options.onStatusChange,
+      onConnectionError: options.onConnectionError,
       onSynced: options.onSynced,
+      onPresenceChange: options.onPresenceChange,
     });
   }
 

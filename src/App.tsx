@@ -32,6 +32,7 @@ import {
   List,
   ListOrdered,
   LoaderCircle,
+  Lock,
   MessageCircle,
   MessageSquare,
   Minus,
@@ -59,14 +60,21 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import appIconUrl from "../build/icon.svg";
 import FileTree from "./FileTree";
-import PdfPreview, { type PdfClickLocation } from "./PdfPreview";
+import type { PdfClickLocation } from "./PdfPreview";
 import TikzCanvas from "./TikzCanvas";
 import TableCanvas from "./TableCanvas";
 import { FigureToTikzConverter } from "./components/FigureToTikzConverter";
-import { TerminalPanel } from "./components/TerminalPanel";
 import { ReviewSidebar } from "./components/ReviewSidebar";
 import { RebuttalSidebar } from "./components/RebuttalSidebar";
 import { HistorySidebar } from "./components/HistorySidebar";
@@ -82,6 +90,13 @@ import { generateRebuttalLetter } from "./rebuttalGenerator";
 import { normalizeLatexDoReviewMarkup, usesLatexDoReviewMacros } from "./reviewMarkup";
 import type { RebuttalGeneratorSettings } from "./types";
 import { monaco } from "./monaco";
+
+const PdfPreview = lazy(() => import("./PdfPreview"));
+const TerminalPanel = lazy(() =>
+  import("./components/TerminalPanel").then((module) => ({
+    default: module.TerminalPanel,
+  })),
+);
 import type {
   CompileResult,
   CollaborationState,
@@ -278,6 +293,7 @@ type PanelKind =
   | "structureReport"
   | "pdfReport";
 type SidebarView = "explorer" | "sourceControl" | "history" | "search";
+const collaborationProjectReconciliationMs = 5 * 60_000;
 type LatexToolbarCommand =
   | "bold"
   | "italic"
@@ -486,6 +502,12 @@ export default function App() {
   const [joinTokenDraft, setJoinTokenDraft] = useState("");
   const [joinCollaborationBusy, setJoinCollaborationBusy] = useState(false);
   const [joinCollaborationError, setJoinCollaborationError] = useState("");
+  const [realtimeBlockedDocuments, setRealtimeBlockedDocuments] = useState<
+    Record<string, string>
+  >({});
+  const [realtimeReadyDocuments, setRealtimeReadyDocuments] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [pdfData, setPdfData] = useState<Uint8Array | null>(null);
   const [pdfTarget, setPdfTarget] = useState<SyncTexPdfLocation | null>(null);
   const [lastPdfLocation, setLastPdfLocation] = useState<PdfClickLocation | null>(null);
@@ -551,6 +573,8 @@ export default function App() {
   const editorBlameDisposablesRef = useRef<monaco.IDisposable[]>([]);
   const blameHoverDisposablesRef = useRef<monaco.IDisposable[]>([]);
   const collaborationBindingRef = useRef<MonacoCollaborationBinding | null>(null);
+  const realtimeBlockedDocumentsRef = useRef<Record<string, string>>({});
+  const realtimeReadyDocumentsRef = useRef<Set<string>>(new Set());
   const scheduleGitRefreshRef = useRef<() => void>(() => {});
   const installedExtensionSnippetsRef = useRef<LatexDoExtensionSnippet[]>([]);
   const runtime = (window.latexdo as typeof window.latexdo & { runtime?: string })
@@ -571,6 +595,16 @@ export default function App() {
       normalizeBookmarkLines(activeBookmarkKey ? bookmarkStore[activeBookmarkKey] : []),
     [activeBookmarkKey, bookmarkStore],
   );
+  const activeCollaborationReadOnlyMessage =
+    activeDocument && collaborationState.enabled && collaborationState.token
+      ? currentUserRole === "viewer"
+        ? "Viewer access: this shared document is read-only."
+        : realtimeBlockedDocuments[activeDocument.relativePath]
+          ? realtimeBlockedDocuments[activeDocument.relativePath]
+          : !realtimeReadyDocuments.has(activeDocument.relativePath)
+            ? "Connecting securely before editing is enabled."
+            : ""
+      : "";
   const documentOutline = useMemo(
     () =>
       activeDocument && activeDocumentIsLatex
@@ -1616,14 +1650,20 @@ ${macroEnd}
   useEffect(() => {
     const runtime = (window.latexdo as typeof window.latexdo & { runtime?: string })
       .runtime;
-    if ((runtime !== "browser" && runtime !== "cloud") || browserAutoOpenRef.current) {
+    if (
+      !["browser", "cloud", "desktop"].includes(runtime ?? "") ||
+      browserAutoOpenRef.current
+    ) {
       return;
     }
 
     browserAutoOpenRef.current = true;
     void (async () => {
       try {
-        const project = await window.latexdo.openProject();
+        const project =
+          runtime === "desktop"
+            ? await window.latexdo.restoreCloudProject()
+            : await window.latexdo.openProject();
         if (project) {
           await loadProject(project, true, false);
         }
@@ -1643,6 +1683,20 @@ ${macroEnd}
       if (!currentProject) {
         return;
       }
+      if (
+        collaborationState.enabled &&
+        collaborationState.token &&
+        (currentUserRole === "viewer" ||
+          Boolean(realtimeBlockedDocumentsRef.current[document.relativePath]) ||
+          !realtimeReadyDocumentsRef.current.has(document.relativePath))
+      ) {
+        throw new Error(
+          realtimeBlockedDocumentsRef.current[document.relativePath] ||
+            (currentUserRole === "viewer"
+              ? "Viewer access cannot save changes."
+              : "Wait for secure collaboration sync before saving."),
+        );
+      }
       if (document.content !== document.savedContent && document.content.trim()) {
         addHistorySnapshot(buildHistorySnapshot(document, "auto"));
       }
@@ -1661,7 +1715,12 @@ ${macroEnd}
       scheduleGitRefreshRef.current();
       setStatusMessage(`Saved ${pathForDisplay(document.relativePath)}`);
     },
-    [addHistorySnapshot],
+    [
+      addHistorySnapshot,
+      collaborationState.enabled,
+      collaborationState.token,
+      currentUserRole,
+    ],
   );
 
   const compile = useCallback(async (): Promise<CompileResult | null> => {
@@ -3428,9 +3487,8 @@ ${macroEnd}
     instance.languages.registerHoverProvider("latex", {
       provideHover: async (model, position) => {
         try {
-          const { parseMathAtPosition, mathPreviewDataUri } = await import(
-            "./latex/mathPreview"
-          );
+          const { parseMathAtPosition, mathPreviewDataUri } =
+            await import("./latex/mathPreview");
           const mathTarget = parseMathAtPosition(
             model.getValue(),
             position.lineNumber,
@@ -3752,33 +3810,99 @@ ${macroEnd}
       }
 
       disposeCollaborationBinding();
+      setRealtimeReadyDocuments((current) => {
+        if (!current.has(document.relativePath)) return current;
+        const next = new Set(current);
+        next.delete(document.relativePath);
+        realtimeReadyDocumentsRef.current = next;
+        return next;
+      });
+      const bindingProjectId = projectIdRef.current;
       collaborationBindingRef.current = new MonacoCollaborationBinding({
         editor,
         projectId: projectIdRef.current,
         relativePath: document.relativePath,
         shareToken: token,
         apiBaseUrl: collaboration.apiBaseUrl,
-        sessionId: collaboration.sessionId,
-        clientId: collaboration.clientId,
         clientName: collaborationDisplayName,
         color: collaboration.color,
         onStatusChange: (status) => {
           if (status === "connected") {
             setStatusMessage(
-              `Live collaboration connected: ${pathForDisplay(document.relativePath)}`,
+              `Live collaboration syncing: ${pathForDisplay(document.relativePath)}`,
             );
           } else if (status === "error") {
             setStatusMessage("Live collaboration connection failed.");
           }
         },
+        onSynced: () => {
+          setRealtimeBlockedDocuments((current) => {
+            if (!(document.relativePath in current)) return current;
+            const next = { ...current };
+            delete next[document.relativePath];
+            realtimeBlockedDocumentsRef.current = next;
+            return next;
+          });
+          setRealtimeReadyDocuments((current) => {
+            const next = new Set(current).add(document.relativePath);
+            realtimeReadyDocumentsRef.current = next;
+            return next;
+          });
+          setStatusMessage(
+            `Live collaboration connected: ${pathForDisplay(document.relativePath)}`,
+          );
+        },
+        onConnectionError: (message, status) => {
+          if (status && [400, 403, 404, 413, 415].includes(status)) {
+            setRealtimeBlockedDocuments((current) => {
+              const next = { ...current, [document.relativePath]: message };
+              realtimeBlockedDocumentsRef.current = next;
+              return next;
+            });
+            setRealtimeReadyDocuments((current) => {
+              if (!current.has(document.relativePath)) return current;
+              const next = new Set(current);
+              next.delete(document.relativePath);
+              realtimeReadyDocumentsRef.current = next;
+              return next;
+            });
+            queueMicrotask(disposeCollaborationBinding);
+            void window.latexdo
+              .readFile(bindingProjectId, document.relativePath)
+              .then((content) => {
+                if (projectIdRef.current !== bindingProjectId) return;
+                setDocuments((current) => {
+                  const next = current.map((item) =>
+                    item.relativePath === document.relativePath
+                      ? { ...item, content, savedContent: content }
+                      : item,
+                  );
+                  documentsRef.current = next;
+                  return next;
+                });
+                setStatusMessage(
+                  `Read-only authoritative copy loaded: ${pathForDisplay(document.relativePath)}`,
+                );
+              })
+              .catch((error: unknown) => {
+                setStatusMessage(
+                  error instanceof Error
+                    ? `Could not reload the authoritative copy: ${error.message}`
+                    : "Could not reload the authoritative copy.",
+                );
+              });
+          }
+          setStatusMessage(`Live collaboration unavailable: ${message}`);
+        },
+        onPresenceChange: (users) => {
+          setCollaborationState((current) => ({ ...current, users }));
+        },
       });
     },
     [
       collaboration.apiBaseUrl,
-      collaboration.clientId,
       collaborationDisplayName,
       collaboration.color,
-      collaboration.sessionId,
       collaborationAvailable,
       collaborationState.enabled,
       collaborationState.token,
@@ -3797,6 +3921,13 @@ ${macroEnd}
   ]);
 
   useEffect(() => disposeCollaborationBinding, [disposeCollaborationBinding]);
+
+  useEffect(() => {
+    realtimeBlockedDocumentsRef.current = {};
+    realtimeReadyDocumentsRef.current = new Set();
+    setRealtimeBlockedDocuments({});
+    setRealtimeReadyDocuments(new Set());
+  }, [projectId, collaborationState.token]);
 
   const applyEditorBlameDecorations = useCallback(() => {
     const editor = editorRef.current;
@@ -3907,7 +4038,9 @@ ${macroEnd}
   useEffect(() => {
     editorBlameStateRef.current = {
       byLine: blameByLine(editorBlameLines),
-      dirty: activeDocument ? activeDocument.content !== activeDocument.savedContent : false,
+      dirty: activeDocument
+        ? activeDocument.content !== activeDocument.savedContent
+        : false,
       inlineEnabled: settings.inlineBlame,
       fileBlameEnabled,
     };
@@ -3973,9 +4106,7 @@ ${macroEnd}
       editor.addAction({
         id: "latexdo.toggleFileBlame",
         label: "Git: Toggle File Blame Annotations",
-        keybindings: [
-          monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyB,
-        ],
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyB],
         contextMenuGroupId: "navigation",
         contextMenuOrder: 0,
         run: () => setFileBlameEnabled((current) => !current),
@@ -4356,34 +4487,10 @@ ${macroEnd}
     [collaborationAvailable, loadCollaborationPermissions],
   );
 
-  const handleCollaborationDisplayNameChange = useCallback(
-    (value: string) => {
-      const nextName = storeCollaborationDisplayName(value);
-      setCollaborationDisplayName(nextName);
-
-      const currentProject = projectIdRef.current;
-      if (!currentProject || !collaborationAvailable || !collaborationState.enabled) {
-        return;
-      }
-
-      void (async () => {
-        try {
-          const active = documentsRef.current.find(
-            (document) => document.path === activePathRef.current,
-          );
-          const state = await window.latexdo.updateCollaborationPresence(
-            currentProject,
-            active?.relativePath ?? null,
-          );
-          setCollaborationState(state);
-          await loadCollaborationPermissions(currentProject);
-        } catch {
-          // The next presence heartbeat will retry.
-        }
-      })();
-    },
-    [collaborationAvailable, collaborationState.enabled, loadCollaborationPermissions],
-  );
+  const handleCollaborationDisplayNameChange = useCallback((value: string) => {
+    const nextName = storeCollaborationDisplayName(value);
+    setCollaborationDisplayName(nextName);
+  }, []);
 
   const createProject = async () => {
     try {
@@ -4450,122 +4557,41 @@ ${macroEnd}
     }
 
     let cancelled = false;
-    const sendPresence = async () => {
+    let requestInFlight = false;
+    const reconcileProjectTree = async () => {
+      if (requestInFlight || document.visibilityState === "hidden") {
+        return;
+      }
+      requestInFlight = true;
       try {
-        const active = documentsRef.current.find(
-          (document) => document.path === activePathRef.current,
-        );
-        const state = await window.latexdo.updateCollaborationPresence(
-          projectId,
-          active?.relativePath ?? null,
-        );
+        await refreshProject(projectId);
+      } catch {
+        // Reconciliation is opportunistic; Yjs remains the live document channel.
+      } finally {
         if (!cancelled) {
-          setCollaborationState(state);
-          if (state.currentUserRole) {
-            setCurrentUserRole(state.currentUserRole);
-          }
-          if (typeof state.isAdmin === "boolean") {
-            setIsProjectAdmin(state.isAdmin);
-          }
+          requestInFlight = false;
         }
-      } catch {
-        // Presence is opportunistic; editing should keep working offline.
       }
     };
 
-    void sendPresence();
-    const interval = window.setInterval(() => void sendPresence(), 8000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [
-    activePath,
-    collaborationAvailable,
-    collaborationState.enabled,
-    hideProjectEntries,
-    projectId,
-  ]);
-
-  useEffect(() => {
-    if (
-      !projectId ||
-      !collaborationAvailable ||
-      !collaborationState.enabled ||
-      !activeDocument ||
-      hideProjectEntries
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-    const checkForRemoteDocument = async () => {
-      const current = documentsRef.current.find(
-        (document) => document.path === activePathRef.current,
-      );
-      if (!current) return;
-
-      try {
-        const remoteContent = await window.latexdo.readFile(
-          projectId,
-          current.relativePath,
-        );
-        if (cancelled || remoteContent === current.savedContent) {
-          return;
-        }
-
-        if (remoteContent === current.content) {
-          setDocuments((openDocuments) => {
-            const nextDocuments = openDocuments.map((document) =>
-              document.path === current.path
-                ? {
-                    ...document,
-                    savedContent: remoteContent,
-                  }
-                : document,
-            );
-            documentsRef.current = nextDocuments;
-            return nextDocuments;
-          });
-          return;
-        }
-
-        if (current.content === current.savedContent) {
-          setDocuments((openDocuments) => {
-            const nextDocuments = openDocuments.map((document) =>
-              document.path === current.path
-                ? {
-                    ...document,
-                    content: remoteContent,
-                    savedContent: remoteContent,
-                  }
-                : document,
-            );
-            documentsRef.current = nextDocuments;
-            return nextDocuments;
-          });
-          void refreshProject(projectId);
-          setStatusMessage(
-            `Synced collaborator changes in ${pathForDisplay(current.relativePath)}`,
-          );
-        } else {
-          setStatusMessage(
-            `Collaborator updated ${pathForDisplay(current.relativePath)}; save or reopen to reconcile.`,
-          );
-        }
-      } catch {
-        // Polling should not interrupt editing when the network is unavailable.
+    const reconcileWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void reconcileProjectTree();
       }
     };
-
-    const interval = window.setInterval(() => void checkForRemoteDocument(), 3500);
+    const interval = window.setInterval(
+      () => void reconcileProjectTree(),
+      collaborationProjectReconciliationMs,
+    );
+    window.addEventListener("focus", reconcileWhenVisible);
+    document.addEventListener("visibilitychange", reconcileWhenVisible);
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      window.removeEventListener("focus", reconcileWhenVisible);
+      document.removeEventListener("visibilitychange", reconcileWhenVisible);
     };
   }, [
-    activeDocument,
-    activePath,
     collaborationAvailable,
     collaborationState.enabled,
     hideProjectEntries,
@@ -8173,6 +8199,12 @@ ${macroEnd}
                   }}
                   onDropCapture={(event) => void handleEditorFileDrop(event)}
                 >
+                  {activeCollaborationReadOnlyMessage ? (
+                    <div className="editor-readonly-banner" role="status">
+                      <Lock size={13} />
+                      <span>{activeCollaborationReadOnlyMessage}</span>
+                    </div>
+                  ) : null}
                   <Editor
                     key={activeDocument.path}
                     path={activeDocument.path}
@@ -8183,6 +8215,12 @@ ${macroEnd}
                     onMount={handleEditorMount}
                     onChange={handleEditorChange}
                     options={{
+                      readOnly: Boolean(activeCollaborationReadOnlyMessage),
+                      readOnlyMessage: {
+                        value:
+                          activeCollaborationReadOnlyMessage ||
+                          "This document is read-only.",
+                      },
                       fontFamily:
                         "'SFMono-Regular', 'Cascadia Code', 'Fira Code', Menlo, monospace",
                       fontSize: settings.editorFontSize,
@@ -8315,17 +8353,25 @@ ${macroEnd}
                     }}
                   >
                     {pdfData ? (
-                      <PdfPreview
-                        data={pdfData}
-                        scale={pdfScale}
-                        rotation={pdfRotation}
-                        target={pdfTarget}
-                        onNavigate={(location) => {
-                          setPdfTarget(null);
-                          setLastPdfLocation(location);
-                          void handleBackwardSync(location);
-                        }}
-                      />
+                      <Suspense
+                        fallback={
+                          <div className="preview-empty" aria-label="Loading PDF">
+                            <LoaderCircle className="spin" size={18} />
+                          </div>
+                        }
+                      >
+                        <PdfPreview
+                          data={pdfData}
+                          scale={pdfScale}
+                          rotation={pdfRotation}
+                          target={pdfTarget}
+                          onNavigate={(location) => {
+                            setPdfTarget(null);
+                            setLastPdfLocation(location);
+                            void handleBackwardSync(location);
+                          }}
+                        />
+                      </Suspense>
                     ) : (
                       <div className="preview-empty">
                         <div className="paper-skeleton">
@@ -8891,11 +8937,19 @@ ${macroEnd}
                       activePanel === "terminal" ? "" : "hidden"
                     }`}
                   >
-                    <TerminalPanel
-                      projectId={projectId}
-                      workspacePath={projectPath}
-                      active={activePanel === "terminal"}
-                    />
+                    <Suspense
+                      fallback={
+                        <div className="panel-empty" aria-label="Loading terminal">
+                          <LoaderCircle className="spin" size={16} />
+                        </div>
+                      }
+                    >
+                      <TerminalPanel
+                        projectId={projectId}
+                        workspacePath={projectPath}
+                        active={activePanel === "terminal"}
+                      />
+                    </Suspense>
                   </section>
                 ) : null}
                 {activePanel === "checkAnalysis" ? (

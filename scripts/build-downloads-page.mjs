@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, sign } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -9,6 +9,17 @@ const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "
 
 const baseUrl = process.env.LATEXDO_DOWNLOAD_BASE_URL ?? "https://latexdo.org";
 const publishedAt = process.env.LATEXDO_RELEASE_DATE ?? new Date().toISOString();
+const publishedAtMs = Date.parse(publishedAt);
+if (!Number.isFinite(publishedAtMs)) {
+  throw new Error("LATEXDO_RELEASE_DATE must be a valid timestamp.");
+}
+const expiresAt =
+  process.env.LATEXDO_UPDATE_EXPIRES_AT ??
+  new Date(publishedAtMs + 30 * 24 * 60 * 60 * 1_000).toISOString();
+const expiresAtMs = Date.parse(expiresAt);
+if (!Number.isFinite(expiresAtMs) || expiresAtMs <= publishedAtMs) {
+  throw new Error("The signed update feed expiry must follow its publication time.");
+}
 const commit = process.env.GITHUB_SHA ?? "";
 const repository = process.env.GITHUB_REPOSITORY ?? "latexdo/latexdo";
 const siteRootDir = path.dirname(outputDir);
@@ -107,6 +118,62 @@ function htmlEscape(value) {
     .replaceAll('"', "&quot;");
 }
 
+function canonicalJson(value) {
+  if (value === null) return "null";
+  if (typeof value === "string" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("Cannot sign a non-finite number.");
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .join(",")}}`;
+  }
+  throw new Error("Cannot sign an unsupported JSON value.");
+}
+
+async function signUpdateFeed(feed) {
+  const encodedPrivateKey = process.env.LATEXDO_UPDATE_SIGNING_KEY?.trim();
+  if (!encodedPrivateKey) {
+    throw new Error("LATEXDO_UPDATE_SIGNING_KEY is required to publish updates.");
+  }
+
+  const privateKey = createPrivateKey(
+    Buffer.from(encodedPrivateKey, "base64").toString("utf8"),
+  );
+  if (privateKey.asymmetricKeyType !== "ed25519") {
+    throw new Error("LATEXDO_UPDATE_SIGNING_KEY must contain an Ed25519 private key.");
+  }
+
+  const publicKey = createPublicKey(privateKey);
+  const expectedPublicKey = createPublicKey(
+    await readFile(path.join(root, "build", "update-public-key.pem"), "utf8"),
+  );
+  const publicDer = publicKey.export({ type: "spki", format: "der" });
+  const expectedDer = expectedPublicKey.export({ type: "spki", format: "der" });
+  if (!Buffer.from(publicDer).equals(Buffer.from(expectedDer))) {
+    throw new Error("Update signing key does not match build/update-public-key.pem.");
+  }
+
+  const keyId = createHash("sha256").update(publicDer).digest("hex").slice(0, 16);
+  const signature = sign(null, Buffer.from(canonicalJson(feed)), privateKey);
+  return {
+    ...feed,
+    signature: {
+      algorithm: "ed25519",
+      keyId,
+      value: signature.toString("base64"),
+    },
+  };
+}
+
 function platformIcon(platform) {
   if (platform === "macos") {
     return `<svg class="platform-logo" viewBox="0 0 24 24" aria-hidden="true">
@@ -156,11 +223,12 @@ const manifest = {
 };
 
 const updateFeed = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   product: "LatexDo",
   channel: "stable",
   version: releaseVersion,
   publishedAt,
+  expiresAt,
   commit,
   repository,
   release: releaseSlug,
@@ -169,6 +237,7 @@ const updateFeed = {
   manifestUrl: `${manifest.downloadsPage}manifest.json`,
   files,
 };
+const signedUpdateFeed = await signUpdateFeed(updateFeed);
 
 const releaseChecksums = files
   .map((file) => `${file.sha256}  ${file.filename}`)
@@ -188,11 +257,11 @@ await writeFile(path.join(releaseOutputDir, "SHA256SUMS.txt"), `${releaseChecksu
 await mkdir(path.join(siteRootDir, "updates"), { recursive: true });
 await writeFile(
   path.join(siteRootDir, "updates", "latest.json"),
-  `${JSON.stringify(updateFeed, null, 2)}\n`,
+  `${JSON.stringify(signedUpdateFeed, null, 2)}\n`,
 );
 await writeFile(
   path.join(siteRootDir, "updates", `${releaseSlug}.json`),
-  `${JSON.stringify(updateFeed, null, 2)}\n`,
+  `${JSON.stringify(signedUpdateFeed, null, 2)}\n`,
 );
 
 function macBuildName(file) {

@@ -659,9 +659,7 @@ function locateToken(
     const scanLimit = normalized.includes("file ended")
       ? lines.length
       : diagnostic.line;
-    return (
-      findUnclosedBrace(lines, scanLimit) ?? lastUnmatchedOpeningBrace(sourceLine)
-    );
+    return findUnclosedBrace(lines, scanLimit) ?? lastUnmatchedOpeningBrace(sourceLine);
   }
 
   if (normalized.includes("double superscript")) {
@@ -693,7 +691,9 @@ function locateToken(
     );
   }
 
-  const fragileArgument = normalized.match(/argument of \\@?sect|argument of \\@caption/);
+  const fragileArgument = normalized.match(
+    /argument of \\@?sect|argument of \\@caption/,
+  );
   if (fragileArgument) {
     const fragile = findLiteralBeforeLine(lines, "\\footnote", diagnostic.line);
     if (fragile) {
@@ -1081,7 +1081,9 @@ function explainDiagnostic(
     };
   }
 
-  const extraBraceArgument = normalized.match(/argument of (\\[a-z@]+) has an extra \}/i);
+  const extraBraceArgument = normalized.match(
+    /argument of (\\[a-z@]+) has an extra \}/i,
+  );
   if (extraBraceArgument) {
     return {
       title: `Unbalanced braces in the argument of ${extraBraceArgument[1]}`,

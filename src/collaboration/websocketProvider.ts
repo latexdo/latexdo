@@ -4,10 +4,22 @@ import * as awarenessProtocol from "y-protocols/awareness";
 import { Awareness } from "y-protocols/awareness";
 import * as syncProtocol from "y-protocols/sync";
 import * as Y from "yjs";
+import { CollaborationApiError } from "./collaborationApi";
 import type { CollaborationConnectionStatus } from "./collaborationTypes";
+import type { CollaboratorPresence, CollaboratorRole } from "../types";
 
 const messageSync = 0;
 const messageAwareness = 1;
+const messageProjectPresence = 4;
+const reconnectInitialDelayMs = 750;
+const reconnectMaxDelayMs = 10_000;
+const outboundHighWaterBytes = 512 * 1024;
+const maxQueuedMessages = 256;
+const maxQueuedBytes = 2 * 1024 * 1024;
+const outboundDrainDelayMs = 50;
+const maxInboundMessageBytes = 512 * 1024;
+const maxPresenceFrameBytes = 128 * 1024;
+const maxPresenceUsers = 50;
 
 type AwarenessChange = {
   added: number[];
@@ -16,21 +28,71 @@ type AwarenessChange = {
 };
 
 export interface LatexDoWebsocketProviderOptions {
-  url: string;
+  url: string | (() => Promise<string>);
   doc: Y.Doc;
   awareness: Awareness;
   onStatusChange?: (status: CollaborationConnectionStatus) => void;
+  onConnectionError?: (message: string, status?: number) => void;
   onSynced?: () => void;
+  onPresenceChange?: (users: CollaboratorPresence[]) => void;
+}
+
+function isCollaboratorRole(value: unknown): value is CollaboratorRole {
+  return value === "admin" || value === "editor" || value === "viewer";
+}
+
+function parseProjectPresence(value: unknown): CollaboratorPresence[] | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const snapshot = value as { version?: unknown; users?: unknown };
+  if (snapshot.version !== 1 || !Array.isArray(snapshot.users)) return null;
+  if (snapshot.users.length > maxPresenceUsers) return null;
+
+  const users: CollaboratorPresence[] = [];
+  const clientIds = new Set<string>();
+  for (const value of snapshot.users) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const user = value as Record<string, unknown>;
+    if (
+      typeof user.clientId !== "string" ||
+      !user.clientId ||
+      user.clientId.length > 160 ||
+      clientIds.has(user.clientId) ||
+      typeof user.name !== "string" ||
+      user.name.length > 80 ||
+      (user.currentFile !== null &&
+        (typeof user.currentFile !== "string" || user.currentFile.length > 512)) ||
+      typeof user.lastSeen !== "number" ||
+      !Number.isSafeInteger(user.lastSeen) ||
+      user.lastSeen < 0 ||
+      !isCollaboratorRole(user.role)
+    ) {
+      return null;
+    }
+    clientIds.add(user.clientId);
+    users.push({
+      clientId: user.clientId,
+      name: user.name,
+      currentFile: user.currentFile,
+      lastSeen: user.lastSeen,
+      role: user.role,
+    });
+  }
+  return users;
 }
 
 export class LatexDoWebsocketProvider {
   readonly doc: Y.Doc;
   readonly awareness: Awareness;
-  private readonly url: string;
+  private readonly url: string | (() => Promise<string>);
   private readonly onStatusChange?: (status: CollaborationConnectionStatus) => void;
+  private readonly onConnectionError?: (message: string, status?: number) => void;
   private readonly onSynced?: () => void;
+  private readonly onPresenceChange?: (users: CollaboratorPresence[]) => void;
   private socket: WebSocket | null = null;
   private reconnectTimer: number | null = null;
+  private outboundDrainTimer: number | null = null;
+  private readonly outboundQueue: Uint8Array[] = [];
+  private outboundQueueBytes = 0;
   private reconnectAttempt = 0;
   private shouldConnect = true;
   private synced = false;
@@ -40,7 +102,9 @@ export class LatexDoWebsocketProvider {
     this.doc = options.doc;
     this.awareness = options.awareness;
     this.onStatusChange = options.onStatusChange;
+    this.onConnectionError = options.onConnectionError;
     this.onSynced = options.onSynced;
+    this.onPresenceChange = options.onPresenceChange;
     this.doc.on("update", this.handleDocUpdate);
     this.awareness.on("update", this.handleAwarenessUpdate);
     this.connect();
@@ -53,6 +117,7 @@ export class LatexDoWebsocketProvider {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    this.clearOutboundQueue();
     this.awareness.off("update", this.handleAwarenessUpdate);
     this.doc.off("update", this.handleDocUpdate);
     this.sendAwarenessUpdate([this.doc.clientID]);
@@ -61,10 +126,49 @@ export class LatexDoWebsocketProvider {
   }
 
   private connect(): void {
+    if (!this.shouldConnect) {
+      return;
+    }
     this.reportStatus("connecting");
+    if (typeof this.url === "string") {
+      this.openSocket(this.url);
+      return;
+    }
+    void this.url().then(
+      (url) => {
+        if (this.shouldConnect) {
+          this.openSocket(url);
+        }
+      },
+      (error: unknown) => {
+        if (!this.shouldConnect) {
+          return;
+        }
+        this.socket = null;
+        this.synced = false;
+        this.reportStatus("error");
+        if (error instanceof Error) {
+          this.onConnectionError?.(
+            error.message.slice(0, 500),
+            error instanceof CollaborationApiError ? error.status : undefined,
+          );
+        }
+        if (
+          error instanceof CollaborationApiError &&
+          [400, 403, 404, 413, 415].includes(error.status)
+        ) {
+          this.shouldConnect = false;
+          return;
+        }
+        this.scheduleReconnect();
+      },
+    );
+  }
+
+  private openSocket(url: string): void {
     let socket: WebSocket;
     try {
-      socket = new WebSocket(this.url);
+      socket = new WebSocket(url);
     } catch {
       this.socket = null;
       this.synced = false;
@@ -76,7 +180,6 @@ export class LatexDoWebsocketProvider {
     this.socket = socket;
 
     socket.addEventListener("open", () => {
-      this.reconnectAttempt = 0;
       this.reportStatus("connected");
       this.sendSyncStep1();
       this.sendAwarenessUpdate([this.doc.clientID]);
@@ -86,12 +189,22 @@ export class LatexDoWebsocketProvider {
       void this.handleMessage(event.data);
     });
 
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", (event) => {
       if (this.socket === socket) {
         this.socket = null;
       }
+      this.clearOutboundQueue();
       this.synced = false;
       this.reportStatus("disconnected");
+      if (event.code === 1008 || event.code === 1009) {
+        this.shouldConnect = false;
+        this.onConnectionError?.(
+          event.reason.slice(0, 500) ||
+            "This document cannot use real-time collaboration.",
+          event.code === 1009 ? 413 : 403,
+        );
+        return;
+      }
       this.scheduleReconnect();
     });
 
@@ -104,7 +217,11 @@ export class LatexDoWebsocketProvider {
     if (!this.shouldConnect || this.reconnectTimer !== null) {
       return;
     }
-    const delay = Math.min(10_000, 750 * 2 ** this.reconnectAttempt);
+    const ceiling = Math.min(
+      reconnectMaxDelayMs,
+      reconnectInitialDelayMs * 2 ** Math.min(this.reconnectAttempt, 8),
+    );
+    const delay = Math.round(ceiling * (0.5 + Math.random() * 0.5));
     this.reconnectAttempt += 1;
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
@@ -119,7 +236,16 @@ export class LatexDoWebsocketProvider {
         : data instanceof Blob
           ? await data.arrayBuffer()
           : null;
-    if (!buffer || buffer.byteLength === 0) return;
+    if (
+      !buffer ||
+      buffer.byteLength === 0 ||
+      buffer.byteLength > maxInboundMessageBytes
+    ) {
+      if (buffer && buffer.byteLength > maxInboundMessageBytes) {
+        this.socket?.close(1009, "Collaboration frame is too large");
+      }
+      return;
+    }
 
     let decoder: decoding.Decoder;
     let messageType: number;
@@ -143,6 +269,7 @@ export class LatexDoWebsocketProvider {
       }
       if (!this.synced) {
         this.synced = true;
+        this.reconnectAttempt = 0;
         this.onSynced?.();
       }
       return;
@@ -154,6 +281,19 @@ export class LatexDoWebsocketProvider {
         const update = decoding.readVarUint8Array(decoder);
         if (!update.byteLength) return;
         awarenessProtocol.applyAwarenessUpdate(this.awareness, update, this);
+      } catch {
+        return;
+      }
+      return;
+    }
+
+    if (messageType === messageProjectPresence) {
+      if (buffer.byteLength > maxPresenceFrameBytes) return;
+      try {
+        const raw = decoding.readVarString(decoder);
+        if (decoding.hasContent(decoder) || raw.length > maxPresenceFrameBytes) return;
+        const users = parseProjectPresence(JSON.parse(raw) as unknown);
+        if (users) this.onPresenceChange?.(users);
       } catch {
         return;
       }
@@ -204,9 +344,68 @@ export class LatexDoWebsocketProvider {
 
   private send(message: Uint8Array): void {
     const socket = this.socket;
-    if (socket && socket.readyState === WebSocket.OPEN) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    if (
+      this.outboundQueue.length > 0 ||
+      (socket.bufferedAmount ?? 0) >= outboundHighWaterBytes
+    ) {
+      this.enqueueOutbound(message, socket);
+      return;
+    }
+    socket.send(message);
+  }
+
+  private enqueueOutbound(message: Uint8Array, socket: WebSocket): void {
+    if (
+      this.outboundQueue.length >= maxQueuedMessages ||
+      this.outboundQueueBytes + message.byteLength > maxQueuedBytes
+    ) {
+      this.clearOutboundQueue();
+      socket.close(1013, "Collaboration client overloaded");
+      return;
+    }
+    this.outboundQueue.push(message);
+    this.outboundQueueBytes += message.byteLength;
+    this.scheduleOutboundDrain();
+  }
+
+  private scheduleOutboundDrain(): void {
+    if (this.outboundDrainTimer !== null || !this.outboundQueue.length) {
+      return;
+    }
+    this.outboundDrainTimer = window.setTimeout(() => {
+      this.outboundDrainTimer = null;
+      this.flushOutboundQueue();
+    }, outboundDrainDelayMs);
+  }
+
+  private flushOutboundQueue(): void {
+    const socket = this.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      this.clearOutboundQueue();
+      return;
+    }
+    while (
+      this.outboundQueue.length > 0 &&
+      (socket.bufferedAmount ?? 0) < outboundHighWaterBytes
+    ) {
+      const message = this.outboundQueue.shift();
+      if (!message) break;
+      this.outboundQueueBytes -= message.byteLength;
       socket.send(message);
     }
+    this.scheduleOutboundDrain();
+  }
+
+  private clearOutboundQueue(): void {
+    if (this.outboundDrainTimer !== null) {
+      window.clearTimeout(this.outboundDrainTimer);
+      this.outboundDrainTimer = null;
+    }
+    this.outboundQueue.length = 0;
+    this.outboundQueueBytes = 0;
   }
 
   private reportStatus(status: CollaborationConnectionStatus): void {

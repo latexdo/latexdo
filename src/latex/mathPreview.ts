@@ -160,10 +160,7 @@ function offsetOf(lines: string[], line: number, column: number): number {
   return offset + column - 1;
 }
 
-function positionOf(
-  lines: string[],
-  offset: number,
-): { line: number; column: number } {
+function positionOf(lines: string[], offset: number): { line: number; column: number } {
   let remaining = offset;
   for (let index = 0; index < lines.length; index += 1) {
     if (remaining <= lines[index].length) {

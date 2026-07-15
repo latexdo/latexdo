@@ -1,3 +1,4 @@
+import { createHash, createPublicKey, verify } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -14,6 +15,16 @@ const expectedRepository = process.env.GITHUB_REPOSITORY ?? "latexdo/latexdo";
 const expectedVersion = JSON.parse(
   await readFile(path.join(process.cwd(), "package.json"), "utf8"),
 ).version;
+const updatePublicKey = createPublicKey(
+  await readFile(path.join(process.cwd(), "build", "update-public-key.pem"), "utf8"),
+);
+if (updatePublicKey.asymmetricKeyType !== "ed25519") {
+  throw new Error("The update verification key must be Ed25519.");
+}
+const expectedUpdateKeyId = createHash("sha256")
+  .update(updatePublicKey.export({ type: "spki", format: "der" }))
+  .digest("hex")
+  .slice(0, 16);
 const expectedReleaseSlug = normalizeReleaseSlug(
   process.env.LATEXDO_RELEASE_SLUG ?? `v${expectedVersion.replace(/^v/i, "")}`,
 );
@@ -58,6 +69,31 @@ const verifyRunId =
 
 const requiredIds = new Set(["macos-arm64", "macos-x64", "windows-x64", "linux-x64"]);
 const sha256Pattern = /^[a-f0-9]{64}$/;
+const updateSignaturePattern = /^[A-Za-z0-9+/]{86}==$/;
+const updateClockSkewMs = 10 * 60 * 1_000;
+
+function canonicalJson(value) {
+  if (value === null) return "null";
+  if (typeof value === "string" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error("Update feed contains a non-finite number.");
+    }
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .join(",")}}`;
+  }
+  throw new Error("Update feed contains an unsupported value.");
+}
 
 function normalizeReleaseSlug(value) {
   const slug = String(value).trim();
@@ -110,6 +146,12 @@ function assertManifest(value) {
       `Manifest version ${value.version ?? "<missing>"} does not match ${expectedVersion}.`,
     );
   }
+  if (!/^[a-f0-9]{40}$/.test(value.commit ?? "")) {
+    throw new Error("Update feed commit must be a full Git SHA.");
+  }
+  if (value.repository !== expectedRepository) {
+    throw new Error("Update feed repository does not match the expected repository.");
+  }
   if (expectedCommit && value.commit !== expectedCommit) {
     throw new Error(
       `Manifest commit ${value.commit ?? "<missing>"} does not match ${expectedCommit}.`,
@@ -154,8 +196,8 @@ function assertUpdateFeed(value, manifestFiles) {
   if (!value || typeof value !== "object") {
     throw new Error("Update feed is not an object.");
   }
-  if (value.schemaVersion !== 1) {
-    throw new Error("Update feed schemaVersion must be 1.");
+  if (value.schemaVersion !== 2) {
+    throw new Error("Update feed schemaVersion must be 2.");
   }
   if (value.product !== "LatexDo") {
     throw new Error("Update feed product must be LatexDo.");
@@ -170,6 +212,20 @@ function assertUpdateFeed(value, manifestFiles) {
     throw new Error(
       `Update feed version ${value.version ?? "<missing>"} does not match ${expectedVersion}.`,
     );
+  }
+  const publishedAt = Date.parse(value.publishedAt);
+  const expiresAt = Date.parse(value.expiresAt);
+  const now = Date.now();
+  if (
+    typeof value.publishedAt !== "string" ||
+    typeof value.expiresAt !== "string" ||
+    !Number.isFinite(publishedAt) ||
+    !Number.isFinite(expiresAt) ||
+    expiresAt <= publishedAt ||
+    publishedAt > now + updateClockSkewMs ||
+    expiresAt <= now
+  ) {
+    throw new Error("Update feed freshness window is invalid or expired.");
   }
   if (expectedCommit && value.commit !== expectedCommit) {
     throw new Error(
@@ -189,10 +245,39 @@ function assertUpdateFeed(value, manifestFiles) {
     throw new Error("Update feed files must be an array.");
   }
 
-  const updateIds = new Set(value.files.map((file) => file.id));
+  const signature = value.signature;
+  if (
+    !signature ||
+    typeof signature !== "object" ||
+    signature.algorithm !== "ed25519" ||
+    signature.keyId !== expectedUpdateKeyId ||
+    typeof signature.value !== "string" ||
+    !updateSignaturePattern.test(signature.value)
+  ) {
+    throw new Error("Update feed signature metadata is invalid.");
+  }
+  const unsignedFeed = { ...value };
+  delete unsignedFeed.signature;
+  if (
+    !verify(
+      null,
+      Buffer.from(canonicalJson(unsignedFeed)),
+      updatePublicKey,
+      Buffer.from(signature.value, "base64"),
+    )
+  ) {
+    throw new Error("Update feed signature verification failed.");
+  }
+
   for (const file of manifestFiles) {
-    if (!updateIds.has(file.id)) {
+    const updateFile = value.files.find((entry) => entry?.id === file.id);
+    if (!updateFile) {
       throw new Error(`Update feed is missing ${file.id}.`);
+    }
+    for (const field of ["filename", "url", "size", "sha256"]) {
+      if (updateFile[field] !== file[field]) {
+        throw new Error(`Update feed ${file.id} ${field} does not match the manifest.`);
+      }
     }
   }
 }

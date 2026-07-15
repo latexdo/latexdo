@@ -5,10 +5,16 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  protocol,
   shell,
   type MenuItemConstructorOptions,
 } from "electron";
-import { createHash, randomUUID } from "node:crypto";
+import {
+  createHash,
+  createPublicKey,
+  randomUUID,
+  verify as verifySignature,
+} from "node:crypto";
 import { createReadStream, createWriteStream, watch, type FSWatcher } from "node:fs";
 import {
   access,
@@ -29,11 +35,7 @@ import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  compileAsymptote,
-  compileLatex,
-  materializeCloudCompileFiles,
-} from "./compiler.js";
+import { compileAsymptote, compileLatex } from "./compiler.js";
 import { importDocxIntoProject } from "./docxImport.js";
 import { importMarkdown } from "./markdownImport.js";
 import { backwardSyncTex, forwardSyncTex } from "./synctex.js";
@@ -76,6 +78,8 @@ import { listProject } from "./projectTree.js";
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
 const appIconPath = path.join(currentDirectory, "..", "build", "icon.png");
+const packagedRendererOrigin = "latexdo://app";
+const packagedRendererRoot = path.resolve(currentDirectory, "..", "dist");
 const startupSmokeTest = process.argv.includes("--smoke-test");
 const startupSmokeTimeoutMs = 20_000;
 const extensionCatalogFetchTimeoutMs = 4_500;
@@ -91,19 +95,39 @@ const externalUrlHosts = new Set([
   "store.latexdo.org",
   "www.latexdo.org",
 ]);
-const updateDownloadHosts = new Set(["github.com", "latexdo.org", "www.latexdo.org"]);
+const updateRedirectHosts = new Set([
+  "github.com",
+  "objects.githubusercontent.com",
+  "release-assets.githubusercontent.com",
+]);
 const spellCheckerSettingsFile = "spellchecker-settings.json";
 const proofreadingSettingsFile = "proofreading-settings.json";
 const privacyConsentFile = "privacy-consent.json";
 const trustedWorkspacesFile = "trusted-workspaces.json";
+const updateFeedStateFile = "update-feed-state.json";
 const privacyConsentSchemaVersion = 1;
 const trustedWorkspacesSchemaVersion = 1;
+const updateFeedStateSchemaVersion = 1;
 const openSpellCheckerChannel = "tools:open-spellchecker";
 const openProjectChannel = "file:open-project";
 const createFileChannel = "file:create-dialog";
 const createFolderChannel = "folder:create-dialog";
 const importDocxChannel = "file:import-docx";
 const importMarkdownChannel = "file:import-markdown";
+const maxHostedImportFileBytes = 5 * 1024 * 1024;
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "latexdo",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      codeCache: true,
+    },
+  },
+]);
 const starterDocument = String.raw`\documentclass[11pt]{article}
 
 \usepackage[margin=1in]{geometry}
@@ -163,7 +187,6 @@ function installSafeConsole(): void {
 installSafeConsole();
 
 const openProjects = new Map<string, OpenProject>();
-const cloudCompileProjectIdPattern = /^(?:project|session)_[a-z0-9]{6,64}$/i;
 const activeCompileControllers = new Map<string, Set<AbortController>>();
 
 interface GitWatchState {
@@ -319,10 +342,20 @@ interface WebsiteUpdatePayload {
   channel?: unknown;
   version?: unknown;
   publishedAt?: unknown;
+  expiresAt?: unknown;
+  commit?: unknown;
+  release?: unknown;
   releaseUrl?: unknown;
   downloadsPage?: unknown;
   manifestUrl?: unknown;
   files?: unknown;
+  signature?: unknown;
+}
+
+interface WebsiteUpdateSignature {
+  algorithm: "ed25519";
+  keyId: string;
+  value: string;
 }
 
 interface WebsiteUpdateFile {
@@ -345,6 +378,13 @@ interface StoredPrivacyConsent {
 interface StoredTrustedWorkspaces {
   schemaVersion?: unknown;
   trustedPaths?: unknown;
+}
+
+interface StoredUpdateFeedState {
+  schemaVersion?: unknown;
+  highestVersion?: unknown;
+  highestCommit?: unknown;
+  highestPublishedAt?: unknown;
 }
 
 function registerProject(rootPath: string): OpenProject {
@@ -718,6 +758,7 @@ async function registerProjectIfTrusted(
 const maxProjectIdLength = 128;
 const maxRelativePathLength = 4096;
 const maxTextContentLength = 20 * 1024 * 1024;
+const maxCloudUploadFileBytes = 2 * 1024 * 1024;
 const maxProofreadingContentLength = 5 * 1024 * 1024;
 const MAX_PROOFREAD_CHARS = 20_000;
 const maxGitCommitMessageLength = 20_000;
@@ -2179,7 +2220,13 @@ function safeUpdateDownloadUrl(value: unknown): string | null {
 
   try {
     const url = new URL(value.trim());
-    if (url.protocol === "https:" && updateDownloadHosts.has(url.hostname)) {
+    const isReleaseAsset =
+      url.hostname === "github.com" &&
+      url.pathname.startsWith("/latexdo/latexdo/releases/download/");
+    const isWebsiteAsset =
+      (url.hostname === "latexdo.org" || url.hostname === "www.latexdo.org") &&
+      url.pathname.startsWith("/downloads/");
+    if (url.protocol === "https:" && (isReleaseAsset || isWebsiteAsset)) {
       return url.href;
     }
   } catch {
@@ -2187,6 +2234,18 @@ function safeUpdateDownloadUrl(value: unknown): string | null {
   }
 
   return null;
+}
+
+function isSafeUpdateResponseUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      safeUpdateDownloadUrl(url.href) !== null ||
+      (url.protocol === "https:" && updateRedirectHosts.has(url.hostname))
+    );
+  } catch {
+    return false;
+  }
 }
 
 function safeUpdateFilename(value: unknown): string | null {
@@ -2303,7 +2362,7 @@ function updateResultFromWebsitePayload(
   payload: WebsiteUpdatePayload,
   currentVersion: string,
 ): UpdateCheckResult {
-  if (payload.schemaVersion !== 1 || payload.product !== "LatexDo") {
+  if (payload.schemaVersion !== 2 || payload.product !== "LatexDo") {
     throw new Error("Website update payload is not a LatexDo update feed.");
   }
 
@@ -2312,10 +2371,9 @@ function updateResultFromWebsitePayload(
     throw new Error("No website update version found.");
   }
 
-  const releaseUrl =
-    payloadString(payload.releaseUrl) ??
-    payloadString(payload.downloadsPage) ??
-    downloadsPageUrl;
+  const releaseUrl = safeDownloadsUrl(
+    payloadString(payload.releaseUrl) ?? payloadString(payload.downloadsPage),
+  );
   return {
     currentVersion,
     latestVersion,
@@ -2330,6 +2388,200 @@ function updateResultFromWebsitePayload(
 
 const updateFeedFetchTimeoutMs = 15_000;
 const maxUpdateFeedBytes = 1024 * 1024;
+const updateFeedClockSkewMs = 10 * 60 * 1_000;
+let updateFeedStateQueue: Promise<void> = Promise.resolve();
+
+function canonicalJson(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value === "string" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value))
+      throw new Error("Update feed contains a non-finite number.");
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .join(",")}}`;
+  }
+  throw new Error("Update feed contains an unsupported value.");
+}
+
+function updateSignatureFromPayload(value: unknown): WebsiteUpdateSignature | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const keyId = payloadString(record.keyId);
+  const signature = payloadString(record.value);
+  if (
+    record.algorithm !== "ed25519" ||
+    !keyId ||
+    !/^[a-f0-9]{16}$/.test(keyId) ||
+    !signature ||
+    !/^[A-Za-z0-9+/]{86}==$/.test(signature)
+  ) {
+    return null;
+  }
+  return { algorithm: "ed25519", keyId, value: signature };
+}
+
+async function verifyWebsiteUpdatePayload(
+  payload: WebsiteUpdatePayload,
+): Promise<void> {
+  const signature = updateSignatureFromPayload(payload.signature);
+  if (!signature) throw new Error("Website update feed has no valid signature.");
+
+  const publicKeyPath = app.isPackaged
+    ? path.join(process.resourcesPath, "update-public-key.pem")
+    : path.join(currentDirectory, "..", "build", "update-public-key.pem");
+  const publicKey = createPublicKey(await readFile(publicKeyPath, "utf8"));
+  if (publicKey.asymmetricKeyType !== "ed25519") {
+    throw new Error("The embedded update verification key is not Ed25519.");
+  }
+  const keyId = createHash("sha256")
+    .update(publicKey.export({ type: "spki", format: "der" }))
+    .digest("hex")
+    .slice(0, 16);
+  if (keyId !== signature.keyId) {
+    throw new Error("Website update feed was signed by an unknown key.");
+  }
+
+  const unsignedPayload = {
+    ...(payload as unknown as Record<string, unknown>),
+  };
+  delete unsignedPayload.signature;
+  const verified = verifySignature(
+    null,
+    Buffer.from(canonicalJson(unsignedPayload)),
+    publicKey,
+    Buffer.from(signature.value, "base64"),
+  );
+  if (!verified) throw new Error("Website update feed signature verification failed.");
+}
+
+async function readStoredUpdateFeedState(): Promise<StoredUpdateFeedState | null> {
+  try {
+    const state = JSON.parse(
+      await readFile(userDataFilePath(updateFeedStateFile), "utf8"),
+    ) as StoredUpdateFeedState;
+    if (
+      state.schemaVersion !== updateFeedStateSchemaVersion ||
+      typeof state.highestVersion !== "string" ||
+      !/^\d+\.\d+\.\d+$/.test(state.highestVersion) ||
+      typeof state.highestCommit !== "string" ||
+      !/^[a-f0-9]{40}$/.test(state.highestCommit) ||
+      typeof state.highestPublishedAt !== "string" ||
+      !Number.isFinite(Date.parse(state.highestPublishedAt))
+    ) {
+      throw new Error("Stored update rollback state is invalid.");
+    }
+    return state;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function enforceUpdateFeedFreshness(
+  payload: WebsiteUpdatePayload,
+): Promise<void> {
+  const operation = updateFeedStateQueue.then(async () => {
+    const version = payloadString(payload.version);
+    const release = payloadString(payload.release);
+    const commit = payloadString(payload.commit);
+    const publishedAtValue = payloadString(payload.publishedAt);
+    const expiresAtValue = payloadString(payload.expiresAt);
+    if (
+      payload.channel !== "stable" ||
+      !version ||
+      !/^\d+\.\d+\.\d+$/.test(version) ||
+      release !== `v${version}` ||
+      !commit ||
+      !/^[a-f0-9]{40}$/.test(commit) ||
+      !publishedAtValue ||
+      !expiresAtValue
+    ) {
+      throw new Error("Website update feed metadata is invalid.");
+    }
+
+    const publishedAt = Date.parse(publishedAtValue);
+    const expiresAt = Date.parse(expiresAtValue);
+    const now = Date.now();
+    if (
+      !Number.isFinite(publishedAt) ||
+      !Number.isFinite(expiresAt) ||
+      expiresAt <= publishedAt ||
+      publishedAt > now + updateFeedClockSkewMs ||
+      expiresAt <= now
+    ) {
+      throw new Error("Website update feed freshness window is invalid or expired.");
+    }
+    if (compareVersions(version, app.getVersion()) < 0) {
+      throw new Error(
+        `Website update feed version ${version} is older than installed version ${app.getVersion()}.`,
+      );
+    }
+
+    const previousState = await readStoredUpdateFeedState();
+    const versionComparison = previousState
+      ? compareVersions(version, previousState.highestVersion as string)
+      : 1;
+    if (versionComparison < 0) {
+      throw new Error(
+        `Website update feed version ${version} is older than previously trusted version ${String(previousState?.highestVersion)}.`,
+      );
+    }
+    if (previousState && versionComparison === 0) {
+      if (commit !== previousState.highestCommit) {
+        throw new Error(
+          "Website update feed changed the commit for an already trusted version.",
+        );
+      }
+      if (publishedAt < Date.parse(previousState.highestPublishedAt as string)) {
+        throw new Error(
+          "Website update feed publication date is older than the previously trusted feed.",
+        );
+      }
+    }
+    if (
+      previousState &&
+      versionComparison > 0 &&
+      publishedAt < Date.parse(previousState.highestPublishedAt as string)
+    ) {
+      throw new Error("Website update feed publication timeline moved backwards.");
+    }
+
+    const isAlreadyStored =
+      previousState &&
+      versionComparison === 0 &&
+      publishedAt === Date.parse(previousState.highestPublishedAt as string);
+    if (!isAlreadyStored) {
+      await atomicWriteUtf8(
+        userDataFilePath(updateFeedStateFile),
+        JSON.stringify(
+          {
+            schemaVersion: updateFeedStateSchemaVersion,
+            highestVersion: version,
+            highestCommit: commit,
+            highestPublishedAt: publishedAtValue,
+            updatedAt: new Date().toISOString(),
+          },
+          null,
+          2,
+        ),
+        { backup: true },
+      );
+    }
+  });
+  updateFeedStateQueue = operation.catch(() => undefined);
+  return operation;
+}
 
 async function fetchWebsiteUpdateJson(
   url: string,
@@ -2350,7 +2602,10 @@ async function fetchWebsiteUpdateJson(
       throw new Error(`${url} returned an update feed that is too large.`);
     }
 
-    return JSON.parse(body) as WebsiteUpdatePayload;
+    const payload = JSON.parse(body) as WebsiteUpdatePayload;
+    await verifyWebsiteUpdatePayload(payload);
+    await enforceUpdateFeedFreshness(payload);
+    return payload;
   } catch (error) {
     if (controller.signal.aborted) {
       throw new Error(`${url} timed out while checking for updates.`);
@@ -2403,7 +2658,7 @@ async function checkForUpdates(): Promise<UpdateCheckResult> {
   };
   const errors: string[] = [];
 
-  for (const url of [updatesFeedUrl, downloadsManifestUrl]) {
+  for (const url of [updatesFeedUrl]) {
     try {
       return await fetchWebsiteUpdatePayload(url, currentVersion, requestHeaders);
     } catch (error) {
@@ -2458,17 +2713,37 @@ async function downloadUpdateInstaller(
   latestVersion: string | null,
   onProgress?: UpdateProgressSink,
 ): Promise<string> {
-  const response = await fetch(file.url, {
-    headers: {
-      "User-Agent": `latexdo/${currentVersion}`,
-    },
-  });
+  const maxInstallerBytes = 1_500_000_000;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20 * 60 * 1000);
+  let response: Response;
+  try {
+    response = await fetch(file.url, {
+      headers: {
+        "User-Agent": `latexdo/${currentVersion}`,
+      },
+      redirect: "follow",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    clearTimeout(timeout);
+    if (controller.signal.aborted) {
+      throw new Error("Update installer download timed out.");
+    }
+    throw error;
+  }
 
   if (!response.ok) {
+    clearTimeout(timeout);
     throw new Error(`Update installer download returned ${response.status}.`);
   }
   if (!response.body) {
+    clearTimeout(timeout);
     throw new Error("Update installer download did not include a response body.");
+  }
+  if (!isSafeUpdateResponseUrl(response.url)) {
+    clearTimeout(timeout);
+    throw new Error("Update installer redirected to an untrusted host.");
   }
 
   const contentLength = response.headers.get("content-length");
@@ -2477,6 +2752,10 @@ async function downloadUpdateInstaller(
     Number.isFinite(parsedContentLength) && parsedContentLength > 0
       ? parsedContentLength
       : null;
+  if (totalBytes !== null && totalBytes > maxInstallerBytes) {
+    clearTimeout(timeout);
+    throw new Error("Update installer exceeds the maximum download size.");
+  }
   let transferredBytes = 0;
   let lastProgressSentAt = 0;
   const emitDownloadProgress = (force = false) => {
@@ -2513,6 +2792,10 @@ async function downloadUpdateInstaller(
             typeof chunk === "string"
               ? Buffer.byteLength(chunk)
               : (chunk as Uint8Array).byteLength;
+          if (transferredBytes > maxInstallerBytes) {
+            callback(new Error("Update installer exceeds the maximum download size."));
+            return;
+          }
           emitDownloadProgress();
           callback(null, chunk);
         },
@@ -2544,6 +2827,8 @@ async function downloadUpdateInstaller(
   } catch (error) {
     await unlink(temporaryPath).catch(() => undefined);
     throw error;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -2577,7 +2862,7 @@ async function updateNow(
     }),
   );
 
-  for (const url of [updatesFeedUrl, downloadsManifestUrl]) {
+  for (const url of [updatesFeedUrl]) {
     try {
       const payload = await fetchWebsiteUpdateJson(url, requestHeaders);
       const result = updateResultFromWebsitePayload(payload, currentVersion);
@@ -2933,6 +3218,63 @@ async function gitDiscardAll(projectPath: string): Promise<GitDiscardResult> {
   };
 }
 
+const rendererContentTypes: Record<string, string> = {
+  ".css": "text/css; charset=utf-8",
+  ".gif": "image/gif",
+  ".html": "text/html; charset=utf-8",
+  ".ico": "image/x-icon",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".ttf": "font/ttf",
+  ".wasm": "application/wasm",
+  ".webp": "image/webp",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
+
+async function packagedRendererResponse(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  if (url.origin !== packagedRendererOrigin || request.method !== "GET") {
+    return new Response("Not found", { status: 404 });
+  }
+
+  let pathname: string;
+  try {
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    return new Response("Invalid path", { status: 400 });
+  }
+  if (pathname.includes("\0")) {
+    return new Response("Invalid path", { status: 400 });
+  }
+
+  const relativePath = pathname.replace(/^\/+/, "") || "index.html";
+  const filePath = path.resolve(packagedRendererRoot, relativePath);
+  const relativeToRoot = path.relative(packagedRendererRoot, filePath);
+  if (relativeToRoot.startsWith("..") || path.isAbsolute(relativeToRoot)) {
+    return new Response("Not found", { status: 404 });
+  }
+
+  const file = await stat(filePath).catch(() => null);
+  if (!file?.isFile()) {
+    return new Response("Not found", { status: 404 });
+  }
+  const extension = path.extname(filePath).toLowerCase();
+  return new Response(await readFile(filePath), {
+    headers: {
+      "cache-control":
+        extension === ".html" ? "no-cache" : "public, max-age=31536000, immutable",
+      "content-type": rendererContentTypes[extension] ?? "application/octet-stream",
+      "x-content-type-options": "nosniff",
+    },
+  });
+}
+
 function createWindow(): BrowserWindow {
   console.log("[latexdo] createWindow:start");
   nativeTheme.themeSource = "dark";
@@ -2974,7 +3316,7 @@ function createWindow(): BrowserWindow {
   if (isDevelopment) {
     void window.loadURL(process.env.VITE_DEV_SERVER_URL!);
   } else {
-    void window.loadFile(path.join(currentDirectory, "..", "dist", "index.html"));
+    void window.loadURL(`${packagedRendererOrigin}/index.html`);
   }
 
   return window;
@@ -3031,14 +3373,21 @@ async function runStartupSmokeTest(window: BrowserWindow): Promise<void> {
         title: document.title,
         rootChildCount: root?.childElementCount ?? 0,
         hasLatexDoText: document.body?.innerText?.includes("LatexDo") ?? false,
+        origin: window.location.origin,
       };
     })()
-  `)) as { title?: string; rootChildCount?: number; hasLatexDoText?: boolean };
+  `)) as {
+    title?: string;
+    rootChildCount?: number;
+    hasLatexDoText?: boolean;
+    origin?: string;
+  };
 
   if (
     result.title !== "LatexDo" ||
     !result.rootChildCount ||
-    result.hasLatexDoText !== true
+    result.hasLatexDoText !== true ||
+    result.origin !== packagedRendererOrigin
   ) {
     throw new Error(`Renderer smoke test failed: ${JSON.stringify(result)}`);
   }
@@ -3046,10 +3395,18 @@ async function runStartupSmokeTest(window: BrowserWindow): Promise<void> {
   console.log("[latexdo] packaged startup smoke test passed", result);
 }
 
-// Concurrent instances race on the settings store, trusted-workspace
-// registry, and history snapshots, so a second launch focuses the
-// existing window instead.
-if (!app.requestSingleInstanceLock()) {
+// Smoke tests use an isolated profile and must not be mistaken for a request to
+// focus an already-running desktop instance.
+if (startupSmokeTest) {
+  app.setPath(
+    "userData",
+    path.join(app.getPath("temp"), `latexdo-smoke-${process.pid}`),
+  );
+}
+
+// Concurrent interactive instances race on the settings store, trusted-workspace
+// registry, and history snapshots, so a second launch focuses the existing window.
+if (!startupSmokeTest && !app.requestSingleInstanceLock()) {
   app.exit(0);
 }
 
@@ -3066,8 +3423,11 @@ app.on("second-instance", () => {
 
 app.whenReady().then(async () => {
   console.log("[latexdo] app:ready");
+  if (!isDevelopment) {
+    protocol.handle("latexdo", packagedRendererResponse);
+  }
   if (process.platform === "darwin") {
-    app.dock.setIcon(appIconPath);
+    app.dock?.setIcon(appIconPath);
   }
   registerTerminalIpc({ getProjectRoot });
   console.log("[latexdo] app:terminal-registered");
@@ -3158,6 +3518,76 @@ app.whenReady().then(async () => {
     const projectPath = getProjectRoot(projectId);
     const resolvedPath = resolveProjectPath(projectPath, filePath);
     return readSafeTextFile(projectPath, resolvedPath, filePath);
+  });
+  ipcMain.handle("file:read-cloud-upload", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "file:read-cloud-upload";
+    const [rawProjectId, rawFilePath] = expectIpcArgs(channel, rawArgs, 2);
+    const projectId = parseProjectId(channel, rawProjectId);
+    const filePath = parseRelativePath(channel, rawFilePath);
+    const projectPath = getProjectRoot(projectId);
+    const resolvedPath = resolveProjectPath(projectPath, filePath);
+    const file = await stat(resolvedPath);
+    if (!file.isFile()) {
+      throw new Error(`${filePath} is not a file.`);
+    }
+    if (file.size > maxCloudUploadFileBytes) {
+      throw new Error(`${filePath} exceeds the 2 MiB cloud file limit.`);
+    }
+    const content = await readFile(resolvedPath);
+    if (content.byteLength !== file.size) {
+      throw new Error(`${filePath} changed while preparing the cloud upload.`);
+    }
+    return {
+      contentBase64: content.toString("base64"),
+      size: content.byteLength,
+    };
+  });
+  ipcMain.handle("file:choose-hosted-import", async (event, ...rawArgs: unknown[]) => {
+    const channel = "file:choose-hosted-import";
+    const [rawKind] = expectIpcArgs(channel, rawArgs, 1);
+    if (rawKind !== "docx" && rawKind !== "markdown") {
+      throw new Error(`${channel}: unsupported import type.`);
+    }
+    const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const isDocx = rawKind === "docx";
+    const dialogOptions = {
+      properties: ["openFile"],
+      title: isDocx ? "Import DOCX as LaTeX" : "Import Markdown as LaTeX",
+      buttonLabel: isDocx ? "Import DOCX" : "Import Markdown",
+      defaultPath: app.getPath("documents"),
+      filters: isDocx
+        ? [{ name: "Word documents", extensions: ["docx"] }]
+        : [{ name: "Markdown documents", extensions: ["md", "markdown"] }],
+    } satisfies Electron.OpenDialogOptions;
+    const result = window
+      ? await dialog.showOpenDialog(window, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
+    const selectedPath = result.filePaths[0];
+    if (result.canceled || !selectedPath) return null;
+
+    const extension = path.extname(selectedPath).toLowerCase();
+    const allowedExtensions = isDocx
+      ? new Set([".docx"])
+      : new Set([".md", ".markdown"]);
+    if (!allowedExtensions.has(extension)) {
+      throw new Error("The selected file type does not match this importer.");
+    }
+    const selectedStat = await stat(selectedPath);
+    if (!selectedStat.isFile()) throw new Error("The selected path is not a file.");
+    if (selectedStat.size > maxHostedImportFileBytes) {
+      throw new Error("Hosted imports are limited to 5 MiB.");
+    }
+    const bytes = await readFile(selectedPath);
+    if (
+      bytes.byteLength > maxHostedImportFileBytes ||
+      bytes.byteLength !== selectedStat.size
+    ) {
+      throw new Error("The selected import changed while it was being read.");
+    }
+    return {
+      fileName: path.basename(selectedPath),
+      contentBase64: bytes.toString("base64"),
+    };
   });
   ipcMain.handle("asset:read", async (_event, ...rawArgs: unknown[]) => {
     const channel = "asset:read";
@@ -3662,65 +4092,6 @@ app.whenReady().then(async () => {
     const request = parseCompileRequestInput(channel, rawRequest);
     const projectPath = getProjectRoot(request.projectId);
     resolveProjectPath(projectPath, request.rootFile);
-    const controller = new AbortController();
-    const untrack = trackCompileController(request.projectId, controller);
-    try {
-      const result = await compileLatex(
-        {
-          projectPath,
-          rootFile: request.rootFile,
-          engine: request.engine,
-        },
-        { signal: controller.signal },
-      );
-      return {
-        ...result,
-        pdfPath: result.pdfPath
-          ? relativeProjectPath(projectPath, result.pdfPath)
-          : undefined,
-      };
-    } finally {
-      untrack();
-    }
-  });
-  ipcMain.handle("latex:compile-cloud", async (_event, ...rawArgs: unknown[]) => {
-    const channel = "latex:compile-cloud";
-    const [rawRequest] = expectIpcArgs(channel, rawArgs, 1);
-    if (!isRecord(rawRequest)) {
-      invalidIpcInput(channel);
-    }
-    const request = parseCompileRequestInput(channel, rawRequest);
-    if (!cloudCompileProjectIdPattern.test(request.projectId)) {
-      invalidIpcInput(channel);
-    }
-    if (!Array.isArray(rawRequest.files)) {
-      invalidIpcInput(channel);
-    }
-    const files = rawRequest.files.map((file) => {
-      if (!isRecord(file)) {
-        invalidIpcInput(channel);
-      }
-      return {
-        relativePath: parseRelativePath(channel, file.relativePath),
-        content: typeof file.content === "string" ? file.content : "",
-      };
-    });
-
-    const projectPath = path.join(
-      app.getPath("temp"),
-      "latexdo-cloud",
-      request.projectId,
-    );
-    await materializeCloudCompileFiles(projectPath, files);
-    // Register the scratch copy so PDF preview, SyncTeX, and cancelation
-    // resolve the cloud project id to this local mirror.
-    openProjects.set(request.projectId, {
-      id: request.projectId,
-      rootPath: projectPath,
-      name: `Shared project ${request.projectId}`,
-    });
-    resolveProjectPath(projectPath, request.rootFile);
-
     const controller = new AbortController();
     const untrack = trackCompileController(request.projectId, controller);
     try {

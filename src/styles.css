@@ -3129,9 +3129,35 @@ button {
 
 .editor-drop-zone {
   display: grid;
+  position: relative;
   min-width: 0;
   min-height: 0;
   grid-template-rows: minmax(0, 1fr);
+}
+
+.editor-readonly-banner {
+  position: absolute;
+  z-index: 5;
+  top: 8px;
+  right: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(420px, calc(100% - 36px));
+  padding: 5px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  background: var(--bg-dialog);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.editor-readonly-banner span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .editor-drop-zone > * {
