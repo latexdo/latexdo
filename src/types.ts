@@ -372,6 +372,7 @@ export interface ReviewChat {
     text: string;
   };
   comments: ReviewChatComment[];
+  insertedInTex?: boolean;
 }
 
 export type DocumentHistorySource = "auto" | "manual" | "restore";

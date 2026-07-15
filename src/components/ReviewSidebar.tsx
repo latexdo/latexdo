@@ -1,5 +1,5 @@
 import React from "react";
-import { MessageSquare, Plus, Send, Trash2, User } from "lucide-react";
+import { Check, FilePlus2, MessageSquare, Plus, Send, Trash2, User } from "lucide-react";
 import type { ReviewChat } from "../types";
 
 interface ReviewSidebarProps {
@@ -8,6 +8,7 @@ interface ReviewSidebarProps {
   onAddComment: (chatId: string, text: string) => void;
   onDeleteChat: (chatId: string) => void;
   onJumpToSelection: (chat: ReviewChat) => void;
+  onInsertIntoTex: (chat: ReviewChat) => void;
 }
 
 export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
@@ -16,6 +17,7 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
   onAddComment,
   onDeleteChat,
   onJumpToSelection,
+  onInsertIntoTex,
 }) => {
   const [commentTexts, setCommentTexts] = React.useState<Record<string, string>>({});
 
@@ -111,6 +113,30 @@ export const ReviewSidebar: React.FC<ReviewSidebarProps> = ({
                 >
                   <Send size={13} />
                 </button>
+              </div>
+
+              <div className="review-chat-footer">
+                {chat.insertedInTex ? (
+                  <span className="review-chat-in-tex" title="This thread is in the TeX source">
+                    <Check size={13} />
+                    <span>In TeX source</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="sidebar-primary-action review-insert-button"
+                    onClick={() => onInsertIntoTex(chat)}
+                    disabled={chat.comments.length === 0}
+                    title={
+                      chat.comments.length === 0
+                        ? "Write a message first, then insert the thread into the TeX source"
+                        : "Insert this review thread into the TeX source"
+                    }
+                  >
+                    <FilePlus2 size={13} />
+                    <span>Insert into TeX</span>
+                  </button>
+                )}
               </div>
             </div>
           ))

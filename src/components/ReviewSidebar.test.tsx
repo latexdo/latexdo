@@ -33,6 +33,7 @@ describe("ReviewSidebar", () => {
         onAddComment={vi.fn()}
         onDeleteChat={vi.fn()}
         onJumpToSelection={vi.fn()}
+        onInsertIntoTex={vi.fn()}
       />,
     );
 
@@ -53,6 +54,7 @@ describe("ReviewSidebar", () => {
         onAddComment={onAddComment}
         onDeleteChat={onDeleteChat}
         onJumpToSelection={onJumpToSelection}
+        onInsertIntoTex={vi.fn()}
       />,
     );
 
@@ -68,5 +70,47 @@ describe("ReviewSidebar", () => {
 
     fireEvent.click(screen.getByTitle("Delete review chat"));
     expect(onDeleteChat).toHaveBeenCalledWith("chat-1");
+  });
+
+  it("inserts a thread into the TeX source from the panel", () => {
+    const onInsertIntoTex = vi.fn();
+
+    render(
+      <ReviewSidebar
+        chats={[chat]}
+        onAddChat={vi.fn()}
+        onAddComment={vi.fn()}
+        onDeleteChat={vi.fn()}
+        onJumpToSelection={vi.fn()}
+        onInsertIntoTex={onInsertIntoTex}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /insert into tex/i }));
+    expect(onInsertIntoTex).toHaveBeenCalledWith(chat);
+  });
+
+  it("disables insertion until the thread has a message and shows the inserted state", () => {
+    const onInsertIntoTex = vi.fn();
+    const emptyChat: ReviewChat = { ...chat, id: "chat-2", comments: [] };
+    const insertedChat: ReviewChat = { ...chat, id: "chat-3", insertedInTex: true };
+
+    render(
+      <ReviewSidebar
+        chats={[emptyChat, insertedChat]}
+        onAddChat={vi.fn()}
+        onAddComment={vi.fn()}
+        onDeleteChat={vi.fn()}
+        onJumpToSelection={vi.fn()}
+        onInsertIntoTex={onInsertIntoTex}
+      />,
+    );
+
+    const insertButton = screen.getByRole("button", { name: /insert into tex/i });
+    expect(insertButton).toBeDisabled();
+    fireEvent.click(insertButton);
+    expect(onInsertIntoTex).not.toHaveBeenCalled();
+
+    expect(screen.getByText(/in tex source/i)).toBeVisible();
   });
 });

@@ -87,7 +87,11 @@ import {
 } from "./components/CitationManager";
 import { ProjectSearchPanel } from "./components/ProjectSearchPanel";
 import { generateRebuttalLetter } from "./rebuttalGenerator";
-import { normalizeLatexDoReviewMarkup, usesLatexDoReviewMacros } from "./reviewMarkup";
+import {
+  escapeLatexText,
+  normalizeLatexDoReviewMarkup,
+  usesLatexDoReviewMacros,
+} from "./reviewMarkup";
 import type { RebuttalGeneratorSettings } from "./types";
 import { monaco } from "./monaco";
 
@@ -518,6 +522,8 @@ export default function App() {
   const [mode, setMode] = useState<EditorMode>("author");
   const [reviewChats, setReviewChats] = useState<ReviewChat[]>([]);
   const [rebuttalItems, setRebuttalItems] = useState<RebuttalItem[]>([]);
+  const reviewDataReadyRef = useRef(false);
+  const reviewSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const editorMouseDisposableRef = useRef<monaco.IDisposable | null>(null);
   const editorActionDisposablesRef = useRef<monaco.IDisposable[]>([]);
@@ -1232,13 +1238,30 @@ ${macroEnd}
     async (chats: ReviewChat[], items: RebuttalItem[]) => {
       const currentProject = projectIdRef.current;
       if (!currentProject) return;
+      if (!reviewDataReadyRef.current) {
+        // The stored review data never loaded for this project; writing now
+        // would overwrite it with a partial view.
+        setStatusMessage(
+          "Review data could not be loaded — changes are not being saved. Reload the project to retry.",
+        );
+        return;
+      }
 
-      try {
+      // Serialize writes so a slow earlier save cannot land after (and
+      // overwrite) a newer one.
+      const write = reviewSaveQueueRef.current.then(async () => {
         const data = JSON.stringify({ chats, items }, null, 2);
         const filePath = resolveProjectDataPath(".latexdo/review_data.json");
         await window.latexdo.writeFile(currentProject, filePath, data);
+      });
+      reviewSaveQueueRef.current = write.catch(() => undefined);
+      try {
+        await write;
       } catch (e) {
         console.error("Failed to save review data", e);
+        setStatusMessage(
+          "Could not save review data — your latest review change may be lost. Check your connection and try again.",
+        );
       }
     },
     [resolveProjectDataPath],
@@ -1246,12 +1269,14 @@ ${macroEnd}
 
   const loadReviewData = useCallback(
     async (id: string) => {
+      reviewDataReadyRef.current = false;
       try {
         const filePath = resolveProjectDataPath(".latexdo/review_data.json");
         const exists = await window.latexdo.fileExists(id, filePath);
         if (!exists) {
           setReviewChats([]);
           setRebuttalItems([]);
+          reviewDataReadyRef.current = true;
           return;
         }
         const content = await window.latexdo.readFile(id, filePath);
@@ -1259,16 +1284,27 @@ ${macroEnd}
           chats: ReviewChat[];
           items: RebuttalItem[];
         };
-        const nextItems = (items || []).map(normalizeRebuttalItem);
-        const normalizedChats = removeLegacyReviewPlaceholders(chats || []);
+        const nextItems = (Array.isArray(items) ? items : []).map(
+          normalizeRebuttalItem,
+        );
+        const normalizedChats = removeLegacyReviewPlaceholders(
+          Array.isArray(chats) ? chats : [],
+        );
         setReviewChats(normalizedChats.chats);
         setRebuttalItems(nextItems);
+        reviewDataReadyRef.current = true;
         if (normalizedChats.changed) {
           void saveReviewData(normalizedChats.chats, nextItems);
         }
       } catch (e) {
+        // Keep reviewDataReadyRef false: saves are blocked so a transient
+        // load failure cannot lead to overwriting the stored review data.
+        console.error("Failed to load review data", e);
         setReviewChats([]);
         setRebuttalItems([]);
+        setStatusMessage(
+          "Could not load saved review data — review changes will not be saved until the project reloads successfully.",
+        );
       }
     },
     [resolveProjectDataPath, saveReviewData],
@@ -6357,13 +6393,33 @@ ${macroEnd}
       }
       const outName = "rebuttal-letter.tex";
       await window.latexdo.writeFile(currentProject, outName, tex);
-      setStatusMessage(`Generated response file ${outName} — open to compile.`);
       await refreshProject(currentProject);
+      setDocuments((current) => {
+        const nextDocuments = current.map((document) =>
+          normalizeRelativePath(document.relativePath) === outName
+            ? { ...document, content: tex, savedContent: tex }
+            : document,
+        );
+        documentsRef.current = nextDocuments;
+        return nextDocuments;
+      });
+      const entry = flattenEntries(projectEntriesRef.current).find(
+        (candidate) =>
+          candidate.type === "file" &&
+          normalizeRelativePath(candidate.relativePath) === outName,
+      );
+      if (entry) {
+        await openDocument(entry);
+        setStatusMessage(`Generated ${outName} — compiling…`);
+        await compileEntry(entry);
+      } else {
+        setStatusMessage(`Generated response file ${outName} — open to compile.`);
+      }
     } catch (e) {
       const err = e instanceof Error ? e.message : String(e);
       setStatusMessage(`Failed: ${err}`);
     }
-  }, [rebuttalItems, refreshProject, settings]);
+  }, [compileEntry, openDocument, rebuttalItems, refreshProject, settings]);
 
   const handleAddReviewComment = useCallback(
     (chatId: string, text: string) => {
@@ -6402,6 +6458,101 @@ ${macroEnd}
       });
     },
     [rebuttalItems, saveReviewData],
+  );
+
+  const handleInsertReviewChatIntoTex = useCallback(
+    async (chat: ReviewChat) => {
+      const currentProject = projectIdRef.current;
+      if (!currentProject) {
+        setStatusMessage("No project open.");
+        return;
+      }
+      if (chat.insertedInTex) {
+        setStatusMessage("This review thread is already in the TeX source.");
+        return;
+      }
+      const comments = chat.comments.filter((comment) => comment.text.trim());
+      if (comments.length === 0) {
+        setStatusMessage("Write at least one message before inserting the thread into TeX.");
+        return;
+      }
+
+      const normalizedPath = normalizeRelativePath(chat.filePath);
+      const openDoc = documentsRef.current.find(
+        (document) => normalizeRelativePath(document.relativePath) === normalizedPath,
+      );
+      let content: string;
+      try {
+        content =
+          openDoc?.content ??
+          (await window.latexdo.readFile(currentProject, chat.filePath));
+      } catch {
+        setStatusMessage("Could not read the file for this review thread.");
+        return;
+      }
+
+      const selectionText = chat.selection.text;
+      // Prefer the recorded selection range; fall back to searching for the text.
+      const lines = content.split("\n");
+      let start = -1;
+      if (chat.selection.startLine >= 1 && chat.selection.startLine <= lines.length) {
+        let offset = 0;
+        for (let line = 1; line < chat.selection.startLine; line += 1) {
+          offset += lines[line - 1].length + 1;
+        }
+        const candidate = offset + chat.selection.startColumn - 1;
+        if (content.slice(candidate, candidate + selectionText.length) === selectionText) {
+          start = candidate;
+        }
+      }
+      if (start === -1) {
+        start = content.indexOf(selectionText);
+      }
+      if (start === -1) {
+        setStatusMessage(
+          "Could not find the reviewed text in the file — it may have been edited.",
+        );
+        return;
+      }
+
+      const commentLatex = comments
+        .map(
+          (comment) =>
+            `\\textbf{${escapeLatexText(comment.author)}:} ${escapeLatexText(comment.text)}`,
+        )
+        .join(" \\par ");
+      const nextContent =
+        content.slice(0, start) +
+        `\\reviewercomment{${selectionText}}{${commentLatex}}` +
+        content.slice(start + selectionText.length);
+
+      if (openDoc) {
+        setDocuments((current) => {
+          const nextDocuments = current.map((document) =>
+            document.path === openDoc.path
+              ? { ...document, content: nextContent }
+              : document,
+          );
+          documentsRef.current = nextDocuments;
+          return nextDocuments;
+        });
+      } else {
+        await window.latexdo.writeFile(currentProject, chat.filePath, nextContent);
+        void compile();
+      }
+
+      setReviewChats((prev) => {
+        const next = prev.map((existing) =>
+          existing.id === chat.id ? { ...existing, insertedInTex: true } : existing,
+        );
+        void saveReviewData(next, rebuttalItems);
+        return next;
+      });
+      setStatusMessage(
+        "Inserted review thread into the TeX source — it will render on the next compile.",
+      );
+    },
+    [compile, rebuttalItems, saveReviewData],
   );
 
   const handleJumpToReviewSelection = useCallback(
@@ -7332,6 +7483,7 @@ ${macroEnd}
                       onAddComment={handleAddReviewComment}
                       onDeleteChat={handleDeleteReviewChat}
                       onJumpToSelection={handleJumpToReviewSelection}
+                      onInsertIntoTex={(chat) => void handleInsertReviewChatIntoTex(chat)}
                     />
                   ) : (
                     <RebuttalSidebar

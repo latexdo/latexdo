@@ -1,6 +1,21 @@
 const latexDoReviewCommandPattern =
   /\\(?:reviewercomment|latexdoreviewercomment|rebuttal)\s*\{/;
 
+export function escapeLatexText(value: string): string {
+  return value.replace(/[\\&%#$_{}~^]/g, (character) => {
+    switch (character) {
+      case "\\":
+        return "\\textbackslash{}";
+      case "~":
+        return "\\textasciitilde{}";
+      case "^":
+        return "\\textasciicircum{}";
+      default:
+        return `\\${character}`;
+    }
+  });
+}
+
 interface BraceArgument {
   value: string;
   endIndex: number;

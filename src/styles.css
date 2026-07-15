@@ -6730,6 +6730,33 @@ button {
   text-decoration: underline;
 }
 
+.review-chat-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.review-chat-footer .review-insert-button {
+  width: auto;
+  padding: 4px 10px;
+  font-size: 10px;
+}
+
+.review-chat-footer .review-insert-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.review-chat-in-tex {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
 .monaco-editor .review-comment-decoration {
   border-bottom: 1px solid rgba(124, 166, 255, 0.75);
   background: rgba(124, 166, 255, 0.14);
