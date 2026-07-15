@@ -35,7 +35,11 @@ import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { compileAsymptote, compileLatex } from "./compiler.js";
+import {
+  compileAsymptote,
+  compileLatex,
+  materializeCloudCompileFiles,
+} from "./compiler.js";
 import { importDocxIntoProject } from "./docxImport.js";
 import { importMarkdown } from "./markdownImport.js";
 import { backwardSyncTex, forwardSyncTex } from "./synctex.js";
@@ -187,6 +191,7 @@ function installSafeConsole(): void {
 installSafeConsole();
 
 const openProjects = new Map<string, OpenProject>();
+const cloudCompileProjectIdPattern = /^(?:project|session)_[a-z0-9]{6,64}$/i;
 const activeCompileControllers = new Map<string, Set<AbortController>>();
 
 interface GitWatchState {
@@ -3238,8 +3243,14 @@ const rendererContentTypes: Record<string, string> = {
 };
 
 async function packagedRendererResponse(request: Request): Promise<Response> {
+  // Node's URL parser treats custom schemes as opaque, so `url.origin` is the
+  // literal string "null" here; compare protocol and host instead.
   const url = new URL(request.url);
-  if (url.origin !== packagedRendererOrigin || request.method !== "GET") {
+  if (
+    url.protocol !== "latexdo:" ||
+    url.host !== "app" ||
+    request.method !== "GET"
+  ) {
     return new Response("Not found", { status: 404 });
   }
 
@@ -4092,6 +4103,65 @@ app.whenReady().then(async () => {
     const request = parseCompileRequestInput(channel, rawRequest);
     const projectPath = getProjectRoot(request.projectId);
     resolveProjectPath(projectPath, request.rootFile);
+    const controller = new AbortController();
+    const untrack = trackCompileController(request.projectId, controller);
+    try {
+      const result = await compileLatex(
+        {
+          projectPath,
+          rootFile: request.rootFile,
+          engine: request.engine,
+        },
+        { signal: controller.signal },
+      );
+      return {
+        ...result,
+        pdfPath: result.pdfPath
+          ? relativeProjectPath(projectPath, result.pdfPath)
+          : undefined,
+      };
+    } finally {
+      untrack();
+    }
+  });
+  ipcMain.handle("latex:compile-cloud", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "latex:compile-cloud";
+    const [rawRequest] = expectIpcArgs(channel, rawArgs, 1);
+    if (!isRecord(rawRequest)) {
+      invalidIpcInput(channel);
+    }
+    const request = parseCompileRequestInput(channel, rawRequest);
+    if (!cloudCompileProjectIdPattern.test(request.projectId)) {
+      invalidIpcInput(channel);
+    }
+    if (!Array.isArray(rawRequest.files)) {
+      invalidIpcInput(channel);
+    }
+    const files = rawRequest.files.map((file) => {
+      if (!isRecord(file)) {
+        invalidIpcInput(channel);
+      }
+      return {
+        relativePath: parseRelativePath(channel, file.relativePath),
+        content: typeof file.content === "string" ? file.content : "",
+      };
+    });
+
+    const projectPath = path.join(
+      app.getPath("temp"),
+      "latexdo-cloud",
+      request.projectId,
+    );
+    await materializeCloudCompileFiles(projectPath, files);
+    // Register the scratch copy so PDF preview, SyncTeX, and cancelation
+    // resolve the cloud project id to this local mirror.
+    openProjects.set(request.projectId, {
+      id: request.projectId,
+      rootPath: projectPath,
+      name: `Shared project ${request.projectId}`,
+    });
+    resolveProjectPath(projectPath, request.rootFile);
+
     const controller = new AbortController();
     const untrack = trackCompileController(request.projectId, controller);
     try {
