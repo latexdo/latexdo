@@ -1,4 +1,5 @@
 import type { LatexDoApi } from "../electron/preload.cjs";
+import type { CompileResult } from "../electron/types";
 import type {
   CollaborationState,
   CollaboratorPermission,
@@ -15,8 +16,8 @@ import type {
 } from "./types";
 import { appVersion } from "./appVersion";
 import {
-  collaborationApiBaseUrl,
   collaborationHeaders,
+  resolveCollaborationApiBaseUrl,
 } from "./collaboration/collaborationApi";
 import {
   rememberShareToken,
@@ -82,12 +83,9 @@ const defaultSpellCheckerSettings: SpellCheckerSettings = {
   usesSystemLanguage: false,
 };
 
-function apiBaseUrl(): string {
-  return collaborationApiBaseUrl().replace(/\/+$/, "");
-}
-
-function apiUrl(path: string): string {
-  return `${apiBaseUrl()}${path}`;
+async function apiUrl(path: string): Promise<string> {
+  const base = (await resolveCollaborationApiBaseUrl()).replace(/\/+$/, "");
+  return `${base}${path}`;
 }
 
 function isSafeRequest(method: string): boolean {
@@ -258,7 +256,7 @@ async function requestResponse(
     let response: Response;
     try {
       response = await fetchWithTimeout(
-        apiUrl(path),
+        await apiUrl(path),
         { ...options, method, headers },
         timeoutMs,
       );
@@ -482,6 +480,39 @@ function unavailableGitDiffSession(
 
 function cloudUnavailable(feature: string): Error {
   return new Error(`${feature} is not enabled in the hosted editor yet.`);
+}
+
+function hostedCompileFailure(
+  rootFile: string,
+  message: string,
+  detail: string,
+): CompileResult {
+  return {
+    ok: false,
+    durationMs: 0,
+    output: `${message}\n\n${detail}`,
+    diagnostics: [
+      {
+        file: rootFile,
+        line: 1,
+        column: 1,
+        severity: "warning",
+        message,
+        detail,
+        source: "latex",
+      },
+    ],
+    error: message,
+  };
+}
+
+function hostedCompileUnavailableResult(rootFile: string): CompileResult {
+  return hostedCompileFailure(
+    rootFile,
+    "PDF compilation is not enabled on this hosted backend yet.",
+    "Your project, review threads, and rebuttal data are saved in the cloud. " +
+      "Use the desktop app to compile PDFs until hosted compilation is enabled.",
+  );
 }
 
 export function createCloudLatexDoApi(): CloudLatexDoApi {
@@ -961,7 +992,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       const controller = new AbortController();
       compileControllers.set(request.projectId, controller);
       try {
-        return await requestJson(
+        const response = await requestResponse(
           "/api/compile",
           {
             method: "POST",
@@ -970,6 +1001,42 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
           },
           shareTokenForProject(request.projectId),
           { timeoutMs: compileRequestTimeoutMs, retries: 0 },
+        );
+
+        if (
+          response.status === 404 ||
+          response.status === 405 ||
+          response.status === 501
+        ) {
+          await response.body?.cancel().catch(() => undefined);
+          return hostedCompileUnavailableResult(request.rootFile);
+        }
+        if (!response.ok) {
+          let message = `${response.status} ${response.statusText}`;
+          try {
+            const body = (await response.json()) as { error?: string };
+            message = body.error || message;
+          } catch {
+            // Keep the HTTP status fallback.
+          }
+          return hostedCompileFailure(
+            request.rootFile,
+            `The hosted compile service reported an error: ${message}`,
+            "Your source files are saved. Fix the reported problem or retry, " +
+              "or compile with the desktop app.",
+          );
+        }
+        return (await response.json()) as CompileResult;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          throw error;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        return hostedCompileFailure(
+          request.rootFile,
+          `Could not reach the hosted compile service: ${message}`,
+          "Your source files are saved. Check your connection and retry, " +
+            "or compile with the desktop app.",
         );
       } finally {
         if (compileControllers.get(request.projectId) === controller) {

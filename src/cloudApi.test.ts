@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCloudLatexDoApi } from "./cloudApi";
+import { resetCollaborationApiBaseUrlForTests } from "./collaboration/collaborationApi";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -262,5 +263,125 @@ describe("cloud API request policies", () => {
     await expect(api.cancelCompile("project-1")).resolves.toBe(true);
     await expect(compile).rejects.toMatchObject({ name: "AbortError" });
     await expect(api.cancelCompile("project-1")).resolves.toBe(false);
+  });
+});
+
+describe("hosted backend resilience", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.history.replaceState(null, "", "/");
+    installStoredSession();
+    resetCollaborationApiBaseUrlForTests();
+  });
+
+  afterEach(() => {
+    resetCollaborationApiBaseUrlForTests();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("returns a structured failure when the backend has no compile route", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse({ error: "Not found" }, 404));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = createCloudLatexDoApi();
+
+    const result = await api.compile({
+      projectId: "project-1",
+      rootFile: "rebuttal-letter.tex",
+      engine: "pdflatex",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/not enabled/i);
+    expect(result.diagnostics[0]?.file).toBe("rebuttal-letter.tex");
+    expect(result.output).toMatch(/review threads/i);
+  });
+
+  it("returns a structured failure when the compile backend is unreachable", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new TypeError("Failed to fetch"));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = createCloudLatexDoApi();
+
+    const result = await api.compile({
+      projectId: "project-1",
+      rootFile: "main.tex",
+      engine: "pdflatex",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/could not reach/i);
+    expect(result.diagnostics[0]?.file).toBe("main.tex");
+  });
+
+  it("returns a structured failure for a compile service error", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse({ error: "TeX engine crashed" }, 500));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = createCloudLatexDoApi();
+
+    const result = await api.compile({
+      projectId: "project-1",
+      rootFile: "main.tex",
+      engine: "pdflatex",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/TeX engine crashed/);
+  });
+
+  it("falls back to the default backend when the configured API is unhealthy", async () => {
+    vi.stubEnv("VITE_LATEXDO_API_BASE_URL", "https://editor.example");
+    resetCollaborationApiBaseUrlForTests();
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url === "https://editor.example/api/health") {
+        return jsonResponse(
+          { error: "Failed to start container: no container application" },
+          500,
+        );
+      }
+      return jsonResponse([]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const api = createCloudLatexDoApi();
+
+    await expect(api.listProject("project-1")).resolves.toEqual([]);
+
+    const calls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(calls[0]).toBe("https://editor.example/api/health");
+    expect(calls[1]).toBe(
+      "https://collaborations.latexdo.org/api/projects/project-1/files",
+    );
+  });
+
+  it("keeps the configured backend when its API answers", async () => {
+    vi.stubEnv("VITE_LATEXDO_API_BASE_URL", "https://editor.example");
+    resetCollaborationApiBaseUrlForTests();
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url === "https://editor.example/api/health") {
+        return jsonResponse({ ok: true });
+      }
+      return jsonResponse([]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const api = createCloudLatexDoApi();
+
+    await expect(api.listProject("project-1")).resolves.toEqual([]);
+
+    const calls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(calls[0]).toBe("https://editor.example/api/health");
+    expect(calls[1]).toBe("https://editor.example/api/projects/project-1/files");
+    // The probe result is memoized: later requests skip the health check.
+    await expect(api.listProject("project-2")).resolves.toEqual([]);
+    expect(
+      fetchMock.mock.calls.filter((call) => String(call[0]).endsWith("/api/health")),
+    ).toHaveLength(1);
   });
 });

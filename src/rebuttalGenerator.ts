@@ -1,11 +1,10 @@
 import type { RebuttalItem, RebuttalGeneratorSettings } from "./types";
+import { escapeLatexText } from "./reviewMarkup";
 
 const DEFAULT_SUMMARY =
   "We revised the manuscript substantially in response to the reviewers' comments.";
 
-function esc(s: string): string {
-  return s.replace(/&/g, "\\&").replace(/%/g, "\\%").replace(/#/g, "\\#");
-}
+const esc = escapeLatexText;
 
 function firstNonEmptyLine(value: string, fallback: string): string {
   return (
@@ -198,7 +197,7 @@ function preamble(settings: RebuttalGeneratorSettings): string {
     "    top=2mm,",
     "    bottom=2mm",
     "]",
-    "{\\color{white}\\bfseries ##1 \\hfill ##2}",
+    "{\\color{white}\\bfseries #1 \\hfill #2}",
     "\\end{tcolorbox}",
     "\\vspace{0.3em}",
     "}",
@@ -443,5 +442,6 @@ export function generateRebuttalLetter(
 export function latexdiffCommand(settings: RebuttalGeneratorSettings): string {
   if (!settings.diffOldFile || !settings.diffNewFile) return "";
   const out = settings.diffOutput || "diff.tex";
-  return `latexdiff ${esc(settings.diffOldFile)} ${esc(settings.diffNewFile)} > ${esc(out)}`;
+  const quote = (file: string) => `"${file.replace(/(["\\$`])/g, "\\$1")}"`;
+  return `latexdiff ${quote(settings.diffOldFile)} ${quote(settings.diffNewFile)} > ${quote(out)}`;
 }
