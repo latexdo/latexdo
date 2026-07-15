@@ -10,6 +10,7 @@ import type {
   ProofreadingSettings,
   SpellCheckerSettings,
 } from "./types";
+import { appVersion } from "./appVersion";
 import { createCloudLatexDoApi } from "./cloudApi";
 
 type BrowserLatexDoApi = LatexDoApi & {
@@ -407,6 +408,10 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       return projectToOpenProject(project);
     },
 
+    async restoreCloudProject() {
+      return null;
+    },
+
     async createProject(options) {
       const store = readStore();
       const project = createProjectRecord(options?.folderName);
@@ -669,7 +674,7 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
 
     async checkForUpdates() {
       return {
-        currentVersion: "0.1.0",
+        currentVersion: appVersion,
         latestVersion: null,
         releaseUrl: "https://latexdo.org/downloads/",
         updateAvailable: false,
@@ -680,7 +685,7 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
     async updateNow() {
       await api.openReleasesPage("https://latexdo.org/downloads/");
       return {
-        currentVersion: "0.1.0",
+        currentVersion: appVersion,
         latestVersion: null,
         releaseUrl: "https://latexdo.org/downloads/",
         updateAvailable: false,

@@ -1,6 +1,6 @@
 {
   "name": "latexdo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "A focused desktop LaTeX editor with live PDF preview.",
   "author": "LatexDo",
@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "web": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build && tsc -p tsconfig.electron.json",
+    "build": "tsc -b && vite build && node scripts/verify-built-assets.mjs && tsc -p tsconfig.electron.json",
     "start": "electron .",
     "sync:downstream": "sh scripts/sync-downstream-repos.sh",
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.electron.json --pretty false",
@@ -20,6 +20,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:diagnostics": "node --experimental-strip-types scripts/test-latex-diagnostics.ts",
+    "test:supply-chain": "node scripts/verify-supply-chain.mjs && node scripts/test-supply-chain-runtime.mjs",
     "package": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder"
   },
@@ -28,7 +29,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "bibtex-parse-js": "^0.0.24",
+    "bibtex-parse": "2.1.0",
     "lib0": "^0.2.117",
     "lucide-react": "^0.468.0",
     "mathjax-full": "^3.2.1",
@@ -51,10 +52,10 @@
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^4.1.9",
-    "concurrently": "^9.1.0",
+    "concurrently": "10.0.3",
     "cross-env": "^7.0.3",
-    "electron": "^33.2.1",
-    "electron-builder": "^25.1.8",
+    "electron": "43.1.1",
+    "electron-builder": "26.15.3",
     "eslint": "^10.5.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.6.0",
@@ -78,6 +79,10 @@
       "package.json"
     ],
     "extraResources": [
+      {
+        "from": "build/update-public-key.pem",
+        "to": "update-public-key.pem"
+      },
       {
         "from": "examples/welcome",
         "to": "examples/welcome"

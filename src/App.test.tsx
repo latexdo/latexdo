@@ -81,8 +81,6 @@ vi.mock("./collaboration/MonacoCollaborationBinding", () => ({
 vi.mock("./collaboration/CollaborationContext", () => ({
   useCollaborationContext: () => ({
     apiBaseUrl: "https://collaborations.latexdo.org",
-    sessionId: "session-test",
-    clientId: "client-test",
     clientName: "",
     color: "#2f6fdb",
   }),

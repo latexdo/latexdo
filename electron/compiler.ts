@@ -550,7 +550,8 @@ function safeCloudRelativePath(relativePath: string): string {
   const segments = normalized.split("/");
   if (
     segments.some(
-      (segment) => !segment || segment === "." || segment === ".." || segment.endsWith(":"),
+      (segment) =>
+        !segment || segment === "." || segment === ".." || segment.endsWith(":"),
     )
   ) {
     throw new Error(`Unsafe project path: ${relativePath}`);

@@ -2,34 +2,35 @@ name: latexdo-release
 
 on:
   push:
-    branches:
-      - main
     tags:
-      - "v*"
-  workflow_dispatch:
+      - "v[0-9]*.[0-9]*.[0-9]*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: latexdo-release-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   quality:
-    name: test / typecheck
+    name: test / static analysis / audit
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 22.17.0
           cache: npm
       - run: npm ci
       - run: npm test
       - run: npm run typecheck
+      - run: npm run lint -- --quiet
+      - run: npm run format:check
+      - run: npm audit --audit-level=high
+      - run: npm run test:supply-chain
 
   build_macos:
     name: build / macOS (${{ matrix.label }})
@@ -55,7 +56,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 22.17.0
           cache: npm
 
       - name: Set up Python for native modules
@@ -102,10 +103,8 @@ jobs:
           done
 
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::warning::Apple signing is disabled because these secrets are missing: ${missing[*]}"
-            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
-            echo "MACOS_SIGNING_ENABLED=false" >> "$GITHUB_ENV"
-            exit 0
+            echo "::error::Refusing to publish an unsigned macOS build. Missing: ${missing[*]}"
+            exit 1
           fi
 
           api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
@@ -122,14 +121,12 @@ jobs:
             echo "APPLE_API_KEY_ID=$APPLE_API_KEY_ID"
             echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
             echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
-            echo "MACOS_SIGNING_ENABLED=true"
           } >> "$GITHUB_ENV"
 
       - name: Disable Spotlight indexing
         run: sudo mdutil -a -i off
 
       - name: Sign, notarize, and package macOS DMG
-        if: env.MACOS_SIGNING_ENABLED == 'true'
         run: >
           npx electron-builder
           --mac dmg zip
@@ -138,42 +135,10 @@ jobs:
           --config.forceCodeSigning=true
           --config.directories.output=release/${{ matrix.arch }}
 
-      - name: Package ad-hoc signed macOS DMG
-        if: env.MACOS_SIGNING_ENABLED != 'true'
-        shell: bash
-        run: |
-          npx electron-builder \
-            --mac dir \
-            --${{ matrix.arch }} \
-            --publish never \
-            --config.mac.identity=- \
-            --config.mac.hardenedRuntime=false \
-            --config.mac.notarize=false \
-            --config.directories.output=release/${{ matrix.arch }}-app
-
-          app_path="$(find "release/${{ matrix.arch }}-app" -type d -name 'LatexDo.app' -print -quit)"
-          if [ -z "$app_path" ]; then
-            echo "The packaged macOS app bundle was not found."
-            exit 1
-          fi
-
-          codesign --force --deep --sign - "$app_path"
-          codesign --verify --deep --strict --verbose=2 "$app_path"
-
-          npx electron-builder \
-            --mac dmg \
-            --${{ matrix.arch }} \
-            --prepackaged "$app_path" \
-            --publish never \
-            --config.mac.identity=- \
-            --config.mac.hardenedRuntime=false \
-            --config.mac.notarize=false \
-            --config.directories.output=release/${{ matrix.arch }}
-
       - name: Test packaged macOS application
         shell: bash
         run: |
-          executable="$(find "release/${{ matrix.arch }}" "release/${{ matrix.arch }}-app" -type f -path '*/LatexDo.app/Contents/MacOS/LatexDo' -print -quit 2>/dev/null || true)"
+          executable="$(find "release/${{ matrix.arch }}" -type f -path '*/LatexDo.app/Contents/MacOS/LatexDo' -print -quit 2>/dev/null || true)"
           if [ -z "$executable" ]; then
             echo "The packaged macOS executable was not found."
             exit 1
@@ -189,17 +154,10 @@ jobs:
           cp "$pkg" "artifacts/${{ matrix.asset }}"
 
       - name: Verify Gatekeeper acceptance
-        if: env.MACOS_SIGNING_ENABLED == 'true'
         run: >
           bash scripts/verify-macos-release.sh
           "artifacts/${{ matrix.asset }}"
           "$APPLE_TEAM_ID"
-
-      - name: Verify ad-hoc macOS signature
-        if: env.MACOS_SIGNING_ENABLED != 'true'
-        run: >
-          bash scripts/verify-macos-adhoc-release.sh
-          "artifacts/${{ matrix.asset }}"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -221,7 +179,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 22.17.0
           cache: npm
 
       - name: Set up Python for native modules
@@ -239,12 +197,25 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+      - name: Configure Windows signing
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_P12: ${{ secrets.WINDOWS_CERTIFICATE_P12 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_CERTIFICATE_P12 -or -not $env:WINDOWS_CERTIFICATE_PASSWORD) {
+            throw "Refusing to publish an unsigned Windows build. Configure WINDOWS_CERTIFICATE_P12 and WINDOWS_CERTIFICATE_PASSWORD."
+          }
+          "WIN_CSC_LINK=$env:WINDOWS_CERTIFICATE_P12" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WIN_CSC_KEY_PASSWORD=$env:WINDOWS_CERTIFICATE_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Package Windows installer
         run: >
           npx electron-builder
           --win nsis
           --x64
           --publish never
+          --config.forceCodeSigning=true
           --config.directories.output=release/windows
 
       - name: Prepare artifact
@@ -254,6 +225,14 @@ jobs:
           if (-not $pkg) { throw "No EXE produced" }
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           Copy-Item $pkg.FullName artifacts/LatexDo-windows-x64.exe
+
+      - name: Verify Windows Authenticode signature
+        shell: pwsh
+        run: |
+          $signature = Get-AuthenticodeSignature artifacts/LatexDo-windows-x64.exe
+          if ($signature.Status -ne "Valid") {
+            throw "Windows installer signature is $($signature.Status): $($signature.StatusMessage)"
+          }
 
       - uses: actions/upload-artifact@v7
         with:
@@ -272,7 +251,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 22.17.0
           cache: npm
 
       - name: Set up Python for native modules
@@ -357,6 +336,9 @@ jobs:
     needs: [build_macos, build_windows, build_linux]
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: write
     concurrency:
       group: latexdo-org-deploy
       cancel-in-progress: false
@@ -365,6 +347,27 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.17.0
+
+      - name: Validate publication credentials
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          LATEXDO_UPDATE_SIGNING_KEY: ${{ secrets.LATEXDO_UPDATE_SIGNING_KEY }}
+          LATEXDO_WEBSITE_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
+        run: |
+          missing=()
+          for name in CLOUDFLARE_API_TOKEN LATEXDO_UPDATE_SIGNING_KEY LATEXDO_WEBSITE_TOKEN; do
+            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Refusing a partial release. Missing: ${missing[*]}"
+            exit 1
+          fi
 
       - name: Download all artifacts
         uses: actions/download-artifact@v8
@@ -393,25 +396,44 @@ jobs:
         run: |
           version="$(node -p "require('./package.json').version")"
           version="${version#v}"
-          short_sha="${GITHUB_SHA::12}"
-          tag="v${version}-build.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}.${short_sha}"
-          title="LatexDo v${version} (${short_sha})"
-
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            tag="${GITHUB_REF_NAME}"
-            tag_version="${tag#v}"
-            if [ "$tag_version" != "$version" ]; then
-              echo "::error::Git tag $tag does not match package.json version $version."
-              exit 1
-            fi
-            title="LatexDo ${tag}"
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            echo "::error::Releases must run from an immutable version tag."
+            exit 1
           fi
+          tag="${GITHUB_REF_NAME}"
+          tag_version="${tag#v}"
+          if [ "$tag_version" != "$version" ]; then
+            echo "::error::Git tag $tag does not match package.json version $version."
+            exit 1
+          fi
+          tag_commit="$(git rev-list -n 1 "$tag")"
+          if [ "$tag_commit" != "$GITHUB_SHA" ]; then
+            echo "::error::Git tag $tag resolves to $tag_commit, expected $GITHUB_SHA."
+            exit 1
+          fi
+          title="LatexDo ${tag}"
 
           {
             echo "version=$version"
             echo "tag=$tag"
             echo "title=$title"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Build signed downloads website
+        env:
+          LATEXDO_DOWNLOAD_BASE_URL: https://latexdo.org
+          LATEXDO_RELEASE_VERSION: ${{ steps.release_metadata.outputs.version }}
+          LATEXDO_RELEASE_SLUG: ${{ steps.release_metadata.outputs.tag }}
+          LATEXDO_RELEASE_ASSET_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.release_metadata.outputs.tag }}
+          LATEXDO_UPDATE_SIGNING_KEY: ${{ secrets.LATEXDO_UPDATE_SIGNING_KEY }}
+        run: node scripts/build-downloads-page.mjs artifacts public-downloads/downloads
+
+      - name: Verify signed update feeds
+        env:
+          RELEASE_TAG: ${{ steps.release_metadata.outputs.tag }}
+        run: |
+          node scripts/verify-update-feed.mjs public-downloads/updates/latest.json
+          node scripts/verify-update-feed.mjs "public-downloads/updates/${RELEASE_TAG}.json"
 
       - name: Publish GitHub release assets
         env:
@@ -430,8 +452,32 @@ jobs:
           )
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "::error::Release $RELEASE_TAG already exists; refusing to overwrite published assets."
-            exit 1
+            release_state="$(gh release view "$RELEASE_TAG" --json isDraft,isPrerelease,tagName --jq '[.tagName, .isDraft, .isPrerelease] | @tsv')"
+            expected_release_state="$(printf '%s\tfalse\tfalse' "$RELEASE_TAG")"
+            if [ "$release_state" != "$expected_release_state" ]; then
+              echo "::error::Existing release $RELEASE_TAG is not the expected published stable release."
+              exit 1
+            fi
+
+            expected_assets="$(printf '%s\n' "${assets[@]##*/}" | LC_ALL=C sort)"
+            published_assets="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | LC_ALL=C sort)"
+            if [ "$published_assets" != "$expected_assets" ]; then
+              echo "::error::Existing release $RELEASE_TAG has a different asset set."
+              diff -u <(printf '%s\n' "$expected_assets") <(printf '%s\n' "$published_assets") || true
+              exit 1
+            fi
+
+            mkdir -p existing-release-assets
+            gh release download "$RELEASE_TAG" --dir existing-release-assets
+            for asset in "${assets[@]}"; do
+              published="existing-release-assets/$(basename "$asset")"
+              if ! cmp -s "$asset" "$published"; then
+                echo "::error::Existing release asset $(basename "$asset") does not match this run byte-for-byte."
+                exit 1
+              fi
+            done
+            echo "Release $RELEASE_TAG already contains the exact expected assets; continuing idempotently."
+            exit 0
           fi
 
           gh release create "$RELEASE_TAG" "${assets[@]}" \
@@ -439,46 +485,7 @@ jobs:
             --title "$RELEASE_TITLE" \
             --notes "LatexDo v${RELEASE_VERSION} desktop installers from ${GITHUB_SHA}."
 
-      - name: Build downloads website
-        env:
-          LATEXDO_DOWNLOAD_BASE_URL: https://latexdo.org
-          LATEXDO_RELEASE_VERSION: ${{ steps.release_metadata.outputs.version }}
-          LATEXDO_RELEASE_SLUG: ${{ steps.release_metadata.outputs.tag }}
-          LATEXDO_RELEASE_ASSET_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.release_metadata.outputs.tag }}
-        run: node scripts/build-downloads-page.mjs artifacts public-downloads/downloads
-
-      - name: Select deploy mode
-        id: deploy_mode
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          LATEXDO_WEBSITE_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
-        shell: bash
-        run: |
-          if [ -z "$LATEXDO_WEBSITE_TOKEN" ]; then
-            echo "website_enabled=false" >> "$GITHUB_OUTPUT"
-            website_message="latexdo.org downloads update skipped: missing LATEXDO_WEBSITE_TOKEN with contents write and actions write access."
-          else
-            echo "website_enabled=true" >> "$GITHUB_OUTPUT"
-            website_message="latexdo.org downloads update enabled."
-          fi
-
-          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "cloudflare_enabled=false" >> "$GITHUB_OUTPUT"
-            cloudflare_message="Cloudflare deploy skipped: missing CLOUDFLARE_API_TOKEN."
-          else
-            echo "cloudflare_enabled=true" >> "$GITHUB_OUTPUT"
-            cloudflare_message="Cloudflare deploy enabled."
-          fi
-
-          {
-            echo "### Downloads deploy mode"
-            echo
-            echo "- ${website_message}"
-            echo "- ${cloudflare_message}"
-          } >> "$GITHUB_STEP_SUMMARY"
-
       - name: Checkout latexdo.org
-        if: ${{ steps.deploy_mode.outputs.website_enabled == 'true' }}
         uses: actions/checkout@v6
         with:
           repository: latexdo/latexdo.org
@@ -488,20 +495,70 @@ jobs:
 
       - name: Update latexdo.org downloads
         id: update_latexdo_org_downloads
-        if: ${{ steps.deploy_mode.outputs.website_enabled == 'true' }}
         shell: bash
         run: |
           echo "updated=false" >> "$GITHUB_OUTPUT"
           echo "commit_sha=" >> "$GITHUB_OUTPUT"
+          if [ -f latexdo-org-site/updates/latest.json ]; then
+            node --input-type=module - \
+              latexdo-org-site/updates/latest.json \
+              public-downloads/updates/latest.json <<'NODE'
+          import { readFile } from "node:fs/promises";
+
+          const [currentPath, incomingPath] = process.argv.slice(2);
+          const current = JSON.parse(await readFile(currentPath, "utf8"));
+          const incoming = JSON.parse(await readFile(incomingPath, "utf8"));
+          if (
+            current.product !== "LatexDo" ||
+            ![1, 2].includes(current.schemaVersion)
+          ) {
+            throw new Error("Existing website update metadata is malformed.");
+          }
+          if (current.schemaVersion === 2 && current.product === "LatexDo") {
+            const parts = (value) => value.split(".").map(Number);
+            const compare = (left, right) => {
+              const leftParts = parts(left);
+              const rightParts = parts(right);
+              for (let index = 0; index < 3; index += 1) {
+                if (leftParts[index] !== rightParts[index]) {
+                  return leftParts[index] > rightParts[index] ? 1 : -1;
+                }
+              }
+              return 0;
+            };
+            if (
+              !/^\d+\.\d+\.\d+$/.test(current.version ?? "") ||
+              !/^\d+\.\d+\.\d+$/.test(incoming.version ?? "")
+            ) {
+              throw new Error("Cannot compare malformed website update versions.");
+            }
+            const comparison = compare(incoming.version, current.version);
+            if (comparison < 0) {
+              throw new Error(
+                `Refusing to replace website update ${current.version} with older ${incoming.version}.`,
+              );
+            }
+            if (comparison === 0 && current.commit !== incoming.commit) {
+              throw new Error(
+                `Refusing to change the commit for published version ${current.version}.`,
+              );
+            }
+          }
+          NODE
+          fi
           mkdir -p latexdo-org-site/downloads latexdo-org-site/updates
           cp -R public-downloads/downloads/. latexdo-org-site/downloads/
           cp -R public-downloads/updates/. latexdo-org-site/updates/
+          mkdir -p latexdo-org-site/bin
+          cp cli/bin/latexdo latexdo-org-site/bin/latexdo
+          cp cli/install.sh latexdo-org-site/install.sh
+          chmod 0755 latexdo-org-site/bin/latexdo latexdo-org-site/install.sh
           LATEXDO_DOWNLOAD_BASE_URL=https://latexdo.org \
             node scripts/build-downloads-release-index.mjs latexdo-org-site/downloads
 
           git -C latexdo-org-site config user.name "github-actions[bot]"
           git -C latexdo-org-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C latexdo-org-site add downloads updates
+          git -C latexdo-org-site add downloads updates bin/latexdo install.sh
 
           if git -C latexdo-org-site diff --cached --quiet; then
             echo "No latexdo.org download changes to commit."
@@ -530,14 +587,14 @@ jobs:
           echo "Cloudflare Workers Builds will deploy the pushed release metadata, or the next step will deploy with Wrangler when CLOUDFLARE_API_TOKEN is configured."
 
       - name: Deploy downloads to Cloudflare
-        if: ${{ steps.deploy_mode.outputs.website_enabled == 'true' && steps.deploy_mode.outputs.cloudflare_enabled == 'true' }}
         working-directory: latexdo-org-site
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx --yes wrangler@latest deploy
+        run: |
+          npm ci
+          npm run deploy
 
       - name: Verify deployed downloads
-        if: ${{ steps.deploy_mode.outputs.website_enabled == 'true' && steps.deploy_mode.outputs.cloudflare_enabled == 'true' }}
         env:
           LATEXDO_RELEASE_SLUG: ${{ steps.release_metadata.outputs.tag }}
           LATEXDO_VERIFY_RETRIES: 12

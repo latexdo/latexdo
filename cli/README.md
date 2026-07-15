@@ -2,6 +2,10 @@
 
 `latexdo-cli` installs the `latexdo` command. The command keeps a cached copy of the main LatexDo app, installs dependencies when they change, starts the local browser editor, and opens it in the default browser.
 
+The installer verifies the downloaded command against the SHA-256 digest pinned
+in `install.sh` before it is made executable. A custom `LATEXDO_CLI_URL` must be
+paired with its expected `LATEXDO_CLI_SHA256`.
+
 ## Repository Role
 
 - Publishes the `latexdo` command package.
@@ -12,7 +16,7 @@
 ## Requirements
 
 - Git.
-- Node.js 20 or newer.
+- Node.js 22.17 or newer.
 - npm.
 - A browser.
 - Optional: a TeX distribution with `latexmk` for local PDF compilation.
@@ -60,6 +64,7 @@ Use a custom host or port:
 ```sh
 latexdo              # Start the local browser editor.
 latexdo update       # Update the cached app and dependencies.
+latexdo verify-update # Verify and print the signed release source.
 latexdo doctor       # Check local tools.
 latexdo path         # Print the cached app path.
 latexdo reset        # Remove the cached app checkout.

@@ -131,7 +131,10 @@ const missingPackage = analyzeLatexDiagnostic(
   "! LaTeX Error: File `doesnotexist123.sty' not found.\n./main.tex:3: Emergency stop.\nl.3 \\begin",
 );
 assert.equal(missingPackage.title, 'LaTeX package "doesnotexist123" is not installed');
-assert.equal(missingPackage.message, "LaTeX Error: File `doesnotexist123.sty' not found.");
+assert.equal(
+  missingPackage.message,
+  "LaTeX Error: File `doesnotexist123.sty' not found.",
+);
 assert.equal(missingPackage.line, 2);
 assert.equal(missingPackage.column, 13);
 assert.equal(missingPackage.highlightText, "doesnotexist123");

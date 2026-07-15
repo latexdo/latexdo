@@ -1,5 +1,6 @@
 import type { Awareness } from "y-protocols/awareness";
 import type * as Y from "yjs";
+import type { CollaboratorPresence } from "../types";
 
 export type CollaborationConnectionStatus =
   | "idle"
@@ -11,8 +12,6 @@ export type CollaborationConnectionStatus =
 export type CollaboratorRole = "admin" | "editor" | "viewer";
 
 export interface CollaborationIdentity {
-  sessionId: string;
-  clientId: string;
   clientName: string;
   color: string;
 }
@@ -30,7 +29,9 @@ export interface CollaborationProviderState extends CollaborationIdentity {
 
 export interface CollaborationClientOptions extends CollaborationRoomOptions {
   onStatusChange?: (status: CollaborationConnectionStatus) => void;
+  onConnectionError?: (message: string, status?: number) => void;
   onSynced?: () => void;
+  onPresenceChange?: (users: CollaboratorPresence[]) => void;
 }
 
 export interface CollaborationDocument {

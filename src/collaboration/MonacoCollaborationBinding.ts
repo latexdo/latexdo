@@ -6,10 +6,14 @@ import type {
   CollaborationConnectionStatus,
   CollaborationRoomOptions,
 } from "./collaborationTypes";
+import type { CollaboratorPresence } from "../types";
 
 export interface MonacoCollaborationBindingOptions extends CollaborationRoomOptions {
   editor: monaco.editor.IStandaloneCodeEditor;
   onStatusChange?: (status: CollaborationConnectionStatus) => void;
+  onConnectionError?: (message: string, status?: number) => void;
+  onSynced?: () => void;
+  onPresenceChange?: (users: CollaboratorPresence[]) => void;
 }
 
 export class MonacoCollaborationBinding {
@@ -21,11 +25,17 @@ export class MonacoCollaborationBinding {
   private disposed = false;
 
   constructor(options: MonacoCollaborationBindingOptions) {
-    this.key = `${options.projectId}:${options.relativePath}:${options.shareToken ?? ""}`;
+    this.key = `${options.projectId}:${options.relativePath}:${options.shareToken ?? ""}:${options.clientName}`;
     this.editor = options.editor;
     this.client = new CollaborationClient({
       ...options,
-      onSynced: () => this.attach(),
+      onSynced: () => {
+        this.attach();
+        if (!this.disposed) options.onSynced?.();
+      },
+      onPresenceChange: (users) => {
+        if (!this.disposed) options.onPresenceChange?.(users);
+      },
     });
   }
 
