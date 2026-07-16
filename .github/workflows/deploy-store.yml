@@ -1,0 +1,111 @@
+name: deploy-store
+
+on:
+  workflow_run:
+    workflows: ["latexdo-ci"]
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: store-latexdo-org-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy / store.latexdo.org catalog
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event == 'push') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      LATEXDO_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.17.0
+
+      - name: Validate publication credentials
+        shell: bash
+        env:
+          LATEXDO_DOWNSTREAM_TOKEN: ${{ secrets.LATEXDO_DOWNSTREAM_TOKEN }}
+        run: |
+          if [ -z "$LATEXDO_DOWNSTREAM_TOKEN" ]; then
+            echo "::error::Missing LATEXDO_DOWNSTREAM_TOKEN; cannot update store.latexdo.org."
+            exit 1
+          fi
+
+      - name: Checkout store.latexdo.org
+        uses: actions/checkout@v6
+        with:
+          repository: latexdo/store.latexdo.org
+          ref: main
+          path: store-site
+          token: ${{ secrets.LATEXDO_DOWNSTREAM_TOKEN }}
+
+      - name: Update store.latexdo.org catalog
+        id: update_store
+        shell: bash
+        run: |
+          echo "updated=false" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=" >> "$GITHUB_OUTPUT"
+
+          node --experimental-strip-types --input-type=module - <<'NODE'
+          import { writeFile } from "node:fs/promises";
+          import { fallbackExtensionCatalog } from "./src/extensions.ts";
+
+          await writeFile(
+            "store-site/extensions/catalog.json",
+            `${JSON.stringify(fallbackExtensionCatalog, null, 2)}\n`,
+          );
+          NODE
+
+          npm ci --prefix store-site
+          npm run build --prefix store-site
+
+          git -C store-site config user.name "github-actions[bot]"
+          git -C store-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C store-site add -- extensions/catalog.json
+
+          staged_paths="$(git -C store-site diff --cached --name-only)"
+          invalid_paths="$(printf '%s\n' "$staged_paths" | grep -Ev '^extensions/catalog\.json$' || true)"
+          if [ -n "$invalid_paths" ]; then
+            echo "::error::Store publication must stage only extensions/catalog.json."
+            printf '%s\n' "$invalid_paths"
+            exit 1
+          fi
+
+          if git -C store-site diff --cached --quiet; then
+            echo "No store.latexdo.org catalog changes to commit."
+          else
+            git -C store-site commit \
+              -m "Deploy extension catalog from latexdo@${LATEXDO_SOURCE_SHA}"
+            git -C store-site push origin HEAD:main
+            commit_sha="$(git -C store-site rev-parse HEAD)"
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+            echo "commit_sha=${commit_sha}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify store.latexdo.org update
+        if: ${{ steps.update_store.outputs.updated == 'true' }}
+        shell: bash
+        env:
+          STORE_ORG_COMMIT: ${{ steps.update_store.outputs.commit_sha }}
+        run: |
+          remote_sha="$(git -C store-site ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [ "$remote_sha" != "$STORE_ORG_COMMIT" ]; then
+            echo "::error::store.latexdo.org main is ${remote_sha}, expected ${STORE_ORG_COMMIT}."
+            exit 1
+          fi
+
+          echo "store.latexdo.org updated at ${STORE_ORG_COMMIT}."
+          echo "Cloudflare Workers Builds can deploy the pushed store repo commit."

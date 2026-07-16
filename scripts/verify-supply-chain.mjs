@@ -11,6 +11,10 @@ const [
   electronMain,
   releaseWorkflow,
   websiteWorkflow,
+  editorWorkflow,
+  cliWorkflow,
+  docsWorkflow,
+  storeWorkflow,
   renewalWorkflow,
   renewalScript,
   downloadsBuilder,
@@ -24,6 +28,10 @@ const [
   readFile("electron/main.ts", "utf8"),
   readFile(".github/workflows/release.yml", "utf8"),
   readFile(".github/workflows/deploy-website.yml", "utf8"),
+  readFile(".github/workflows/deploy-editor.yml", "utf8"),
+  readFile(".github/workflows/deploy-cli.yml", "utf8"),
+  readFile(".github/workflows/deploy-docs.yml", "utf8"),
+  readFile(".github/workflows/deploy-store.yml", "utf8"),
   readFile(".github/workflows/renew-update-feed.yml", "utf8"),
   readFile("scripts/renew-update-feed.mjs", "utf8"),
   readFile("scripts/build-downloads-page.mjs", "utf8"),
@@ -65,6 +73,10 @@ for (const requiredProtection of [
 if (
   releaseWorkflow.includes("wrangler@latest") ||
   websiteWorkflow.includes("wrangler@latest") ||
+  editorWorkflow.includes("wrangler@latest") ||
+  cliWorkflow.includes("wrangler@latest") ||
+  docsWorkflow.includes("wrangler@latest") ||
+  storeWorkflow.includes("wrangler@latest") ||
   renewalWorkflow.includes("wrangler@latest")
 ) {
   throw new Error("Deployment workflows must not resolve Wrangler dynamically.");
@@ -100,15 +112,109 @@ for (const forbiddenReleaseControl of [
   }
 }
 for (const requiredWebsiteControl of [
-  "id: deploy_mode",
-  "cloudflare_enabled=false",
-  "Direct Cloudflare deploy skipped: missing CLOUDFLARE_API_TOKEN",
-  "if: ${{ steps.deploy_mode.outputs.cloudflare_enabled == 'true' }}",
-  "npm run deploy",
+  "workflow_run:",
+  'workflows: ["latexdo-ci"]',
+  "github.event.workflow_run.conclusion == 'success'",
+  "github.event.workflow_run.head_branch == 'main'",
+  "Missing LATEXDO_WEBSITE_TOKEN; cannot update latexdo.org.",
+  "Cloudflare deployment is handled by the latexdo.org Git integration.",
+  "Cloudflare Workers Builds can deploy the pushed website repo.",
 ]) {
   if (!websiteWorkflow.includes(requiredWebsiteControl)) {
     throw new Error(`Website deployment control is missing: ${requiredWebsiteControl}`);
   }
+}
+for (const forbiddenWebsiteControl of [
+  "CLOUDFLARE_API_TOKEN",
+  "deploy_mode",
+  "cloudflare_enabled",
+  "Deploy website to Cloudflare",
+  "npm run deploy",
+]) {
+  if (websiteWorkflow.includes(forbiddenWebsiteControl)) {
+    throw new Error(
+      `Website workflow must only push the GitHub repo: ${forbiddenWebsiteControl}`,
+    );
+  }
+}
+for (const requiredEditorControl of [
+  "workflow_run:",
+  'workflows: ["latexdo-ci"]',
+  "github.event.workflow_run.conclusion == 'success'",
+  "github.event.workflow_run.head_branch == 'main'",
+  "repository: latexdo/editor.latexdo.org",
+  "LATEXDO_DOWNSTREAM_TOKEN",
+  "git -C editor-site add -- dist",
+  "Editor publication must stage only dist/.",
+]) {
+  if (!editorWorkflow.includes(requiredEditorControl)) {
+    throw new Error(`Editor deployment control is missing: ${requiredEditorControl}`);
+  }
+}
+for (const requiredCliControl of [
+  "workflow_run:",
+  'workflows: ["latexdo-ci"]',
+  "github.event.workflow_run.conclusion == 'success'",
+  "github.event.workflow_run.head_branch == 'main'",
+  "repository: latexdo/cli.latexdo.org",
+  "LATEXDO_DOWNSTREAM_TOKEN",
+  "git -C cli-site add -- README.md package.json install.sh bin/latexdo LICENSE",
+  "CLI publication must stage only CLI package files.",
+  "cp LICENSE cli-site/LICENSE",
+]) {
+  if (!cliWorkflow.includes(requiredCliControl)) {
+    throw new Error(`CLI deployment control is missing: ${requiredCliControl}`);
+  }
+}
+for (const requiredDocsControl of [
+  "workflow_run:",
+  'workflows: ["latexdo-ci"]',
+  "github.event.workflow_run.conclusion == 'success'",
+  "github.event.workflow_run.head_branch == 'main'",
+  "repository: latexdo/docs.latexdo.org",
+  "LATEXDO_DOWNSTREAM_TOKEN",
+  "git -C docs-site add -- assets/icon.svg site.js",
+  "Docs publication must stage only assets/icon.svg and site.js.",
+]) {
+  if (!docsWorkflow.includes(requiredDocsControl)) {
+    throw new Error(`Docs deployment control is missing: ${requiredDocsControl}`);
+  }
+}
+for (const requiredStoreControl of [
+  "workflow_run:",
+  'workflows: ["latexdo-ci"]',
+  "github.event.workflow_run.conclusion == 'success'",
+  "github.event.workflow_run.head_branch == 'main'",
+  "repository: latexdo/store.latexdo.org",
+  "LATEXDO_DOWNSTREAM_TOKEN",
+  "fallbackExtensionCatalog",
+  "git -C store-site add -- extensions/catalog.json",
+  "Store publication must stage only extensions/catalog.json.",
+]) {
+  if (!storeWorkflow.includes(requiredStoreControl)) {
+    throw new Error(`Store deployment control is missing: ${requiredStoreControl}`);
+  }
+}
+for (const [label, workflow] of [
+  ["Editor", editorWorkflow],
+  ["CLI", cliWorkflow],
+  ["Docs", docsWorkflow],
+  ["Store", storeWorkflow],
+]) {
+  for (const forbiddenDownstreamControl of [
+    "CLOUDFLARE_API_TOKEN",
+    "wrangler deploy",
+    "npm run deploy",
+  ]) {
+    if (workflow.includes(forbiddenDownstreamControl)) {
+      throw new Error(
+        `${label} workflow must only push the GitHub repo: ${forbiddenDownstreamControl}`,
+      );
+    }
+  }
+}
+if (cliWorkflow.includes("rsync -a --delete")) {
+  throw new Error("CLI workflow must not delete unrelated cli.latexdo.org files.");
 }
 for (const requiredRenewalControl of [
   "schedule:",
@@ -116,12 +222,24 @@ for (const requiredRenewalControl of [
   "group: latexdo-org-deploy",
   "git -C latexdo-org-site add -- updates/latest.json",
   "LATEXDO_UPDATE_MIN_VALIDITY_DAYS: 14",
-  "npm ci",
-  "npm run deploy",
+  "Cloudflare Workers Builds can deploy the pushed feed commit.",
 ]) {
   if (!renewalWorkflow.includes(requiredRenewalControl)) {
     throw new Error(
       `Update-feed renewal control is missing: ${requiredRenewalControl}`,
+    );
+  }
+}
+for (const forbiddenRenewalControl of [
+  "CLOUDFLARE_API_TOKEN",
+  "Deploy renewed feed to Cloudflare",
+  "Verify live signed feed",
+  "npm run deploy",
+  "curl -fsSL",
+]) {
+  if (renewalWorkflow.includes(forbiddenRenewalControl)) {
+    throw new Error(
+      `Update-feed renewal must only push the GitHub repo: ${forbiddenRenewalControl}`,
     );
   }
 }

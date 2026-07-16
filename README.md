@@ -7,7 +7,8 @@ LatexDo is the main desktop LaTeX editor and the source of truth for the shared 
 - Runs the desktop app for local LaTeX projects.
 - Provides the browser editor used by the CLI and hosted editor builds.
 - Contains source copies for the CLI in `cli/` and public website in `website/`.
-- Syncs downstream repositories with `npm run sync:downstream`.
+- Syncs downstream repositories locally with `npm run sync:downstream` and in
+  GitHub Actions after `latexdo-ci` passes on `main`.
 
 ## Requirements
 
@@ -60,9 +61,23 @@ npm run sync:downstream
 
 That refreshes:
 
-- `../latexdo-cli` from `cli/`.
+- `../cli.latexdo.org` from `cli/`.
 - `../latexdo.org` from `website/`.
 - `../editor.latexdo.org/dist` from the built editor frontend.
+
+In GitHub Actions, the matching downstream deploy workflows run after
+`latexdo-ci` succeeds on `main` and push commits to:
+
+- `latexdo/latexdo.org`: static website files, excluding release-owned downloads,
+  updates, CLI files, and installer scripts.
+- `latexdo/cli.latexdo.org`: the standalone CLI package from `cli/`.
+- `latexdo/editor.latexdo.org`: the hosted editor frontend in `dist/`.
+- `latexdo/docs.latexdo.org`: shared icon and generated docs `site.js`.
+- `latexdo/store.latexdo.org`: `extensions/catalog.json` from the app fallback
+  extension catalog.
+
+They only update GitHub repositories; Cloudflare deployment is handled by each
+connected GitHub repository, not by this repo's workflows.
 
 ## Hosted Production
 
@@ -79,10 +94,9 @@ Deploy in this order:
    replace, or bind the legacy `collaborations-latexdo-org` Worker.
 2. Deploy `editor.latexdo.org` from a reviewed commit. Roll out a compiler image
    only through that repository's protected manual workflow.
-3. Use this repository's `hosted-editor-candidate` workflow to validate the
-   exact frontend commit, then give that full commit SHA to the hosted editor's
-   protected deployment workflow. Only the hosted editor repository deploys the
-   production Worker.
+3. Use this repository's `deploy-editor` workflow to publish the exact hosted
+   frontend commit to `editor.latexdo.org`. Only the hosted editor repository
+   deploys the production Worker.
 4. Run credentialed project, edit, WebSocket reconnect, import, compile, PDF
    range, and rollback smoke tests before moving production traffic.
 
@@ -137,6 +151,8 @@ packages remain available only as short-lived CI artifacts and are never
 published by the release workflow.
 
 The standalone website workflow requires `LATEXDO_WEBSITE_TOKEN` to push the
-generated static site to `latexdo/latexdo.org`. `CLOUDFLARE_API_TOKEN` enables
-the direct Wrangler deploy in that workflow; when it is absent, Cloudflare
-Workers Builds is expected to deploy the pushed website repository commit.
+generated static site to `latexdo/latexdo.org`. Downstream CLI and editor
+publishing require `LATEXDO_DOWNSTREAM_TOKEN` with write access to
+`latexdo/cli.latexdo.org`, `latexdo/editor.latexdo.org`,
+`latexdo/docs.latexdo.org`, and `latexdo/store.latexdo.org`. Cloudflare deploys
+from the pushed GitHub commits.
