@@ -129,10 +129,12 @@ The downloads page also publishes an all-release tag index at
 Production publication fails closed unless GitHub Actions has the Apple signing
 and notarization secrets, `WINDOWS_CERTIFICATE_P12`,
 `WINDOWS_CERTIFICATE_PASSWORD`, `LATEXDO_UPDATE_SIGNING_KEY`,
-`LATEXDO_WEBSITE_TOKEN`, and `CLOUDFLARE_API_TOKEN`. The update signing secret is
-the base64-encoded PEM private key matching `build/update-public-key.pem`.
-Unsigned packages remain available only as short-lived CI artifacts and are
-never published by the release workflow.
+and `LATEXDO_WEBSITE_TOKEN`. The release workflow commits only `downloads/` and
+`updates/` to `latexdo/latexdo.org`; normal website pages, CLI scripts, and
+direct site deployment stay out of that path. The update signing secret is the
+base64-encoded PEM private key matching `build/update-public-key.pem`. Unsigned
+packages remain available only as short-lived CI artifacts and are never
+published by the release workflow.
 
 The standalone website workflow requires `LATEXDO_WEBSITE_TOKEN` to push the
 generated static site to `latexdo/latexdo.org`. `CLOUDFLARE_API_TOKEN` enables

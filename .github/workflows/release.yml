@@ -375,7 +375,7 @@ jobs:
           retention-days: 1
 
   publish:
-    name: publish / website downloads
+    name: publish / latexdo.org downloads
     needs: [release_gate, build_macos, build_windows, build_linux]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -400,12 +400,11 @@ jobs:
       - name: Validate publication credentials
         shell: bash
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           LATEXDO_UPDATE_SIGNING_KEY: ${{ secrets.LATEXDO_UPDATE_SIGNING_KEY }}
           LATEXDO_WEBSITE_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
         run: |
           missing=()
-          for name in CLOUDFLARE_API_TOKEN LATEXDO_UPDATE_SIGNING_KEY LATEXDO_WEBSITE_TOKEN; do
+          for name in LATEXDO_UPDATE_SIGNING_KEY LATEXDO_WEBSITE_TOKEN; do
             if [ -z "${!name:-}" ]; then missing+=("$name"); fi
           done
           if [ "${#missing[@]}" -gt 0 ]; then
@@ -629,16 +628,20 @@ jobs:
           mkdir -p latexdo-org-site/downloads latexdo-org-site/updates
           cp -R public-downloads/downloads/. latexdo-org-site/downloads/
           cp -R public-downloads/updates/. latexdo-org-site/updates/
-          mkdir -p latexdo-org-site/bin
-          cp cli/bin/latexdo latexdo-org-site/bin/latexdo
-          cp cli/install.sh latexdo-org-site/install.sh
-          chmod 0755 latexdo-org-site/bin/latexdo latexdo-org-site/install.sh
           LATEXDO_DOWNLOAD_BASE_URL=https://latexdo.org \
             node scripts/build-downloads-release-index.mjs latexdo-org-site/downloads
 
           git -C latexdo-org-site config user.name "github-actions[bot]"
           git -C latexdo-org-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C latexdo-org-site add downloads updates bin/latexdo install.sh
+          git -C latexdo-org-site add -- downloads updates
+
+          staged_paths="$(git -C latexdo-org-site diff --cached --name-only)"
+          invalid_paths="$(printf '%s\n' "$staged_paths" | grep -Ev '^(downloads|updates)/' || true)"
+          if [ -n "$invalid_paths" ]; then
+            echo "::error::Release publication must stage only downloads/ and updates/."
+            printf '%s\n' "$invalid_paths"
+            exit 1
+          fi
 
           if git -C latexdo-org-site diff --cached --quiet; then
             echo "No latexdo.org download changes to commit."
@@ -664,22 +667,4 @@ jobs:
           fi
 
           echo "latexdo.org updated at ${LATEXDO_ORG_COMMIT}."
-          echo "Cloudflare Workers Builds will deploy the pushed release metadata, or the next step will deploy with Wrangler when CLOUDFLARE_API_TOKEN is configured."
-
-      - name: Deploy downloads to Cloudflare
-        working-directory: latexdo-org-site
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          npm ci
-          npm run deploy
-
-      - name: Verify deployed downloads
-        env:
-          LATEXDO_RELEASE_SLUG: ${{ steps.release_metadata.outputs.tag }}
-          LATEXDO_VERIFY_RETRIES: 12
-          LATEXDO_VERIFY_DELAY_MS: 5000
-          LATEXDO_PUBLIC_DOWNLOADS_URL: https://latexdo.org/downloads/
-          LATEXDO_RELEASE_COMMIT: ${{ needs.release_gate.outputs.target_sha }}
-          LATEXDO_RELEASE_ASSET_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.release_metadata.outputs.tag }}
-        run: node scripts/verify-deployed-downloads.mjs https://raw.githubusercontent.com/latexdo/latexdo.org/main/downloads/
+          echo "Cloudflare Workers Builds can deploy the pushed latexdo.org commit."
