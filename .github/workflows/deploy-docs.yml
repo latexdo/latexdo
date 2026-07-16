@@ -1,0 +1,106 @@
+name: deploy-docs
+
+on:
+  workflow_run:
+    workflows: ["latexdo-ci"]
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-latexdo-org-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy / docs.latexdo.org
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event == 'push') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      LATEXDO_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Validate publication credentials
+        shell: bash
+        env:
+          LATEXDO_DOWNSTREAM_TOKEN: ${{ secrets.LATEXDO_DOWNSTREAM_TOKEN }}
+        run: |
+          if [ -z "$LATEXDO_DOWNSTREAM_TOKEN" ]; then
+            echo "::error::Missing LATEXDO_DOWNSTREAM_TOKEN; cannot update docs.latexdo.org."
+            exit 1
+          fi
+
+      - name: Checkout docs.latexdo.org
+        uses: actions/checkout@v6
+        with:
+          repository: latexdo/docs.latexdo.org
+          ref: main
+          path: docs-site
+          token: ${{ secrets.LATEXDO_DOWNSTREAM_TOKEN }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.17.0
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+
+      - name: Update docs.latexdo.org build outputs
+        id: update_docs
+        shell: bash
+        run: |
+          echo "updated=false" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=" >> "$GITHUB_OUTPUT"
+
+          mkdir -p docs-site/assets
+          cp build/icon.svg docs-site/assets/icon.svg
+
+          npm ci --prefix docs-site
+          npm run build --prefix docs-site
+
+          git -C docs-site config user.name "github-actions[bot]"
+          git -C docs-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C docs-site add -- assets/icon.svg site.js
+
+          staged_paths="$(git -C docs-site diff --cached --name-only)"
+          invalid_paths="$(printf '%s\n' "$staged_paths" | grep -Ev '^(assets/icon\.svg|site\.js)$' || true)"
+          if [ -n "$invalid_paths" ]; then
+            echo "::error::Docs publication must stage only assets/icon.svg and site.js."
+            printf '%s\n' "$invalid_paths"
+            exit 1
+          fi
+
+          if git -C docs-site diff --cached --quiet; then
+            echo "No docs.latexdo.org changes to commit."
+          else
+            git -C docs-site commit \
+              -m "Deploy docs assets from latexdo@${LATEXDO_SOURCE_SHA}"
+            git -C docs-site push origin HEAD:main
+            commit_sha="$(git -C docs-site rev-parse HEAD)"
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+            echo "commit_sha=${commit_sha}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify docs.latexdo.org update
+        if: ${{ steps.update_docs.outputs.updated == 'true' }}
+        shell: bash
+        env:
+          DOCS_ORG_COMMIT: ${{ steps.update_docs.outputs.commit_sha }}
+        run: |
+          remote_sha="$(git -C docs-site ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [ "$remote_sha" != "$DOCS_ORG_COMMIT" ]; then
+            echo "::error::docs.latexdo.org main is ${remote_sha}, expected ${DOCS_ORG_COMMIT}."
+            exit 1
+          fi
+
+          echo "docs.latexdo.org updated at ${DOCS_ORG_COMMIT}."
+          echo "Cloudflare Workers Builds can deploy the pushed docs repo commit."

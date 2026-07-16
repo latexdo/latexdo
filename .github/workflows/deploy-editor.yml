@@ -1,40 +1,35 @@
-name: hosted-editor-candidate
+name: deploy-editor
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "src/**"
-      - "electron/preload.cts"
-      - "build/icon.svg"
-      - "index.html"
-      - "vite.config.ts"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig*.json"
-      - ".github/workflows/deploy-editor.yml"
+  workflow_run:
+    workflows: ["latexdo-ci"]
+    types:
+      - completed
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: hosted-editor-candidate-${{ github.ref }}
-  cancel-in-progress: true
+  group: editor-latexdo-org-deploy
+  cancel-in-progress: false
 
 jobs:
-  build:
-    name: validate hosted frontend
+  deploy:
+    name: deploy / editor.latexdo.org frontend
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event == 'push') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
+      LATEXDO_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
       VITE_LATEXDO_RUNTIME: cloud
       VITE_LATEXDO_API_BASE_URL: https://editor.latexdo.org
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -45,28 +40,72 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run static checks
-        run: npm run typecheck
-
-      - name: Run lint
-        run: npm run lint -- --quiet
-
-      - name: Check formatting
-        run: npm run format:check
-
-      - name: Run tests
-        run: npm test
-
-      - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=high
-
       - name: Build canonical hosted frontend
-        run: npx vite build
+        run: npx vite build --outDir hosted-editor-dist --emptyOutDir
 
-      - name: Upload immutable frontend candidate
-        uses: actions/upload-artifact@v7
+      - name: Validate publication credentials
+        shell: bash
+        env:
+          LATEXDO_DOWNSTREAM_TOKEN: ${{ secrets.LATEXDO_DOWNSTREAM_TOKEN }}
+        run: |
+          if [ -z "$LATEXDO_DOWNSTREAM_TOKEN" ]; then
+            echo "::error::Missing LATEXDO_DOWNSTREAM_TOKEN; cannot update editor.latexdo.org."
+            exit 1
+          fi
+
+      - name: Checkout editor.latexdo.org
+        uses: actions/checkout@v6
         with:
-          name: hosted-editor-${{ github.sha }}
-          path: dist/
-          if-no-files-found: error
-          retention-days: 7
+          repository: latexdo/editor.latexdo.org
+          ref: main
+          path: editor-site
+          token: ${{ secrets.LATEXDO_DOWNSTREAM_TOKEN }}
+
+      - name: Update editor.latexdo.org frontend
+        id: update_editor_frontend
+        shell: bash
+        run: |
+          echo "updated=false" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=" >> "$GITHUB_OUTPUT"
+
+          rm -rf editor-site/dist
+          mkdir -p editor-site/dist
+          cp -R hosted-editor-dist/. editor-site/dist/
+
+          git -C editor-site config user.name "github-actions[bot]"
+          git -C editor-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C editor-site add -- dist
+
+          staged_paths="$(git -C editor-site diff --cached --name-only)"
+          invalid_paths="$(printf '%s\n' "$staged_paths" | grep -Ev '^dist/' || true)"
+          if [ -n "$invalid_paths" ]; then
+            echo "::error::Editor publication must stage only dist/."
+            printf '%s\n' "$invalid_paths"
+            exit 1
+          fi
+
+          if git -C editor-site diff --cached --quiet; then
+            echo "No editor.latexdo.org frontend changes to commit."
+          else
+            git -C editor-site commit \
+              -m "Deploy editor frontend from latexdo@${LATEXDO_SOURCE_SHA}"
+            git -C editor-site push origin HEAD:main
+            commit_sha="$(git -C editor-site rev-parse HEAD)"
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+            echo "commit_sha=${commit_sha}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify editor.latexdo.org update
+        if: ${{ steps.update_editor_frontend.outputs.updated == 'true' }}
+        shell: bash
+        env:
+          EDITOR_ORG_COMMIT: ${{ steps.update_editor_frontend.outputs.commit_sha }}
+        run: |
+          remote_sha="$(git -C editor-site ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [ "$remote_sha" != "$EDITOR_ORG_COMMIT" ]; then
+            echo "::error::editor.latexdo.org main is ${remote_sha}, expected ${EDITOR_ORG_COMMIT}."
+            exit 1
+          fi
+
+          echo "editor.latexdo.org updated at ${EDITOR_ORG_COMMIT}."
+          echo "Cloudflare Workers Builds can deploy the pushed editor repo commit."

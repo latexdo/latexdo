@@ -30,12 +30,11 @@ jobs:
       - name: Validate renewal credentials
         shell: bash
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           LATEXDO_UPDATE_SIGNING_KEY: ${{ secrets.LATEXDO_UPDATE_SIGNING_KEY }}
           LATEXDO_WEBSITE_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
         run: |
           missing=()
-          for name in CLOUDFLARE_API_TOKEN LATEXDO_UPDATE_SIGNING_KEY LATEXDO_WEBSITE_TOKEN; do
+          for name in LATEXDO_UPDATE_SIGNING_KEY LATEXDO_WEBSITE_TOKEN; do
             if [ -z "${!name:-}" ]; then missing+=("$name"); fi
           done
           if [ "${#missing[@]}" -gt 0 ]; then
@@ -99,32 +98,7 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy renewed feed to Cloudflare
-        working-directory: latexdo-org-site
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          npm ci
-          npm run deploy
-
-      - name: Verify live signed feed
-        shell: bash
-        env:
-          LATEXDO_UPDATE_MIN_VALIDITY_DAYS: 14
-        run: |
-          live_feed="$RUNNER_TEMP/latexdo-latest.json"
-          for attempt in $(seq 1 12); do
-            url="https://latexdo.org/updates/latest.json?renewal=${GITHUB_RUN_ID}-${attempt}"
-            if curl -fsSL --max-time 20 "$url" -o "$live_feed" && \
-              cmp -s latexdo-org-site/updates/latest.json "$live_feed" && \
-              node scripts/verify-update-feed.mjs "$live_feed" build/update-public-key.pem; then
-              echo "Verified renewed update feed at ${url}."
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "::error::Live update feed was not renewed with at least fourteen days of validity."
-          exit 1
+          echo "Cloudflare Workers Builds can deploy the pushed feed commit."
 
       - name: Alert on renewal failure
         if: ${{ failure() }}

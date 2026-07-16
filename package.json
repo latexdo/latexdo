@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "web": "vite --host 127.0.0.1",
+    "collab:start": "node collaborations/server.mjs",
+    "collab:check": "node --check collaborations/server.mjs",
     "build": "tsc -b && vite build && node scripts/verify-built-assets.mjs && tsc -p tsconfig.electron.json",
     "start": "electron .",
     "sync:downstream": "sh scripts/sync-downstream-repos.sh",

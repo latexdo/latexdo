@@ -6,7 +6,7 @@ PARENT_DIR="$(dirname "$SOURCE_DIR")"
 
 EDITOR_REPO="${LATEXDO_EDITOR_REPO:-$PARENT_DIR/editor.latexdo.org}"
 WEBSITE_REPO="${LATEXDO_WEBSITE_REPO:-$PARENT_DIR/latexdo.org}"
-CLI_REPO="${LATEXDO_CLI_REPO:-$PARENT_DIR/latexdo-cli}"
+CLI_REPO="${LATEXDO_CLI_REPO:-$PARENT_DIR/cli.latexdo.org}"
 
 log() {
   printf '%s\n' "$*"
@@ -29,11 +29,10 @@ sync_cli_repo() {
   require_dir "$CLI_REPO" "CLI repo"
 
   log "Syncing CLI repo: $CLI_REPO"
-  rsync -a --delete \
-    --exclude ".git/" \
-    "$SOURCE_DIR/cli/" \
-    "$CLI_REPO/"
-
+  mkdir -p "$CLI_REPO/bin"
+  cp "$SOURCE_DIR/cli/README.md" "$SOURCE_DIR/cli/package.json" \
+    "$SOURCE_DIR/cli/install.sh" "$CLI_REPO/"
+  cp "$SOURCE_DIR/cli/bin/latexdo" "$CLI_REPO/bin/latexdo"
   cp "$SOURCE_DIR/LICENSE" "$CLI_REPO/LICENSE"
   chmod 0755 "$CLI_REPO/bin/latexdo" "$CLI_REPO/install.sh"
 }

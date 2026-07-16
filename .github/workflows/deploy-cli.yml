@@ -1,0 +1,99 @@
+name: deploy-cli
+
+on:
+  workflow_run:
+    workflows: ["latexdo-ci"]
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cli-latexdo-org-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy / cli.latexdo.org
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event == 'push') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      LATEXDO_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Validate publication credentials
+        shell: bash
+        env:
+          LATEXDO_DOWNSTREAM_TOKEN: ${{ secrets.LATEXDO_DOWNSTREAM_TOKEN }}
+        run: |
+          if [ -z "$LATEXDO_DOWNSTREAM_TOKEN" ]; then
+            echo "::error::Missing LATEXDO_DOWNSTREAM_TOKEN; cannot update cli.latexdo.org."
+            exit 1
+          fi
+
+      - name: Checkout cli.latexdo.org
+        uses: actions/checkout@v6
+        with:
+          repository: latexdo/cli.latexdo.org
+          ref: main
+          path: cli-site
+          token: ${{ secrets.LATEXDO_DOWNSTREAM_TOKEN }}
+
+      - name: Update cli.latexdo.org package
+        id: update_cli
+        shell: bash
+        run: |
+          echo "updated=false" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=" >> "$GITHUB_OUTPUT"
+
+          mkdir -p cli-site/bin
+          cp cli/README.md cli/package.json cli/install.sh cli-site/
+          cp cli/bin/latexdo cli-site/bin/latexdo
+          cp LICENSE cli-site/LICENSE
+          chmod 0755 cli-site/bin/latexdo cli-site/install.sh
+
+          git -C cli-site config user.name "github-actions[bot]"
+          git -C cli-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C cli-site add -- README.md package.json install.sh bin/latexdo LICENSE
+
+          staged_paths="$(git -C cli-site diff --cached --name-only)"
+          invalid_paths="$(printf '%s\n' "$staged_paths" | grep -Ev '^(README\.md|package\.json|install\.sh|bin/latexdo|LICENSE)$' || true)"
+          if [ -n "$invalid_paths" ]; then
+            echo "::error::CLI publication must stage only CLI package files."
+            printf '%s\n' "$invalid_paths"
+            exit 1
+          fi
+
+          if git -C cli-site diff --cached --quiet; then
+            echo "No cli.latexdo.org changes to commit."
+          else
+            git -C cli-site commit \
+              -m "Deploy CLI from latexdo@${LATEXDO_SOURCE_SHA}"
+            git -C cli-site push origin HEAD:main
+            commit_sha="$(git -C cli-site rev-parse HEAD)"
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+            echo "commit_sha=${commit_sha}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify cli.latexdo.org update
+        if: ${{ steps.update_cli.outputs.updated == 'true' }}
+        shell: bash
+        env:
+          CLI_ORG_COMMIT: ${{ steps.update_cli.outputs.commit_sha }}
+        run: |
+          remote_sha="$(git -C cli-site ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [ "$remote_sha" != "$CLI_ORG_COMMIT" ]; then
+            echo "::error::cli.latexdo.org main is ${remote_sha}, expected ${CLI_ORG_COMMIT}."
+            exit 1
+          fi
+
+          echo "cli.latexdo.org updated at ${CLI_ORG_COMMIT}."
+          echo "Cloudflare Workers Builds can deploy the pushed CLI repo commit."
