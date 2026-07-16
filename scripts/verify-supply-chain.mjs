@@ -76,10 +76,26 @@ for (const requiredReleaseControl of [
   "github.event.workflow_run.head_branch == 'main'",
   "LATEXDO_RELEASE_TARGET_SHA",
   "LATEXDO_RELEASE_COMMIT: ${{ needs.release_gate.outputs.target_sha }}",
+  "git -C latexdo-org-site add -- downloads updates",
+  "Release publication must stage only downloads/ and updates/",
 ]) {
   if (!releaseWorkflow.includes(requiredReleaseControl)) {
     throw new Error(
       `Release publication control is missing: ${requiredReleaseControl}`,
+    );
+  }
+}
+for (const forbiddenReleaseControl of [
+  "CLOUDFLARE_API_TOKEN",
+  "cp cli/bin/latexdo latexdo-org-site/bin/latexdo",
+  "cp cli/install.sh latexdo-org-site/install.sh",
+  "git -C latexdo-org-site add downloads updates bin/latexdo install.sh",
+  "Deploy downloads to Cloudflare",
+  "Verify deployed downloads",
+]) {
+  if (releaseWorkflow.includes(forbiddenReleaseControl)) {
+    throw new Error(
+      `Release publication must update only latexdo.org downloads: ${forbiddenReleaseControl}`,
     );
   }
 }
