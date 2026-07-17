@@ -150,9 +150,11 @@ base64-encoded PEM private key matching `build/update-public-key.pem`. Unsigned
 packages remain available only as short-lived CI artifacts and are never
 published by the release workflow.
 
-The standalone website workflow requires `LATEXDO_WEBSITE_TOKEN` to push the
-generated static site to `latexdo/latexdo.org`. Downstream CLI and editor
-publishing require `LATEXDO_DOWNSTREAM_TOKEN` with write access to
+The standalone website and downstream publication workflows require
+`LATEXDO_WEBSITE_TOKEN`. The token pushes the generated static site to
+`latexdo/latexdo.org`, publishes generated downstream content to
 `latexdo/cli.latexdo.org`, `latexdo/editor.latexdo.org`,
-`latexdo/docs.latexdo.org`, and `latexdo/store.latexdo.org`. Cloudflare deploys
-from the pushed GitHub commits.
+`latexdo/docs.latexdo.org`, and `latexdo/store.latexdo.org`, and dispatches
+downstream validation in `latexdo/cli.latexdo.org`,
+`latexdo/editor.latexdo.org`, and `latexdo/store.latexdo.org`. Cloudflare
+deploys from the pushed GitHub commits.

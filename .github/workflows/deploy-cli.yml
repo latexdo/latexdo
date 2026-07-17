@@ -32,10 +32,10 @@ jobs:
       - name: Validate publication credentials
         shell: bash
         env:
-          LATEXDO_DOWNSTREAM_TOKEN: ${{ secrets.LATEXDO_DOWNSTREAM_TOKEN }}
+          LATEXDO_WEBSITE_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
         run: |
-          if [ -z "$LATEXDO_DOWNSTREAM_TOKEN" ]; then
-            echo "::error::Missing LATEXDO_DOWNSTREAM_TOKEN; cannot update cli.latexdo.org."
+          if [ -z "$LATEXDO_WEBSITE_TOKEN" ]; then
+            echo "::error::Missing LATEXDO_WEBSITE_TOKEN; cannot update cli.latexdo.org."
             exit 1
           fi
 
@@ -45,7 +45,7 @@ jobs:
           repository: latexdo/cli.latexdo.org
           ref: main
           path: cli-site
-          token: ${{ secrets.LATEXDO_DOWNSTREAM_TOKEN }}
+          token: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
 
       - name: Update cli.latexdo.org package
         id: update_cli
