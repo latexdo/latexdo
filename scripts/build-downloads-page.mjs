@@ -13,13 +13,12 @@ const publishedAtMs = Date.parse(publishedAt);
 if (!Number.isFinite(publishedAtMs)) {
   throw new Error("LATEXDO_RELEASE_DATE must be a valid timestamp.");
 }
-const expiresAt =
-  process.env.LATEXDO_UPDATE_EXPIRES_AT ??
-  new Date(publishedAtMs + 30 * 24 * 60 * 60 * 1_000).toISOString();
-const expiresAtMs = Date.parse(expiresAt);
-if (!Number.isFinite(expiresAtMs) || expiresAtMs <= publishedAtMs) {
-  throw new Error("The signed update feed expiry must follow its publication time.");
-}
+const updateFeedSigningKey = process.env.LATEXDO_UPDATE_SIGNING_KEY?.trim() ?? "";
+const updateFeedSetting = process.env.LATEXDO_UPDATE_FEED_ENABLED?.toLowerCase().trim();
+const updateFeedEnabled =
+  updateFeedSetting === undefined || updateFeedSetting === ""
+    ? Boolean(updateFeedSigningKey)
+    : updateFeedSetting !== "false";
 const commit = process.env.LATEXDO_RELEASE_COMMIT ?? process.env.GITHUB_SHA ?? "";
 const repository = process.env.GITHUB_REPOSITORY ?? "latexdo/latexdo";
 const siteRootDir = path.dirname(outputDir);
@@ -139,8 +138,19 @@ function canonicalJson(value) {
   throw new Error("Cannot sign an unsupported JSON value.");
 }
 
+function resolveUpdateFeedExpiry() {
+  const expiresAt =
+    process.env.LATEXDO_UPDATE_EXPIRES_AT ??
+    new Date(publishedAtMs + 30 * 24 * 60 * 60 * 1_000).toISOString();
+  const expiresAtMs = Date.parse(expiresAt);
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= publishedAtMs) {
+    throw new Error("The signed update feed expiry must follow its publication time.");
+  }
+  return expiresAt;
+}
+
 async function signUpdateFeed(feed) {
-  const encodedPrivateKey = process.env.LATEXDO_UPDATE_SIGNING_KEY?.trim();
+  const encodedPrivateKey = updateFeedSigningKey;
   if (!encodedPrivateKey) {
     throw new Error("LATEXDO_UPDATE_SIGNING_KEY is required to publish updates.");
   }
@@ -222,23 +232,6 @@ const manifest = {
   files,
 };
 
-const updateFeed = {
-  schemaVersion: 2,
-  product: "LatexDo",
-  channel: "stable",
-  version: releaseVersion,
-  publishedAt,
-  expiresAt,
-  commit,
-  repository,
-  release: releaseSlug,
-  releaseUrl: releaseDownloadsPageUrl,
-  downloadsPage: manifest.downloadsPage,
-  manifestUrl: `${manifest.downloadsPage}manifest.json`,
-  files,
-};
-const signedUpdateFeed = await signUpdateFeed(updateFeed);
-
 const releaseChecksums = files
   .map((file) => `${file.sha256}  ${file.filename}`)
   .join("\n");
@@ -254,15 +247,39 @@ await writeFile(
 );
 await writeFile(path.join(releaseOutputDir, "SHA256SUMS.txt"), `${releaseChecksums}\n`);
 
-await mkdir(path.join(siteRootDir, "updates"), { recursive: true });
-await writeFile(
-  path.join(siteRootDir, "updates", "latest.json"),
-  `${JSON.stringify(signedUpdateFeed, null, 2)}\n`,
-);
-await writeFile(
-  path.join(siteRootDir, "updates", `${releaseSlug}.json`),
-  `${JSON.stringify(signedUpdateFeed, null, 2)}\n`,
-);
+if (updateFeedEnabled) {
+  const expiresAt = resolveUpdateFeedExpiry();
+  const updateFeed = {
+    schemaVersion: 2,
+    product: "LatexDo",
+    channel: "stable",
+    version: releaseVersion,
+    publishedAt,
+    expiresAt,
+    commit,
+    repository,
+    release: releaseSlug,
+    releaseUrl: releaseDownloadsPageUrl,
+    downloadsPage: manifest.downloadsPage,
+    manifestUrl: `${manifest.downloadsPage}manifest.json`,
+    files,
+  };
+  const signedUpdateFeed = await signUpdateFeed(updateFeed);
+
+  await mkdir(path.join(siteRootDir, "updates"), { recursive: true });
+  await writeFile(
+    path.join(siteRootDir, "updates", "latest.json"),
+    `${JSON.stringify(signedUpdateFeed, null, 2)}\n`,
+  );
+  await writeFile(
+    path.join(siteRootDir, "updates", `${releaseSlug}.json`),
+    `${JSON.stringify(signedUpdateFeed, null, 2)}\n`,
+  );
+} else {
+  console.log(
+    "Built downloads without signed update feed; LATEXDO_UPDATE_SIGNING_KEY is not configured.",
+  );
+}
 
 function macBuildName(file) {
   const value = `${file.id} ${file.label} ${file.arch}`.toLowerCase();

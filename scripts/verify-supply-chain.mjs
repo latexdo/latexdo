@@ -113,9 +113,13 @@ for (const requiredReleaseControl of [
   "CSC_IDENTITY_AUTO_DISCOVERY=false",
   "steps.macos_signing.outputs.signed == 'true'",
   "steps.windows_signing.outputs.signed == 'true'",
+  "Signed update feed disabled; LATEXDO_UPDATE_SIGNING_KEY is not configured.",
+  "LATEXDO_UPDATE_FEED_ENABLED: ${{ steps.publication_credentials.outputs.update_feed_enabled }}",
   "rm -f public-downloads/downloads/index.html",
+  "if [ -d public-downloads/updates ]; then",
+  "No signed update feed generated; leaving latexdo.org updates/ unchanged.",
   "node scripts/build-downloads-release-index.mjs latexdo-org-site/downloads --json-only",
-  "git -C latexdo-org-site add -- downloads updates",
+  "git -C latexdo-org-site add -- downloads",
   "Release publication must stage only downloads/ and updates/",
 ]) {
   if (!releaseWorkflow.includes(requiredReleaseControl)) {
@@ -132,6 +136,7 @@ for (const forbiddenReleaseControl of [
   "git -C latexdo-org-site add -A",
   "Refusing to publish an unsigned macOS build",
   "Refusing to publish an unsigned Windows build",
+  "Refusing a partial release. Missing",
   "Deploy downloads to Cloudflare",
   "Verify deployed downloads",
 ]) {
@@ -297,6 +302,18 @@ for (const requiredRenewalProtection of [
 }
 if (!downloadsBuilder.includes("publishedAtMs + 30 * 24 * 60 * 60 * 1_000")) {
   throw new Error("New release feeds must start with a thirty-day validity window.");
+}
+for (const requiredDownloadsBuilderControl of [
+  "const updateFeedSigningKey",
+  "const updateFeedEnabled",
+  "if (updateFeedEnabled)",
+  "Built downloads without signed update feed; LATEXDO_UPDATE_SIGNING_KEY is not configured.",
+]) {
+  if (!downloadsBuilder.includes(requiredDownloadsBuilderControl)) {
+    throw new Error(
+      `Downloads builder optional feed control is missing: ${requiredDownloadsBuilderControl}`,
+    );
+  }
 }
 const expectedHash = installer.match(
   /CLI_SHA256="\$\{LATEXDO_CLI_SHA256:-([a-f0-9]{64})\}"/,
