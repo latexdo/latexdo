@@ -158,3 +158,8 @@ The standalone website and downstream publication workflows require
 downstream validation in `latexdo/cli.latexdo.org`,
 `latexdo/editor.latexdo.org`, and `latexdo/store.latexdo.org`. Cloudflare
 deploys from the pushed GitHub commits.
+
+Automatic CI publication to `latexdo.org` is scoped to downloads/update data in
+`downloads/` and `updates/`. The design-owned `downloads/index.html`, site
+pages, CSS, and JavaScript stay in the website repository; the downloads page
+hydrates from `downloads/releases.json` and the latest manifests.

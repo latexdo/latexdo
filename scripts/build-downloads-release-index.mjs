@@ -2,9 +2,11 @@ import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const root = process.cwd();
+const jsonOnly = process.argv.includes("--json-only");
+const positionalArgs = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
 const downloadsDir = path.resolve(
   root,
-  process.argv[2] ?? "public-downloads/downloads",
+  positionalArgs[0] ?? "public-downloads/downloads",
 );
 const baseUrl = process.env.LATEXDO_DOWNLOAD_BASE_URL ?? "https://latexdo.org";
 const baseUrlRoot = baseUrl.replace(/\/$/, "");
@@ -361,7 +363,7 @@ try {
 const index = {
   schemaVersion: 1,
   product: "LatexDo",
-  generatedAt: new Date().toISOString(),
+  generatedAt: releases[0]?.publishedAt ?? new Date().toISOString(),
   releases,
 };
 
@@ -369,9 +371,13 @@ await writeFile(
   path.join(downloadsDir, "releases.json"),
   `${JSON.stringify(index, null, 2)}\n`,
 );
-await writeFile(
-  path.join(downloadsDir, "index.html"),
-  renderDownloadsPage(latestManifest, releases),
-);
+if (!jsonOnly) {
+  await writeFile(
+    path.join(downloadsDir, "index.html"),
+    renderDownloadsPage(latestManifest, releases),
+  );
+}
 
-console.log(`Built downloads release index with ${releases.length} releases.`);
+console.log(
+  `Built downloads release ${jsonOnly ? "JSON " : ""}index with ${releases.length} releases.`,
+);

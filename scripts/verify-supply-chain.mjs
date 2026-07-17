@@ -108,6 +108,8 @@ for (const requiredReleaseControl of [
   "github.event.workflow_run.head_branch == 'main'",
   "LATEXDO_RELEASE_TARGET_SHA",
   "LATEXDO_RELEASE_COMMIT: ${{ needs.release_gate.outputs.target_sha }}",
+  "rm -f public-downloads/downloads/index.html",
+  "node scripts/build-downloads-release-index.mjs latexdo-org-site/downloads --json-only",
   "git -C latexdo-org-site add -- downloads updates",
   "Release publication must stage only downloads/ and updates/",
 ]) {
@@ -122,6 +124,7 @@ for (const forbiddenReleaseControl of [
   "cp cli/bin/latexdo latexdo-org-site/bin/latexdo",
   "cp cli/install.sh latexdo-org-site/install.sh",
   "git -C latexdo-org-site add downloads updates bin/latexdo install.sh",
+  "git -C latexdo-org-site add -A",
   "Deploy downloads to Cloudflare",
   "Verify deployed downloads",
 ]) {
@@ -133,18 +136,26 @@ for (const forbiddenReleaseControl of [
 }
 for (const requiredWebsiteControl of [
   "workflow_run:",
-  'workflows: ["latexdo-ci"]',
+  'workflows: ["latexdo-release"]',
   "github.event.workflow_run.conclusion == 'success'",
   "github.event.workflow_run.head_branch == 'main'",
-  "Missing LATEXDO_WEBSITE_TOKEN; cannot update latexdo.org.",
+  "Missing LATEXDO_WEBSITE_TOKEN; cannot update latexdo.org downloads.",
+  "This workflow stages only downloads/releases.json.",
+  "node scripts/build-downloads-release-index.mjs latexdo-org-site/downloads --json-only",
+  "git -C latexdo-org-site add -- downloads/releases.json",
+  "Downloads index refresh must stage only downloads/releases.json.",
   "Cloudflare deployment is handled by the latexdo.org Git integration.",
-  "Cloudflare Workers Builds can deploy the pushed website repo.",
+  "Cloudflare Workers Builds can deploy the pushed downloads index commit.",
 ]) {
   if (!websiteWorkflow.includes(requiredWebsiteControl)) {
     throw new Error(`Website deployment control is missing: ${requiredWebsiteControl}`);
   }
 }
 for (const forbiddenWebsiteControl of [
+  "rsync -a website/",
+  "git -C latexdo-org-site add -A",
+  "npm ci --prefix website",
+  "npm run build --prefix website",
   "CLOUDFLARE_API_TOKEN",
   "deploy_mode",
   "cloudflare_enabled",
@@ -280,18 +291,6 @@ for (const requiredRenewalProtection of [
 if (!downloadsBuilder.includes("publishedAtMs + 30 * 24 * 60 * 60 * 1_000")) {
   throw new Error("New release feeds must start with a thirty-day validity window.");
 }
-for (const excludedReleasePath of [
-  "rm -rf website/downloads website/updates",
-  "rm -rf website/bin",
-  "rm -f website/install.sh",
-]) {
-  if (!websiteWorkflow.includes(excludedReleasePath)) {
-    throw new Error(
-      `Normal website deployment can overwrite a release-owned path: ${excludedReleasePath}`,
-    );
-  }
-}
-
 const expectedHash = installer.match(
   /CLI_SHA256="\$\{LATEXDO_CLI_SHA256:-([a-f0-9]{64})\}"/,
 )?.[1];
