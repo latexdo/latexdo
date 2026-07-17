@@ -71,7 +71,7 @@ jobs:
           NODE
 
           npm ci --prefix store-site
-          npm run build --prefix store-site
+          npm run ci:pr --prefix store-site
 
           git -C store-site config user.name "github-actions[bot]"
           git -C store-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
