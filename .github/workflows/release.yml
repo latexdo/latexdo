@@ -426,18 +426,21 @@ jobs:
           node-version: 22.17.0
 
       - name: Validate publication credentials
+        id: publication_credentials
         shell: bash
         env:
           LATEXDO_UPDATE_SIGNING_KEY: ${{ secrets.LATEXDO_UPDATE_SIGNING_KEY }}
           LATEXDO_WEBSITE_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
         run: |
-          missing=()
-          for name in LATEXDO_UPDATE_SIGNING_KEY LATEXDO_WEBSITE_TOKEN; do
-            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
-          done
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::Refusing a partial release. Missing: ${missing[*]}"
+          if [ -z "${LATEXDO_WEBSITE_TOKEN:-}" ]; then
+            echo "::error::LATEXDO_WEBSITE_TOKEN is required to update latexdo.org downloads."
             exit 1
+          fi
+          if [ -z "${LATEXDO_UPDATE_SIGNING_KEY:-}" ]; then
+            echo "::warning::Signed update feed disabled; LATEXDO_UPDATE_SIGNING_KEY is not configured. Downloads will be published and latexdo.org updates/ will be left unchanged."
+            echo "update_feed_enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "update_feed_enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Download all artifacts
@@ -494,17 +497,19 @@ jobs:
             echo "title=$title"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build signed downloads website
+      - name: Build downloads website
         env:
           LATEXDO_DOWNLOAD_BASE_URL: https://latexdo.org
           LATEXDO_RELEASE_VERSION: ${{ steps.release_metadata.outputs.version }}
           LATEXDO_RELEASE_SLUG: ${{ steps.release_metadata.outputs.tag }}
           LATEXDO_RELEASE_COMMIT: ${{ needs.release_gate.outputs.target_sha }}
           LATEXDO_RELEASE_ASSET_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.release_metadata.outputs.tag }}
+          LATEXDO_UPDATE_FEED_ENABLED: ${{ steps.publication_credentials.outputs.update_feed_enabled }}
           LATEXDO_UPDATE_SIGNING_KEY: ${{ secrets.LATEXDO_UPDATE_SIGNING_KEY }}
         run: node scripts/build-downloads-page.mjs artifacts public-downloads/downloads
 
       - name: Verify signed update feeds
+        if: ${{ steps.publication_credentials.outputs.update_feed_enabled == 'true' }}
         env:
           RELEASE_TAG: ${{ steps.release_metadata.outputs.tag }}
         run: |
@@ -578,7 +583,7 @@ jobs:
         run: |
           echo "updated=false" >> "$GITHUB_OUTPUT"
           echo "commit_sha=" >> "$GITHUB_OUTPUT"
-          if [ -f latexdo-org-site/updates/latest.json ]; then
+          if [ -f public-downloads/updates/latest.json ] && [ -f latexdo-org-site/updates/latest.json ]; then
             node --input-type=module - \
               latexdo-org-site/updates/latest.json \
               public-downloads/updates/latest.json <<'NODE'
@@ -653,16 +658,24 @@ jobs:
           }
           NODE
           fi
-          mkdir -p latexdo-org-site/downloads latexdo-org-site/updates
+          mkdir -p latexdo-org-site/downloads
           rm -f public-downloads/downloads/index.html
           cp -R public-downloads/downloads/. latexdo-org-site/downloads/
-          cp -R public-downloads/updates/. latexdo-org-site/updates/
+          if [ -d public-downloads/updates ]; then
+            mkdir -p latexdo-org-site/updates
+            cp -R public-downloads/updates/. latexdo-org-site/updates/
+          else
+            echo "No signed update feed generated; leaving latexdo.org updates/ unchanged."
+          fi
           LATEXDO_DOWNLOAD_BASE_URL=https://latexdo.org \
             node scripts/build-downloads-release-index.mjs latexdo-org-site/downloads --json-only
 
           git -C latexdo-org-site config user.name "github-actions[bot]"
           git -C latexdo-org-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C latexdo-org-site add -- downloads updates
+          git -C latexdo-org-site add -- downloads
+          if [ -d public-downloads/updates ]; then
+            git -C latexdo-org-site add -- updates
+          fi
 
           staged_paths="$(git -C latexdo-org-site diff --cached --name-only)"
           invalid_paths="$(printf '%s\n' "$staged_paths" | grep -Ev '^(downloads|updates)/' || true)"
