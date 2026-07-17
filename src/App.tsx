@@ -10329,6 +10329,18 @@ ${macroEnd}
                         <ExternalLink size={13} />
                         Open store
                       </button>
+                      <button
+                        type="button"
+                        className="dialog-cancel"
+                        onClick={() =>
+                          void window.latexdo.openExternalUrl(
+                            new URL("builder/", extensionStoreSiteUrl).toString(),
+                          )
+                        }
+                      >
+                        <Plus size={13} />
+                        Build extension
+                      </button>
                     </div>
                   </div>
 
