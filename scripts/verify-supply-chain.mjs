@@ -189,6 +189,9 @@ for (const requiredEditorControl of [
   "LATEXDO_WEBSITE_TOKEN",
   "git -C editor-site add -- dist",
   "Editor publication must stage only dist/.",
+  "Dispatch editor.latexdo.org CI after publication",
+  "TARGET_WORKFLOW: ci.yml",
+  "Triggered ${TARGET_REPOSITORY}/${TARGET_WORKFLOW} after publication.",
 ]) {
   if (!editorWorkflow.includes(requiredEditorControl)) {
     throw new Error(`Editor deployment control is missing: ${requiredEditorControl}`);
@@ -204,6 +207,9 @@ for (const requiredCliControl of [
   "git -C cli-site add -- README.md package.json install.sh bin/latexdo LICENSE",
   "CLI publication must stage only CLI package files.",
   "cp LICENSE cli-site/LICENSE",
+  "Dispatch cli.latexdo.org CI after publication",
+  "TARGET_WORKFLOW: ci.yml",
+  "Triggered ${TARGET_REPOSITORY}/${TARGET_WORKFLOW} after publication.",
 ]) {
   if (!cliWorkflow.includes(requiredCliControl)) {
     throw new Error(`CLI deployment control is missing: ${requiredCliControl}`);
@@ -233,6 +239,9 @@ for (const requiredStoreControl of [
   "fallbackExtensionCatalog",
   "git -C store-site add -- extensions/catalog.json",
   "Store publication must stage only extensions/catalog.json.",
+  "Dispatch store.latexdo.org validation after publication",
+  "TARGET_WORKFLOW: validate-pr.yml",
+  "Triggered ${TARGET_REPOSITORY}/${TARGET_WORKFLOW} after publication.",
 ]) {
   if (!storeWorkflow.includes(requiredStoreControl)) {
     throw new Error(`Store deployment control is missing: ${requiredStoreControl}`);
