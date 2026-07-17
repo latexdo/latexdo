@@ -126,7 +126,7 @@ npm run dist
 ```
 
 CI also builds non-release smoke-test installers. When `latexdo-ci` passes on
-`main`, the release workflow publishes a signed build release named
+`main`, the release workflow publishes a build release named
 `v<package version>-build.<run>.<attempt>.<sha>`. Production version tags remain
 supported: an immutable `v<package version>` tag whose version exactly matches
 `package.json` publishes the same release assets under that stable tag. The
@@ -140,15 +140,14 @@ CLI persist the highest trusted version and publication date to reject rollbacks
 The downloads page also publishes an all-release tag index at
 `https://latexdo.org/downloads/` and `https://latexdo.org/downloads/releases.json`.
 
-Production publication fails closed unless GitHub Actions has the Apple signing
-and notarization secrets, `WINDOWS_CERTIFICATE_P12`,
-`WINDOWS_CERTIFICATE_PASSWORD`, `LATEXDO_UPDATE_SIGNING_KEY`,
-and `LATEXDO_WEBSITE_TOKEN`. The release workflow commits only `downloads/` and
-`updates/` to `latexdo/latexdo.org`; normal website pages, CLI scripts, and
-direct site deployment stay out of that path. The update signing secret is the
-base64-encoded PEM private key matching `build/update-public-key.pem`. Unsigned
-packages remain available only as short-lived CI artifacts and are never
-published by the release workflow.
+Production publication requires `LATEXDO_UPDATE_SIGNING_KEY` and
+`LATEXDO_WEBSITE_TOKEN`. Apple and Windows signing secrets are optional: when
+they are present, the release workflow signs/notarizes the platform installers;
+when they are missing, it publishes unsigned macOS and Windows installers. The
+release workflow commits only `downloads/` and `updates/` to
+`latexdo/latexdo.org`; normal website pages, CLI scripts, and direct site
+deployment stay out of that path. The update signing secret is the
+base64-encoded PEM private key matching `build/update-public-key.pem`.
 
 The standalone website and downstream publication workflows require
 `LATEXDO_WEBSITE_TOKEN`. The token pushes the generated static site to

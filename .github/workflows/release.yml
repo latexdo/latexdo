@@ -114,6 +114,7 @@ jobs:
       - run: npm run build
 
       - name: Configure Apple signing and notarization
+        id: macos_signing
         env:
           MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -142,8 +143,10 @@ jobs:
           done
 
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::Refusing to publish an unsigned macOS build. Missing: ${missing[*]}"
-            exit 1
+            echo "::warning::Publishing an unsigned macOS build. Missing signing/notarization secrets: ${missing[*]}"
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
           api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
@@ -161,18 +164,28 @@ jobs:
             echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
             echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
           } >> "$GITHUB_ENV"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
 
       - name: Disable Spotlight indexing
         run: sudo mdutil -a -i off
 
-      - name: Sign, notarize, and package macOS DMG
-        run: >
-          npx electron-builder
-          --mac dmg zip
-          --${{ matrix.arch }}
-          --publish never
-          --config.forceCodeSigning=true
-          --config.directories.output=release/${{ matrix.arch }}
+      - name: Package macOS DMG
+        shell: bash
+        run: |
+          builder_args=(
+            --mac dmg zip
+            --${{ matrix.arch }}
+            --publish never
+            --config.directories.output=release/${{ matrix.arch }}
+          )
+
+          if [ "${{ steps.macos_signing.outputs.signed }}" = "true" ]; then
+            builder_args+=(--config.forceCodeSigning=true)
+          else
+            builder_args+=(--config.mac.notarize=false)
+          fi
+
+          npx electron-builder "${builder_args[@]}"
 
       - name: Test packaged macOS application
         shell: bash
@@ -193,6 +206,7 @@ jobs:
           cp "$pkg" "artifacts/${{ matrix.asset }}"
 
       - name: Verify Gatekeeper acceptance
+        if: ${{ steps.macos_signing.outputs.signed == 'true' }}
         run: >
           bash scripts/verify-macos-release.sh
           "artifacts/${{ matrix.asset }}"
@@ -239,25 +253,38 @@ jobs:
       - run: npm run build
 
       - name: Configure Windows signing
+        id: windows_signing
         shell: pwsh
         env:
           WINDOWS_CERTIFICATE_P12: ${{ secrets.WINDOWS_CERTIFICATE_P12 }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
           if (-not $env:WINDOWS_CERTIFICATE_P12 -or -not $env:WINDOWS_CERTIFICATE_PASSWORD) {
-            throw "Refusing to publish an unsigned Windows build. Configure WINDOWS_CERTIFICATE_P12 and WINDOWS_CERTIFICATE_PASSWORD."
+            Write-Warning "Publishing an unsigned Windows build. Configure WINDOWS_CERTIFICATE_P12 and WINDOWS_CERTIFICATE_PASSWORD to sign it."
+            "CSC_IDENTITY_AUTO_DISCOVERY=false" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "signed=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            exit 0
           }
           "WIN_CSC_LINK=$env:WINDOWS_CERTIFICATE_P12" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "WIN_CSC_KEY_PASSWORD=$env:WINDOWS_CERTIFICATE_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "signed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Package Windows installer
-        run: >
-          npx electron-builder
-          --win nsis
-          --x64
-          --publish never
-          --config.forceCodeSigning=true
-          --config.directories.output=release/windows
+        shell: pwsh
+        run: |
+          $builderArgs = @(
+            "electron-builder",
+            "--win", "nsis",
+            "--x64",
+            "--publish", "never",
+            "--config.directories.output=release/windows"
+          )
+
+          if ("${{ steps.windows_signing.outputs.signed }}" -eq "true") {
+            $builderArgs += "--config.forceCodeSigning=true"
+          }
+
+          npx @builderArgs
 
       - name: Prepare artifact
         shell: pwsh
@@ -268,6 +295,7 @@ jobs:
           Copy-Item $pkg.FullName artifacts/LatexDo-windows-x64.exe
 
       - name: Verify Windows Authenticode signature
+        if: ${{ steps.windows_signing.outputs.signed == 'true' }}
         shell: pwsh
         run: |
           $signature = Get-AuthenticodeSignature artifacts/LatexDo-windows-x64.exe
