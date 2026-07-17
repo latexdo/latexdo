@@ -9,6 +9,7 @@ const [
   publicKey,
   cliPackage,
   electronMain,
+  ciWorkflow,
   releaseWorkflow,
   websiteWorkflow,
   editorWorkflow,
@@ -26,6 +27,7 @@ const [
   readFile("build/update-public-key.pem", "utf8"),
   readFile("cli/package.json", "utf8").then(JSON.parse),
   readFile("electron/main.ts", "utf8"),
+  readFile(".github/workflows/ci.yml", "utf8"),
   readFile(".github/workflows/release.yml", "utf8"),
   readFile(".github/workflows/deploy-website.yml", "utf8"),
   readFile(".github/workflows/deploy-editor.yml", "utf8"),
@@ -80,6 +82,24 @@ if (
   renewalWorkflow.includes("wrangler@latest")
 ) {
   throw new Error("Deployment workflows must not resolve Wrangler dynamically.");
+}
+for (const requiredCiDispatchControl of [
+  "repository: latexdo/cli.latexdo.org",
+  "repository: latexdo/editor.latexdo.org",
+  "repository: latexdo/store.latexdo.org",
+  "workflow: validate-pr.yml",
+  "DISPATCH_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}",
+  "LATEXDO_WEBSITE_TOKEN is required to trigger downstream CI.",
+  "/actions/workflows/${TARGET_WORKFLOW}/dispatches",
+]) {
+  if (!ciWorkflow.includes(requiredCiDispatchControl)) {
+    throw new Error(
+      `Downstream CI dispatch control is missing: ${requiredCiDispatchControl}`,
+    );
+  }
+}
+if (ciWorkflow.includes("LATEXDO_CI_DISPATCH_TOKEN")) {
+  throw new Error("Downstream CI dispatch must use LATEXDO_WEBSITE_TOKEN.");
 }
 for (const requiredReleaseControl of [
   "workflow_run:",
@@ -143,7 +163,7 @@ for (const requiredEditorControl of [
   "github.event.workflow_run.conclusion == 'success'",
   "github.event.workflow_run.head_branch == 'main'",
   "repository: latexdo/editor.latexdo.org",
-  "LATEXDO_DOWNSTREAM_TOKEN",
+  "LATEXDO_WEBSITE_TOKEN",
   "git -C editor-site add -- dist",
   "Editor publication must stage only dist/.",
 ]) {
@@ -157,7 +177,7 @@ for (const requiredCliControl of [
   "github.event.workflow_run.conclusion == 'success'",
   "github.event.workflow_run.head_branch == 'main'",
   "repository: latexdo/cli.latexdo.org",
-  "LATEXDO_DOWNSTREAM_TOKEN",
+  "LATEXDO_WEBSITE_TOKEN",
   "git -C cli-site add -- README.md package.json install.sh bin/latexdo LICENSE",
   "CLI publication must stage only CLI package files.",
   "cp LICENSE cli-site/LICENSE",
@@ -172,7 +192,7 @@ for (const requiredDocsControl of [
   "github.event.workflow_run.conclusion == 'success'",
   "github.event.workflow_run.head_branch == 'main'",
   "repository: latexdo/docs.latexdo.org",
-  "LATEXDO_DOWNSTREAM_TOKEN",
+  "LATEXDO_WEBSITE_TOKEN",
   "git -C docs-site add -- assets/icon.svg site.js",
   "Docs publication must stage only assets/icon.svg and site.js.",
 ]) {
@@ -186,7 +206,7 @@ for (const requiredStoreControl of [
   "github.event.workflow_run.conclusion == 'success'",
   "github.event.workflow_run.head_branch == 'main'",
   "repository: latexdo/store.latexdo.org",
-  "LATEXDO_DOWNSTREAM_TOKEN",
+  "LATEXDO_WEBSITE_TOKEN",
   "fallbackExtensionCatalog",
   "git -C store-site add -- extensions/catalog.json",
   "Store publication must stage only extensions/catalog.json.",

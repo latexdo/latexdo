@@ -46,10 +46,10 @@ jobs:
       - name: Validate publication credentials
         shell: bash
         env:
-          LATEXDO_DOWNSTREAM_TOKEN: ${{ secrets.LATEXDO_DOWNSTREAM_TOKEN }}
+          LATEXDO_WEBSITE_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
         run: |
-          if [ -z "$LATEXDO_DOWNSTREAM_TOKEN" ]; then
-            echo "::error::Missing LATEXDO_DOWNSTREAM_TOKEN; cannot update editor.latexdo.org."
+          if [ -z "$LATEXDO_WEBSITE_TOKEN" ]; then
+            echo "::error::Missing LATEXDO_WEBSITE_TOKEN; cannot update editor.latexdo.org."
             exit 1
           fi
 
@@ -59,7 +59,7 @@ jobs:
           repository: latexdo/editor.latexdo.org
           ref: main
           path: editor-site
-          token: ${{ secrets.LATEXDO_DOWNSTREAM_TOKEN }}
+          token: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
 
       - name: Update editor.latexdo.org frontend
         id: update_editor_frontend

@@ -385,7 +385,7 @@ jobs:
       - name: Dispatch downstream workflow
         shell: bash
         env:
-          DISPATCH_TOKEN: ${{ secrets.LATEXDO_CI_DISPATCH_TOKEN }}
+          DISPATCH_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
           TARGET_REPOSITORY: ${{ matrix.repository }}
           TARGET_WORKFLOW: ${{ matrix.workflow }}
           SOURCE_REPOSITORY: ${{ github.repository }}
@@ -394,7 +394,7 @@ jobs:
           SOURCE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ -z "${DISPATCH_TOKEN:-}" ]; then
-            echo "LATEXDO_CI_DISPATCH_TOKEN is required to trigger downstream CI."
+            echo "LATEXDO_WEBSITE_TOKEN is required to trigger downstream CI."
             echo "Create a fine-grained token with Actions write access to the downstream repos."
             exit 1
           fi
