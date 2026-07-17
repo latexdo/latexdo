@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   extensionStoreCatalogUrl,
@@ -6,6 +8,12 @@ import {
   validateExtensionCatalog,
   type LatexDoExtensionCatalog,
 } from "./extensions";
+
+const localStoreCatalogPath = resolve(
+  process.cwd(),
+  "../store.latexdo.org/extensions/catalog.json",
+);
+const localStoreCatalogTest = existsSync(localStoreCatalogPath) ? it : it.skip;
 
 describe("extension catalog validation", () => {
   it("accepts the bundled catalog", () => {
@@ -21,6 +29,36 @@ describe("extension catalog validation", () => {
       ),
     ).toBe(true);
   });
+
+  localStoreCatalogTest(
+    "accepts the local store catalog without dropping app-visible contributions",
+    () => {
+      const rawCatalog = JSON.parse(
+        readFileSync(localStoreCatalogPath, "utf8"),
+      ) as LatexDoExtensionCatalog;
+      const catalog = validateExtensionCatalog(rawCatalog);
+
+      expect(catalog?.extensions).toHaveLength(rawCatalog.extensions.length);
+      for (const extension of rawCatalog.extensions) {
+        const normalized = catalog?.extensions.find(
+          (candidate) => candidate.id === extension.id,
+        );
+        expect(normalized, `${extension.id} should be accepted`).toBeDefined();
+        expect(
+          Object.keys(normalized?.contributes.featureFlags ?? {}).sort(),
+          `${extension.id} feature flags`,
+        ).toEqual(Object.keys(extension.contributes.featureFlags ?? {}).sort());
+        expect(
+          normalized?.contributes.snippets?.length ?? 0,
+          `${extension.id} snippets`,
+        ).toBe(extension.contributes.snippets?.length ?? 0);
+        expect(
+          normalized?.contributes.templates?.length ?? 0,
+          `${extension.id} templates`,
+        ).toBe(extension.contributes.templates?.length ?? 0);
+      }
+    },
+  );
 
   it("drops invalid extensions and unsafe contribution keys", () => {
     const catalog = validateExtensionCatalog({

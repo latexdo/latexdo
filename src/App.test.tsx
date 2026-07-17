@@ -1,7 +1,22 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { fallbackExtensionCatalog } from "./extensions";
+import {
+  fallbackExtensionCatalog,
+  type LatexDoExtensionCatalog,
+} from "./extensions";
+import {
+  defaultSettings,
+  installedExtensionsStorageKey,
+  settingsStorageKey,
+} from "./features/settings/settings";
 import type {
   GitDiffSession,
   GitGraphCommit,
@@ -39,6 +54,30 @@ vi.mock("@monaco-editor/react", async () => {
     loader: {
       config: vi.fn(),
     },
+  };
+});
+
+vi.mock("./components/MonacoEditor", async () => {
+  const React = await vi.importActual<typeof import("react")>("react");
+
+  return {
+    MonacoEditor: ({
+      value,
+      onChange,
+    }: {
+      value?: string;
+      onChange?: (value: string) => void;
+    }) =>
+      React.createElement("textarea", {
+        "aria-label": "mock editor",
+        value: value ?? "",
+        onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) =>
+          onChange?.(event.currentTarget.value),
+      }),
+    MonacoDiffEditor: () =>
+      React.createElement("div", {
+        "data-testid": "mock-diff-editor",
+      }),
   };
 });
 
@@ -177,6 +216,7 @@ const stagedDiffSession: GitDiffSession = {
 };
 
 function installLatexDoMock(options?: {
+  extensionCatalog?: LatexDoExtensionCatalog;
   gitStatus?: GitStatusSummary;
   proofreadingSettings?: ProofreadingSettings;
   updateResult?: UpdateCheckResult;
@@ -266,7 +306,9 @@ function installLatexDoMock(options?: {
     ),
     openReleasesPage: vi.fn().mockResolvedValue(undefined),
     getSpellCheckerSettings: vi.fn().mockResolvedValue(defaultSpellCheckerSettings),
-    fetchExtensionCatalog: vi.fn().mockResolvedValue(fallbackExtensionCatalog),
+    fetchExtensionCatalog: vi
+      .fn()
+      .mockResolvedValue(options?.extensionCatalog ?? fallbackExtensionCatalog),
     updateSpellCheckerSettings: vi.fn(
       async (settings: SpellCheckerSettings) => settings,
     ),
@@ -315,6 +357,22 @@ async function openProjectFromWelcome() {
   });
   await waitFor(() => {
     expect(screen.getByText("Ready")).toBeVisible();
+  });
+}
+
+async function installExtensionByName(name: string) {
+  fireEvent.click(screen.getByTitle("Extension Store"));
+  const card = (await screen.findByText(name)).closest("article");
+  expect(card).not.toBeNull();
+  fireEvent.click(
+    within(card as HTMLElement).getByRole("button", { name: /install/i }),
+  );
+}
+
+async function closeSettingsDialog() {
+  fireEvent.keyDown(window, { key: "Escape" });
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: /settings/i })).not.toBeInTheDocument();
   });
 }
 
@@ -749,10 +807,113 @@ describe("App critical UI controls", () => {
     });
   });
 
+  it("keeps optional workbench tools hidden until their extensions are installed", async () => {
+    installLatexDoMock();
+
+    render(<App />);
+
+    expect(screen.queryByTitle("Citation Manager")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Table Generator")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Figure → TikZ Converter")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Notation Manager")).not.toBeInTheDocument();
+
+    await installExtensionByName("Citation Workbench");
+    expect(screen.getByTitle("Citation Manager")).toBeVisible();
+    expect(
+      screen.queryByText("Browse installable LatexDo packs from store.latexdo.org."),
+    ).not.toBeInTheDocument();
+
+    await installExtensionByName("Table Generator");
+    expect(screen.getByTitle("Table Generator")).toBeVisible();
+
+    await installExtensionByName("Figure Lab");
+    expect(screen.getByTitle("Figure → TikZ Converter")).toBeVisible();
+
+    await installExtensionByName("Math Notation Kit");
+    expect(screen.getByTitle("Notation Manager")).toBeVisible();
+
+    const tableCard = screen.getByText("Table Generator").closest("article");
+    expect(tableCard).not.toBeNull();
+    fireEvent.click(
+      within(tableCard as HTMLElement).getByRole("button", {
+        name: /uninstall/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTitle("Table Generator")).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows Citation Manager for older Citation Workbench manifests", async () => {
+    const legacyCitationCatalog: LatexDoExtensionCatalog = {
+      ...fallbackExtensionCatalog,
+      extensions: fallbackExtensionCatalog.extensions.map((extension) =>
+        extension.id === "latexdo.citation-workbench"
+          ? {
+              ...extension,
+              contributes: {
+                ...extension.contributes,
+                featureFlags: {
+                  citationAssistantEnabled: true,
+                  detectMissingCitations: true,
+                  detectUnusedEntries: true,
+                  detectDuplicateReferences: true,
+                  detectBrokenLinks: true,
+                  suggestCitationKeys: true,
+                  importMetadataSources: true,
+                  warnOldCitations: true,
+                },
+              },
+            }
+          : extension,
+      ),
+    };
+    const api = installLatexDoMock({ extensionCatalog: legacyCitationCatalog });
+
+    render(<App />);
+
+    fireEvent.click(screen.getByTitle("Extension Store"));
+    await waitFor(() => {
+      expect(api.fetchExtensionCatalog).toHaveBeenCalledTimes(1);
+    });
+    await screen.findByText("Live catalog");
+
+    const card = screen.getByText("Citation Workbench").closest("article");
+    expect(card).not.toBeNull();
+    fireEvent.click(
+      within(card as HTMLElement).getByRole("button", { name: /install/i }),
+    );
+
+    expect(screen.getByTitle("Citation Manager")).toBeVisible();
+  });
+
+  it("keeps Citation Manager visible when citation checks are disabled", async () => {
+    installLatexDoMock();
+    window.localStorage.setItem(
+      installedExtensionsStorageKey,
+      JSON.stringify(["latexdo.citation-workbench"]),
+    );
+    window.localStorage.setItem(
+      settingsStorageKey,
+      JSON.stringify({
+        ...defaultSettings,
+        citationAssistantEnabled: false,
+        projectBibliographyEnabled: false,
+      }),
+    );
+
+    render(<App />);
+
+    expect(screen.getByTitle("Citation Manager")).toBeVisible();
+  });
+
   it("closes settings and citation manager with Escape", async () => {
     installLatexDoMock();
 
     render(<App />);
+    await installExtensionByName("Citation Workbench");
+    await closeSettingsDialog();
 
     fireEvent.click(screen.getByLabelText(/open settings/i));
     expect(screen.getByRole("dialog", { name: /settings/i })).toBeVisible();
@@ -766,7 +927,9 @@ describe("App critical UI controls", () => {
     });
 
     fireEvent.click(screen.getByTitle("Citation Manager"));
-    expect(await screen.findByText("Project Bibliography")).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { name: "Project Bibliography" }),
+    ).toBeVisible();
 
     fireEvent.keyDown(window, { key: "Escape" });
 
@@ -1080,6 +1243,8 @@ describe("App critical UI controls", () => {
     installLatexDoMock();
 
     render(<App />);
+    await installExtensionByName("Math Notation Kit");
+    await closeSettingsDialog();
     await openProjectFromWelcome();
 
     fireEvent.click(screen.getByTitle("Notation Manager"));

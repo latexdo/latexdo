@@ -396,6 +396,7 @@ export interface AppSettings {
   checkCompiler: boolean;
 
   // Citation Assistant
+  projectBibliographyEnabled: boolean;
   citationAssistantEnabled: boolean;
   detectMissingCitations: boolean;
   detectUnusedEntries: boolean;
@@ -438,6 +439,7 @@ export interface AppSettings {
   autoFixCommon: boolean;
 
   // TikZ Converter
+  tableGeneratorEnabled: boolean;
   tikzConverterEnabled: boolean;
   tikzConverterAutoOpen: boolean;
 
@@ -521,14 +523,15 @@ export const defaultSettings: AppSettings = {
   checkEmbeddedFonts: true,
   checkCompiler: true,
 
-  citationAssistantEnabled: true,
-  detectMissingCitations: true,
-  detectUnusedEntries: true,
-  detectDuplicateReferences: true,
-  detectBrokenLinks: true,
-  suggestCitationKeys: true,
-  importMetadataSources: true,
-  warnOldCitations: true,
+  projectBibliographyEnabled: false,
+  citationAssistantEnabled: false,
+  detectMissingCitations: false,
+  detectUnusedEntries: false,
+  detectDuplicateReferences: false,
+  detectBrokenLinks: false,
+  suggestCitationKeys: false,
+  importMetadataSources: false,
+  warnOldCitations: false,
 
   structureAssistantEnabled: true,
   checkAbstractStructure: true,
@@ -558,13 +561,14 @@ export const defaultSettings: AppSettings = {
   suggestFixes: true,
   autoFixCommon: true,
 
-  tikzConverterEnabled: true,
-  tikzConverterAutoOpen: true,
+  tableGeneratorEnabled: false,
+  tikzConverterEnabled: false,
+  tikzConverterAutoOpen: false,
 
-  notationManagerEnabled: true,
-  detectNotation: true,
-  detectNotationConflicts: true,
-  detectUndefinedNotation: true,
+  notationManagerEnabled: false,
+  detectNotation: false,
+  detectNotationConflicts: false,
+  detectUndefinedNotation: false,
 
   pdfComplianceEnabled: true,
   checkPageCount: true,
@@ -896,6 +900,10 @@ export function loadSettings(): AppSettings {
           ? saved.checkCompiler
           : defaultSettings.checkCompiler,
 
+      projectBibliographyEnabled:
+        typeof saved.projectBibliographyEnabled === "boolean"
+          ? saved.projectBibliographyEnabled
+          : defaultSettings.projectBibliographyEnabled,
       citationAssistantEnabled:
         typeof saved.citationAssistantEnabled === "boolean"
           ? saved.citationAssistantEnabled
@@ -1029,6 +1037,10 @@ export function loadSettings(): AppSettings {
           ? saved.autoFixCommon
           : defaultSettings.autoFixCommon,
 
+      tableGeneratorEnabled:
+        typeof saved.tableGeneratorEnabled === "boolean"
+          ? saved.tableGeneratorEnabled
+          : defaultSettings.tableGeneratorEnabled,
       tikzConverterEnabled:
         typeof saved.tikzConverterEnabled === "boolean"
           ? saved.tikzConverterEnabled

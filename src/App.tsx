@@ -1,4 +1,5 @@
-import Editor, { type BeforeMount, type OnMount } from "@monaco-editor/react";
+import type { BeforeMount, OnMount } from "@monaco-editor/react";
+import type * as Monaco from "monaco-editor";
 import {
   AlertCircle,
   ArrowLeftToLine,
@@ -93,12 +94,16 @@ import {
   usesLatexDoReviewMacros,
 } from "./reviewMarkup";
 import type { RebuttalGeneratorSettings } from "./types";
-import { monaco } from "./monaco";
 
 const PdfPreview = lazy(() => import("./PdfPreview"));
 const TerminalPanel = lazy(() =>
   import("./components/TerminalPanel").then((module) => ({
     default: module.TerminalPanel,
+  })),
+);
+const MonacoEditor = lazy(() =>
+  import("./components/MonacoEditor").then((module) => ({
+    default: module.MonacoEditor,
   })),
 );
 import type {
@@ -147,7 +152,7 @@ import { runNotationChecks } from "./checks/notationManager";
 import { runPdfComplianceChecks } from "./checks/pdfCompliance";
 import { NotationManager } from "./components/NotationManager";
 import { useCollaborationContext } from "./collaboration/CollaborationContext";
-import { MonacoCollaborationBinding } from "./collaboration/MonacoCollaborationBinding";
+import type { MonacoCollaborationBinding } from "./collaboration/MonacoCollaborationBinding";
 import {
   analyzeCitationLibrary,
   type CitationProjectFile,
@@ -171,6 +176,7 @@ import {
   extensionCategories,
   extensionStoreSiteUrl,
   type ExtensionCategory,
+  type ExtensionFeatureFlag,
   type LatexDoExtensionSnippet,
 } from "./extensions";
 import {
@@ -289,6 +295,10 @@ import {
   normalizeRebuttalItem,
   removeLegacyReviewPlaceholders,
 } from "./features/review/reviewState";
+
+type MonacoNamespace = typeof Monaco;
+let monaco = null as unknown as MonacoNamespace;
+
 type PanelKind =
   | "problems"
   | "output"
@@ -298,6 +308,7 @@ type PanelKind =
   | "pdfReport";
 type SidebarView = "explorer" | "sourceControl" | "history" | "search";
 const collaborationProjectReconciliationMs = 5 * 60_000;
+const startupUpdateCheckDelayMs = import.meta.env.MODE === "test" ? 0 : 2_000;
 type LatexToolbarCommand =
   | "bold"
   | "italic"
@@ -380,6 +391,49 @@ export default function App() {
     installExtension,
     uninstallExtension,
   } = useSettings(setStatusMessage);
+  const installedExtensionFeatureFlags = useMemo(() => {
+    const featureFlags = new Set<ExtensionFeatureFlag>();
+
+    for (const extension of installedExtensions) {
+      for (const flag of Object.keys(extension.contributes.featureFlags ?? {})) {
+        featureFlags.add(flag as ExtensionFeatureFlag);
+      }
+    }
+
+    return featureFlags;
+  }, [installedExtensions]);
+  const extensionToolInstallation = useMemo(
+    () => {
+      const projectBibliographyInstalled =
+        installedExtensionFeatureFlags.has("projectBibliographyEnabled") ||
+        installedExtensionFeatureFlags.has("citationAssistantEnabled");
+
+      return {
+        projectBibliography: projectBibliographyInstalled,
+        tableGenerator: installedExtensionFeatureFlags.has("tableGeneratorEnabled"),
+        tikzConverter: installedExtensionFeatureFlags.has("tikzConverterEnabled"),
+        notationManager: installedExtensionFeatureFlags.has("notationManagerEnabled"),
+      };
+    },
+    [installedExtensionFeatureFlags],
+  );
+  const extensionToolAvailability = useMemo(() => {
+    const settingsByFlag = settings as unknown as Record<string, boolean>;
+    const enabled = (flag: ExtensionFeatureFlag) =>
+      settingsByFlag[flag] === true && installedExtensionFeatureFlags.has(flag);
+    return {
+      projectBibliography: extensionToolInstallation.projectBibliography,
+      tableGenerator: enabled("tableGeneratorEnabled"),
+      tikzConverter: enabled("tikzConverterEnabled"),
+      notationManager: enabled("notationManagerEnabled"),
+    };
+  }, [
+    installedExtensionFeatureFlags,
+    extensionToolInstallation.projectBibliography,
+    settings.tableGeneratorEnabled,
+    settings.tikzConverterEnabled,
+    settings.notationManagerEnabled,
+  ]);
   const [activeSidebar, setActiveSidebar] = useState<SidebarView>("explorer");
   const editorPreviewRef = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<Engine>(settings.defaultEngine);
@@ -398,6 +452,48 @@ export default function App() {
   const [citationLibraryError, setCitationLibraryError] = useState("");
   const [projectSearchFiles, setProjectSearchFiles] = useState<ProjectSearchFile[]>([]);
   const [projectSearchLoading, setProjectSearchLoading] = useState(false);
+
+  useEffect(() => {
+    if (tableCanvasOpen && !extensionToolAvailability.tableGenerator) {
+      setTableCanvasOpen(false);
+    }
+    if (tikzConverterOpen && !extensionToolAvailability.tikzConverter) {
+      setTikzConverterOpen(false);
+    }
+    if (notationManagerOpen && !extensionToolAvailability.notationManager) {
+      setNotationManagerOpen(false);
+    }
+    if (citationManagerOpen && !extensionToolAvailability.projectBibliography) {
+      setCitationManagerOpen(false);
+    }
+  }, [
+    citationManagerOpen,
+    extensionToolAvailability.notationManager,
+    extensionToolAvailability.projectBibliography,
+    extensionToolAvailability.tableGenerator,
+    extensionToolAvailability.tikzConverter,
+    notationManagerOpen,
+    tableCanvasOpen,
+    tikzConverterOpen,
+  ]);
+
+  useEffect(() => {
+    const unavailableExtensionSettingsTab =
+      (settingsTab === "citation" &&
+        !extensionToolInstallation.projectBibliography) ||
+      (settingsTab === "tikz" && !extensionToolInstallation.tikzConverter) ||
+      (settingsTab === "notation" && !extensionToolInstallation.notationManager);
+
+    if (unavailableExtensionSettingsTab) {
+      setSettingsTab("extensions");
+    }
+  }, [
+    extensionToolInstallation.notationManager,
+    extensionToolInstallation.projectBibliography,
+    extensionToolInstallation.tikzConverter,
+    setSettingsTab,
+    settingsTab,
+  ]);
   const [projectSearchError, setProjectSearchError] = useState("");
   const [projectSearchRefreshNonce, setProjectSearchRefreshNonce] = useState(0);
   const {
@@ -524,9 +620,9 @@ export default function App() {
   const [rebuttalItems, setRebuttalItems] = useState<RebuttalItem[]>([]);
   const reviewDataReadyRef = useRef(false);
   const reviewSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
-  const editorMouseDisposableRef = useRef<monaco.IDisposable | null>(null);
-  const editorActionDisposablesRef = useRef<monaco.IDisposable[]>([]);
+  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+  const editorMouseDisposableRef = useRef<Monaco.IDisposable | null>(null);
+  const editorActionDisposablesRef = useRef<Monaco.IDisposable[]>([]);
   const documentsRef = useRef<OpenDocument[]>([]);
   const documentHistoryRef = useRef<DocumentHistorySnapshot[]>([]);
   const projectEntriesRef = useRef<ProjectEntry[]>([]);
@@ -539,7 +635,7 @@ export default function App() {
   const rootFileRef = useRef(rootFile);
   const engineRef = useRef(engine);
   const pdfPathRef = useRef("");
-  const forwardSyncRef = useRef<((position: monaco.Position) => Promise<void>) | null>(
+  const forwardSyncRef = useRef<((position: Monaco.Position) => Promise<void>) | null>(
     null,
   );
   const pendingSourceRef = useRef<{
@@ -576,9 +672,10 @@ export default function App() {
   const inlineBlameDecorationsRef = useRef<string[]>([]);
   const fileBlameDecorationsRef = useRef<string[]>([]);
   const editorBlameFetchSeqRef = useRef(0);
-  const editorBlameDisposablesRef = useRef<monaco.IDisposable[]>([]);
-  const blameHoverDisposablesRef = useRef<monaco.IDisposable[]>([]);
+  const editorBlameDisposablesRef = useRef<Monaco.IDisposable[]>([]);
+  const blameHoverDisposablesRef = useRef<Monaco.IDisposable[]>([]);
   const collaborationBindingRef = useRef<MonacoCollaborationBinding | null>(null);
+  const collaborationBindingRequestIdRef = useRef(0);
   const realtimeBlockedDocumentsRef = useRef<Record<string, string>>({});
   const realtimeReadyDocumentsRef = useRef<Set<string>>(new Set());
   const scheduleGitRefreshRef = useRef<() => void>(() => {});
@@ -2406,7 +2503,7 @@ ${macroEnd}
   }, []);
 
   const handleForwardSync = useCallback(
-    async (position: monaco.Position) => {
+    async (position: Monaco.Position) => {
       const document = documentsRef.current.find(
         (item) => item.path === activePathRef.current,
       );
@@ -2918,7 +3015,7 @@ ${macroEnd}
   }, [activeDocument, diagnostics]);
 
   const applyBookmarkDecorations = useCallback(
-    (editor: monaco.editor.IStandaloneCodeEditor, lines: number[]) => {
+    (editor: Monaco.editor.IStandaloneCodeEditor, lines: number[]) => {
       const model = editor.getModel();
       if (!model) {
         bookmarkDecorationsRef.current = [];
@@ -3133,7 +3230,7 @@ ${macroEnd}
     const model = editor.getModel();
     if (!model) return;
 
-    const ranges: monaco.editor.IModelDeltaDecoration[] = [];
+    const ranges: Monaco.editor.IModelDeltaDecoration[] = [];
     const text = activeDocument.content;
 
     for (const match of text.matchAll(/\\(?:[a-zA-Z]+|\S)|%/g)) {
@@ -3220,6 +3317,8 @@ ${macroEnd}
   };
 
   const configureMonaco: BeforeMount = (instance) => {
+    monaco = instance;
+
     if (!instance.languages.getLanguages().some(({ id }) => id === "latex")) {
       instance.languages.register({
         id: "latex",
@@ -3384,7 +3483,7 @@ ${macroEnd}
         // Check if we are inside \cite{...}
         if (argumentCompletion?.type === "citation") {
           const range = completionRange(argumentCompletion);
-          const suggestions: monaco.languages.CompletionItem[] = [];
+          const suggestions: Monaco.languages.CompletionItem[] = [];
           const allEntries = flattenEntries(projectEntriesRef.current);
           const bibFiles = allEntries.filter((e) => e.name.endsWith(".bib"));
           for (const bib of bibFiles) {
@@ -3433,7 +3532,7 @@ ${macroEnd}
         // Check if we are inside \ref{...}
         if (argumentCompletion?.type === "reference") {
           const range = completionRange(argumentCompletion);
-          const suggestions: monaco.languages.CompletionItem[] = [];
+          const suggestions: Monaco.languages.CompletionItem[] = [];
           const allEntries = flattenEntries(projectEntriesRef.current);
           const texFiles = allEntries.filter((e) => e.name.endsWith(".tex"));
 
@@ -3475,7 +3574,7 @@ ${macroEnd}
         // Default snippet completion (triggered by \)
         if (commandCompletion) {
           const range = completionRange(commandCompletion);
-          const builtInSuggestions: monaco.languages.CompletionItem[] =
+          const builtInSuggestions: Monaco.languages.CompletionItem[] =
             latexCommandSnippets.map((snippet) => ({
               label: `\\${snippet.label}`,
               kind: instance.languages.CompletionItemKind.Snippet,
@@ -3486,7 +3585,7 @@ ${macroEnd}
               detail: snippet.detail,
               documentation: snippet.documentation,
             }));
-          const mathSuggestions: monaco.languages.CompletionItem[] = SYMBOL_PALETTE.map(
+          const mathSuggestions: Monaco.languages.CompletionItem[] = SYMBOL_PALETTE.map(
             (symbol) => ({
               label: symbol.latex,
               kind: instance.languages.CompletionItemKind.Operator,
@@ -3496,7 +3595,7 @@ ${macroEnd}
               documentation: symbol.search,
             }),
           );
-          const extensionSuggestions: monaco.languages.CompletionItem[] =
+          const extensionSuggestions: Monaco.languages.CompletionItem[] =
             installedExtensionSnippetsRef.current.map((snippet) => ({
               label: `\\${snippet.label}`,
               kind: instance.languages.CompletionItemKind.Snippet,
@@ -3817,6 +3916,7 @@ ${macroEnd}
   };
 
   const disposeCollaborationBinding = useCallback(() => {
+    collaborationBindingRequestIdRef.current += 1;
     collaborationBindingRef.current?.destroy();
     collaborationBindingRef.current = null;
   }, []);
@@ -3846,6 +3946,7 @@ ${macroEnd}
       }
 
       disposeCollaborationBinding();
+      const requestId = ++collaborationBindingRequestIdRef.current;
       setRealtimeReadyDocuments((current) => {
         if (!current.has(document.relativePath)) return current;
         const next = new Set(current);
@@ -3854,86 +3955,104 @@ ${macroEnd}
         return next;
       });
       const bindingProjectId = projectIdRef.current;
-      collaborationBindingRef.current = new MonacoCollaborationBinding({
-        editor,
-        projectId: projectIdRef.current,
-        relativePath: document.relativePath,
-        shareToken: token,
-        apiBaseUrl: collaboration.apiBaseUrl,
-        clientName: collaborationDisplayName,
-        color: collaboration.color,
-        onStatusChange: (status) => {
-          if (status === "connected") {
-            setStatusMessage(
-              `Live collaboration syncing: ${pathForDisplay(document.relativePath)}`,
-            );
-          } else if (status === "error") {
-            setStatusMessage("Live collaboration connection failed.");
-          }
-        },
-        onSynced: () => {
-          setRealtimeBlockedDocuments((current) => {
-            if (!(document.relativePath in current)) return current;
-            const next = { ...current };
-            delete next[document.relativePath];
-            realtimeBlockedDocumentsRef.current = next;
-            return next;
-          });
-          setRealtimeReadyDocuments((current) => {
-            const next = new Set(current).add(document.relativePath);
-            realtimeReadyDocumentsRef.current = next;
-            return next;
-          });
-          setStatusMessage(
-            `Live collaboration connected: ${pathForDisplay(document.relativePath)}`,
+      void import("./collaboration/MonacoCollaborationBinding").then(
+        ({ MonacoCollaborationBinding }) => {
+          const currentDocument = documentsRef.current.find(
+            (item) => item.path === activePathRef.current,
           );
-        },
-        onConnectionError: (message, status) => {
-          if (status && [400, 403, 404, 413, 415].includes(status)) {
-            setRealtimeBlockedDocuments((current) => {
-              const next = { ...current, [document.relativePath]: message };
-              realtimeBlockedDocumentsRef.current = next;
-              return next;
-            });
-            setRealtimeReadyDocuments((current) => {
-              if (!current.has(document.relativePath)) return current;
-              const next = new Set(current);
-              next.delete(document.relativePath);
-              realtimeReadyDocumentsRef.current = next;
-              return next;
-            });
-            queueMicrotask(disposeCollaborationBinding);
-            void window.latexdo
-              .readFile(bindingProjectId, document.relativePath)
-              .then((content) => {
-                if (projectIdRef.current !== bindingProjectId) return;
-                setDocuments((current) => {
-                  const next = current.map((item) =>
-                    item.relativePath === document.relativePath
-                      ? { ...item, content, savedContent: content }
-                      : item,
-                  );
-                  documentsRef.current = next;
+          if (
+            collaborationBindingRequestIdRef.current !== requestId ||
+            editorRef.current !== editor ||
+            projectIdRef.current !== bindingProjectId ||
+            currentDocument?.relativePath !== document.relativePath ||
+            !collaborationState.enabled ||
+            collaborationState.token !== token
+          ) {
+            return;
+          }
+
+          collaborationBindingRef.current = new MonacoCollaborationBinding({
+            editor,
+            projectId: bindingProjectId,
+            relativePath: document.relativePath,
+            shareToken: token,
+            apiBaseUrl: collaboration.apiBaseUrl,
+            clientName: collaborationDisplayName,
+            color: collaboration.color,
+            onStatusChange: (status) => {
+              if (status === "connected") {
+                setStatusMessage(
+                  `Live collaboration syncing: ${pathForDisplay(document.relativePath)}`,
+                );
+              } else if (status === "error") {
+                setStatusMessage("Live collaboration connection failed.");
+              }
+            },
+            onSynced: () => {
+              setRealtimeBlockedDocuments((current) => {
+                if (!(document.relativePath in current)) return current;
+                const next = { ...current };
+                delete next[document.relativePath];
+                realtimeBlockedDocumentsRef.current = next;
+                return next;
+              });
+              setRealtimeReadyDocuments((current) => {
+                const next = new Set(current).add(document.relativePath);
+                realtimeReadyDocumentsRef.current = next;
+                return next;
+              });
+              setStatusMessage(
+                `Live collaboration connected: ${pathForDisplay(document.relativePath)}`,
+              );
+            },
+            onConnectionError: (message, status) => {
+              if (status && [400, 403, 404, 413, 415].includes(status)) {
+                setRealtimeBlockedDocuments((current) => {
+                  const next = { ...current, [document.relativePath]: message };
+                  realtimeBlockedDocumentsRef.current = next;
                   return next;
                 });
-                setStatusMessage(
-                  `Read-only authoritative copy loaded: ${pathForDisplay(document.relativePath)}`,
-                );
-              })
-              .catch((error: unknown) => {
-                setStatusMessage(
-                  error instanceof Error
-                    ? `Could not reload the authoritative copy: ${error.message}`
-                    : "Could not reload the authoritative copy.",
-                );
-              });
-          }
-          setStatusMessage(`Live collaboration unavailable: ${message}`);
+                setRealtimeReadyDocuments((current) => {
+                  if (!current.has(document.relativePath)) return current;
+                  const next = new Set(current);
+                  next.delete(document.relativePath);
+                  realtimeReadyDocumentsRef.current = next;
+                  return next;
+                });
+                queueMicrotask(disposeCollaborationBinding);
+                void window.latexdo
+                  .readFile(bindingProjectId, document.relativePath)
+                  .then((content) => {
+                    if (projectIdRef.current !== bindingProjectId) return;
+                    setDocuments((current) => {
+                      const next = current.map((item) =>
+                        item.relativePath === document.relativePath
+                          ? { ...item, content, savedContent: content }
+                          : item,
+                      );
+                      documentsRef.current = next;
+                      return next;
+                    });
+                    setStatusMessage(
+                      `Read-only authoritative copy loaded: ${pathForDisplay(document.relativePath)}`,
+                    );
+                  })
+                  .catch((error: unknown) => {
+                    setStatusMessage(
+                      error instanceof Error
+                        ? `Could not reload the authoritative copy: ${error.message}`
+                        : "Could not reload the authoritative copy.",
+                    );
+                  });
+              }
+              setStatusMessage(`Live collaboration unavailable: ${message}`);
+            },
+            onPresenceChange: (users) => {
+              setCollaborationState((current) => ({ ...current, users }));
+            },
+          });
         },
-        onPresenceChange: (users) => {
-          setCollaborationState((current) => ({ ...current, users }));
-        },
-      });
+      );
     },
     [
       collaboration.apiBaseUrl,
@@ -3974,7 +4093,7 @@ ${macroEnd}
     const state = editorBlameStateRef.current;
     const now = new Date();
 
-    const inlineDecorations: monaco.editor.IModelDeltaDecoration[] = [];
+    const inlineDecorations: Monaco.editor.IModelDeltaDecoration[] = [];
     if (state.inlineEnabled && !state.fileBlameEnabled && state.byLine.size) {
       const position = editor.getPosition();
       if (position && position.lineNumber <= model.getLineCount()) {
@@ -4005,7 +4124,7 @@ ${macroEnd}
       inlineDecorations,
     );
 
-    const gutterDecorations: monaco.editor.IModelDeltaDecoration[] = [];
+    const gutterDecorations: Monaco.editor.IModelDeltaDecoration[] = [];
     if (state.fileBlameEnabled && !state.dirty && state.byLine.size) {
       const annotations = buildBlameAnnotations([...state.byLine.values()], now);
       const lineCount = model.getLineCount();
@@ -4266,7 +4385,7 @@ ${macroEnd}
   }, []);
 
   const insertLatexBlockAtEditorPosition = useCallback(
-    (text: string, position?: monaco.IPosition | null): boolean => {
+    (text: string, position?: Monaco.IPosition | null): boolean => {
       const editor = editorRef.current;
       const model = editor?.getModel();
       if (!editor || !model) {
@@ -5919,11 +6038,16 @@ ${macroEnd}
   }, []);
 
   useEffect(() => {
-    void checkForUpdates({ silent: true });
+    const startupTimer = window.setTimeout(() => {
+      void checkForUpdates({ silent: true });
+    }, startupUpdateCheckDelayMs);
     const interval = window.setInterval(() => {
       void checkForUpdates({ silent: true });
     }, updateCheckIntervalMs);
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearTimeout(startupTimer);
+      window.clearInterval(interval);
+    };
   }, [checkForUpdates]);
 
   const togglePreview = async () => {
@@ -7283,38 +7407,42 @@ ${macroEnd}
             >
               <Pencil size={21} />
             </button>
-            <button
-              className={`activity-button ${tableCanvasOpen ? "active" : ""}`}
-              onClick={() => setTableCanvasOpen((open) => !open)}
-              title="Table Generator"
-            >
-              <Box size={21} />
-            </button>
-            <button
-              className={`activity-button ${tikzConverterOpen ? "active" : ""}`}
-              onClick={() => setTikzConverterOpen((open) => !open)}
-              title="Figure → TikZ Converter"
-            >
-              <ImageUp size={21} />
-            </button>
-            <button
-              className={`activity-button ${notationManagerOpen ? "active" : ""}`}
-              onClick={() => {
-                if (settings.notationManagerEnabled) {
-                  setNotationManagerOpen((open) => !open);
-                }
-              }}
-              title="Notation Manager"
-            >
-              <Variable size={21} />
-            </button>
-            <button
-              className={`activity-button ${citationManagerOpen ? "active" : ""}`}
-              onClick={() => setCitationManagerOpen((open) => !open)}
-              title="Citation Manager"
-            >
-              <BookOpenText size={21} />
-            </button>
+            {extensionToolAvailability.tableGenerator ? (
+              <button
+                className={`activity-button ${tableCanvasOpen ? "active" : ""}`}
+                onClick={() => setTableCanvasOpen((open) => !open)}
+                title="Table Generator"
+              >
+                <Box size={21} />
+              </button>
+            ) : null}
+            {extensionToolAvailability.tikzConverter ? (
+              <button
+                className={`activity-button ${tikzConverterOpen ? "active" : ""}`}
+                onClick={() => setTikzConverterOpen((open) => !open)}
+                title="Figure → TikZ Converter"
+              >
+                <ImageUp size={21} />
+              </button>
+            ) : null}
+            {extensionToolAvailability.notationManager ? (
+              <button
+                className={`activity-button ${notationManagerOpen ? "active" : ""}`}
+                onClick={() => setNotationManagerOpen((open) => !open)}
+                title="Notation Manager"
+              >
+                <Variable size={21} />
+              </button>
+            ) : null}
+            {extensionToolAvailability.projectBibliography ? (
+              <button
+                className={`activity-button ${citationManagerOpen ? "active" : ""}`}
+                onClick={() => setCitationManagerOpen((open) => !open)}
+                title="Citation Manager"
+              >
+                <BookOpenText size={21} />
+              </button>
+            ) : null}
             <button
               className={`activity-button ${
                 settingsOpen && settingsTab === "extensions" ? "active" : ""
@@ -8411,52 +8539,64 @@ ${macroEnd}
                       <span>{activeCollaborationReadOnlyMessage}</span>
                     </div>
                   ) : null}
-                  <Editor
-                    key={activeDocument.path}
-                    path={activeDocument.path}
-                    value={activeDocument.content}
-                    language={languageFor(activeDocument.name)}
-                    theme={editorTheme}
-                    beforeMount={configureMonaco}
-                    onMount={handleEditorMount}
-                    onChange={handleEditorChange}
-                    options={{
-                      readOnly: Boolean(activeCollaborationReadOnlyMessage),
-                      readOnlyMessage: {
-                        value:
-                          activeCollaborationReadOnlyMessage ||
-                          "This document is read-only.",
-                      },
-                      fontFamily:
-                        "'SFMono-Regular', 'Cascadia Code', 'Fira Code', Menlo, monospace",
-                      fontSize: settings.editorFontSize,
-                      lineHeight: 22,
-                      minimap: { enabled: settings.minimap, scale: 0.75 },
-                      padding: { top: 16, bottom: 24 },
-                      renderWhitespace: "selection",
-                      smoothScrolling: true,
-                      cursorSmoothCaretAnimation: "on",
-                      bracketPairColorization: { enabled: true },
-                      guides: { bracketPairs: true, indentation: true },
-                      wordWrap: settings.wordWrap ? "on" : "off",
-                      glyphMargin: true,
-                      folding: true,
-                      foldingStrategy: "auto",
-                      showFoldingControls: "mouseover",
-                      links: true,
-                      multiCursorModifier: "alt",
-                      multiCursorPaste: "spread",
-                      columnSelection: true,
-                      scrollBeyondLastLine: false,
-                      automaticLayout: true,
-                      fixedOverflowWidgets: true,
-                      acceptSuggestionOnCommitCharacter: false,
-                      acceptSuggestionOnEnter: "off",
-                      quickSuggestions: { other: true, comments: false, strings: true },
-                      snippetSuggestions: "top",
-                      suggest: { showSnippets: true },
-                    }}
-                  />
+                  <Suspense
+                    fallback={
+                      <div className="editor-loading" role="status">
+                        Loading editor...
+                      </div>
+                    }
+                  >
+                    <MonacoEditor
+                      key={activeDocument.path}
+                      path={activeDocument.path}
+                      value={activeDocument.content}
+                      language={languageFor(activeDocument.name)}
+                      theme={editorTheme}
+                      beforeMount={configureMonaco}
+                      onMount={handleEditorMount}
+                      onChange={handleEditorChange}
+                      options={{
+                        readOnly: Boolean(activeCollaborationReadOnlyMessage),
+                        readOnlyMessage: {
+                          value:
+                            activeCollaborationReadOnlyMessage ||
+                            "This document is read-only.",
+                        },
+                        fontFamily:
+                          "'SFMono-Regular', 'Cascadia Code', 'Fira Code', Menlo, monospace",
+                        fontSize: settings.editorFontSize,
+                        lineHeight: 22,
+                        minimap: { enabled: settings.minimap, scale: 0.75 },
+                        padding: { top: 16, bottom: 24 },
+                        renderWhitespace: "selection",
+                        smoothScrolling: true,
+                        cursorSmoothCaretAnimation: "on",
+                        bracketPairColorization: { enabled: true },
+                        guides: { bracketPairs: true, indentation: true },
+                        wordWrap: settings.wordWrap ? "on" : "off",
+                        glyphMargin: true,
+                        folding: true,
+                        foldingStrategy: "auto",
+                        showFoldingControls: "mouseover",
+                        links: true,
+                        multiCursorModifier: "alt",
+                        multiCursorPaste: "spread",
+                        columnSelection: true,
+                        scrollBeyondLastLine: false,
+                        automaticLayout: true,
+                        fixedOverflowWidgets: true,
+                        acceptSuggestionOnCommitCharacter: false,
+                        acceptSuggestionOnEnter: "off",
+                        quickSuggestions: {
+                          other: true,
+                          comments: false,
+                          strings: true,
+                        },
+                        snippetSuggestions: "top",
+                        suggest: { showSnippets: true },
+                      }}
+                    />
+                  </Suspense>
                 </div>
               ) : gitDiffSession ? (
                 <GitDiffWorkbench
@@ -8649,7 +8789,7 @@ ${macroEnd}
             </div>
           )}
 
-          {tableCanvasOpen && (
+          {extensionToolAvailability.tableGenerator && tableCanvasOpen && (
             <div className="tikz-modal-overlay">
               <div className="tikz-modal-header">
                 <span className="tikz-modal-title">Table Generator</span>
@@ -8696,7 +8836,7 @@ ${macroEnd}
             </div>
           )}
 
-          {tikzConverterOpen && (
+          {extensionToolAvailability.tikzConverter && tikzConverterOpen && (
             <div className="tikz-modal-overlay">
               <div className="tikz-modal-header">
                 <span className="tikz-modal-title">
@@ -8746,7 +8886,7 @@ ${macroEnd}
             </div>
           )}
 
-          {notationManagerOpen && (
+          {extensionToolAvailability.notationManager && notationManagerOpen && (
             <div className="tikz-modal-overlay">
               <div className="tikz-modal-header">
                 <span className="tikz-modal-title">
@@ -8774,7 +8914,7 @@ ${macroEnd}
             </div>
           )}
 
-          {citationManagerOpen && (
+          {extensionToolAvailability.projectBibliography && citationManagerOpen && (
             <div className="tikz-modal-overlay">
               <div className="tikz-modal-header">
                 <span className="tikz-modal-title">
@@ -9819,12 +9959,14 @@ ${macroEnd}
               >
                 Conference Checker
               </button>
-              <button
-                className={`settings-tab ${settingsTab === "citation" ? "active" : ""}`}
-                onClick={() => setSettingsTab("citation")}
-              >
-                Citation Assistant
-              </button>
+              {extensionToolInstallation.projectBibliography ? (
+                <button
+                  className={`settings-tab ${settingsTab === "citation" ? "active" : ""}`}
+                  onClick={() => setSettingsTab("citation")}
+                >
+                  Citation Assistant
+                </button>
+              ) : null}
               <button
                 className={`settings-tab ${settingsTab === "structure" ? "active" : ""}`}
                 onClick={() => setSettingsTab("structure")}
@@ -9849,18 +9991,22 @@ ${macroEnd}
               >
                 Error Doctor
               </button>
-              <button
-                className={`settings-tab ${settingsTab === "tikz" ? "active" : ""}`}
-                onClick={() => setSettingsTab("tikz")}
-              >
-                TikZ Converter
-              </button>
-              <button
-                className={`settings-tab ${settingsTab === "notation" ? "active" : ""}`}
-                onClick={() => setSettingsTab("notation")}
-              >
-                Notation
-              </button>
+              {extensionToolInstallation.tikzConverter ? (
+                <button
+                  className={`settings-tab ${settingsTab === "tikz" ? "active" : ""}`}
+                  onClick={() => setSettingsTab("tikz")}
+                >
+                  TikZ Converter
+                </button>
+              ) : null}
+              {extensionToolInstallation.notationManager ? (
+                <button
+                  className={`settings-tab ${settingsTab === "notation" ? "active" : ""}`}
+                  onClick={() => setSettingsTab("notation")}
+                >
+                  Notation
+                </button>
+              ) : null}
               <button
                 className={`settings-tab ${settingsTab === "pdf" ? "active" : ""}`}
                 onClick={() => setSettingsTab("pdf")}
@@ -10131,9 +10277,6 @@ ${macroEnd}
                 <>
                   <div className="settings-section-heading">
                     <strong>Extension Store</strong>
-                    <span>
-                      Browse installable LatexDo packs from store.latexdo.org.
-                    </span>
                   </div>
 
                   <div className="extension-store-toolbar">
