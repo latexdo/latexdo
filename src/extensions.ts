@@ -276,8 +276,7 @@ export const fallbackExtensionCatalog: LatexDoExtensionCatalog = {
       kind: "extension",
       name: "Table Generator",
       version: "1.0.0",
-      description:
-        "Adds the visual table builder for generating LaTeX tabular code.",
+      description: "Adds the visual table builder for generating LaTeX tabular code.",
       author: "LatexDo",
       category: "graphics",
       tags: ["tables", "tabular", "latex"],

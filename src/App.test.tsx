@@ -8,10 +8,7 @@ import {
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import {
-  fallbackExtensionCatalog,
-  type LatexDoExtensionCatalog,
-} from "./extensions";
+import { fallbackExtensionCatalog, type LatexDoExtensionCatalog } from "./extensions";
 import {
   defaultSettings,
   installedExtensionsStorageKey,
