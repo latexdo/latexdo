@@ -2,7 +2,7 @@ name: deploy-website
 
 on:
   workflow_run:
-    workflows: ["latexdo-ci"]
+    workflows: ["latexdo-release"]
     types:
       - completed
   workflow_dispatch:
@@ -11,13 +11,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-website
+  group: deploy-website-downloads
   cancel-in-progress: true
 
 jobs:
   deploy:
-    name: deploy / latexdo.org
-    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event == 'push') }}
+    name: deploy / latexdo.org downloads index
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -34,28 +34,6 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22.17.0
-          cache: npm
-          cache-dependency-path: website/package-lock.json
-
-      - name: Build TypeScript website
-        shell: bash
-        run: |
-          npm ci --prefix website
-          npm run build --prefix website
-
-      - name: Prepare static website
-        shell: bash
-        run: |
-          mkdir -p website/assets
-          cp build/icon.svg website/assets/icon.svg
-          # Downloads and update feeds are owned by latexdo-release. Leaving them
-          # out of publish_dir lets keep_files preserve every versioned release.
-          rm -rf website/downloads website/updates
-          # The CLI and installer are released together with their signed feed.
-          rm -rf website/bin
-          rm -f website/install.sh
-          rm -rf website/node_modules website/src website/.github
-          rm -f website/package.json website/package-lock.json website/tsconfig.json website/.gitignore
 
       - name: Validate publication credentials
         env:
@@ -63,14 +41,16 @@ jobs:
         shell: bash
         run: |
           if [ -z "$LATEXDO_WEBSITE_TOKEN" ]; then
-            echo "::error::Missing LATEXDO_WEBSITE_TOKEN; cannot update latexdo.org."
+            echo "::error::Missing LATEXDO_WEBSITE_TOKEN; cannot update latexdo.org downloads."
             exit 1
           fi
 
           {
-            echo "### Website publication"
+            echo "### Downloads publication"
             echo
-            echo "- latexdo.org repo update enabled."
+            echo "- latexdo.org downloads index update enabled."
+            echo "- This workflow stages only downloads/releases.json."
+            echo "- Release/update artifacts are published by latexdo-release."
             echo "- Cloudflare deployment is handled by the latexdo.org Git integration."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -82,23 +62,33 @@ jobs:
           path: latexdo-org-site
           token: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
 
-      - name: Update latexdo.org website
-        id: update_latexdo_org_website
+      - name: Refresh latexdo.org downloads index
+        id: update_latexdo_org_downloads_index
         shell: bash
         run: |
           echo "updated=false" >> "$GITHUB_OUTPUT"
           echo "commit_sha=" >> "$GITHUB_OUTPUT"
-          rsync -a website/ latexdo-org-site/
+
+          LATEXDO_DOWNLOAD_BASE_URL=https://latexdo.org \
+            node scripts/build-downloads-release-index.mjs latexdo-org-site/downloads --json-only
 
           git -C latexdo-org-site config user.name "github-actions[bot]"
           git -C latexdo-org-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C latexdo-org-site add -A
+          git -C latexdo-org-site add -- downloads/releases.json
+
+          staged_paths="$(git -C latexdo-org-site diff --cached --name-only)"
+          invalid_paths="$(printf '%s\n' "$staged_paths" | grep -Ev '^downloads/releases\.json$' || true)"
+          if [ -n "$invalid_paths" ]; then
+            echo "::error::Downloads index refresh must stage only downloads/releases.json."
+            printf '%s\n' "$invalid_paths"
+            exit 1
+          fi
 
           if git -C latexdo-org-site diff --cached --quiet; then
-            echo "No latexdo.org website changes to commit."
+            echo "No latexdo.org downloads index changes to commit."
           else
             git -C latexdo-org-site commit \
-              -m "Deploy website from latexdo@${LATEXDO_SOURCE_SHA}"
+              -m "Refresh downloads index from latexdo@${LATEXDO_SOURCE_SHA}"
             git -C latexdo-org-site push origin HEAD:main
             commit_sha="$(git -C latexdo-org-site rev-parse HEAD)"
             echo "updated=true" >> "$GITHUB_OUTPUT"
@@ -106,10 +96,10 @@ jobs:
           fi
 
       - name: Verify latexdo.org update
-        if: ${{ steps.update_latexdo_org_website.outputs.updated == 'true' }}
+        if: ${{ steps.update_latexdo_org_downloads_index.outputs.updated == 'true' }}
         shell: bash
         env:
-          LATEXDO_ORG_COMMIT: ${{ steps.update_latexdo_org_website.outputs.commit_sha }}
+          LATEXDO_ORG_COMMIT: ${{ steps.update_latexdo_org_downloads_index.outputs.commit_sha }}
         run: |
           remote_sha="$(git -C latexdo-org-site ls-remote origin refs/heads/main | awk '{print $1}')"
           if [ "$remote_sha" != "$LATEXDO_ORG_COMMIT" ]; then
@@ -117,5 +107,5 @@ jobs:
             exit 1
           fi
 
-          echo "latexdo.org updated at ${LATEXDO_ORG_COMMIT}."
-          echo "Cloudflare Workers Builds can deploy the pushed website repo."
+          echo "latexdo.org downloads index updated at ${LATEXDO_ORG_COMMIT}."
+          echo "Cloudflare Workers Builds can deploy the pushed downloads index commit."
