@@ -1,13 +1,22 @@
-import {
-  DiffEditor,
-  type DiffBeforeMount,
-  type DiffOnMount,
-} from "@monaco-editor/react";
+import type { DiffBeforeMount, DiffOnMount } from "@monaco-editor/react";
 import { Binary, ExternalLink, GitCompareArrows, X } from "lucide-react";
-import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  type ReactNode,
+} from "react";
 import type { editor as MonacoEditor, IDisposable } from "monaco-editor";
 import type { GitBlameLine, GitDiffSession, GitRevisionRef } from "../types";
 import { fileNameForDisplay, pathForDisplay } from "../pathDisplay";
+
+const MonacoDiffEditor = lazy(() =>
+  import("./MonacoEditor").then((module) => ({
+    default: module.MonacoDiffEditor,
+  })),
+);
 
 export interface GitDiffWorkbenchProps {
   session: GitDiffSession;
@@ -330,46 +339,54 @@ export function GitDiffWorkbench({
             <span>{pathForDisplay(session.relativePath)}</span>
           </div>
         ) : (
-          <DiffEditor
-            key={session.id}
-            original={session.originalContent}
-            modified={session.modifiedContent}
-            originalModelPath={originalModelPath}
-            modifiedModelPath={modifiedModelPath}
-            language={session.language}
-            theme={theme}
-            beforeMount={beforeMount}
-            onMount={handleDiffEditorMount}
-            options={{
-              ...options,
-              readOnly: true,
-              originalEditable: false,
-              renderSideBySide: true,
-              useInlineViewWhenSpaceIsLimited: false,
-              automaticLayout: true,
-              scrollBeyondLastLine: false,
-              fontFamily:
-                "'SFMono-Regular', 'Cascadia Code', 'Fira Code', Menlo, monospace",
-              fontSize,
-              lineHeight: 22,
-              minimap: { enabled: false },
-              renderOverviewRuler: true,
-              overviewRulerBorder: false,
-              renderIndicators: true,
-              renderMarginRevertIcon: false,
-              diffCodeLens: true,
-              ignoreTrimWhitespace: false,
-              renderWhitespace: "selection",
-              enableSplitViewResizing: true,
-              splitViewDefaultRatio: 0.5,
-              maxComputationTime: 5_000,
-              maxFileSize: 20,
-              originalAriaLabel: `${session.originalLabel}: ${originalPath}`,
-              modifiedAriaLabel: `${session.modifiedLabel}: ${pathForDisplay(
-                session.relativePath,
-              )}`,
-            }}
-          />
+          <Suspense
+            fallback={
+              <div className="git-diff-loading" role="status">
+                Loading diff editor...
+              </div>
+            }
+          >
+            <MonacoDiffEditor
+              key={session.id}
+              original={session.originalContent}
+              modified={session.modifiedContent}
+              originalModelPath={originalModelPath}
+              modifiedModelPath={modifiedModelPath}
+              language={session.language}
+              theme={theme}
+              beforeMount={beforeMount}
+              onMount={handleDiffEditorMount}
+              options={{
+                ...options,
+                readOnly: true,
+                originalEditable: false,
+                renderSideBySide: true,
+                useInlineViewWhenSpaceIsLimited: false,
+                automaticLayout: true,
+                scrollBeyondLastLine: false,
+                fontFamily:
+                  "'SFMono-Regular', 'Cascadia Code', 'Fira Code', Menlo, monospace",
+                fontSize,
+                lineHeight: 22,
+                minimap: { enabled: false },
+                renderOverviewRuler: true,
+                overviewRulerBorder: false,
+                renderIndicators: true,
+                renderMarginRevertIcon: false,
+                diffCodeLens: true,
+                ignoreTrimWhitespace: false,
+                renderWhitespace: "selection",
+                enableSplitViewResizing: true,
+                splitViewDefaultRatio: 0.5,
+                maxComputationTime: 5_000,
+                maxFileSize: 20,
+                originalAriaLabel: `${session.originalLabel}: ${originalPath}`,
+                modifiedAriaLabel: `${session.modifiedLabel}: ${pathForDisplay(
+                  session.relativePath,
+                )}`,
+              }}
+            />
+          </Suspense>
         )}
       </div>
     </div>

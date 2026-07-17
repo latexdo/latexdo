@@ -22,6 +22,7 @@ jobs:
     timeout-minutes: 10
     env:
       LATEXDO_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      LATEXDO_APP_ROOT: ${{ github.workspace }}
 
     steps:
       - name: Check out repository

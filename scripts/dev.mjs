@@ -21,7 +21,7 @@ async function canReach(url) {
 
   try {
     const response = await fetch(url, { signal: controller.signal });
-    return response.ok || response.status > 0;
+    return response.ok;
   } catch {
     return false;
   } finally {

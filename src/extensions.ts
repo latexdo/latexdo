@@ -42,10 +42,12 @@ export type ExtensionFeatureFlag =
   | "importMetadataSources"
   | "notationManagerEnabled"
   | "pdfComplianceEnabled"
+  | "projectBibliographyEnabled"
   | "reproducibilityEnabled"
   | "structureAssistantEnabled"
   | "suggestCitationKeys"
   | "suggestFixes"
+  | "tableGeneratorEnabled"
   | "tikzConverterAutoOpen"
   | "tikzConverterEnabled"
   | "warnOldCitations";
@@ -149,10 +151,12 @@ const extensionFeatureFlags = new Set<ExtensionFeatureFlag>([
   "importMetadataSources",
   "notationManagerEnabled",
   "pdfComplianceEnabled",
+  "projectBibliographyEnabled",
   "reproducibilityEnabled",
   "structureAssistantEnabled",
   "suggestCitationKeys",
   "suggestFixes",
+  "tableGeneratorEnabled",
   "tikzConverterAutoOpen",
   "tikzConverterEnabled",
   "warnOldCitations",
@@ -164,7 +168,7 @@ const extensionVersionPattern = /^[0-9]+(?:\.[0-9]+){0,2}(?:[-+][a-z0-9.-]+)?$/i
 export const fallbackExtensionCatalog: LatexDoExtensionCatalog = {
   schemaVersion: 1,
   product: "LatexDo",
-  updatedAt: "2026-07-03T00:00:00.000Z",
+  updatedAt: "2026-07-17T00:00:00.000Z",
   extensions: [
     {
       schemaVersion: 1,
@@ -208,6 +212,7 @@ export const fallbackExtensionCatalog: LatexDoExtensionCatalog = {
       repository: "https://github.com/latexdo/store.latexdo.org",
       contributes: {
         featureFlags: {
+          projectBibliographyEnabled: true,
           citationAssistantEnabled: true,
           detectMissingCitations: true,
           detectUnusedEntries: true,
@@ -263,6 +268,25 @@ export const fallbackExtensionCatalog: LatexDoExtensionCatalog = {
               "\\begin{tikzpicture}\n  \\begin{axis}[\n    xlabel={${1:x}},\n    ylabel={${2:y}},\n    grid=both\n  ]\n    \\addplot coordinates {${3:(0,0) (1,1)}};\n  \\end{axis}\n\\end{tikzpicture}",
           },
         ],
+      },
+    },
+    {
+      schemaVersion: 1,
+      id: "latexdo.table-generator",
+      kind: "extension",
+      name: "Table Generator",
+      version: "1.0.0",
+      description:
+        "Adds the visual table builder for generating LaTeX tabular code.",
+      author: "LatexDo",
+      category: "graphics",
+      tags: ["tables", "tabular", "latex"],
+      homepage: "https://store.latexdo.org/extensions/latexdo.table-generator/",
+      repository: "https://github.com/latexdo/store.latexdo.org",
+      contributes: {
+        featureFlags: {
+          tableGeneratorEnabled: true,
+        },
       },
     },
     {

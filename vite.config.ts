@@ -14,6 +14,9 @@ const mathjaxPackageJson = JSON.parse(
 
 function vendorChunk(id: string): string | undefined {
   const moduleId = id.replaceAll("\\", "/");
+  if (moduleId.includes("vite/preload-helper")) {
+    return "vite-runtime";
+  }
   if (!moduleId.includes("/node_modules/")) return undefined;
   if (/\/node_modules\/(?:react|react-dom|scheduler)\//.test(moduleId)) {
     return "react-vendor";

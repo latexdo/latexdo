@@ -12,10 +12,10 @@ const diffMock = vi.hoisted(() => ({
   props: null as DiffEditorProps | null,
 }));
 
-vi.mock("@monaco-editor/react", async () => {
+vi.mock("./MonacoEditor", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
   return {
-    DiffEditor: (props: DiffEditorProps) => {
+    MonacoDiffEditor: (props: DiffEditorProps) => {
       diffMock.props = props;
       return React.createElement("div", { "data-testid": "mock-diff-editor" });
     },
@@ -42,10 +42,10 @@ describe("GitDiffWorkbench", () => {
     diffMock.props = null;
   });
 
-  it("uses stable revision models and forces a side-by-side Monaco diff", () => {
+  it("uses stable revision models and forces a side-by-side Monaco diff", async () => {
     render(<GitDiffWorkbench session={session} theme="latexdo-dark" fontSize={13} />);
 
-    expect(screen.getByTestId("mock-diff-editor")).toBeVisible();
+    expect(await screen.findByTestId("mock-diff-editor")).toBeVisible();
     expect(screen.getByText(gitDiffTabLabel(session))).toBeVisible();
     expect(diffMock.props?.original).toBe(session.originalContent);
     expect(diffMock.props?.modified).toBe(session.modifiedContent);
@@ -79,7 +79,7 @@ describe("GitDiffWorkbench", () => {
     expect(diffMock.props).toBeNull();
   });
 
-  it("adds blame only to unchanged modified-side lines", () => {
+  it("adds blame only to unchanged modified-side lines", async () => {
     const blameLines: GitBlameLine[] = [
       {
         line: 1,
@@ -138,6 +138,7 @@ describe("GitDiffWorkbench", () => {
         blameLines={blameLines}
       />,
     );
+    await screen.findByTestId("mock-diff-editor");
     const mount = diffMock.props?.onMount as unknown as (
       editor: unknown,
       monacoInstance: unknown,

@@ -1,6 +1,6 @@
 import { MonacoBinding } from "y-monaco";
 import * as Y from "yjs";
-import { monaco } from "../monaco";
+import type * as monaco from "monaco-editor";
 import { CollaborationClient } from "./CollaborationClient";
 import type {
   CollaborationConnectionStatus,

@@ -16,6 +16,8 @@ import {
   type AppSettings,
 } from "./settings";
 
+const extensionCatalogStartupDelayMs = import.meta.env.MODE === "test" ? 0 : 1_500;
+
 export function useSettings(onStatusMessage: (message: string) => void) {
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -109,12 +111,43 @@ export function useSettings(onStatusMessage: (message: string) => void) {
 
   const uninstallExtension = useCallback(
     (extension: LatexDoExtensionManifest) => {
+      const remainingExtensions = installedExtensions.filter(
+        (installedExtension) => installedExtension.id !== extension.id,
+      );
+      const featureFlagsToDisable = Object.keys(
+        extension.contributes.featureFlags ?? {},
+      ).filter(
+        (flag) =>
+          !remainingExtensions.some((installedExtension) => {
+            const featureFlags = installedExtension.contributes.featureFlags as
+              | Record<string, boolean>
+              | undefined;
+            return featureFlags?.[flag] === true;
+          }),
+      );
+
       setInstalledExtensionIds((current) =>
         current.filter((extensionId) => extensionId !== extension.id),
       );
+
+      if (featureFlagsToDisable.length) {
+        setSettings((current) => {
+          const next = { ...current } as AppSettings;
+          const writableNext = next as unknown as Record<string, boolean>;
+
+          for (const flag of featureFlagsToDisable) {
+            if (typeof writableNext[flag] === "boolean") {
+              writableNext[flag] = false;
+            }
+          }
+
+          return next;
+        });
+      }
+
       onStatusMessage(`Uninstalled ${extension.name}`);
     },
-    [onStatusMessage],
+    [installedExtensions, onStatusMessage],
   );
 
   useEffect(() => {
@@ -129,7 +162,10 @@ export function useSettings(onStatusMessage: (message: string) => void) {
   }, [installedExtensionIds]);
 
   useEffect(() => {
-    void refreshExtensionCatalog();
+    const timer = window.setTimeout(() => {
+      void refreshExtensionCatalog();
+    }, extensionCatalogStartupDelayMs);
+    return () => window.clearTimeout(timer);
   }, [refreshExtensionCatalog]);
 
   return {
