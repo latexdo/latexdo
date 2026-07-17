@@ -363,70 +363,6 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  downstream_ci:
-    name: trigger / downstream CI
-    needs:
-      - installers
-    if: ${{ github.event_name != 'pull_request' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - repository: latexdo/cli.latexdo.org
-            workflow: ci.yml
-          - repository: latexdo/editor.latexdo.org
-            workflow: ci.yml
-          - repository: latexdo/store.latexdo.org
-            workflow: validate-pr.yml
-
-    steps:
-      - name: Dispatch downstream workflow
-        shell: bash
-        env:
-          DISPATCH_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
-          TARGET_REPOSITORY: ${{ matrix.repository }}
-          TARGET_WORKFLOW: ${{ matrix.workflow }}
-          SOURCE_REPOSITORY: ${{ github.repository }}
-          SOURCE_SHA: ${{ github.sha }}
-          SOURCE_RUN_ID: ${{ github.run_id }}
-          SOURCE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          if [ -z "${DISPATCH_TOKEN:-}" ]; then
-            echo "LATEXDO_WEBSITE_TOKEN is required to trigger downstream CI."
-            echo "Create a fine-grained token with Actions write access to the downstream repos."
-            exit 1
-          fi
-
-          payload="$(
-            jq -n \
-              --arg ref "main" \
-              --arg source_repository "$SOURCE_REPOSITORY" \
-              --arg source_sha "$SOURCE_SHA" \
-              --arg source_run_id "$SOURCE_RUN_ID" \
-              --arg source_run_url "$SOURCE_RUN_URL" \
-              '{
-                ref: $ref,
-                inputs: {
-                  source_repository: $source_repository,
-                  source_sha: $source_sha,
-                  source_run_id: $source_run_id,
-                  source_run_url: $source_run_url
-                }
-              }'
-          )"
-
-          curl -fsSL \
-            -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${DISPATCH_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${TARGET_REPOSITORY}/actions/workflows/${TARGET_WORKFLOW}/dispatches" \
-            -d "$payload"
-
-          echo "Triggered ${TARGET_REPOSITORY}/${TARGET_WORKFLOW}."
-
   ci_summary:
     name: summary / CI tree
     needs:
@@ -435,7 +371,6 @@ jobs:
       - package_windows
       - package_linux
       - installers
-      - downstream_ci
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -457,7 +392,6 @@ jobs:
             echo "  windows --> installers"
             echo "  linux --> installers"
             echo "  installers --> bundle[\"installer bundle artifact\"]"
-            echo "  installers --> downstream[\"trigger / downstream CI\"]"
             echo '```'
             echo
             echo '```text'
@@ -476,10 +410,6 @@ jobs:
             echo "+-- verify"
             echo "|   +-- installer bundle"
             echo "|   +-- SHA-256 checksums"
-            echo "+-- downstream"
-            echo "|   +-- cli.latexdo.org"
-            echo "|   +-- editor.latexdo.org"
-            echo "|   +-- store.latexdo.org"
             echo "+-- summary"
             echo "    +-- CI tree"
             echo '```'
@@ -491,5 +421,4 @@ jobs:
             echo "| package / Windows EXE | ${{ needs.package_windows.result }} |"
             echo "| package / Linux AppImage | ${{ needs.package_linux.result }} |"
             echo "| verify / installers | ${{ needs.installers.result }} |"
-            echo "| trigger / downstream CI | ${{ needs.downstream_ci.result }} |"
           } >> "$GITHUB_STEP_SUMMARY"

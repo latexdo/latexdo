@@ -155,10 +155,10 @@ The standalone website and downstream publication workflows require
 `LATEXDO_WEBSITE_TOKEN`. The token pushes the generated static site to
 `latexdo/latexdo.org`, publishes generated downstream content to
 `latexdo/cli.latexdo.org`, `latexdo/editor.latexdo.org`,
-`latexdo/docs.latexdo.org`, and `latexdo/store.latexdo.org`, and dispatches
-downstream validation in `latexdo/cli.latexdo.org`,
-`latexdo/editor.latexdo.org`, and `latexdo/store.latexdo.org`. Cloudflare
-deploys from the pushed GitHub commits.
+`latexdo/docs.latexdo.org`, and `latexdo/store.latexdo.org`. After CLI, editor,
+and store publication finishes, the same token dispatches downstream validation
+in `latexdo/cli.latexdo.org`, `latexdo/editor.latexdo.org`, and
+`latexdo/store.latexdo.org`. Cloudflare deploys from the pushed GitHub commits.
 
 Automatic CI publication to `latexdo.org` is scoped to downloads/update data in
 `downloads/` and `updates/`. The design-owned `downloads/index.html`, site

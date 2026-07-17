@@ -83,23 +83,16 @@ if (
 ) {
   throw new Error("Deployment workflows must not resolve Wrangler dynamically.");
 }
-for (const requiredCiDispatchControl of [
-  "repository: latexdo/cli.latexdo.org",
-  "repository: latexdo/editor.latexdo.org",
-  "repository: latexdo/store.latexdo.org",
-  "workflow: validate-pr.yml",
-  "DISPATCH_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}",
+for (const forbiddenCiDispatchControl of [
+  "trigger / downstream CI",
+  "LATEXDO_CI_DISPATCH_TOKEN",
   "LATEXDO_WEBSITE_TOKEN is required to trigger downstream CI.",
-  "/actions/workflows/${TARGET_WORKFLOW}/dispatches",
 ]) {
-  if (!ciWorkflow.includes(requiredCiDispatchControl)) {
+  if (ciWorkflow.includes(forbiddenCiDispatchControl)) {
     throw new Error(
-      `Downstream CI dispatch control is missing: ${requiredCiDispatchControl}`,
+      `Downstream CI dispatch must happen after publication: ${forbiddenCiDispatchControl}`,
     );
   }
-}
-if (ciWorkflow.includes("LATEXDO_CI_DISPATCH_TOKEN")) {
-  throw new Error("Downstream CI dispatch must use LATEXDO_WEBSITE_TOKEN.");
 }
 for (const requiredReleaseControl of [
   "workflow_run:",
