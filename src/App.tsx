@@ -402,21 +402,18 @@ export default function App() {
 
     return featureFlags;
   }, [installedExtensions]);
-  const extensionToolInstallation = useMemo(
-    () => {
-      const projectBibliographyInstalled =
-        installedExtensionFeatureFlags.has("projectBibliographyEnabled") ||
-        installedExtensionFeatureFlags.has("citationAssistantEnabled");
+  const extensionToolInstallation = useMemo(() => {
+    const projectBibliographyInstalled =
+      installedExtensionFeatureFlags.has("projectBibliographyEnabled") ||
+      installedExtensionFeatureFlags.has("citationAssistantEnabled");
 
-      return {
-        projectBibliography: projectBibliographyInstalled,
-        tableGenerator: installedExtensionFeatureFlags.has("tableGeneratorEnabled"),
-        tikzConverter: installedExtensionFeatureFlags.has("tikzConverterEnabled"),
-        notationManager: installedExtensionFeatureFlags.has("notationManagerEnabled"),
-      };
-    },
-    [installedExtensionFeatureFlags],
-  );
+    return {
+      projectBibliography: projectBibliographyInstalled,
+      tableGenerator: installedExtensionFeatureFlags.has("tableGeneratorEnabled"),
+      tikzConverter: installedExtensionFeatureFlags.has("tikzConverterEnabled"),
+      notationManager: installedExtensionFeatureFlags.has("notationManagerEnabled"),
+    };
+  }, [installedExtensionFeatureFlags]);
   const extensionToolAvailability = useMemo(() => {
     const settingsByFlag = settings as unknown as Record<string, boolean>;
     const enabled = (flag: ExtensionFeatureFlag) =>
@@ -479,8 +476,7 @@ export default function App() {
 
   useEffect(() => {
     const unavailableExtensionSettingsTab =
-      (settingsTab === "citation" &&
-        !extensionToolInstallation.projectBibliography) ||
+      (settingsTab === "citation" && !extensionToolInstallation.projectBibliography) ||
       (settingsTab === "tikz" && !extensionToolInstallation.tikzConverter) ||
       (settingsTab === "notation" && !extensionToolInstallation.notationManager);
 

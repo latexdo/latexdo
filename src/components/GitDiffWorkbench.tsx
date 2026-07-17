@@ -1,13 +1,6 @@
 import type { DiffBeforeMount, DiffOnMount } from "@monaco-editor/react";
 import { Binary, ExternalLink, GitCompareArrows, X } from "lucide-react";
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useRef,
-  type ReactNode,
-} from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, type ReactNode } from "react";
 import type { editor as MonacoEditor, IDisposable } from "monaco-editor";
 import type { GitBlameLine, GitDiffSession, GitRevisionRef } from "../types";
 import { fileNameForDisplay, pathForDisplay } from "../pathDisplay";
