@@ -348,6 +348,18 @@ async function ensureShare(meta) {
   return token;
 }
 
+async function rotateShare(meta) {
+  const token = randomToken();
+  const previousToken = meta.shareToken;
+  meta.shareToken = token;
+  const index = await readSharesIndex();
+  if (previousToken) delete index[previousToken];
+  index[token] = meta.id;
+  await writeSharesIndex(index);
+  await writeProjectMeta(meta);
+  return token;
+}
+
 function shareUrl(token) {
   try {
     const url = new URL(shareUrlBase);
@@ -755,6 +767,18 @@ async function handleProjectRoute(request, response, url, parts) {
       request.method === "POST" ? "admin" : "viewer",
     );
     if (request.method === "POST") await ensureShare(meta);
+    sendJson(response, request, 200, collaborationState(meta, identity, role));
+    return;
+  }
+
+  if (route === "share/rotate" && request.method === "POST") {
+    const { meta, identity, role } = await authorizeProject(
+      request,
+      url,
+      projectId,
+      "admin",
+    );
+    await rotateShare(meta);
     sendJson(response, request, 200, collaborationState(meta, identity, role));
     return;
   }

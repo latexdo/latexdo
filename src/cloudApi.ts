@@ -761,6 +761,21 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       return normalizeCollaborationState(projectId, state);
     },
 
+    rotateCollaborationLink: async (projectId) => {
+      const state = await requestJson<CollaborationState>(
+        `/api/projects/${projectId}/share/rotate`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        },
+        shareTokenForProject(projectId),
+      );
+      if (state.token) {
+        rememberShareToken(projectId, state.token);
+      }
+      return normalizeCollaborationState(projectId, state);
+    },
+
     joinCollaboration,
 
     updateCollaborationPresence: async (projectId, currentFile) => {

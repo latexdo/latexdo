@@ -373,6 +373,21 @@ async function cloudCreateShare(projectId: string): Promise<CollaborationState> 
   return normalizeCloudState(projectId, state);
 }
 
+async function cloudRotateShare(projectId: string): Promise<CollaborationState> {
+  const state = await cloudRequestJson<CollaborationState>(
+    `/api/projects/${encodeURIComponent(projectId)}/share/rotate`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+    cloudShareTokenForProject(projectId),
+  );
+  if (state.token) {
+    markCloudProject(projectId, state.token);
+  }
+  return normalizeCloudState(projectId, state);
+}
+
 async function openCloudShare(tokenOrUrl: string): Promise<{
   project: OpenProject;
   collaboration: CollaborationState;
@@ -752,6 +767,14 @@ const api = {
     }
     const cloudProject = await uploadLocalProjectToCloud(projectId);
     return cloudCreateShare(cloudProject.id);
+  },
+  rotateCollaborationLink: async (
+    projectId: string,
+  ): Promise<CollaborationState> => {
+    if (!isCloudProject(projectId)) {
+      throw new Error("This project has not been shared yet");
+    }
+    return cloudRotateShare(projectId);
   },
   joinCollaboration: (
     token: string,

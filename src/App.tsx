@@ -4930,6 +4930,41 @@ ${macroEnd}
     }
   };
 
+  const regenerateCollaborationLink = async () => {
+    const currentProject = collaborationState.projectId ?? projectIdRef.current;
+    if (!currentProject) {
+      setStatusMessage("Open a shared project to regenerate its link.");
+      return;
+    }
+    if (!collaborationAvailable) {
+      setStatusMessage("Cloud collaboration is not available in this runtime.");
+      return;
+    }
+
+    setCollaborationBusy(true);
+    try {
+      const state = await window.latexdo.rotateCollaborationLink(currentProject);
+      setCollaborationState(state);
+      const activeProjectId = state.projectId ?? currentProject;
+      await loadCollaborationPermissions(activeProjectId);
+      const tokenOrUrl = state.token ?? state.shareUrl;
+      if (tokenOrUrl) {
+        await copyToClipboard(tokenOrUrl);
+        setCollaborationCopied(true);
+        window.setTimeout(() => setCollaborationCopied(false), 1800);
+        setStatusMessage("New collaboration link copied. The old link no longer works.");
+      } else {
+        setStatusMessage("Collaboration link regenerated.");
+      }
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Could not regenerate collaboration link",
+      );
+    } finally {
+      setCollaborationBusy(false);
+    }
+  };
+
   const joinCollaborationFromDialog = async () => {
     const token = joinTokenDraft.trim();
     if (!token || joinCollaborationBusy) {
@@ -10260,6 +10295,7 @@ ${macroEnd}
         }}
         onDisplayNameChange={handleCollaborationDisplayNameChange}
         onJoin={() => void joinCollaborationFromDialog()}
+        onRegenerate={() => void regenerateCollaborationLink()}
         onClose={() => setShareDialogOpen(false)}
         onUpdatePermission={handleUpdatePermission}
         onRemoveCollaborator={handleRemoveCollaborator}
