@@ -141,20 +141,21 @@ The downloads page also publishes an all-release tag index at
 `https://latexdo.org/downloads/` and `https://latexdo.org/downloads/releases.json`.
 
 Production publication requires `LATEXDO_WEBSITE_TOKEN`. macOS release
-publication also requires Apple signing and notarization secrets:
-`MACOS_CERTIFICATE_P12` or legacy `CSC_LINK`, `MACOS_CERTIFICATE_PASSWORD` or
-legacy `CSC_KEY_PASSWORD`, `APPLE_API_KEY_P8`, `APPLE_API_KEY_ID`,
-`APPLE_API_ISSUER`, and `APPLE_TEAM_ID`; `APPLE_API_KEY_P8` must be the
-base64-encoded `.p8` key content. If any are missing, the release workflow fails
-instead of publishing a Gatekeeper-rejected DMG. Windows signing secrets are
-optional: when they are missing, the workflow publishes an unsigned Windows
-installer. `LATEXDO_UPDATE_SIGNING_KEY` is optional for downloads publication:
-when it is missing, the workflow updates `downloads/` and leaves `updates/`
-unchanged. When present, the secret must be the base64-encoded PEM private key
-matching `build/update-public-key.pem`, and the workflow publishes the signed
-app update feed. The release workflow commits only `downloads/` and optionally
-`updates/` to `latexdo/latexdo.org`; normal website pages, CLI scripts, and
-direct site deployment stay out of that path.
+publication uses Apple signing and notarization when these secrets are
+configured: `MACOS_CERTIFICATE_P12` or legacy `CSC_LINK`,
+`MACOS_CERTIFICATE_PASSWORD` or legacy `CSC_KEY_PASSWORD`, `APPLE_API_KEY_P8`,
+`APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, and `APPLE_TEAM_ID`; `APPLE_API_KEY_P8`
+must be the base64-encoded `.p8` key content. When any are missing, the release
+workflow publishes an ad-hoc signed macOS DMG instead. Users may need to approve
+that build from macOS Privacy & Security settings before launching it. Windows
+signing secrets are optional: when they are missing, the workflow publishes an
+unsigned Windows installer. `LATEXDO_UPDATE_SIGNING_KEY` is optional for
+downloads publication: when it is missing, the workflow updates `downloads/` and
+leaves `updates/` unchanged. When present, the secret must be the base64-encoded
+PEM private key matching `build/update-public-key.pem`, and the workflow
+publishes the signed app update feed. The release workflow commits only
+`downloads/` and optionally `updates/` to `latexdo/latexdo.org`; normal website
+pages, CLI scripts, and direct site deployment stay out of that path.
 
 The standalone website and downstream publication workflows require
 `LATEXDO_WEBSITE_TOKEN`. The token pushes the generated static site to
