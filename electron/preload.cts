@@ -148,6 +148,67 @@ function isCloudProject(projectId: string): boolean {
   );
 }
 
+const desktopTextFileExtensions = new Set([
+  ".tex",
+  ".bib",
+  ".sty",
+  ".cls",
+  ".asy",
+  ".txt",
+  ".md",
+  ".json",
+]);
+const desktopAssetFileExtensions = new Set([".png", ".jpg", ".jpeg", ".svg", ".pdf"]);
+
+function isSafeDesktopProjectId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim() !== "" &&
+    !/[\u0000-\u001f\u007f]/.test(value)
+  );
+}
+
+function isSafeDesktopRelativePath(
+  value: unknown,
+  allowedExtensions?: ReadonlySet<string>,
+): value is string {
+  if (typeof value !== "string") return false;
+  const normalized = value.replaceAll("\\", "/").replace(/\/+/g, "/");
+  if (
+    !normalized ||
+    normalized.startsWith("/") ||
+    /^[A-Za-z]:/.test(normalized) ||
+    /^[a-z][a-z0-9+.-]*:/i.test(normalized) ||
+    /[\u0000-\u001f\u007f]/.test(normalized)
+  ) {
+    return false;
+  }
+
+  const segments = normalized.split("/");
+  if (
+    segments.some(
+      (segment) =>
+        !segment ||
+        segment === "." ||
+        segment === ".." ||
+        segment === ".git" ||
+        segment === "node_modules",
+    )
+  ) {
+    return false;
+  }
+
+  if (!allowedExtensions) return true;
+  const extensionIndex = normalized.lastIndexOf(".");
+  const extension =
+    extensionIndex >= 0 ? normalized.slice(extensionIndex).toLowerCase() : "";
+  return allowedExtensions.has(extension);
+}
+
+function invalidDesktopApiInput(action: string): Promise<never> {
+  return Promise.reject(new Error(`Invalid desktop API input for ${action}.`));
+}
+
 function cloudApiUrl(path: string): string {
   return new URL(path, collaborationApiBaseUrl).toString();
 }
@@ -535,7 +596,10 @@ const api = {
           {},
           cloudShareTokenForProject(projectId),
         ).then((body) => body.content)
-      : ipcRenderer.invoke("file:read", projectId, relativePath),
+      : isSafeDesktopProjectId(projectId) &&
+          isSafeDesktopRelativePath(relativePath, desktopTextFileExtensions)
+        ? ipcRenderer.invoke("file:read", projectId, relativePath)
+        : invalidDesktopApiInput("readFile"),
   readAsset: (projectId: string, relativePath: string): Promise<Uint8Array> =>
     isCloudProject(projectId)
       ? cloudRequestJson<{ content: string }>(
@@ -543,7 +607,10 @@ const api = {
           {},
           cloudShareTokenForProject(projectId),
         ).then((body) => new TextEncoder().encode(body.content))
-      : ipcRenderer.invoke("asset:read", projectId, relativePath),
+      : isSafeDesktopProjectId(projectId) &&
+          isSafeDesktopRelativePath(relativePath, desktopAssetFileExtensions)
+        ? ipcRenderer.invoke("asset:read", projectId, relativePath)
+        : invalidDesktopApiInput("readAsset"),
   writeFile: (
     projectId: string,
     relativePath: string,
@@ -566,7 +633,9 @@ const api = {
           {},
           cloudShareTokenForProject(projectId),
         ).then((body) => body.exists)
-      : ipcRenderer.invoke("file:exists", projectId, relativePath),
+      : isSafeDesktopProjectId(projectId) && isSafeDesktopRelativePath(relativePath)
+        ? ipcRenderer.invoke("file:exists", projectId, relativePath)
+        : Promise.resolve(false),
   createFile: (projectId: string, relativePath: string): Promise<string> =>
     isCloudProject(projectId)
       ? cloudRequestJson<{ relativePath: string }>(

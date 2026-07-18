@@ -32,15 +32,17 @@ vi.mock("@monaco-editor/react", async () => {
 
   return {
     default: ({
+      defaultValue,
       value,
       onChange,
     }: {
+      defaultValue?: string;
       value?: string;
       onChange?: (value: string) => void;
     }) =>
       React.createElement("textarea", {
         "aria-label": "mock editor",
-        value: value ?? "",
+        value: value ?? defaultValue ?? "",
         onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) =>
           onChange?.(event.currentTarget.value),
       }),
@@ -59,15 +61,17 @@ vi.mock("./components/MonacoEditor", async () => {
 
   return {
     MonacoEditor: ({
+      defaultValue,
       value,
       onChange,
     }: {
+      defaultValue?: string;
       value?: string;
       onChange?: (value: string) => void;
     }) =>
       React.createElement("textarea", {
         "aria-label": "mock editor",
-        value: value ?? "",
+        value: value ?? defaultValue ?? "",
         onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) =>
           onChange?.(event.currentTarget.value),
       }),
