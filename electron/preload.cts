@@ -768,9 +768,7 @@ const api = {
     const cloudProject = await uploadLocalProjectToCloud(projectId);
     return cloudCreateShare(cloudProject.id);
   },
-  rotateCollaborationLink: async (
-    projectId: string,
-  ): Promise<CollaborationState> => {
+  rotateCollaborationLink: async (projectId: string): Promise<CollaborationState> => {
     if (!isCloudProject(projectId)) {
       throw new Error("This project has not been shared yet");
     }

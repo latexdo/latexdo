@@ -4952,13 +4952,17 @@ ${macroEnd}
         await copyToClipboard(tokenOrUrl);
         setCollaborationCopied(true);
         window.setTimeout(() => setCollaborationCopied(false), 1800);
-        setStatusMessage("New collaboration link copied. The old link no longer works.");
+        setStatusMessage(
+          "New collaboration link copied. The old link no longer works.",
+        );
       } else {
         setStatusMessage("Collaboration link regenerated.");
       }
     } catch (error) {
       setStatusMessage(
-        error instanceof Error ? error.message : "Could not regenerate collaboration link",
+        error instanceof Error
+          ? error.message
+          : "Could not regenerate collaboration link",
       );
     } finally {
       setCollaborationBusy(false);
