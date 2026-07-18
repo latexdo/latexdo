@@ -143,10 +143,8 @@ jobs:
           done
 
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::warning::Publishing an unsigned macOS build. Missing signing/notarization secrets: ${missing[*]}"
-            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
-            echo "signed=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "::error::Refusing to publish an unsigned macOS build. Missing signing/notarization secrets: ${missing[*]}"
+            exit 1
           fi
 
           api_key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
@@ -176,14 +174,9 @@ jobs:
             --mac dmg zip
             --${{ matrix.arch }}
             --publish never
+            --config.forceCodeSigning=true
             --config.directories.output=release/${{ matrix.arch }}
           )
-
-          if [ "${{ steps.macos_signing.outputs.signed }}" = "true" ]; then
-            builder_args+=(--config.forceCodeSigning=true)
-          else
-            builder_args+=(--config.mac.notarize=false)
-          fi
 
           npx electron-builder "${builder_args[@]}"
 
@@ -206,7 +199,6 @@ jobs:
           cp "$pkg" "artifacts/${{ matrix.asset }}"
 
       - name: Verify Gatekeeper acceptance
-        if: ${{ steps.macos_signing.outputs.signed == 'true' }}
         run: >
           bash scripts/verify-macos-release.sh
           "artifacts/${{ matrix.asset }}"
