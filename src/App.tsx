@@ -289,6 +289,7 @@ import { useProofreading } from "./features/proofreading/useProofreading";
 import { wordColumn } from "./features/pdf/sync";
 import {
   formatUpdateDate,
+  formatUpdateLocation,
   formatUpdateProgress,
   updateCheckIntervalMs,
 } from "./features/pdf/updateFormatting";
@@ -6002,6 +6003,8 @@ ${macroEnd}
           current && current !== result.latestVersion ? null : current,
         );
         setStatusMessage(`LatexDo ${result.latestVersion} is available.`);
+      } else if (!options?.silent) {
+        setStatusMessage(`LatexDo ${result.currentVersion} is up to date.`);
       }
     } catch (error) {
       const message =
@@ -6079,8 +6082,13 @@ ${macroEnd}
       }
 
       if (result.opened && result.latestVersion) {
+        const manualDownload = result.manualDownload === true;
         setUpdateProgress((current) => ({
-          status: result.restartScheduled ? "restarting" : "opening",
+          status: result.restartScheduled
+            ? "restarting"
+            : manualDownload
+              ? "done"
+              : "opening",
           currentVersion: result.currentVersion,
           latestVersion: result.latestVersion,
           fileName: current?.fileName ?? null,
@@ -6088,12 +6096,18 @@ ${macroEnd}
           transferredBytes: current?.transferredBytes ?? 1,
           totalBytes: current?.totalBytes ?? 1,
           percent: current?.percent ?? 100,
-          message: result.restartScheduled ? "Restarting LatexDo" : "Opened installer",
+          message: result.restartScheduled
+            ? "Restarting LatexDo"
+            : manualDownload
+              ? "Opened downloads page"
+              : "Opened installer",
         }));
         setStatusMessage(
           result.restartScheduled
             ? `Restarting LatexDo to finish ${result.latestVersion}.`
-            : `Opened LatexDo ${result.latestVersion} installer.`,
+            : manualDownload
+              ? `Opened LatexDo ${result.latestVersion} downloads.`
+              : `Opened LatexDo ${result.latestVersion} installer.`,
         );
       } else if (result.latestVersion) {
         setUpdateProgress((current) => ({
@@ -6391,6 +6405,7 @@ ${macroEnd}
         releaseUrl: current?.releaseUrl ?? null,
         updateAvailable:
           progress.status === "done" ? false : (current?.updateAvailable ?? false),
+        automaticInstallAvailable: current?.automaticInstallAvailable,
         publishedAt: current?.publishedAt,
         channel: current?.channel,
         manifestUrl: current?.manifestUrl,
@@ -7625,13 +7640,26 @@ ${macroEnd}
   );
   const updatePublishedLabel = formatUpdateDate(updateInfo?.publishedAt);
   const updateCheckedLabel = formatUpdateDate(updateInfo?.checkedAt);
+  const updateLocationLabel = formatUpdateLocation(updateInfo?.releaseUrl);
   const currentBuildVersion =
     updateProgress?.currentVersion ?? updateInfo?.currentVersion ?? "Unknown";
   const latestBuildVersion =
     updateProgress?.latestVersion ?? updateInfo?.latestVersion ?? null;
-  const updateBuildSummary = latestBuildVersion
+  const updateHasResult = Boolean(updateInfo || updateProgress);
+  const updateHasAvailableBuild = Boolean(
+    updateInfo?.updateAvailable && latestBuildVersion,
+  );
+  const updateBuildSummary = updateHasAvailableBuild
     ? `Current build ${currentBuildVersion}. Available build ${latestBuildVersion}.`
-    : `Current build ${currentBuildVersion}.`;
+    : updateHasResult && !updateInfo?.error && currentBuildVersion !== "Unknown"
+      ? `Current build ${currentBuildVersion}. You are up to date.`
+      : `Current build ${currentBuildVersion}.`;
+  const updateActionText =
+    updateInfo?.updateAvailable && updateInfo.automaticInstallAvailable === false
+      ? "Open update"
+      : updateInfo?.updateAvailable
+        ? "Install update"
+        : "Update manually";
   const updateProgressLabel = updateProgress
     ? formatUpdateProgress(updateProgress)
     : null;
@@ -10024,8 +10052,12 @@ ${macroEnd}
                 {updateProgressActive && updateProgressLabel
                   ? updateProgressLabel
                   : updatePublishedLabel
-                    ? `Published ${updatePublishedLabel}. Update now or open downloads from Settings.`
-                    : "Update now or open downloads from Settings."}
+                    ? `Published ${updatePublishedLabel}${
+                        updateLocationLabel ? ` at ${updateLocationLabel}` : ""
+                      }.`
+                    : updateLocationLabel
+                      ? `Available at ${updateLocationLabel}.`
+                      : "Update now or open downloads from Settings."}
               </small>
               <small className="update-build-meta">{updateBuildSummary}</small>
               {updateProgressActive ? (
@@ -10065,7 +10097,11 @@ ${macroEnd}
               ) : (
                 <Download size={13} />
               )}
-              {updatingNow ? "Updating…" : "Update now"}
+              {updatingNow
+                ? "Updating…"
+                : updateInfo?.automaticInstallAvailable === false
+                  ? "Open update"
+                  : "Update now"}
             </button>
             <button
               type="button"
@@ -10097,7 +10133,11 @@ ${macroEnd}
               ) : (
                 <Download size={13} />
               )}
-              {updatingNow ? "Updating" : `Update ${updateInfo.latestVersion}`}
+              {updatingNow
+                ? "Updating"
+                : updateInfo.automaticInstallAvailable === false
+                  ? `Open ${updateInfo.latestVersion}`
+                  : `Update ${updateInfo.latestVersion}`}
             </button>
           ) : null}
           <button onClick={() => openPanel("problems")}>
@@ -12004,14 +12044,19 @@ ${macroEnd}
                               : updateInfo?.error
                                 ? updateInfo.error
                                 : updateInfo?.updateAvailable
-                                  ? `Version ${updateInfo.latestVersion} is available. You are on ${updateInfo.currentVersion}.`
-                                  : updateInfo?.latestVersion
-                                    ? `You are up to date on version ${updateInfo.currentVersion}.`
+                                  ? `Version ${updateInfo.latestVersion} is available. Current build ${updateInfo.currentVersion}.`
+                                  : updateInfo
+                                    ? `You are up to date. Current build ${updateInfo.currentVersion}.`
                                     : "No manual check has been run in this session."}
                       </small>
                       <small className="settings-update-meta">
                         {updateBuildSummary}
                       </small>
+                      {updateLocationLabel ? (
+                        <small className="settings-update-meta">
+                          Updates at {updateLocationLabel}.
+                        </small>
+                      ) : null}
                       {updateCheckedLabel || updatePublishedLabel ? (
                         <small className="settings-update-meta">
                           {updateCheckedLabel
@@ -12069,11 +12114,7 @@ ${macroEnd}
                         ) : (
                           <Download size={13} />
                         )}
-                        {updatingNow
-                          ? "Updating…"
-                          : updateInfo?.updateAvailable
-                            ? "Install update"
-                            : "Update manually"}
+                        {updatingNow ? "Updating…" : updateActionText}
                       </button>
                       <button
                         type="button"

@@ -13,6 +13,16 @@ export function formatUpdateDate(value?: string | null): string | null {
   });
 }
 
+export function formatUpdateLocation(value?: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return `${url.hostname}${url.pathname}`;
+  } catch {
+    return null;
+  }
+}
+
 export function formatUpdateBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB"];

@@ -373,6 +373,12 @@ interface WebsiteUpdateFile {
   sha256: string;
 }
 
+interface ResolvedWebsiteUpdate {
+  result: UpdateCheckResult;
+  files: WebsiteUpdateFile[];
+  automaticInstallTrusted: boolean;
+}
+
 interface StoredPrivacyConsent {
   schemaVersion?: unknown;
   acceptedAt?: unknown;
@@ -2406,6 +2412,33 @@ function updateResultFromWebsitePayload(
   };
 }
 
+function updateResultFromDownloadsManifestPayload(
+  payload: WebsiteUpdatePayload,
+  currentVersion: string,
+): UpdateCheckResult {
+  if (payload.schemaVersion !== 1 || payload.product !== "LatexDo") {
+    throw new Error("Website downloads manifest is not a LatexDo manifest.");
+  }
+
+  const manifestVersion = payloadString(payload.version)?.replace(/^v/i, "") ?? null;
+  const comparison = manifestVersion
+    ? compareVersions(manifestVersion, currentVersion)
+    : 0;
+  const updateAvailable = comparison > 0;
+  const latestVersion = updateAvailable ? manifestVersion : currentVersion;
+
+  return {
+    currentVersion,
+    latestVersion,
+    releaseUrl: safeDownloadsUrl(payloadString(payload.downloadsPage)),
+    updateAvailable,
+    automaticInstallAvailable: false,
+    publishedAt: payloadString(payload.publishedAt),
+    manifestUrl: downloadsManifestUrl,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
 const updateFeedFetchTimeoutMs = 15_000;
 const maxUpdateFeedBytes = 1024 * 1024;
 const updateFeedClockSkewMs = 10 * 60 * 1_000;
@@ -2648,6 +2681,36 @@ async function fetchWebsiteUpdateJson(
   }
 }
 
+async function fetchWebsiteDownloadsManifestJson(
+  url: string,
+  headers: Record<string, string>,
+): Promise<WebsiteUpdatePayload> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), updateFeedFetchTimeoutMs);
+
+  try {
+    const response = await fetch(url, { headers, signal: controller.signal });
+
+    if (!response.ok) {
+      throw new Error(`${url} returned ${response.status}`);
+    }
+
+    const body = await response.text();
+    if (body.length > maxUpdateFeedBytes) {
+      throw new Error(`${url} returned a downloads manifest that is too large.`);
+    }
+
+    return JSON.parse(body) as WebsiteUpdatePayload;
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`${url} timed out while checking for updates.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchExtensionStoreCatalogJson(): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), extensionCatalogFetchTimeoutMs);
@@ -2675,11 +2738,68 @@ async function fetchWebsiteUpdatePayload(
   url: string,
   currentVersion: string,
   headers: Record<string, string>,
-): Promise<UpdateCheckResult> {
-  return updateResultFromWebsitePayload(
-    await fetchWebsiteUpdateJson(url, headers),
-    currentVersion,
+): Promise<ResolvedWebsiteUpdate> {
+  const payload = await fetchWebsiteUpdateJson(url, headers);
+  const files = updateFilesFromPayload(payload.files);
+  const result = updateResultFromWebsitePayload(payload, currentVersion);
+  return {
+    result: {
+      ...result,
+      automaticInstallAvailable:
+        result.updateAvailable && selectUpdateFile(files) !== null,
+    },
+    files,
+    automaticInstallTrusted: true,
+  };
+}
+
+async function fetchDownloadsManifestUpdatePayload(
+  currentVersion: string,
+  headers: Record<string, string>,
+): Promise<ResolvedWebsiteUpdate> {
+  const payload = await fetchWebsiteDownloadsManifestJson(
+    downloadsManifestUrl,
+    headers,
   );
+  return {
+    result: updateResultFromDownloadsManifestPayload(payload, currentVersion),
+    files: updateFilesFromPayload(payload.files),
+    automaticInstallTrusted: false,
+  };
+}
+
+async function resolveWebsiteUpdate(
+  currentVersion: string,
+  headers: Record<string, string>,
+): Promise<ResolvedWebsiteUpdate> {
+  const errors: string[] = [];
+
+  try {
+    return await fetchWebsiteUpdatePayload(updatesFeedUrl, currentVersion, headers);
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  }
+
+  try {
+    return await fetchDownloadsManifestUpdatePayload(currentVersion, headers);
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  }
+
+  return {
+    result: {
+      currentVersion,
+      latestVersion: null,
+      releaseUrl: downloadsPageUrl,
+      updateAvailable: false,
+      automaticInstallAvailable: false,
+      manifestUrl: downloadsManifestUrl,
+      checkedAt: new Date().toISOString(),
+      error: errors.join(" ") || "Update check failed",
+    },
+    files: [],
+    automaticInstallTrusted: false,
+  };
 }
 
 async function checkForUpdates(): Promise<UpdateCheckResult> {
@@ -2688,25 +2808,7 @@ async function checkForUpdates(): Promise<UpdateCheckResult> {
     Accept: "application/json",
     "User-Agent": `latexdo/${currentVersion}`,
   };
-  const errors: string[] = [];
-
-  for (const url of [updatesFeedUrl]) {
-    try {
-      return await fetchWebsiteUpdatePayload(url, currentVersion, requestHeaders);
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  return {
-    currentVersion,
-    latestVersion: null,
-    releaseUrl: downloadsPageUrl,
-    updateAvailable: false,
-    manifestUrl: downloadsManifestUrl,
-    checkedAt: new Date().toISOString(),
-    error: errors.join(" ") || "Update check failed",
-  };
+  return (await resolveWebsiteUpdate(currentVersion, requestHeaders)).result;
 }
 
 async function sha256File(filePath: string): Promise<string> {
@@ -2879,7 +2981,6 @@ async function updateNow(
     Accept: "application/json",
     "User-Agent": `latexdo/${currentVersion}`,
   };
-  const errors: string[] = [];
 
   onProgress?.(
     updateProgressPayload({
@@ -2894,101 +2995,186 @@ async function updateNow(
     }),
   );
 
-  for (const url of [updatesFeedUrl]) {
-    try {
-      const payload = await fetchWebsiteUpdateJson(url, requestHeaders);
-      const result = updateResultFromWebsitePayload(payload, currentVersion);
+  let result: UpdateCheckResult = {
+    currentVersion,
+    latestVersion: null,
+    releaseUrl: downloadsPageUrl,
+    updateAvailable: false,
+    automaticInstallAvailable: false,
+    manifestUrl: downloadsManifestUrl,
+    checkedAt: new Date().toISOString(),
+  };
 
-      if (!result.updateAvailable) {
-        onProgress?.(
-          updateProgressPayload({
-            status: "done",
-            currentVersion,
-            latestVersion: result.latestVersion,
-            fileName: null,
-            fileLabel: null,
-            transferredBytes: 0,
-            totalBytes: null,
-            message: `Current build ${currentVersion} is up to date.`,
-          }),
-        );
-        return {
-          ...result,
-          installerPath: null,
-          opened: false,
-          restartScheduled: false,
-        };
-      }
+  try {
+    const resolved = await resolveWebsiteUpdate(currentVersion, requestHeaders);
+    result = resolved.result;
 
-      const updateFile = selectUpdateFile(updateFilesFromPayload(payload.files));
-      if (!updateFile) {
-        throw new Error(
-          `No LatexDo ${result.latestVersion ?? "update"} installer is available for ${currentUpdatePlatform()} ${currentUpdateArch()}.`,
-        );
-      }
-
-      const installerPath = await downloadUpdateInstaller(
-        updateFile,
-        currentVersion,
-        result.latestVersion,
-        onProgress,
+    if (result.error) {
+      onProgress?.(
+        updateProgressPayload({
+          status: "error",
+          currentVersion,
+          latestVersion: result.latestVersion,
+          fileName: null,
+          fileLabel: null,
+          transferredBytes: 0,
+          totalBytes: null,
+          message: result.error,
+        }),
       );
+      return {
+        ...result,
+        installerPath: null,
+        opened: false,
+        restartScheduled: false,
+        manualDownload: false,
+      };
+    }
+
+    if (!result.updateAvailable) {
+      onProgress?.(
+        updateProgressPayload({
+          status: "done",
+          currentVersion,
+          latestVersion: result.latestVersion,
+          fileName: null,
+          fileLabel: null,
+          transferredBytes: 0,
+          totalBytes: null,
+          message: `Current build ${currentVersion} is up to date.`,
+        }),
+      );
+      return {
+        ...result,
+        installerPath: null,
+        opened: false,
+        restartScheduled: false,
+        manualDownload: false,
+      };
+    }
+
+    if (!resolved.automaticInstallTrusted) {
+      const releaseUrl = safeDownloadsUrl(result.releaseUrl);
       onProgress?.(
         updateProgressPayload({
           status: "opening",
           currentVersion,
           latestVersion: result.latestVersion,
-          fileName: updateFile.filename,
-          fileLabel: updateFile.label,
+          fileName: null,
+          fileLabel: null,
           transferredBytes: 1,
           totalBytes: 1,
-          message: "Opening installer",
+          message: "Opening downloads page",
         }),
       );
-      const openError = await shell.openPath(installerPath);
-      if (openError) {
-        throw new Error(
-          `Downloaded update installer but could not open it: ${openError}`,
-        );
-      }
-      onProgress?.(
-        updateProgressPayload({
-          status: "restarting",
-          currentVersion,
-          latestVersion: result.latestVersion,
-          fileName: updateFile.filename,
-          fileLabel: updateFile.label,
-          transferredBytes: 1,
-          totalBytes: 1,
-          message: "Restarting LatexDo",
-        }),
-      );
-      scheduleApplicationRestart();
-
+      await shell.openExternal(releaseUrl);
       return {
         ...result,
-        installerPath,
+        automaticInstallAvailable: false,
+        releaseUrl,
+        installerPath: null,
         opened: true,
-        restartScheduled: true,
+        restartScheduled: false,
+        manualDownload: true,
       };
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
     }
-  }
 
-  onProgress?.(
-    updateProgressPayload({
-      status: "error",
+    const updateFile = selectUpdateFile(resolved.files);
+    if (!updateFile) {
+      const releaseUrl = safeDownloadsUrl(result.releaseUrl);
+      onProgress?.(
+        updateProgressPayload({
+          status: "opening",
+          currentVersion,
+          latestVersion: result.latestVersion,
+          fileName: null,
+          fileLabel: null,
+          transferredBytes: 1,
+          totalBytes: 1,
+          message: "Opening downloads page",
+        }),
+      );
+      await shell.openExternal(releaseUrl);
+      return {
+        ...result,
+        automaticInstallAvailable: false,
+        releaseUrl,
+        installerPath: null,
+        opened: true,
+        restartScheduled: false,
+        manualDownload: true,
+      };
+    }
+
+    const installerPath = await downloadUpdateInstaller(
+      updateFile,
       currentVersion,
-      latestVersion: null,
-      fileName: null,
-      fileLabel: null,
-      transferredBytes: 0,
-      totalBytes: null,
-      message: errors.join(" ") || "Update failed.",
-    }),
-  );
-  throw new Error(errors.join(" ") || "Update failed.");
+      result.latestVersion,
+      onProgress,
+    );
+    onProgress?.(
+      updateProgressPayload({
+        status: "opening",
+        currentVersion,
+        latestVersion: result.latestVersion,
+        fileName: updateFile.filename,
+        fileLabel: updateFile.label,
+        transferredBytes: 1,
+        totalBytes: 1,
+        message: "Opening installer",
+      }),
+    );
+    const openError = await shell.openPath(installerPath);
+    if (openError) {
+      throw new Error(
+        `Downloaded update installer but could not open it: ${openError}`,
+      );
+    }
+    onProgress?.(
+      updateProgressPayload({
+        status: "restarting",
+        currentVersion,
+        latestVersion: result.latestVersion,
+        fileName: updateFile.filename,
+        fileLabel: updateFile.label,
+        transferredBytes: 1,
+        totalBytes: 1,
+        message: "Restarting LatexDo",
+      }),
+    );
+    scheduleApplicationRestart();
+
+    return {
+      ...result,
+      automaticInstallAvailable: true,
+      installerPath,
+      opened: true,
+      restartScheduled: true,
+      manualDownload: false,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    onProgress?.(
+      updateProgressPayload({
+        status: "error",
+        currentVersion,
+        latestVersion: result.latestVersion,
+        fileName: null,
+        fileLabel: null,
+        transferredBytes: 0,
+        totalBytes: null,
+        message,
+      }),
+    );
+    return {
+      ...result,
+      error: message,
+      installerPath: null,
+      opened: false,
+      restartScheduled: false,
+      manualDownload: false,
+    };
+  }
 }
 
 async function availableImportRelativePath(

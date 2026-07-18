@@ -320,6 +320,7 @@ export interface UpdateCheckResult {
   latestVersion: string | null;
   releaseUrl: string | null;
   updateAvailable: boolean;
+  automaticInstallAvailable?: boolean;
   publishedAt?: string | null;
   channel?: string | null;
   manifestUrl?: string | null;
@@ -331,6 +332,7 @@ export interface UpdateInstallResult extends UpdateCheckResult {
   installerPath: string | null;
   opened: boolean;
   restartScheduled?: boolean;
+  manualDownload?: boolean;
 }
 
 export interface UpdateDownloadProgress {
