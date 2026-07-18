@@ -558,6 +558,10 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       throw browserUnavailable("Cloud collaboration");
     },
 
+    async rotateCollaborationLink() {
+      throw browserUnavailable("Cloud collaboration");
+    },
+
     async joinCollaboration() {
       throw browserUnavailable("Cloud collaboration");
     },

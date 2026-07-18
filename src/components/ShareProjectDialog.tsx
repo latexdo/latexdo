@@ -1,4 +1,13 @@
-import { Check, Copy, KeyRound, Link, LogIn, UserRound, X } from "lucide-react";
+import {
+  Check,
+  Copy,
+  KeyRound,
+  Link,
+  LogIn,
+  RefreshCw,
+  UserRound,
+  X,
+} from "lucide-react";
 import { CollaboratorsList } from "./CollaboratorsList";
 import { PermissionManagement } from "./PermissionManagement";
 import type {
@@ -23,6 +32,7 @@ export interface ShareProjectDialogProps {
   onJoinTokenChange: (value: string) => void;
   onDisplayNameChange: (value: string) => void;
   onJoin: () => void;
+  onRegenerate?: () => void;
   onClose: () => void;
   onUpdatePermission?: (update: PermissionUpdate) => Promise<void>;
   onRemoveCollaborator?: (clientId: string) => Promise<void>;
@@ -45,6 +55,7 @@ export function ShareProjectDialog({
   onJoinTokenChange,
   onDisplayNameChange,
   onJoin,
+  onRegenerate,
   onClose,
   onUpdatePermission,
   onRemoveCollaborator,
@@ -84,6 +95,18 @@ export function ShareProjectDialog({
             {copied ? <Check size={15} /> : <Copy size={15} />}
             {copied ? "Copied" : "Copy"}
           </button>
+          {isAdmin && onRegenerate && state.token ? (
+            <button
+              type="button"
+              className="share-regenerate-button"
+              onClick={onRegenerate}
+              disabled={busy}
+              title="Generate a new link and invalidate the current one"
+            >
+              <RefreshCw size={15} />
+              Regenerate
+            </button>
+          ) : null}
         </div>
         <div className="share-name-row">
           <UserRound size={15} />
