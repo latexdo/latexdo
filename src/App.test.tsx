@@ -870,6 +870,62 @@ describe("App critical UI controls", () => {
     });
   });
 
+  it("shows up-to-date update status with current build details", async () => {
+    installLatexDoMock({
+      updateResult: {
+        currentVersion: "0.2.0",
+        latestVersion: "0.2.0",
+        releaseUrl: "https://latexdo.org/downloads/",
+        updateAvailable: false,
+      },
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByLabelText(/open settings/i));
+    fireEvent.click(screen.getByRole("button", { name: "Updates" }));
+
+    expect(
+      await screen.findByText("You are up to date. Current build 0.2.0."),
+    ).toBeVisible();
+    expect(screen.getByText("Current build 0.2.0. You are up to date.")).toBeVisible();
+    expect(screen.getByText("Updates at latexdo.org/downloads/.")).toBeVisible();
+  });
+
+  it("opens the downloads page for manual update fallback results", async () => {
+    const updateResult: UpdateCheckResult = {
+      currentVersion: "0.2.0",
+      latestVersion: "0.3.0",
+      releaseUrl: "https://latexdo.org/downloads/v0.3.0/",
+      updateAvailable: true,
+      automaticInstallAvailable: false,
+    };
+    const api = installLatexDoMock({
+      updateResult,
+      updateNowResult: {
+        ...updateResult,
+        installerPath: null,
+        opened: true,
+        restartScheduled: false,
+        manualDownload: true,
+      },
+    });
+
+    render(<App />);
+
+    const updateButton = await screen.findByRole("button", {
+      name: /open update/i,
+    });
+    fireEvent.click(updateButton);
+
+    await waitFor(() => {
+      expect(api.updateNow).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByText("Opened LatexDo 0.3.0 downloads.")).toBeVisible();
+    expect(
+      screen.getByText("Available at latexdo.org/downloads/v0.3.0/."),
+    ).toBeVisible();
+  });
+
   it("keeps optional workbench tools hidden until their extensions are installed", async () => {
     installLatexDoMock();
 
