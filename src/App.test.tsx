@@ -27,6 +27,10 @@ import type {
   UpdateInstallResult,
 } from "./types";
 
+const editorChangeHandlers = vi.hoisted(
+  () => new Map<string, (value: string) => void>(),
+);
+
 vi.mock("@monaco-editor/react", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
 
@@ -35,17 +39,23 @@ vi.mock("@monaco-editor/react", async () => {
       defaultValue,
       value,
       onChange,
+      path,
     }: {
       defaultValue?: string;
       value?: string;
       onChange?: (value: string) => void;
-    }) =>
-      React.createElement("textarea", {
+      path?: string;
+    }) => {
+      if (path) {
+        editorChangeHandlers.set(path, (nextValue) => onChange?.(nextValue));
+      }
+      return React.createElement("textarea", {
         "aria-label": "mock editor",
         value: value ?? defaultValue ?? "",
         onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) =>
           onChange?.(event.currentTarget.value),
-      }),
+      });
+    },
     DiffEditor: () =>
       React.createElement("div", {
         "data-testid": "mock-diff-editor",
@@ -64,17 +74,23 @@ vi.mock("./components/MonacoEditor", async () => {
       defaultValue,
       value,
       onChange,
+      path,
     }: {
       defaultValue?: string;
       value?: string;
       onChange?: (value: string) => void;
-    }) =>
-      React.createElement("textarea", {
+      path?: string;
+    }) => {
+      if (path) {
+        editorChangeHandlers.set(path, (nextValue) => onChange?.(nextValue));
+      }
+      return React.createElement("textarea", {
         "aria-label": "mock editor",
         value: value ?? defaultValue ?? "",
         onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) =>
           onChange?.(event.currentTarget.value),
-      }),
+      });
+    },
     MonacoDiffEditor: () =>
       React.createElement("div", {
         "data-testid": "mock-diff-editor",
@@ -379,6 +395,7 @@ async function closeSettingsDialog() {
 
 describe("App critical UI controls", () => {
   beforeEach(() => {
+    editorChangeHandlers.clear();
     window.localStorage.clear();
     Object.defineProperty(window, "requestAnimationFrame", {
       configurable: true,
@@ -537,6 +554,51 @@ describe("App critical UI controls", () => {
     expect(
       ((await screen.findByLabelText("mock editor")) as HTMLTextAreaElement).value,
     ).toContain("Unsaved draft");
+  });
+
+  it("keeps late editor changes scoped to the tab that emitted them", async () => {
+    const api = installLatexDoMock();
+    const chapterEntry: ProjectEntry = {
+      name: "chapter.tex",
+      path: "/Users/omar/project/chapter.tex",
+      relativePath: "chapter.tex",
+      type: "file",
+    };
+    api.listProject.mockResolvedValue([entries[0], chapterEntry]);
+    api.readFile.mockImplementation(async (_projectId: string, relativePath: string) =>
+      relativePath === "chapter.tex" ? "Chapter original\n" : "Main original\n",
+    );
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    expect(await screen.findByLabelText("mock editor")).toHaveValue("Main original\n");
+
+    const chapterRow = document.querySelector(
+      '.tree-row[title="chapter.tex"]',
+    ) as HTMLButtonElement | null;
+    expect(chapterRow).not.toBeNull();
+    fireEvent.click(chapterRow as HTMLButtonElement);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("mock editor")).toHaveValue("Chapter original\n");
+    });
+
+    act(() => {
+      editorChangeHandlers.get(entries[0].path)?.("Late main edit\n");
+    });
+
+    expect(screen.getByLabelText("mock editor")).toHaveValue("Chapter original\n");
+
+    const mainTab = within(document.querySelector(".document-tabs") as HTMLElement)
+      .getAllByRole("button")
+      .find((button) => button.textContent?.includes("main.tex"));
+    expect(mainTab).toBeDefined();
+    fireEvent.click(mainTab as HTMLButtonElement);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("mock editor")).toHaveValue("Late main edit\n");
+    });
   });
 
   it("shows the main-process read refusal when opening an unsafe text file", async () => {
