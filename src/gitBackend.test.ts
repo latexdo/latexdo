@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   parseGitBlamePorcelain,
   parseGitStatusPorcelainV2,
+  readGitBlame,
   type GitRepositoryContext,
 } from "../electron/git.js";
 
@@ -102,5 +106,16 @@ describe("Git porcelain parsers", () => {
         summary: "Explain the equation",
       },
     ]);
+  });
+
+  it("returns empty blame for folders that are not git repositories", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "latexdo-non-git-"));
+    try {
+      await expect(
+        readGitBlame(directory, "main.tex", { kind: "working-tree" }),
+      ).resolves.toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

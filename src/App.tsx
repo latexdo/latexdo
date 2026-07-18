@@ -66,6 +66,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -298,6 +299,18 @@ import {
 
 type MonacoNamespace = typeof Monaco;
 let monaco = null as unknown as MonacoNamespace;
+type MonacoProviderDisposableStore = typeof globalThis & {
+  __latexdoMonacoProviderDisposables?: Monaco.IDisposable[];
+};
+
+function resetMonacoProviderDisposables(): Monaco.IDisposable[] {
+  const store = globalThis as MonacoProviderDisposableStore;
+  for (const disposable of store.__latexdoMonacoProviderDisposables ?? []) {
+    disposable.dispose();
+  }
+  store.__latexdoMonacoProviderDisposables = [];
+  return store.__latexdoMonacoProviderDisposables;
+}
 
 type PanelKind =
   | "problems"
@@ -323,6 +336,180 @@ type LatexToolbarCommand =
   | "ref"
   | "href"
   | "formatTable";
+
+type PendingSourceLocation = {
+  path: string;
+  line: number;
+  column: number;
+  endLine?: number;
+  endColumn?: number;
+  word?: string;
+};
+
+function clampModelLine(model: Monaco.editor.ITextModel, lineNumber: number): number {
+  const safeLine = Number.isFinite(lineNumber) ? Math.floor(lineNumber) : 1;
+  return Math.min(Math.max(1, safeLine), model.getLineCount());
+}
+
+function clampModelColumn(
+  model: Monaco.editor.ITextModel,
+  lineNumber: number,
+  column: number,
+): number {
+  const safeColumn = Number.isFinite(column) ? Math.floor(column) : 1;
+  return Math.min(Math.max(1, safeColumn), model.getLineMaxColumn(lineNumber));
+}
+
+function modelRange(
+  model: Monaco.editor.ITextModel,
+  startLineNumber: number,
+  startColumn: number,
+  endLineNumber: number,
+  endColumn: number,
+): Monaco.IRange {
+  const startLine = clampModelLine(model, startLineNumber);
+  const endLine = clampModelLine(model, endLineNumber);
+  const orderedEndLine = Math.max(startLine, endLine);
+  const start = clampModelColumn(model, startLine, startColumn);
+  let end =
+    orderedEndLine === startLine
+      ? clampModelColumn(model, startLine, Math.max(start, endColumn))
+      : clampModelColumn(model, orderedEndLine, endColumn);
+
+  if (orderedEndLine === startLine && end <= start) {
+    end = Math.min(model.getLineMaxColumn(startLine), start + 1);
+  }
+
+  return {
+    startLineNumber: startLine,
+    startColumn: start,
+    endLineNumber: orderedEndLine,
+    endColumn: end,
+  };
+}
+
+function sourceSelectionRange(
+  model: Monaco.editor.ITextModel,
+  pending: PendingSourceLocation,
+): Monaco.IRange {
+  const line = clampModelLine(model, pending.line);
+  const column = clampModelColumn(model, line, pending.column);
+
+  if (pending.word) {
+    const match = wordColumn(model.getLineContent(line), pending.word, column);
+    if (match.length > 0) {
+      return modelRange(model, line, match.column, line, match.column + match.length);
+    }
+  }
+
+  if (pending.endLine !== undefined || pending.endColumn !== undefined) {
+    return modelRange(
+      model,
+      line,
+      column,
+      pending.endLine ?? line,
+      pending.endColumn ?? column + 1,
+    );
+  }
+
+  const wordAtColumn = model.getWordAtPosition({ lineNumber: line, column });
+  if (wordAtColumn) {
+    return modelRange(
+      model,
+      line,
+      wordAtColumn.startColumn,
+      line,
+      wordAtColumn.endColumn,
+    );
+  }
+
+  const lineContent = model.getLineContent(line);
+  const firstTextIndex = lineContent.search(/\S/);
+  if (firstTextIndex >= 0) {
+    return modelRange(
+      model,
+      line,
+      firstTextIndex + 1,
+      line,
+      model.getLineMaxColumn(line),
+    );
+  }
+
+  return modelRange(model, line, column, line, column + 1);
+}
+
+function completionRangeAtPosition(
+  model: Monaco.editor.ITextModel,
+  position: Monaco.Position,
+  completion: { rangeStartColumn: number; rangeEndColumn: number },
+): Monaco.IRange {
+  return modelRange(
+    model,
+    position.lineNumber,
+    completion.rangeStartColumn,
+    position.lineNumber,
+    completion.rangeEndColumn,
+  );
+}
+
+function isSafeIpcProjectId(value: string): boolean {
+  return Boolean(value.trim()) && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+function isSafeIpcRelativePath(
+  filePath: string,
+  allowedExtensions?: readonly string[],
+): boolean {
+  const normalized = normalizeRelativePath(filePath).replace(/\/+/g, "/");
+  if (
+    !normalized ||
+    normalized.startsWith("/") ||
+    /^[A-Za-z]:/.test(normalized) ||
+    /^[a-z][a-z0-9+.-]*:/i.test(normalized) ||
+    /[\u0000-\u001f\u007f]/.test(normalized)
+  ) {
+    return false;
+  }
+
+  const segments = normalized.split("/");
+  if (
+    segments.some(
+      (segment) =>
+        !segment ||
+        segment === "." ||
+        segment === ".." ||
+        segment === ".git" ||
+        segment === "node_modules",
+    )
+  ) {
+    return false;
+  }
+
+  if (!allowedExtensions) {
+    return true;
+  }
+  const lowerPath = normalized.toLowerCase();
+  return allowedExtensions.some((extension) => lowerPath.endsWith(extension));
+}
+
+function clampSelectionToModel(
+  model: Monaco.editor.ITextModel,
+  selection: Monaco.Selection,
+): Monaco.ISelection {
+  const startLine = clampModelLine(model, selection.selectionStartLineNumber);
+  const positionLine = clampModelLine(model, selection.positionLineNumber);
+
+  return {
+    selectionStartLineNumber: startLine,
+    selectionStartColumn: clampModelColumn(
+      model,
+      startLine,
+      selection.selectionStartColumn,
+    ),
+    positionLineNumber: positionLine,
+    positionColumn: clampModelColumn(model, positionLine, selection.positionColumn),
+  };
+}
 
 function AppIcon({ className }: { className?: string }) {
   return (
@@ -634,14 +821,7 @@ export default function App() {
   const forwardSyncRef = useRef<((position: Monaco.Position) => Promise<void>) | null>(
     null,
   );
-  const pendingSourceRef = useRef<{
-    path: string;
-    line: number;
-    column: number;
-    endLine?: number;
-    endColumn?: number;
-    word?: string;
-  } | null>(null);
+  const pendingSourceRef = useRef<PendingSourceLocation | null>(null);
   const sourceSyncDecorationsRef = useRef<string[]>([]);
   const sourceSyncClearTimerRef = useRef<number | null>(null);
   const bookmarkDecorationsRef = useRef<string[]>([]);
@@ -2436,29 +2616,7 @@ ${macroEnd}
       return false;
     }
 
-    const line = Math.min(Math.max(1, pending.line), model.getLineCount());
-    const lineLength = model.getLineLength(line);
-    const match = pending.word
-      ? wordColumn(model.getLineContent(line), pending.word, pending.column)
-      : {
-          column: Math.min(Math.max(1, pending.column), lineLength + 1),
-          length: Math.max(
-            1,
-            (pending.endColumn ?? pending.column + 1) - pending.column,
-          ),
-        };
-    const endLine = Math.min(
-      Math.max(line, pending.endLine ?? line),
-      model.getLineCount(),
-    );
-    const endColumn =
-      endLine === line
-        ? Math.min(lineLength + 1, match.column + match.length)
-        : Math.min(
-            model.getLineLength(endLine) + 1,
-            Math.max(1, pending.endColumn ?? 1),
-          );
-    const range = new monaco.Range(line, match.column, endLine, endColumn);
+    const range = sourceSelectionRange(model, pending);
     editor.setSelection(range);
     editor.revealRangeInCenter(range, monaco.editor.ScrollType.Smooth);
     editor.focus();
@@ -3314,6 +3472,7 @@ ${macroEnd}
 
   const configureMonaco: BeforeMount = (instance) => {
     monaco = instance;
+    const providerDisposables = resetMonacoProviderDisposables();
 
     if (!instance.languages.getLanguages().some(({ id }) => id === "latex")) {
       instance.languages.register({
@@ -3359,31 +3518,35 @@ ${macroEnd}
         { open: "$", close: "$" },
       ],
     });
-    instance.languages.registerFoldingRangeProvider("latex", {
-      provideFoldingRanges: (model) =>
-        buildLatexFoldingRanges(model.getValue()).map((range) => ({
-          start: range.start,
-          end: range.end,
-          kind:
-            range.kind === "comment"
-              ? instance.languages.FoldingRangeKind.Comment
-              : instance.languages.FoldingRangeKind.Region,
-        })),
-    });
-    instance.languages.registerLinkProvider("latex", {
-      provideLinks: (model) => ({
-        links: findLatexDocumentLinks(model.getValue()).map((link) => ({
-          range: new instance.Range(
-            link.startLine,
-            link.startColumn,
-            link.endLine,
-            link.endColumn,
-          ),
-          url: link.url,
-          tooltip: `Open ${link.url}`,
-        })),
+    providerDisposables.push(
+      instance.languages.registerFoldingRangeProvider("latex", {
+        provideFoldingRanges: (model) =>
+          buildLatexFoldingRanges(model.getValue()).map((range) => ({
+            start: range.start,
+            end: range.end,
+            kind:
+              range.kind === "comment"
+                ? instance.languages.FoldingRangeKind.Comment
+                : instance.languages.FoldingRangeKind.Region,
+          })),
       }),
-    });
+    );
+    providerDisposables.push(
+      instance.languages.registerLinkProvider("latex", {
+        provideLinks: (model) => ({
+          links: findLatexDocumentLinks(model.getValue()).map((link) => ({
+            range: new instance.Range(
+              link.startLine,
+              link.startColumn,
+              link.endLine,
+              link.endColumn,
+            ),
+            url: link.url,
+            tooltip: `Open ${link.url}`,
+          })),
+        }),
+      }),
+    );
     instance.languages.setMonarchTokensProvider("asymptote", {
       tokenizer: {
         root: [
@@ -3424,335 +3587,393 @@ ${macroEnd}
         { open: '"', close: '"' },
       ],
     });
-    instance.languages.registerCompletionItemProvider("asymptote", {
-      triggerCharacters: ["(", "."],
-      provideCompletionItems: (model, position) => {
-        const word = model.getWordUntilPosition(position);
-        const range = {
-          startLineNumber: position.lineNumber,
-          endLineNumber: position.lineNumber,
-          startColumn: word.startColumn,
-          endColumn: word.endColumn,
-        };
-        return {
-          suggestions: [
-            ["size", "size(${1:6cm});"],
-            ["draw", "draw((${1:0,0})--(${2:1,1}), ${3:blue});"],
-            ["fill", "fill(${1:unitcircle}, ${2:lightgray});"],
-            ["label", 'label("${1:text}", (${2:0,0}), ${3:N});'],
-            ["pair", "pair ${1:p} = (${2:0}, ${3:0});"],
-            ["path", "path ${1:p} = (${2:0,0})--(${3:1,1});"],
-          ].map(([label, insertText]) => ({
-            label,
-            kind: instance.languages.CompletionItemKind.Snippet,
-            insertText,
-            insertTextRules:
-              instance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-            range,
-            detail: "Asymptote snippet",
-          })),
-        };
-      },
-    });
-    instance.languages.registerCompletionItemProvider("latex", {
-      triggerCharacters: ["\\", "{", ","],
-      provideCompletionItems: async (model, position) => {
-        const lineContent = model.getLineContent(position.lineNumber);
-        const argumentCompletion = getLatexCompletionContext(
-          lineContent,
-          position.column,
-        );
-        const commandCompletion = getLatexCommandCompletionRange(
-          lineContent,
-          position.column,
-        );
-        const completionRange = (completion: {
-          rangeStartColumn: number;
-          rangeEndColumn: number;
-        }) => ({
-          startLineNumber: position.lineNumber,
-          endLineNumber: position.lineNumber,
-          startColumn: completion.rangeStartColumn,
-          endColumn: completion.rangeEndColumn,
-        });
-
-        // Check if we are inside \cite{...}
-        if (argumentCompletion?.type === "citation") {
-          const range = completionRange(argumentCompletion);
-          const suggestions: Monaco.languages.CompletionItem[] = [];
-          const allEntries = flattenEntries(projectEntriesRef.current);
-          const bibFiles = allEntries.filter((e) => e.name.endsWith(".bib"));
-          for (const bib of bibFiles) {
-            try {
-              const content = await window.latexdo.readFile(
-                projectIdRef.current,
-                bib.relativePath,
-              );
-              const regex = /@\w+\s*{\s*([^,]+),/g;
-              let match;
-              while ((match = regex.exec(content)) !== null) {
-                const key = match[1].trim();
-                const start = match.index;
-                const end = content.indexOf("@", start + 1);
-                const block =
-                  end === -1 ? content.slice(start) : content.slice(start, end);
-
-                const titleMatch = block.match(/title\s*=\s*[{"]([^}"]+)[}"]/i);
-                const authorMatch = block.match(/author\s*=\s*[{"]([^}"]+)[}"]/i);
-                const yearMatch = block.match(/year\s*=\s*[{"]([^}"]+)[}"]/i);
-
-                const detail = titleMatch
-                  ? titleMatch[1].replace(/\s+/g, " ").trim()
-                  : "BibTeX Entry";
-                let doc = "";
-                if (authorMatch)
-                  doc += `Author: ${authorMatch[1].replace(/\s+/g, " ").trim()}\n`;
-                if (yearMatch) doc += `Year: ${yearMatch[1].trim()}`;
-
-                suggestions.push({
-                  label: key,
-                  kind: instance.languages.CompletionItemKind.Reference,
-                  insertText: key,
-                  detail,
-                  documentation: doc,
-                  range,
-                });
-              }
-            } catch (e) {
-              // Ignore missing/unreadable bib files
-            }
-          }
-          return { suggestions };
-        }
-
-        // Check if we are inside \ref{...}
-        if (argumentCompletion?.type === "reference") {
-          const range = completionRange(argumentCompletion);
-          const suggestions: Monaco.languages.CompletionItem[] = [];
-          const allEntries = flattenEntries(projectEntriesRef.current);
-          const texFiles = allEntries.filter((e) => e.name.endsWith(".tex"));
-
-          const openDocs = new Map(
-            documentsRef.current.map((d) => [d.path, d.content]),
-          );
-
-          for (const tex of texFiles) {
-            try {
-              let content = openDocs.get(tex.path);
-              if (content === undefined) {
-                content = await window.latexdo.readFile(
-                  projectIdRef.current,
-                  tex.relativePath,
-                );
-              }
-              const regex = /\\label\s*{([^}]+)}/g;
-              let match;
-              while ((match = regex.exec(content)) !== null) {
-                const label = match[1].trim();
-                suggestions.push({
-                  label,
-                  kind: instance.languages.CompletionItemKind.Reference,
-                  insertText: label,
-                  detail: `Label from ${tex.name}`,
-                  range,
-                });
-              }
-            } catch (e) {
-              // Ignore missing/unreadable tex files
-            }
-          }
-          // Remove duplicates
-          const unique = new Map();
-          for (const s of suggestions) unique.set(s.label, s);
-          return { suggestions: Array.from(unique.values()) };
-        }
-
-        // Default snippet completion (triggered by \)
-        if (commandCompletion) {
-          const range = completionRange(commandCompletion);
-          const builtInSuggestions: Monaco.languages.CompletionItem[] =
-            latexCommandSnippets.map((snippet) => ({
-              label: `\\${snippet.label}`,
-              kind: instance.languages.CompletionItemKind.Snippet,
-              insertText: snippet.insertText,
-              insertTextRules:
-                instance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-              range,
-              detail: snippet.detail,
-              documentation: snippet.documentation,
-            }));
-          const mathSuggestions: Monaco.languages.CompletionItem[] = SYMBOL_PALETTE.map(
-            (symbol) => ({
-              label: symbol.latex,
-              kind: instance.languages.CompletionItemKind.Operator,
-              insertText: symbol.latex,
-              range,
-              detail: `${symbol.display} math symbol`,
-              documentation: symbol.search,
-            }),
-          );
-          const extensionSuggestions: Monaco.languages.CompletionItem[] =
-            installedExtensionSnippetsRef.current.map((snippet) => ({
-              label: `\\${snippet.label}`,
-              kind: instance.languages.CompletionItemKind.Snippet,
-              insertText: snippet.insertText,
-              insertTextRules:
-                instance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-              range,
-              detail: snippet.detail ?? "Extension snippet",
-              documentation: snippet.documentation,
-            }));
-
+    providerDisposables.push(
+      instance.languages.registerCompletionItemProvider("asymptote", {
+        triggerCharacters: ["(", "."],
+        provideCompletionItems: (model, position) => {
+          const word = model.getWordUntilPosition(position);
+          const range = {
+            startLineNumber: position.lineNumber,
+            endLineNumber: position.lineNumber,
+            startColumn: word.startColumn,
+            endColumn: word.endColumn,
+          };
           return {
             suggestions: [
-              ...builtInSuggestions,
-              ...mathSuggestions,
-              ...extensionSuggestions,
-            ],
+              ["size", "size(${1:6cm});"],
+              ["draw", "draw((${1:0,0})--(${2:1,1}), ${3:blue});"],
+              ["fill", "fill(${1:unitcircle}, ${2:lightgray});"],
+              ["label", 'label("${1:text}", (${2:0,0}), ${3:N});'],
+              ["pair", "pair ${1:p} = (${2:0}, ${3:0});"],
+              ["path", "path ${1:p} = (${2:0,0})--(${3:1,1});"],
+            ].map(([label, insertText]) => ({
+              label,
+              kind: instance.languages.CompletionItemKind.Snippet,
+              insertText,
+              insertTextRules:
+                instance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              range,
+              detail: "Asymptote snippet",
+            })),
           };
-        }
-
-        return { suggestions: [] };
-      },
-    });
-    instance.languages.registerHoverProvider("latex", {
-      provideHover: async (model, position) => {
-        try {
-          const { parseMathAtPosition, mathPreviewDataUri } =
-            await import("./latex/mathPreview");
-          const mathTarget = parseMathAtPosition(
-            model.getValue(),
-            position.lineNumber,
+        },
+      }),
+    );
+    providerDisposables.push(
+      instance.languages.registerCompletionItemProvider("latex", {
+        triggerCharacters: ["\\", "{", ","],
+        provideCompletionItems: async (model, position, _context, token) => {
+          const requestVersion = model.getVersionId();
+          const requestOffset = model.getOffsetAt(position);
+          const requestIsCurrent = () => {
+            const editor = editorRef.current;
+            const currentPosition = editor?.getPosition();
+            return (
+              !token.isCancellationRequested &&
+              !model.isDisposed() &&
+              model.getVersionId() === requestVersion &&
+              editor?.getModel() === model &&
+              currentPosition !== null &&
+              currentPosition !== undefined &&
+              model.getOffsetAt(currentPosition) === requestOffset
+            );
+          };
+          const lineContent = model.getLineContent(position.lineNumber);
+          const argumentCompletion = getLatexCompletionContext(
+            lineContent,
             position.column,
           );
-          if (mathTarget) {
-            const foreground =
-              mathPreviewForegrounds[settingsRef.current.colorTheme] ?? "#d7dce5";
-            const rendered = mathPreviewDataUri(
-              mathTarget.tex,
-              mathTarget.display,
-              foreground,
-            );
-            if (rendered) {
-              return {
-                range: new instance.Range(
-                  mathTarget.startLine,
-                  mathTarget.startColumn,
-                  mathTarget.endLine,
-                  mathTarget.endColumn,
-                ),
-                contents: [{ value: `![equation](${rendered})` }],
-              };
+          const commandCompletion = getLatexCommandCompletionRange(
+            lineContent,
+            position.column,
+          );
+          const completionRange = (completion: {
+            rangeStartColumn: number;
+            rangeEndColumn: number;
+          }) => completionRangeAtPosition(model, position, completion);
+          const currentProject = projectIdRef.current;
+          const readCompletionFile = (relativePath: string) =>
+            isSafeIpcProjectId(currentProject) &&
+            isSafeIpcRelativePath(relativePath, [".tex", ".bib"])
+              ? window.latexdo.readFile(currentProject, relativePath)
+              : Promise.reject(new Error("Invalid completion file path."));
+
+          // Check if we are inside \cite{...}
+          if (argumentCompletion?.type === "citation") {
+            if (!isSafeIpcProjectId(currentProject)) {
+              return { suggestions: [] };
             }
-          }
-        } catch {
-          // Equation preview is best-effort; fall through to other hovers.
-        }
-
-        const includeTarget = parseIncludeGraphicsAtPosition(
-          model.getLineContent(position.lineNumber),
-          position.column,
-        );
-        if (!includeTarget) {
-          return null;
-        }
-
-        const currentProject = projectIdRef.current;
-        const document = documentsRef.current.find(
-          (item) => item.path === activePathRef.current,
-        );
-        if (!currentProject || !document) {
-          return null;
-        }
-
-        const candidates = figurePreviewCandidatePaths(
-          includeTarget.path,
-          document.relativePath,
-        );
-        const range = new instance.Range(
-          position.lineNumber,
-          includeTarget.startColumn,
-          position.lineNumber,
-          includeTarget.endColumn,
-        );
-
-        if (!candidates.length) {
-          return {
-            range,
-            contents: [
-              {
-                value: `**Figure preview**\n\nCannot resolve \`${includeTarget.rawPath.trim()}\`.`,
-              },
-            ],
-          };
-        }
-
-        for (const candidate of candidates) {
-          if (!figureCanRenderInline(candidate)) {
-            if (figurePreviewMimeType(candidate) === "application/pdf") {
+            const range = completionRange(argumentCompletion);
+            const suggestions: Monaco.languages.CompletionItem[] = [];
+            const allEntries = flattenEntries(projectEntriesRef.current);
+            const bibFiles = allEntries.filter(
+              (entry) =>
+                entry.type === "file" &&
+                entry.name.endsWith(".bib") &&
+                isSafeIpcRelativePath(entry.relativePath, [".bib"]),
+            );
+            for (const bib of bibFiles) {
+              if (!requestIsCurrent()) {
+                return { suggestions: [] };
+              }
               try {
-                if (await window.latexdo.fileExists(currentProject, candidate)) {
-                  return {
+                const content = await readCompletionFile(bib.relativePath);
+                const regex = /@\w+\s*{\s*([^,]+),/g;
+                let match;
+                while ((match = regex.exec(content)) !== null) {
+                  const key = match[1].trim();
+                  const start = match.index;
+                  const end = content.indexOf("@", start + 1);
+                  const block =
+                    end === -1 ? content.slice(start) : content.slice(start, end);
+
+                  const titleMatch = block.match(/title\s*=\s*[{"]([^}"]+)[}"]/i);
+                  const authorMatch = block.match(/author\s*=\s*[{"]([^}"]+)[}"]/i);
+                  const yearMatch = block.match(/year\s*=\s*[{"]([^}"]+)[}"]/i);
+
+                  const detail = titleMatch
+                    ? titleMatch[1].replace(/\s+/g, " ").trim()
+                    : "BibTeX Entry";
+                  let doc = "";
+                  if (authorMatch)
+                    doc += `Author: ${authorMatch[1].replace(/\s+/g, " ").trim()}\n`;
+                  if (yearMatch) doc += `Year: ${yearMatch[1].trim()}`;
+
+                  suggestions.push({
+                    label: key,
+                    kind: instance.languages.CompletionItemKind.Reference,
+                    insertText: key,
+                    detail,
+                    documentation: doc,
                     range,
-                    contents: [
-                      {
-                        value: `**Figure**\n\n\`${candidate}\`\n\nPDF figures preview in the compiled PDF.`,
-                      },
-                    ],
-                  };
+                  });
                 }
-              } catch {
-                // Try the next candidate.
+              } catch (e) {
+                // Ignore missing/unreadable bib files
               }
             }
-            continue;
-          }
-
-          const mimeType = figurePreviewMimeType(candidate);
-          if (!mimeType) {
-            continue;
-          }
-
-          try {
-            const cacheKey = `${currentProject}:${candidate}`;
-            let dataUrl = figurePreviewCacheRef.current.get(cacheKey);
-            if (!dataUrl) {
-              const bytes = await window.latexdo.readAsset(currentProject, candidate);
-              dataUrl = figureBytesToDataUrl(bytes, mimeType);
-              figurePreviewCacheRef.current.set(cacheKey, dataUrl);
+            if (!requestIsCurrent()) {
+              return { suggestions: [] };
             }
+            return { suggestions };
+          }
 
+          // Check if we are inside \ref{...}
+          if (argumentCompletion?.type === "reference") {
+            if (!isSafeIpcProjectId(currentProject)) {
+              return { suggestions: [] };
+            }
+            const range = completionRange(argumentCompletion);
+            const suggestions: Monaco.languages.CompletionItem[] = [];
+            const allEntries = flattenEntries(projectEntriesRef.current);
+            const texFiles = allEntries.filter(
+              (entry) =>
+                entry.type === "file" &&
+                entry.name.endsWith(".tex") &&
+                isSafeIpcRelativePath(entry.relativePath, [".tex"]),
+            );
+
+            const openDocs = new Map(
+              documentsRef.current.map((d) => [d.path, d.content]),
+            );
+
+            for (const tex of texFiles) {
+              if (!requestIsCurrent()) {
+                return { suggestions: [] };
+              }
+              try {
+                let content = openDocs.get(tex.path);
+                if (content === undefined) {
+                  content = await readCompletionFile(tex.relativePath);
+                }
+                const regex = /\\label\s*{([^}]+)}/g;
+                let match;
+                while ((match = regex.exec(content)) !== null) {
+                  const label = match[1].trim();
+                  suggestions.push({
+                    label,
+                    kind: instance.languages.CompletionItemKind.Reference,
+                    insertText: label,
+                    detail: `Label from ${tex.name}`,
+                    range,
+                  });
+                }
+              } catch (e) {
+                // Ignore missing/unreadable tex files
+              }
+            }
+            if (!requestIsCurrent()) {
+              return { suggestions: [] };
+            }
+            // Remove duplicates
+            const unique = new Map();
+            for (const s of suggestions) unique.set(s.label, s);
+            return { suggestions: Array.from(unique.values()) };
+          }
+
+          // Default snippet completion (triggered by \)
+          if (commandCompletion) {
+            const range = completionRange(commandCompletion);
+            const builtInSuggestions: Monaco.languages.CompletionItem[] =
+              latexCommandSnippets.map((snippet) => ({
+                label: `\\${snippet.label}`,
+                kind: instance.languages.CompletionItemKind.Snippet,
+                insertText: snippet.insertText,
+                insertTextRules:
+                  instance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                range,
+                detail: snippet.detail,
+                documentation: snippet.documentation,
+              }));
+            const mathSuggestions: Monaco.languages.CompletionItem[] =
+              SYMBOL_PALETTE.map((symbol) => ({
+                label: symbol.latex,
+                kind: instance.languages.CompletionItemKind.Operator,
+                insertText: symbol.latex,
+                range,
+                detail: `${symbol.display} math symbol`,
+                documentation: symbol.search,
+              }));
+            const extensionSuggestions: Monaco.languages.CompletionItem[] =
+              installedExtensionSnippetsRef.current.map((snippet) => ({
+                label: `\\${snippet.label}`,
+                kind: instance.languages.CompletionItemKind.Snippet,
+                insertText: snippet.insertText,
+                insertTextRules:
+                  instance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                range,
+                detail: snippet.detail ?? "Extension snippet",
+                documentation: snippet.documentation,
+              }));
+
+            return {
+              suggestions: [
+                ...builtInSuggestions,
+                ...mathSuggestions,
+                ...extensionSuggestions,
+              ],
+            };
+          }
+
+          return { suggestions: [] };
+        },
+      }),
+    );
+    providerDisposables.push(
+      instance.languages.registerHoverProvider("latex", {
+        provideHover: async (model, position) => {
+          try {
+            const { parseMathAtPosition, mathPreviewDataUri } =
+              await import("./latex/mathPreview");
+            const mathTarget = parseMathAtPosition(
+              model.getValue(),
+              position.lineNumber,
+              position.column,
+            );
+            if (mathTarget) {
+              const foreground =
+                mathPreviewForegrounds[settingsRef.current.colorTheme] ?? "#d7dce5";
+              const rendered = mathPreviewDataUri(
+                mathTarget.tex,
+                mathTarget.display,
+                foreground,
+              );
+              if (rendered) {
+                return {
+                  range: new instance.Range(
+                    mathTarget.startLine,
+                    mathTarget.startColumn,
+                    mathTarget.endLine,
+                    mathTarget.endColumn,
+                  ),
+                  contents: [{ value: `![equation](${rendered})` }],
+                };
+              }
+            }
+          } catch {
+            // Equation preview is best-effort; fall through to other hovers.
+          }
+
+          const includeTarget = parseIncludeGraphicsAtPosition(
+            model.getLineContent(position.lineNumber),
+            position.column,
+          );
+          if (!includeTarget) {
+            return null;
+          }
+
+          const currentProject = projectIdRef.current;
+          const document = documentsRef.current.find(
+            (item) => item.path === activePathRef.current,
+          );
+          if (!isSafeIpcProjectId(currentProject) || !document) {
+            return null;
+          }
+
+          const candidates = figurePreviewCandidatePaths(
+            includeTarget.path,
+            document.relativePath,
+          );
+          const range = new instance.Range(
+            position.lineNumber,
+            includeTarget.startColumn,
+            position.lineNumber,
+            includeTarget.endColumn,
+          );
+
+          if (!candidates.length) {
             return {
               range,
               contents: [
                 {
-                  supportHtml: true,
-                  value: [
-                    '<div class="latexdo-figure-hover">',
-                    `<strong>${escapeHtml(candidate)}</strong>`,
-                    `<img src="${dataUrl}" alt="${escapeHtml(fileName(candidate))}" />`,
-                    "</div>",
-                  ].join(""),
+                  value: `**Figure preview**\n\nCannot resolve \`${includeTarget.rawPath.trim()}\`.`,
                 },
               ],
             };
-          } catch {
-            // Try the next candidate.
           }
-        }
 
-        return {
-          range,
-          contents: [
-            {
-              value: `**Figure not found**\n\nTried: ${candidates
-                .map((candidate) => `\`${candidate}\``)
-                .join(", ")}`,
-            },
-          ],
-        };
-      },
-    });
+          for (const candidate of candidates) {
+            if (
+              !isSafeIpcRelativePath(candidate, [
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".svg",
+                ".pdf",
+              ])
+            ) {
+              continue;
+            }
+
+            if (!figureCanRenderInline(candidate)) {
+              if (figurePreviewMimeType(candidate) === "application/pdf") {
+                try {
+                  if (await window.latexdo.fileExists(currentProject, candidate)) {
+                    return {
+                      range,
+                      contents: [
+                        {
+                          value: `**Figure**\n\n\`${candidate}\`\n\nPDF figures preview in the compiled PDF.`,
+                        },
+                      ],
+                    };
+                  }
+                } catch {
+                  // Try the next candidate.
+                }
+              }
+              continue;
+            }
+
+            const mimeType = figurePreviewMimeType(candidate);
+            if (!mimeType) {
+              continue;
+            }
+
+            try {
+              const cacheKey = `${currentProject}:${candidate}`;
+              let dataUrl = figurePreviewCacheRef.current.get(cacheKey);
+              if (!dataUrl) {
+                if (!(await window.latexdo.fileExists(currentProject, candidate))) {
+                  continue;
+                }
+                const bytes = await window.latexdo.readAsset(currentProject, candidate);
+                dataUrl = figureBytesToDataUrl(bytes, mimeType);
+                figurePreviewCacheRef.current.set(cacheKey, dataUrl);
+              }
+
+              return {
+                range,
+                contents: [
+                  {
+                    supportHtml: true,
+                    value: [
+                      '<div class="latexdo-figure-hover">',
+                      `<strong>${escapeHtml(candidate)}</strong>`,
+                      `<img src="${dataUrl}" alt="${escapeHtml(fileName(candidate))}" />`,
+                      "</div>",
+                    ].join(""),
+                  },
+                ],
+              };
+            } catch {
+              // Try the next candidate.
+            }
+          }
+
+          return {
+            range,
+            contents: [
+              {
+                value: `**Figure not found**\n\nTried: ${candidates
+                  .map((candidate) => `\`${candidate}\``)
+                  .join(", ")}`,
+              },
+            ],
+          };
+        },
+      }),
+    );
     const sharedRules = [
       { token: "comment", foreground: "6B7280", fontStyle: "italic" },
       { token: "keyword", foreground: "7CA6FF" },
@@ -4368,6 +4589,12 @@ ${macroEnd}
     const nextContent = value ?? "";
     const currentPath = activePathRef.current;
     if (!currentPath) return;
+    if (
+      documentsRef.current.find((document) => document.path === currentPath)
+        ?.content === nextContent
+    ) {
+      return;
+    }
 
     setDocuments((current) => {
       const nextDocuments = current.map((document) =>
@@ -4379,6 +4606,46 @@ ${macroEnd}
       return nextDocuments;
     });
   }, []);
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    if (!editor || !model || !activeDocument) {
+      return;
+    }
+
+    if (
+      normalizeRelativePath(model.uri.fsPath) !==
+      normalizeRelativePath(activeDocument.path)
+    ) {
+      return;
+    }
+
+    if (model.getValue() === activeDocument.content) {
+      return;
+    }
+
+    const selections = editor.getSelections() ?? [];
+    const scrollTop = editor.getScrollTop();
+    const scrollLeft = editor.getScrollLeft();
+
+    editor.executeEdits("latexdo-sync-document", [
+      {
+        range: model.getFullModelRange(),
+        text: activeDocument.content,
+        forceMoveMarkers: true,
+      },
+    ]);
+
+    const updatedModel = editor.getModel();
+    if (updatedModel && selections.length) {
+      editor.setSelections(
+        selections.map((selection) => clampSelectionToModel(updatedModel, selection)),
+      );
+    }
+    editor.setScrollTop(scrollTop);
+    editor.setScrollLeft(scrollLeft);
+  }, [activeDocument?.content, activeDocument?.path]);
 
   const insertLatexBlockAtEditorPosition = useCallback(
     (text: string, position?: Monaco.IPosition | null): boolean => {
@@ -8545,7 +8812,8 @@ ${macroEnd}
                     <MonacoEditor
                       key={activeDocument.path}
                       path={activeDocument.path}
-                      value={activeDocument.content}
+                      defaultValue={activeDocument.content}
+                      defaultLanguage={languageFor(activeDocument.name)}
                       language={languageFor(activeDocument.name)}
                       theme={editorTheme}
                       beforeMount={configureMonaco}
@@ -8580,7 +8848,7 @@ ${macroEnd}
                         columnSelection: true,
                         scrollBeyondLastLine: false,
                         automaticLayout: true,
-                        fixedOverflowWidgets: true,
+                        fixedOverflowWidgets: false,
                         acceptSuggestionOnCommitCharacter: false,
                         acceptSuggestionOnEnter: "off",
                         quickSuggestions: {

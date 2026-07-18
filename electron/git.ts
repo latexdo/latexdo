@@ -1045,7 +1045,12 @@ export async function readGitBlame(
   revision: GitRevisionRef,
 ): Promise<GitBlameLine[]> {
   if (revision.kind === "empty") return [];
-  const context = await getGitRepositoryContext(projectRoot);
+  let context: GitRepositoryContext;
+  try {
+    context = await getGitRepositoryContext(projectRoot);
+  } catch {
+    return [];
+  }
   const repoPath = repoPathForProjectPath(context, relativePath);
   const args = ["blame", "--line-porcelain", "--date=iso-strict"];
   let input: Buffer | undefined;
