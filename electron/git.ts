@@ -1052,24 +1052,31 @@ export async function readGitBlame(
     return [];
   }
   const repoPath = repoPathForProjectPath(context, relativePath);
-  const args = ["blame", "--line-porcelain", "--date=iso-strict"];
-  let input: Buffer | undefined;
-  if (revision.kind === "commit") args.push(revision.hash);
-  if (revision.kind === "index") {
-    const indexContent = await runGitBuffer(
-      context.repositoryRoot,
-      ["show", `:${repoPath}`],
-      { maxBytes: revisionContentLimit },
-    );
-    input = indexContent;
-    const status = await readStructuredGitStatus(projectRoot);
-    if (status.headHash) args.push("--contents", "-", status.headHash);
-    else return [];
+  try {
+    const args = ["blame", "--line-porcelain", "--date=iso-strict"];
+    let input: Buffer | undefined;
+    if (revision.kind === "commit") args.push(revision.hash);
+    if (revision.kind === "index") {
+      const indexContent = await runGitBuffer(
+        context.repositoryRoot,
+        ["show", `:${repoPath}`],
+        { maxBytes: revisionContentLimit },
+      );
+      input = indexContent;
+      const status = await readStructuredGitStatus(projectRoot);
+      if (status.headHash) args.push("--contents", "-", status.headHash);
+      else return [];
+    }
+    args.push("--", repoPath);
+    const output = await runGitText(context.repositoryRoot, args, {
+      maxBytes: 32 * 1024 * 1024,
+      input,
+    });
+    return parseGitBlamePorcelain(output).slice(0, 100_000);
+  } catch (error) {
+    if (error instanceof GitOutputLimitError || error instanceof GitCommandError) {
+      return [];
+    }
+    throw error;
   }
-  args.push("--", repoPath);
-  const output = await runGitText(context.repositoryRoot, args, {
-    maxBytes: 32 * 1024 * 1024,
-    input,
-  });
-  return parseGitBlamePorcelain(output).slice(0, 100_000);
 }

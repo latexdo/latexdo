@@ -16,7 +16,7 @@ async function withTempDirectory(
 }
 
 describe("safe editable text file reads", () => {
-  it("reads supported UTF-8 text files", async () => {
+  it("reads UTF-8 text files", async () => {
     await withTempDirectory(async (root) => {
       const filePath = path.join(root, "main.tex");
       await writeFile(filePath, "\\section{Intro}\n", "utf8");
@@ -27,13 +27,13 @@ describe("safe editable text file reads", () => {
     });
   });
 
-  it("rejects unsupported extensions before reading", async () => {
+  it("reads safe text files with arbitrary extensions", async () => {
     await withTempDirectory(async (root) => {
-      const filePath = path.join(root, "figure.png");
-      await writeFile(filePath, "not really an image", "utf8");
+      const filePath = path.join(root, "analysis.py");
+      await writeFile(filePath, "print('ok')\n", "utf8");
 
-      await expect(readSafeTextFile(root, filePath, "figure.png")).rejects.toThrow(
-        "Unsupported text file type",
+      await expect(readSafeTextFile(root, filePath, "analysis.py")).resolves.toBe(
+        "print('ok')\n",
       );
     });
   });

@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
+import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import {
   parseGitBlamePorcelain,
   parseGitStatusPorcelainV2,
   readGitBlame,
   type GitRepositoryContext,
 } from "../electron/git.js";
+
+const execFileAsync = promisify(execFile);
 
 const context: GitRepositoryContext = {
   projectRoot: "/repo",
@@ -113,6 +117,19 @@ describe("Git porcelain parsers", () => {
     try {
       await expect(
         readGitBlame(directory, "main.tex", { kind: "working-tree" }),
+      ).resolves.toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("returns empty blame when git cannot produce blame data", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "latexdo-empty-git-"));
+    try {
+      await execFileAsync("git", ["init", "-q"], { cwd: directory });
+
+      await expect(
+        readGitBlame(directory, "missing.tex", { kind: "working-tree" }),
       ).resolves.toEqual([]);
     } finally {
       await rm(directory, { recursive: true, force: true });

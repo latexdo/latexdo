@@ -4,19 +4,6 @@ import path from "node:path";
 export const MAX_TEXT_FILE_BYTES = 5 * 1024 * 1024;
 const NULL_BYTE_PREFIX_SCAN_BYTES = 8192;
 
-export const editableTextFileExtensions = [
-  ".tex",
-  ".bib",
-  ".sty",
-  ".cls",
-  ".asy",
-  ".txt",
-  ".md",
-  ".json",
-] as const;
-
-const editableTextFileExtensionSet = new Set<string>(editableTextFileExtensions);
-
 interface ReadSafeTextFileOptions {
   maxBytes?: number;
 }
@@ -34,13 +21,6 @@ function formatBytes(bytes: number): string {
     return `${Math.ceil(bytes / 1024)} KiB`;
   }
   return `${Math.ceil(bytes / (1024 * 1024))} MiB`;
-}
-
-export function assertEditableTextExtension(relativePath: string): void {
-  const extension = path.posix.extname(relativePath).toLowerCase();
-  if (!editableTextFileExtensionSet.has(extension)) {
-    throw new Error("Unsupported text file type.");
-  }
 }
 
 async function hasNullBytePrefix(filePath: string, fileSize: number): Promise<boolean> {
@@ -62,11 +42,9 @@ async function hasNullBytePrefix(filePath: string, fileSize: number): Promise<bo
 export async function readSafeTextFile(
   projectPath: string,
   filePath: string,
-  relativePath: string,
+  _relativePath: string,
   options: ReadSafeTextFileOptions = {},
 ): Promise<string> {
-  assertEditableTextExtension(relativePath);
-
   const [canonicalProjectPath, canonicalFilePath] = await Promise.all([
     realpath(projectPath),
     realpath(filePath),

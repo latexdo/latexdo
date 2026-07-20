@@ -46,8 +46,13 @@ export interface OpenDocument {
   path: string;
   relativePath: string;
   name: string;
+  kind?: "text" | "asset";
   content: string;
   savedContent: string;
+  assetMimeType?: string;
+  assetDataUrl?: string;
+  assetBytes?: Uint8Array;
+  assetSizeBytes?: number;
 }
 
 export interface DiagnosticContextLine {
