@@ -1,5 +1,14 @@
-import React, { useCallback, useRef, useState } from "react";
-import { Copy, Download, ImageUp, Plus, RefreshCw, Upload } from "lucide-react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Copy,
+  Download,
+  FileText,
+  ImageUp,
+  Plus,
+  RefreshCw,
+  Upload,
+} from "lucide-react";
+import { convertDrawioToTikz, type DrawioToTikzConversion } from "../drawioToTikz";
 
 interface DetectedBox {
   x: number;
@@ -318,14 +327,45 @@ interface FigureToTikzConverterProps {
   onInsertCode?: (code: string) => void;
 }
 
+type ConverterSource =
+  | {
+      kind: "image";
+      name: string;
+      image: HTMLImageElement;
+    }
+  | {
+      kind: "drawio";
+      name: string;
+      conversion: DrawioToTikzConversion;
+    };
+
+function isDrawioFile(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return (
+    name.endsWith(".drawio") ||
+    name.endsWith(".mxfile") ||
+    name.endsWith(".xml") ||
+    file.type === "application/xml" ||
+    file.type === "text/xml"
+  );
+}
+
+function conversionSummary(conversion: DrawioToTikzConversion): string {
+  const shapeLabel = conversion.shapeCount === 1 ? "shape" : "shapes";
+  const connectorLabel = conversion.connectorCount === 1 ? "connector" : "connectors";
+  const labelLabel = conversion.labelCount === 1 ? "label" : "labels";
+  return `Converted ${conversion.shapeCount} ${shapeLabel}, ${conversion.connectorCount} ${connectorLabel}, and ${conversion.labelCount} ${labelLabel}.`;
+}
+
 export function FigureToTikzConverter({ onInsertCode }: FigureToTikzConverterProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [image, setImage] = useState<HTMLImageElement | null>(null);
+  const [source, setSource] = useState<ConverterSource | null>(null);
   const [tikzCode, setTikzCode] = useState("");
   const [copied, setCopied] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
-  const [showOriginal, setShowOriginal] = useState(true);
+  const [conversionError, setConversionError] = useState("");
+  const image = source?.kind === "image" ? source.image : null;
 
   const detectShapes = useCallback((img: HTMLImageElement) => {
     const canvas = canvasRef.current;
@@ -354,21 +394,57 @@ export function FigureToTikzConverter({ onInsertCode }: FigureToTikzConverterPro
     }, 100);
   }, []);
 
+  useEffect(() => {
+    if (source?.kind === "image") {
+      detectShapes(source.image);
+    }
+  }, [detectShapes, source]);
+
+  const handleDrawioText = useCallback(async (text: string, name: string) => {
+    setAnalyzing(true);
+    setConversionError("");
+    setTikzCode("");
+    try {
+      const conversion = await convertDrawioToTikz(text);
+      setSource({ kind: "drawio", name, conversion });
+      setTikzCode(conversion.code);
+    } catch (error) {
+      setSource(null);
+      setConversionError(
+        error instanceof Error ? error.message : "Could not convert draw.io file.",
+      );
+    } finally {
+      setAnalyzing(false);
+    }
+  }, []);
+
   const handleFile = useCallback(
     (file: File) => {
-      if (!file.type.startsWith("image/")) return;
+      if (isDrawioFile(file)) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          void handleDrawioText(String(e.target?.result ?? ""), file.name);
+        };
+        reader.readAsText(file);
+        return;
+      }
+      if (!file.type.startsWith("image/")) {
+        setConversionError("Upload an image or draw.io XML file.");
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
-          setImage(img);
-          detectShapes(img);
+          setSource({ kind: "image", name: file.name || "Image", image: img });
+          setTikzCode("");
+          setConversionError("");
         };
         img.src = e.target?.result as string;
       };
       reader.readAsDataURL(file);
     },
-    [detectShapes],
+    [handleDrawioText],
   );
 
   const handleDrop = useCallback(
@@ -382,6 +458,12 @@ export function FigureToTikzConverter({ onInsertCode }: FigureToTikzConverterPro
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent) => {
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      if (text.includes("<mxfile") || text.includes("<mxGraphModel")) {
+        void handleDrawioText(text, "Clipboard draw.io diagram");
+        return;
+      }
+
       const items = e.clipboardData?.items;
       if (!items) return;
       for (const item of items) {
@@ -391,7 +473,7 @@ export function FigureToTikzConverter({ onInsertCode }: FigureToTikzConverterPro
         }
       }
     },
-    [handleFile],
+    [handleDrawioText, handleFile],
   );
 
   const handleCopy = async () => {
@@ -405,13 +487,21 @@ export function FigureToTikzConverter({ onInsertCode }: FigureToTikzConverterPro
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "tikz-figure.tex";
+    a.download = source?.name
+      ? source.name.replace(/\.(drawio|mxfile|xml|png|jpe?g|svg)$/i, ".tikz.tex")
+      : "tikz-figure.tex";
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const handleReanalyze = () => {
     if (image) detectShapes(image);
+  };
+
+  const resetSource = () => {
+    setSource(null);
+    setTikzCode("");
+    setConversionError("");
   };
 
   return (
@@ -422,11 +512,11 @@ export function FigureToTikzConverter({ onInsertCode }: FigureToTikzConverterPro
           <span>Figure → TikZ Converter</span>
         </span>
         <div className="tikz-converter-hints">
-          <span>Drop an image, click to upload, or paste (Ctrl+V)</span>
+          <span>Drop an image or draw.io file, click to upload, or paste</span>
         </div>
       </div>
 
-      {!image ? (
+      {!source ? (
         <div
           className="tikz-converter-upload"
           onDrop={handleDrop}
@@ -437,15 +527,18 @@ export function FigureToTikzConverter({ onInsertCode }: FigureToTikzConverterPro
         >
           <Upload size={40} />
           <span className="tikz-converter-upload-text">
-            Drop an image here, click to upload, or paste from clipboard
+            Drop an image or draw.io file here, click to upload, or paste
           </span>
           <span className="tikz-converter-upload-hint">
-            Supports PNG, JPG, SVG, screenshots, hand-drawn sketches
+            Supports PNG, JPG, SVG, screenshots, and .drawio XML diagrams
           </span>
+          {conversionError ? (
+            <span className="tikz-converter-error">{conversionError}</span>
+          ) : null}
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,.drawio,.mxfile,.xml"
             style={{ display: "none" }}
             onChange={(e) => {
               const file = e.target.files?.[0];
@@ -457,32 +550,39 @@ export function FigureToTikzConverter({ onInsertCode }: FigureToTikzConverterPro
         <div className="tikz-converter-body">
           <div className="tikz-converter-preview">
             <div className="tikz-converter-preview-header">
-              <span>Original Image</span>
+              <span>
+                {source.kind === "drawio" ? "draw.io Diagram" : "Original Image"}
+              </span>
               <div className="tikz-converter-preview-actions">
-                <button
-                  className="tikz-converter-btn"
-                  onClick={() => {
-                    setImage(null);
-                    setTikzCode("");
-                  }}
-                >
+                <button className="tikz-converter-btn" onClick={resetSource}>
                   <Upload size={13} /> Upload New
                 </button>
-                <button
-                  className="tikz-converter-btn"
-                  onClick={handleReanalyze}
-                  disabled={analyzing}
-                >
-                  <RefreshCw size={13} /> {analyzing ? "Analyzing..." : "Re-analyze"}
-                </button>
+                {source.kind === "image" ? (
+                  <button
+                    className="tikz-converter-btn"
+                    onClick={handleReanalyze}
+                    disabled={analyzing}
+                  >
+                    <RefreshCw size={13} /> {analyzing ? "Analyzing..." : "Re-analyze"}
+                  </button>
+                ) : null}
               </div>
             </div>
             <div className="tikz-converter-canvas-wrap">
-              <canvas
-                ref={canvasRef}
-                className="tikz-converter-canvas"
-                style={{ maxWidth: "100%", maxHeight: "400px" }}
-              />
+              {source.kind === "drawio" ? (
+                <div className="tikz-converter-diagram-summary">
+                  <FileText size={36} />
+                  <span>{source.name}</span>
+                  <small>{source.conversion.pageName}</small>
+                  <p>{conversionSummary(source.conversion)}</p>
+                </div>
+              ) : (
+                <canvas
+                  ref={canvasRef}
+                  className="tikz-converter-canvas"
+                  style={{ maxWidth: "100%", maxHeight: "400px" }}
+                />
+              )}
             </div>
           </div>
 

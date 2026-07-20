@@ -168,7 +168,7 @@ const extensionVersionPattern = /^[0-9]+(?:\.[0-9]+){0,2}(?:[-+][a-z0-9.-]+)?$/i
 export const fallbackExtensionCatalog: LatexDoExtensionCatalog = {
   schemaVersion: 1,
   product: "LatexDo",
-  updatedAt: "2026-07-17T00:00:00.000Z",
+  updatedAt: "2026-07-20T00:00:00.000Z",
   extensions: [
     {
       schemaVersion: 1,
@@ -231,6 +231,25 @@ export const fallbackExtensionCatalog: LatexDoExtensionCatalog = {
               "% ${1:Paper note}\n@article{${2:key},\n  title = {${3:Title}},\n  author = {${4:Author}},\n  year = {${5:2026}}\n}",
           },
         ],
+      },
+    },
+    {
+      schemaVersion: 1,
+      id: "latexdo.drawio-tikz",
+      kind: "extension",
+      name: "Draw.io TikZ Converter",
+      version: "1.0.0",
+      description:
+        "Enables the TikZ converter for draw.io diagrams and image-based figure drafts.",
+      author: "LatexDo",
+      category: "graphics",
+      tags: ["draw.io", "tikz", "diagrams"],
+      homepage: "https://store.latexdo.org/extensions/latexdo.drawio-tikz/",
+      repository: "https://github.com/latexdo/store.latexdo.org",
+      contributes: {
+        featureFlags: {
+          tikzConverterEnabled: true,
+        },
       },
     },
     {
