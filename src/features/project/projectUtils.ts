@@ -1,17 +1,6 @@
 import type { ProjectEntry } from "../../types";
 import { fileNameForDisplay } from "../../pathDisplay";
 
-export const supportedExtensions = new Set([
-  "tex",
-  "bib",
-  "sty",
-  "cls",
-  "asy",
-  "txt",
-  "md",
-  "json",
-]);
-
 export function fileName(filePath: string): string {
   return fileNameForDisplay(filePath);
 }

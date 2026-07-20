@@ -43,7 +43,7 @@ import {
 import { importDocxIntoProject } from "./docxImport.js";
 import { importMarkdown } from "./markdownImport.js";
 import { backwardSyncTex, forwardSyncTex } from "./synctex.js";
-import { editableTextFileExtensions, readSafeTextFile } from "./textFile.js";
+import { readSafeTextFile } from "./textFile.js";
 import type {
   Diagnostic,
   DocxImportResult,
@@ -118,6 +118,7 @@ const createFileChannel = "file:create-dialog";
 const createFolderChannel = "folder:create-dialog";
 const importDocxChannel = "file:import-docx";
 const importMarkdownChannel = "file:import-markdown";
+const closeTabChannel = "file:close-tab";
 const maxHostedImportFileBytes = 5 * 1024 * 1024;
 
 protocol.registerSchemesAsPrivileged([
@@ -2090,7 +2091,13 @@ function buildApplicationMenu(): void {
           },
         },
         { type: "separator" },
-        { role: "close" },
+        {
+          label: "Close Tab",
+          accelerator: "CmdOrCtrl+W",
+          click: () => {
+            BrowserWindow.getFocusedWindow()?.webContents.send(closeTabChannel);
+          },
+        },
         ...(process.platform === "darwin"
           ? []
           : ([{ type: "separator" }, { role: "quit" }] as const)),
@@ -2129,7 +2136,15 @@ function buildApplicationMenu(): void {
         { role: "zoom" },
         ...(process.platform === "darwin"
           ? ([{ type: "separator" }, { role: "front" }] as const)
-          : ([{ role: "close" }] as const)),
+          : ([
+              {
+                label: "Close Window",
+                accelerator: "Alt+F4",
+                click: () => {
+                  BrowserWindow.getFocusedWindow()?.close();
+                },
+              },
+            ] as const)),
       ],
     },
     {
@@ -3732,9 +3747,7 @@ app.whenReady().then(async () => {
     const channel = "file:read";
     const [rawProjectId, rawFilePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
-    const filePath = parseRelativePath(channel, rawFilePath, {
-      extensions: [...editableTextFileExtensions],
-    });
+    const filePath = parseRelativePath(channel, rawFilePath);
     const projectPath = getProjectRoot(projectId);
     const resolvedPath = resolveProjectPath(projectPath, filePath);
     return readSafeTextFile(projectPath, resolvedPath, filePath);

@@ -30,6 +30,7 @@ import type {
 const editorChangeHandlers = vi.hoisted(
   () => new Map<string, (value: string) => void>(),
 );
+const editorOptionsByPath = vi.hoisted(() => new Map<string, unknown>());
 
 vi.mock("@monaco-editor/react", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
@@ -40,14 +41,17 @@ vi.mock("@monaco-editor/react", async () => {
       value,
       onChange,
       path,
+      options,
     }: {
       defaultValue?: string;
       value?: string;
       onChange?: (value: string) => void;
       path?: string;
+      options?: unknown;
     }) => {
       if (path) {
         editorChangeHandlers.set(path, (nextValue) => onChange?.(nextValue));
+        editorOptionsByPath.set(path, options);
       }
       return React.createElement("textarea", {
         "aria-label": "mock editor",
@@ -75,14 +79,17 @@ vi.mock("./components/MonacoEditor", async () => {
       value,
       onChange,
       path,
+      options,
     }: {
       defaultValue?: string;
       value?: string;
       onChange?: (value: string) => void;
       path?: string;
+      options?: unknown;
     }) => {
       if (path) {
         editorChangeHandlers.set(path, (nextValue) => onChange?.(nextValue));
+        editorOptionsByPath.set(path, options);
       }
       return React.createElement("textarea", {
         "aria-label": "mock editor",
@@ -144,9 +151,11 @@ vi.mock("./collaboration/CollaborationContext", () => ({
 
 vi.mock("./PdfPreview", () => ({
   default: ({
+    data,
     onNavigate,
   }: {
-    onNavigate: (location: {
+    data?: Uint8Array;
+    onNavigate?: (location: {
       page: number;
       x: number;
       y: number;
@@ -156,7 +165,8 @@ vi.mock("./PdfPreview", () => ({
     <button
       type="button"
       data-testid="mock-pdf-preview"
-      onDoubleClick={() => onNavigate({ page: 2, x: 42, y: 84, word: "Text" })}
+      data-pdf-bytes={data?.byteLength ?? 0}
+      onDoubleClick={() => onNavigate?.({ page: 2, x: 42, y: 84, word: "Text" })}
     >
       PDF preview
     </button>
@@ -357,6 +367,7 @@ function installLatexDoMock(options?: {
     onCreateFolderMenu: vi.fn(() => vi.fn()),
     onImportDocxMenu: vi.fn((_callback: () => void) => vi.fn()),
     onImportMarkdownMenu: vi.fn(() => vi.fn()),
+    onCloseTabMenu: vi.fn(() => vi.fn()),
   };
 
   Object.defineProperty(window, "latexdo", {
@@ -396,6 +407,7 @@ async function closeSettingsDialog() {
 describe("App critical UI controls", () => {
   beforeEach(() => {
     editorChangeHandlers.clear();
+    editorOptionsByPath.clear();
     window.localStorage.clear();
     Object.defineProperty(window, "requestAnimationFrame", {
       configurable: true,
@@ -598,6 +610,193 @@ describe("App critical UI controls", () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText("mock editor")).toHaveValue("Late main edit\n");
+    });
+  });
+
+  it("keeps Monaco in stream selection mode so whole lines can be selected", async () => {
+    installLatexDoMock();
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    await screen.findByLabelText("mock editor");
+
+    expect(editorOptionsByPath.get(entries[0].path)).toEqual(
+      expect.objectContaining({
+        columnSelection: false,
+        multiCursorModifier: "alt",
+      }),
+    );
+  });
+
+  it("opens project images as preview tabs from the file tree", async () => {
+    const api = installLatexDoMock();
+    const imageEntry: ProjectEntry = {
+      name: "chart.png",
+      path: "/Users/omar/project/figures/chart.png",
+      relativePath: "figures/chart.png",
+      type: "file",
+    };
+    api.listProject.mockResolvedValue([...entries, imageEntry]);
+    api.readAsset.mockResolvedValue(new Uint8Array([137, 80, 78, 71]));
+
+    render(<App />);
+    await openProjectFromWelcome();
+    api.getGitBlame.mockClear();
+
+    const imageRow = await waitFor(() => {
+      const row = document.querySelector(
+        '.tree-row[title="figures/chart.png"]',
+      ) as HTMLElement | null;
+      expect(row).not.toBeNull();
+      return row as HTMLElement;
+    });
+
+    fireEvent.click(imageRow);
+
+    await waitFor(() => {
+      expect(api.readAsset).toHaveBeenCalledWith(project.id, "figures/chart.png");
+    });
+    const preview = await screen.findByRole("img", {
+      name: "figures/chart.png preview",
+    });
+    expect(preview.getAttribute("src")).toMatch(/^data:image\/png;base64,/);
+    expect(screen.queryByLabelText("mock editor")).not.toBeInTheDocument();
+    expect(api.readFile).not.toHaveBeenCalledWith(project.id, "figures/chart.png");
+    expect(api.getGitBlame).not.toHaveBeenCalled();
+  });
+
+  it("opens project PDFs with the PDF.js preview tab from the file tree", async () => {
+    const api = installLatexDoMock();
+    const pdfEntry: ProjectEntry = {
+      name: "diagram.pdf",
+      path: "/Users/omar/project/figures/diagram.pdf",
+      relativePath: "figures/diagram.pdf",
+      type: "file",
+    };
+    api.listProject.mockResolvedValue([...entries, pdfEntry]);
+    api.readAsset.mockResolvedValue(new Uint8Array([37, 80, 68, 70]));
+
+    render(<App />);
+    await openProjectFromWelcome();
+    api.getGitBlame.mockClear();
+
+    const pdfRow = await waitFor(() => {
+      const row = document.querySelector(
+        '.tree-row[title="figures/diagram.pdf"]',
+      ) as HTMLElement | null;
+      expect(row).not.toBeNull();
+      return row as HTMLElement;
+    });
+
+    fireEvent.click(pdfRow);
+
+    await waitFor(() => {
+      expect(api.readAsset).toHaveBeenCalledWith(project.id, "figures/diagram.pdf");
+    });
+    const preview = await screen.findByTestId("mock-pdf-preview");
+    expect(preview).toHaveAttribute("data-pdf-bytes", "4");
+    expect(screen.queryByText("PDF preview unavailable.")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("mock editor")).not.toBeInTheDocument();
+    expect(api.readFile).not.toHaveBeenCalledWith(project.id, "figures/diagram.pdf");
+    expect(api.getGitBlame).not.toHaveBeenCalled();
+  });
+
+  it("opens arbitrary text extensions from the file tree", async () => {
+    const api = installLatexDoMock();
+    const scriptEntry: ProjectEntry = {
+      name: "analysis.py",
+      path: "/Users/omar/project/analysis.py",
+      relativePath: "analysis.py",
+      type: "file",
+    };
+    api.listProject.mockResolvedValue([...entries, scriptEntry]);
+    api.readFile.mockImplementation(async (_projectId: string, relativePath: string) =>
+      relativePath === "analysis.py" ? "print('ok')\n" : "Main original\n",
+    );
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    const scriptRow = await waitFor(() => {
+      const row = document.querySelector(
+        '.tree-row[title="analysis.py"]',
+      ) as HTMLElement | null;
+      expect(row).not.toBeNull();
+      return row as HTMLElement;
+    });
+
+    fireEvent.click(scriptRow);
+
+    await waitFor(() => {
+      expect(api.readFile).toHaveBeenCalledWith(project.id, "analysis.py");
+      expect(screen.getByLabelText("mock editor")).toHaveValue("print('ok')\n");
+    });
+  });
+
+  it("closes the active editor tab with Cmd/Ctrl+W", async () => {
+    installLatexDoMock();
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    expect(await screen.findByLabelText("mock editor")).toBeInTheDocument();
+
+    const event = new KeyboardEvent("keydown", {
+      key: "w",
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    await waitFor(() => {
+      expect(screen.queryByLabelText("mock editor")).not.toBeInTheDocument();
+    });
+  });
+
+  it("closes the active asset preview tab with Cmd/Ctrl+W", async () => {
+    const api = installLatexDoMock();
+    const imageEntry: ProjectEntry = {
+      name: "chart.png",
+      path: "/Users/omar/project/figures/chart.png",
+      relativePath: "figures/chart.png",
+      type: "file",
+    };
+    api.listProject.mockResolvedValue([...entries, imageEntry]);
+    api.readAsset.mockResolvedValue(new Uint8Array([137, 80, 78, 71]));
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    const imageRow = await waitFor(() => {
+      const row = document.querySelector(
+        '.tree-row[title="figures/chart.png"]',
+      ) as HTMLElement | null;
+      expect(row).not.toBeNull();
+      return row as HTMLElement;
+    });
+    fireEvent.click(imageRow);
+
+    expect(
+      await screen.findByRole("img", { name: "figures/chart.png preview" }),
+    ).toBeInTheDocument();
+
+    const event = new KeyboardEvent("keydown", {
+      key: "w",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("img", { name: "figures/chart.png preview" }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByLabelText("mock editor")).toBeInTheDocument();
     });
   });
 

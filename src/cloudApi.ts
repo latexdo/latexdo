@@ -1125,5 +1125,6 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
     onCreateFolderMenu: () => () => {},
     onImportDocxMenu: () => () => {},
     onImportMarkdownMenu: () => () => {},
+    onCloseTabMenu: () => () => {},
   };
 }

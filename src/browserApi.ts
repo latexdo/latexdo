@@ -825,6 +825,7 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
     onCreateFolderMenu: () => () => {},
     onImportDocxMenu: () => () => {},
     onImportMarkdownMenu: () => () => {},
+    onCloseTabMenu: () => () => {},
   };
 
   return api;

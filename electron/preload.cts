@@ -148,16 +148,6 @@ function isCloudProject(projectId: string): boolean {
   );
 }
 
-const desktopTextFileExtensions = new Set([
-  ".tex",
-  ".bib",
-  ".sty",
-  ".cls",
-  ".asy",
-  ".txt",
-  ".md",
-  ".json",
-]);
 const desktopAssetFileExtensions = new Set([".png", ".jpg", ".jpeg", ".svg", ".pdf"]);
 
 function isSafeDesktopProjectId(value: unknown): value is string {
@@ -611,8 +601,7 @@ const api = {
           {},
           cloudShareTokenForProject(projectId),
         ).then((body) => body.content)
-      : isSafeDesktopProjectId(projectId) &&
-          isSafeDesktopRelativePath(relativePath, desktopTextFileExtensions)
+      : isSafeDesktopProjectId(projectId) && isSafeDesktopRelativePath(relativePath)
         ? ipcRenderer.invoke("file:read", projectId, relativePath)
         : invalidDesktopApiInput("readFile"),
   readAsset: (projectId: string, relativePath: string): Promise<Uint8Array> =>
@@ -1157,6 +1146,17 @@ const api = {
 
     return () => {
       ipcRenderer.removeListener("file:import-markdown", listener);
+    };
+  },
+  onCloseTabMenu: (callback: () => void) => {
+    const listener = () => {
+      callback();
+    };
+
+    ipcRenderer.on("file:close-tab", listener);
+
+    return () => {
+      ipcRenderer.removeListener("file:close-tab", listener);
     };
   },
 };

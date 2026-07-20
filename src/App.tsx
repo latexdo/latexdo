@@ -19,6 +19,7 @@ import {
   ExternalLink,
   FilePlus2,
   FileUp,
+  FileImage,
   Files,
   FolderPlus,
   FolderOpen,
@@ -275,7 +276,6 @@ import {
   languageFor,
   latexFigureCode,
   normalizeRelativePath,
-  supportedExtensions,
 } from "./features/project/projectUtils";
 import { useProject } from "./features/project/useProject";
 import { useCompile } from "./features/compile/useCompile";
@@ -353,6 +353,37 @@ type PendingSourceLocation = {
   endColumn?: number;
   word?: string;
 };
+
+type TextOpenDocument = OpenDocument & { kind?: "text" };
+
+function isTextDocument(
+  document: OpenDocument | null | undefined,
+): document is TextOpenDocument {
+  return Boolean(document && (document.kind ?? "text") === "text");
+}
+
+function isPreviewAssetMimeType(mimeType: string | null): mimeType is string {
+  return Boolean(
+    mimeType && (mimeType.startsWith("image/") || mimeType === "application/pdf"),
+  );
+}
+
+function assetPreviewTypeLabel(mimeType?: string): string {
+  return mimeType === "application/pdf" ? "PDF" : "Image";
+}
+
+function formatAssetSize(bytes?: number): string {
+  if (!bytes || bytes < 1) {
+    return "";
+  }
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function clampModelLine(model: Monaco.editor.ITextModel, lineNumber: number): number {
   const safeLine = Number.isFinite(lineNumber) ? Math.floor(lineNumber) : 1;
@@ -878,14 +909,16 @@ export default function App() {
     .runtime;
   const collaborationAvailable = runtime === "cloud" || runtime === "desktop";
 
-  const activeDocumentIsLatex = activeDocument
-    ? languageFor(activeDocument.name) === "latex"
+  const activeTextDocument = isTextDocument(activeDocument) ? activeDocument : null;
+  const activeDocumentIsAssetPreview = activeDocument?.kind === "asset";
+  const activeDocumentIsLatex = activeTextDocument
+    ? languageFor(activeTextDocument.name) === "latex"
     : false;
-  const activeDocumentIsAsymptote = activeDocument
-    ? languageFor(activeDocument.name) === "asymptote"
+  const activeDocumentIsAsymptote = activeTextDocument
+    ? languageFor(activeTextDocument.name) === "asymptote"
     : false;
-  const activeBookmarkKey = activeDocument
-    ? bookmarkKey(projectPath || projectId, activeDocument.relativePath)
+  const activeBookmarkKey = activeTextDocument
+    ? bookmarkKey(projectPath || projectId, activeTextDocument.relativePath)
     : "";
   const activeBookmarkLines = useMemo(
     () =>
@@ -893,21 +926,21 @@ export default function App() {
     [activeBookmarkKey, bookmarkStore],
   );
   const activeCollaborationReadOnlyMessage =
-    activeDocument && collaborationState.enabled && collaborationState.token
+    activeTextDocument && collaborationState.enabled && collaborationState.token
       ? currentUserRole === "viewer"
         ? "Viewer access: this shared document is read-only."
-        : realtimeBlockedDocuments[activeDocument.relativePath]
-          ? realtimeBlockedDocuments[activeDocument.relativePath]
-          : !realtimeReadyDocuments.has(activeDocument.relativePath)
+        : realtimeBlockedDocuments[activeTextDocument.relativePath]
+          ? realtimeBlockedDocuments[activeTextDocument.relativePath]
+          : !realtimeReadyDocuments.has(activeTextDocument.relativePath)
             ? "Connecting securely before editing is enabled."
             : ""
       : "";
   const documentOutline = useMemo(
     () =>
-      activeDocument && activeDocumentIsLatex
-        ? extractLatexOutline(activeDocument.content)
+      activeTextDocument && activeDocumentIsLatex
+        ? extractLatexOutline(activeTextDocument.content)
         : [],
-    [activeDocument, activeDocumentIsLatex],
+    [activeDocumentIsLatex, activeTextDocument],
   );
   const hasVisibleProject = Boolean(projectId) && !hideProjectEntries;
   const showWelcome = welcomeOpen && !activePath;
@@ -918,9 +951,9 @@ export default function App() {
   const projectName = hasVisibleProject
     ? fileName(projectPath) || "Project"
     : "No Folder";
-  const activeDocumentHistoryCount = activeDocument
+  const activeDocumentHistoryCount = activeTextDocument
     ? documentHistory.filter(
-        (snapshot) => snapshot.filePath === activeDocument.relativePath,
+        (snapshot) => snapshot.filePath === activeTextDocument.relativePath,
       ).length
     : 0;
   const activeCollaborators = collaborationState.users;
@@ -1248,18 +1281,54 @@ export default function App() {
         return;
       }
 
-      const extension = entry.name.split(".").pop()?.toLowerCase() ?? "";
-      if (!supportedExtensions.has(extension)) {
-        setStatusMessage(`${pathForDisplay(entry.name)} is not an editable text file`);
-        return;
-      }
-
       const existing = documentsRef.current.find(
         (document) => document.path === entry.path,
       );
       if (existing) {
         setActivePath(entry.path);
         activePathRef.current = entry.path;
+        return;
+      }
+
+      const assetMimeType = figurePreviewMimeType(entry.relativePath);
+      if (isPreviewAssetMimeType(assetMimeType)) {
+        try {
+          const bytes = await window.latexdo.readAsset(
+            targetProject,
+            entry.relativePath,
+          );
+          const assetDataUrl = figureBytesToDataUrl(bytes, assetMimeType);
+          const document: OpenDocument = {
+            path: entry.path,
+            relativePath: entry.relativePath,
+            name: entry.name,
+            kind: "asset",
+            content: "",
+            savedContent: "",
+            assetMimeType,
+            assetDataUrl,
+            assetBytes: bytes,
+            assetSizeBytes: bytes.byteLength,
+          };
+          setDocuments((current) => {
+            if (current.some((item) => item.path === document.path)) {
+              documentsRef.current = current;
+              return current;
+            }
+            const nextDocuments = [...current, document];
+            documentsRef.current = nextDocuments;
+            return nextDocuments;
+          });
+          setActivePath(entry.path);
+          activePathRef.current = entry.path;
+          setStatusMessage(`Opened ${pathForDisplay(entry.relativePath)}`);
+        } catch (error) {
+          setStatusMessage(
+            error instanceof Error
+              ? error.message
+              : `Could not open ${pathForDisplay(entry.relativePath)}`,
+          );
+        }
         return;
       }
 
@@ -1278,6 +1347,7 @@ export default function App() {
         path: entry.path,
         relativePath: entry.relativePath,
         name: entry.name,
+        kind: "text",
         content,
         savedContent: content,
       };
@@ -1487,8 +1557,9 @@ ${macroEnd}
       dirtyDocuments
         .filter(
           (document) =>
+            isTextDocument(document) &&
             normalizeRelativePath(document.relativePath) !==
-            normalizeRelativePath(rootRelativePath),
+              normalizeRelativePath(rootRelativePath),
         )
         .map(async (document) => {
           const normalizedPath = normalizeRelativePath(document.relativePath);
@@ -1756,6 +1827,12 @@ ${macroEnd}
         setStatusMessage("Open a document before capturing history.");
         return;
       }
+      if (!isTextDocument(document)) {
+        setStatusMessage(
+          `${pathForDisplay(document.relativePath)} is a preview and has no text history.`,
+        );
+        return;
+      }
       addHistorySnapshot(buildHistorySnapshot(document, source));
       if (source === "manual") {
         setStatusMessage(
@@ -2018,6 +2095,12 @@ ${macroEnd}
       if (!currentProject) {
         return;
       }
+      if (!isTextDocument(document)) {
+        setStatusMessage(
+          `${pathForDisplay(document.relativePath)} is a preview and does not need saving.`,
+        );
+        return;
+      }
       if (
         collaborationState.enabled &&
         collaborationState.token &&
@@ -2198,6 +2281,79 @@ ${macroEnd}
     }
     await compile();
   }, [compile, saveDocument]);
+
+  const closeActiveTab = useCallback(() => {
+    const currentPath = activePathRef.current;
+
+    if (currentPath) {
+      const currentDocuments = documentsRef.current;
+      const target = currentDocuments.find((document) => document.path === currentPath);
+      if (
+        target &&
+        target.content !== target.savedContent &&
+        !window.confirm(`Close ${target.name} without saving?`)
+      ) {
+        return;
+      }
+
+      const index = currentDocuments.findIndex(
+        (document) => document.path === currentPath,
+      );
+      const nextDocuments = currentDocuments.filter(
+        (document) => document.path !== currentPath,
+      );
+      documentsRef.current = nextDocuments;
+      setDocuments(nextDocuments);
+
+      const nextPath =
+        nextDocuments[Math.min(index, nextDocuments.length - 1)]?.path ?? "";
+      setActivePath(nextPath);
+      activePathRef.current = nextPath;
+      setStatusMessage(
+        target ? `Closed ${pathForDisplay(target.relativePath)}` : "Closed active tab",
+      );
+      return;
+    }
+
+    if (gitDiffSessionRef.current && !welcomeOpen) {
+      setGitDiffSession(null);
+      gitDiffSessionRef.current = null;
+      setGitBlameLines([]);
+      gitDiffSessionIdRef.current = "";
+
+      const returnPath = gitDiffReturnPathRef.current;
+      const nextPath = documentsRef.current.some(
+        (document) => document.path === returnPath,
+      )
+        ? returnPath
+        : (documentsRef.current[0]?.path ?? "");
+      setActivePath(nextPath);
+      activePathRef.current = nextPath;
+      setStatusMessage("Closed diff tab");
+      return;
+    }
+
+    if (welcomeOpen) {
+      setWelcomeOpen(false);
+      if (hideProjectEntriesRef.current) {
+        setActivePath("");
+        activePathRef.current = "";
+        setPreviewVisible(false);
+        setStatusMessage("Closed Welcome");
+        return;
+      }
+
+      const previousEditorPath = editorPathBeforeWelcomeRef.current;
+      const nextPath =
+        documentsRef.current.find((document) => document.path === previousEditorPath)
+          ?.path ??
+        documentsRef.current[0]?.path ??
+        "";
+      setActivePath(nextPath);
+      activePathRef.current = nextPath;
+      setStatusMessage("Closed Welcome");
+    }
+  }, [setGitBlameLines, setGitDiffSession, welcomeOpen]);
 
   const downloadPdf = useCallback(async () => {
     const currentProject = projectIdRef.current;
@@ -3039,8 +3195,8 @@ ${macroEnd}
 
   useEffect(() => {
     if (
-      !activeDocument ||
-      !supportsProofreading(activeDocument.name) ||
+      !activeTextDocument ||
+      !supportsProofreading(activeTextDocument.name) ||
       !proofreadingSettings?.enabled
     ) {
       setProofreadingLoading(false);
@@ -3056,9 +3212,9 @@ ${macroEnd}
       window.clearTimeout(timeout);
     };
   }, [
-    activeDocument?.content,
-    activeDocument?.name,
-    activeDocument?.relativePath,
+    activeTextDocument?.content,
+    activeTextDocument?.name,
+    activeTextDocument?.relativePath,
     proofreadingSettings?.enabled,
     proofreadingSettings?.language,
     proofreadingSettings?.motherTongue,
@@ -3126,6 +3282,27 @@ ${macroEnd}
     tikzCanvasOpen,
     tikzConverterOpen,
   ]);
+
+  useEffect(() => {
+    const handleCloseTabKeyDown = (event: KeyboardEvent) => {
+      const modifier = event.metaKey || event.ctrlKey;
+      if (
+        !modifier ||
+        event.altKey ||
+        event.shiftKey ||
+        event.key.toLowerCase() !== "w"
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      closeActiveTab();
+    };
+
+    window.addEventListener("keydown", handleCloseTabKeyDown, true);
+    return () => window.removeEventListener("keydown", handleCloseTabKeyDown, true);
+  }, [closeActiveTab]);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -4245,6 +4422,7 @@ ${macroEnd}
       if (
         !editor ||
         !document ||
+        !isTextDocument(document) ||
         !projectIdRef.current ||
         !collaborationAvailable ||
         !collaborationState.enabled ||
@@ -4468,19 +4646,23 @@ ${macroEnd}
   const refreshEditorBlame = useCallback(async () => {
     const currentProject = projectIdRef.current;
     const currentPath = activePathRef.current;
-    const relativePath = documentsRef.current.find(
+    const currentDocument = documentsRef.current.find(
       (document) => document.path === currentPath,
-    )?.relativePath;
+    );
     const sequence = ++editorBlameFetchSeqRef.current;
-    if (!currentProject || !relativePath) {
+    if (!currentProject || !currentDocument || !isTextDocument(currentDocument)) {
       setEditorBlameLines([]);
       return;
     }
 
     try {
-      const blame = await window.latexdo.getGitBlame(currentProject, relativePath, {
-        kind: "working-tree",
-      });
+      const blame = await window.latexdo.getGitBlame(
+        currentProject,
+        currentDocument.relativePath,
+        {
+          kind: "working-tree",
+        },
+      );
       if (
         sequence === editorBlameFetchSeqRef.current &&
         currentPath === activePathRef.current
@@ -4510,8 +4692,8 @@ ${macroEnd}
   useEffect(() => {
     editorBlameStateRef.current = {
       byLine: blameByLine(editorBlameLines),
-      dirty: activeDocument
-        ? activeDocument.content !== activeDocument.savedContent
+      dirty: activeTextDocument
+        ? activeTextDocument.content !== activeTextDocument.savedContent
         : false,
       inlineEnabled: settings.inlineBlame,
       fileBlameEnabled,
@@ -4519,7 +4701,7 @@ ${macroEnd}
     applyEditorBlameDecorations();
   }, [
     editorBlameLines,
-    activeDocument,
+    activeTextDocument,
     settings.inlineBlame,
     fileBlameEnabled,
     applyEditorBlameDecorations,
@@ -5855,6 +6037,12 @@ ${macroEnd}
       void importMarkdown();
     });
   }, [importMarkdown]);
+
+  useEffect(() => {
+    return window.latexdo.onCloseTabMenu(() => {
+      closeActiveTab();
+    });
+  }, [closeActiveTab]);
 
   const toggleSidebar = () => {
     setSidebarVisible((visible) => !visible);
@@ -7401,7 +7589,7 @@ ${macroEnd}
       window.clearTimeout(historyAutoCaptureTimerRef.current);
       historyAutoCaptureTimerRef.current = null;
     }
-    if (!projectId || !activeDocument?.path || showWelcome || showBlankWorkspace) {
+    if (!projectId || !activeTextDocument?.path || showWelcome || showBlankWorkspace) {
       return;
     }
 
@@ -7412,6 +7600,7 @@ ${macroEnd}
       );
       if (
         !document ||
+        !isTextDocument(document) ||
         !document.content.trim() ||
         document.content === document.savedContent
       ) {
@@ -7427,8 +7616,8 @@ ${macroEnd}
       }
     };
   }, [
-    activeDocument?.content,
-    activeDocument?.path,
+    activeTextDocument?.content,
+    activeTextDocument?.path,
     addHistorySnapshot,
     projectId,
     showBlankWorkspace,
@@ -8013,7 +8202,7 @@ ${macroEnd}
                     className="small-icon"
                     onClick={() => captureActiveHistorySnapshot("manual")}
                     title="Capture current state"
-                    disabled={!activeDocument}
+                    disabled={!activeTextDocument}
                   >
                     <Plus size={14} />
                   </button>
@@ -8515,8 +8704,8 @@ ${macroEnd}
             ) : activeSidebar === "history" ? (
               <div className="sidebar-panel history-panel">
                 <HistorySidebar
-                  activeFilePath={activeDocument?.relativePath}
-                  activeFileContent={activeDocument?.content}
+                  activeFilePath={activeTextDocument?.relativePath}
+                  activeFileContent={activeTextDocument?.content}
                   activeFileSnapshotCount={activeDocumentHistoryCount}
                   totalSnapshotCount={documentHistory.length}
                   snapshots={documentHistory}
@@ -8567,7 +8756,8 @@ ${macroEnd}
               </button>
             ) : null}
             {documents.map((document) => {
-              const dirty = document.content !== document.savedContent;
+              const dirty =
+                isTextDocument(document) && document.content !== document.savedContent;
               return (
                 <button
                   key={document.path}
@@ -8579,7 +8769,11 @@ ${macroEnd}
                     activePathRef.current = document.path;
                   }}
                 >
-                  <Code2 size={14} className="tab-file-icon" />
+                  {document.kind === "asset" ? (
+                    <FileImage size={14} className="tab-file-icon" />
+                  ) : (
+                    <Code2 size={14} className="tab-file-icon" />
+                  )}
                   <span>{pathForDisplay(document.name)}</span>
                   <span
                     className={`tab-close ${dirty ? "dirty" : ""}`}
@@ -8608,7 +8802,27 @@ ${macroEnd}
             <section
               className={`source-pane ${showWelcome ? "welcome-only" : ""} ${showEmptyEditor ? "empty-only" : ""} ${gitDiffSession ? "git-diff-active" : ""}`}
             >
-              {activeDocument && !showWelcome && !gitDiffSession ? (
+              {activeDocument &&
+              !showWelcome &&
+              !gitDiffSession &&
+              activeDocumentIsAssetPreview ? (
+                <div className="source-toolbar asset-source-toolbar">
+                  <div className="asset-toolbar-file">
+                    <span className="pane-label">
+                      {assetPreviewTypeLabel(activeDocument.assetMimeType)}
+                    </span>
+                    <FileImage size={14} />
+                    <span>{pathForDisplay(activeDocument.relativePath)}</span>
+                    {formatAssetSize(activeDocument.assetSizeBytes) ? (
+                      <small>{formatAssetSize(activeDocument.assetSizeBytes)}</small>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+              {activeDocument &&
+              !showWelcome &&
+              !gitDiffSession &&
+              !activeDocumentIsAssetPreview ? (
                 <div className="source-toolbar">
                   <div className="root-control">
                     <span className="control-label">ROOT</span>
@@ -8975,6 +9189,44 @@ ${macroEnd}
                     </span>
                   </div>
                 </div>
+              ) : activeDocumentIsAssetPreview && activeDocument?.assetDataUrl ? (
+                <div
+                  className={`asset-preview-pane ${
+                    activeDocument.assetMimeType === "application/pdf"
+                      ? "asset-preview-pdf-pane"
+                      : ""
+                  }`}
+                  aria-label={`${pathForDisplay(activeDocument.relativePath)} preview`}
+                >
+                  {activeDocument.assetMimeType === "application/pdf" &&
+                  activeDocument.assetBytes ? (
+                    <Suspense
+                      fallback={
+                        <div className="preview-empty" aria-label="Loading PDF">
+                          <LoaderCircle className="spin" size={18} />
+                        </div>
+                      }
+                    >
+                      <PdfPreview
+                        data={activeDocument.assetBytes}
+                        scale={pdfScale}
+                        rotation={pdfRotation}
+                        target={null}
+                      />
+                    </Suspense>
+                  ) : activeDocument.assetMimeType === "application/pdf" ? (
+                    <div className="asset-preview-fallback">
+                      PDF preview unavailable.
+                    </div>
+                  ) : (
+                    <img
+                      className="asset-preview-image"
+                      src={activeDocument.assetDataUrl}
+                      alt={`${pathForDisplay(activeDocument.relativePath)} preview`}
+                      draggable={false}
+                    />
+                  )}
+                </div>
               ) : activeDocument ? (
                 <div
                   className="editor-drop-zone"
@@ -9037,7 +9289,7 @@ ${macroEnd}
                         links: true,
                         multiCursorModifier: "alt",
                         multiCursorPaste: "spread",
-                        columnSelection: true,
+                        columnSelection: false,
                         scrollBeyondLastLine: false,
                         automaticLayout: true,
                         fixedOverflowWidgets: false,
@@ -10223,7 +10475,7 @@ ${macroEnd}
               {Math.max(collaboratorCount, 1)} live
             </button>
           ) : null}
-          {activeDocument ? (
+          {activeTextDocument ? (
             <>
               <button
                 type="button"
@@ -10253,17 +10505,29 @@ ${macroEnd}
           <span className="status-message">{statusMessage}</span>
         </div>
         <div>
-          <span>
-            {activeDocument
-              ? activeDocumentIsAsymptote
-                ? "Asymptote"
-                : activeDocumentIsLatex
-                  ? "LaTeX"
-                  : "Plain Text"
-              : "Plain Text"}
-          </span>
-          <span>UTF-8</span>
-          <span>Spaces: 2</span>
+          {activeDocumentIsAssetPreview && activeDocument ? (
+            <>
+              <span>{assetPreviewTypeLabel(activeDocument.assetMimeType)}</span>
+              <span>{activeDocument.assetMimeType}</span>
+              {formatAssetSize(activeDocument.assetSizeBytes) ? (
+                <span>{formatAssetSize(activeDocument.assetSizeBytes)}</span>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <span>
+                {activeTextDocument
+                  ? activeDocumentIsAsymptote
+                    ? "Asymptote"
+                    : activeDocumentIsLatex
+                      ? "LaTeX"
+                      : "Plain Text"
+                  : "Plain Text"}
+              </span>
+              <span>UTF-8</span>
+              <span>Spaces: 2</span>
+            </>
+          )}
         </div>
       </footer>
 
@@ -11173,8 +11437,8 @@ ${macroEnd}
                             !proofreadingSettings ||
                             !proofreadingSettings.enabled ||
                             proofreadingLoading ||
-                            !activeDocument ||
-                            !supportsProofreading(activeDocument.name)
+                            !activeTextDocument ||
+                            !supportsProofreading(activeTextDocument.name)
                           }
                         >
                           {proofreadingLoading ? "Checking..." : "Proofread now"}

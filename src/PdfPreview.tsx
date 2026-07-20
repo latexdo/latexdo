@@ -23,7 +23,7 @@ interface PdfPreviewProps {
   scale: number;
   rotation?: number;
   target: SyncTexPdfLocation | null;
-  onNavigate: (location: PdfClickLocation) => void;
+  onNavigate?: (location: PdfClickLocation) => void;
 }
 
 interface PdfPageProps {
@@ -32,7 +32,7 @@ interface PdfPageProps {
   scale: number;
   rotation: number;
   target: SyncTexPdfLocation | null;
-  onNavigate: (location: PdfClickLocation) => void;
+  onNavigate?: (location: PdfClickLocation) => void;
 }
 
 interface HighlightRect {
@@ -258,6 +258,9 @@ function PdfPage({
   }, [cssScale, pageNumber, rendered, target]);
 
   const handleDoubleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!onNavigate) {
+      return;
+    }
     event.preventDefault();
     const bounds = event.currentTarget.getBoundingClientRect();
     onNavigate({
@@ -271,10 +274,10 @@ function PdfPage({
   return (
     <div
       ref={pageRef}
-      className="pdf-page"
+      className={`pdf-page ${onNavigate ? "pdf-page-interactive" : ""}`}
       data-page-number={pageNumber}
-      title="Double-click to jump to source"
-      onDoubleClick={handleDoubleClick}
+      title={onNavigate ? "Double-click to jump to source" : undefined}
+      onDoubleClick={onNavigate ? handleDoubleClick : undefined}
     >
       <canvas ref={canvasRef} />
       <div ref={textLayerRef} className="textLayer" />
