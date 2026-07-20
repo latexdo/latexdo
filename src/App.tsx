@@ -52,6 +52,7 @@ import {
   Search,
   Settings,
   Sigma,
+  Sparkles,
   Table2,
   TerminalSquare,
   Underline,
@@ -89,6 +90,17 @@ import {
   type CitationInsertCommand,
 } from "./components/CitationManager";
 import { ProjectSearchPanel } from "./components/ProjectSearchPanel";
+import { AiSidebar } from "./components/AiSidebar";
+import { SetupWizard } from "./components/SetupWizard";
+import { CloudProviderForm } from "./components/CloudProviderForm";
+import { ProfileDialog } from "./components/ProfileDialog";
+import {
+  loadAiConfig,
+  saveAiConfig,
+  layoutPresetFlags,
+  type AiConfig,
+} from "./features/ai/aiConfig";
+import type { AgentContext, EditProposal } from "./features/ai/aiTools";
 import { generateRebuttalLetter } from "./rebuttalGenerator";
 import {
   escapeLatexText,
@@ -327,7 +339,7 @@ type PanelKind =
   | "checkAnalysis"
   | "structureReport"
   | "pdfReport";
-type SidebarView = "explorer" | "sourceControl" | "history" | "search";
+type SidebarView = "explorer" | "sourceControl" | "history" | "search" | "ai";
 const collaborationProjectReconciliationMs = 5 * 60_000;
 const startupUpdateCheckDelayMs = import.meta.env.MODE === "test" ? 0 : 2_000;
 type LatexToolbarCommand =
@@ -668,6 +680,12 @@ export default function App() {
     settings.notationManagerEnabled,
   ]);
   const [activeSidebar, setActiveSidebar] = useState<SidebarView>("explorer");
+  const [aiConfig, setAiConfig] = useState<AiConfig>(loadAiConfig);
+  const [aiWizardOpen, setAiWizardOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  useEffect(() => {
+    saveAiConfig(aiConfig);
+  }, [aiConfig]);
   const editorPreviewRef = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<Engine>(settings.defaultEngine);
   const [rootFile, setRootFile] = useState("main.tex");
@@ -5910,6 +5928,178 @@ ${macroEnd}
     setActiveSidebar(view);
   }, []);
 
+  // --- AI agent integration -------------------------------------------------
+  const aiIsDesktop = Boolean((window as { aiApi?: unknown }).aiApi);
+
+  const applyAgentEdit = useCallback(
+    async (proposal: EditProposal) => {
+      const editor = editorRef.current;
+      if (proposal.kind === "replace-selection" && editor) {
+        const selection = editor.getSelection();
+        if (selection) {
+          editor.executeEdits("ai-agent", [
+            { range: selection, text: proposal.newText },
+          ]);
+          editor.focus();
+        }
+        return;
+      }
+      if (proposal.kind === "insert-at-cursor" && editor) {
+        const position = editor.getPosition();
+        if (position) {
+          editor.executeEdits("ai-agent", [
+            {
+              range: {
+                startLineNumber: position.lineNumber,
+                startColumn: position.column,
+                endLineNumber: position.lineNumber,
+                endColumn: position.column,
+              },
+              text: proposal.newText,
+            },
+          ]);
+          editor.focus();
+        }
+        return;
+      }
+      // replace-file
+      if (
+        proposal.path === activeTextDocument?.relativePath &&
+        editor?.getModel()
+      ) {
+        editor.getModel()?.setValue(proposal.newText);
+      } else if (projectId) {
+        await window.latexdo.writeFile(projectId, proposal.path, proposal.newText);
+      }
+    },
+    [activeTextDocument, projectId],
+  );
+
+  const flattenProjectFiles = useCallback((entries: ProjectEntry[]): string[] => {
+    const out: string[] = [];
+    const walk = (list: ProjectEntry[]) => {
+      for (const entry of list) {
+        if (entry.type === "directory") {
+          if (entry.children) walk(entry.children);
+        } else {
+          out.push(entry.relativePath);
+        }
+      }
+    };
+    walk(entries);
+    return out;
+  }, []);
+
+  const agentContext = useMemo<AgentContext>(
+    () => ({
+      projectName: () => projectName || "Untitled project",
+      activeFilePath: () => activeTextDocument?.relativePath ?? null,
+      listFiles: async () => {
+        if (!projectId) return [];
+        const entries = await window.latexdo.listProject(projectId);
+        return flattenProjectFiles(entries);
+      },
+      readFile: (path) =>
+        projectId
+          ? window.latexdo.readFile(projectId, path)
+          : Promise.reject(new Error("No project open")),
+      writeFile: async (path, content) => {
+        if (!projectId) throw new Error("No project open");
+        await window.latexdo.writeFile(projectId, path, content);
+      },
+      documentText: () =>
+        editorRef.current?.getModel()?.getValue() ??
+        activeTextDocument?.content ??
+        "",
+      selection: () => {
+        const editor = editorRef.current;
+        const selection = editor?.getSelection();
+        const text =
+          selection && editor
+            ? (editor.getModel()?.getValueInRange(selection) ?? "")
+            : "";
+        return { text, hasSelection: text.trim().length > 0 };
+      },
+      applyEdit: applyAgentEdit,
+      compile: async () => {
+        const result = await compile();
+        return {
+          ok: Boolean(result?.ok),
+          log: result?.output ?? "",
+          diagnostics: (result?.diagnostics ?? []).map(
+            (d) => `${d.severity} ${d.file}:${d.line} — ${d.message}`,
+          ),
+        };
+      },
+      runChecks: async (kind) => {
+        const diagnostics = compileResult?.diagnostics ?? [];
+        if (!diagnostics.length) {
+          return `The '${kind}' checker found no compile-level issues. Open the Problems panel for the full built-in ${kind} report.`;
+        }
+        return (
+          `Current diagnostics (also feeding the ${kind} checker):\n` +
+          diagnostics
+            .slice(0, 30)
+            .map((d) => `- ${d.severity} ${d.file}:${d.line} — ${d.message}`)
+            .join("\n")
+        );
+      },
+      insertCitation: async (query) => {
+        const needle = query.toLowerCase();
+        for (const doc of documents) {
+          if (!doc.relativePath.endsWith(".bib")) continue;
+          const entries = doc.content.matchAll(/@\w+\s*\{\s*([^,\s]+)\s*,([^@]*)/g);
+          for (const match of entries) {
+            const key = match[1];
+            const body = (match[2] ?? "").toLowerCase();
+            if (key.toLowerCase().includes(needle) || body.includes(needle)) {
+              return `Use \\cite{${key}} — matched in ${doc.relativePath}.`;
+            }
+          }
+        }
+        return `No bibliography entry matched "${query}". Add it to a .bib file first.`;
+      },
+      // Edits flow through Monaco (visible + undoable); a diff-approval UI is a
+      // planned follow-up, so for now we apply and rely on undo.
+      requestApproval: async () => true,
+    }),
+    [
+      projectName,
+      activeTextDocument,
+      projectId,
+      documents,
+      compileResult,
+      compile,
+      applyAgentEdit,
+      flattenProjectFiles,
+    ],
+  );
+
+  const applyLayoutPreset = useCallback(
+    (config: AiConfig) => {
+      const flags = layoutPresetFlags[config.layoutPreset];
+      setSidebarVisible(flags.sidebarVisible);
+      setPreviewVisible(flags.previewVisible);
+      setPanelVisible(flags.panelVisible);
+      setSettings((current) => ({ ...current, minimap: flags.minimap }));
+    },
+    [setSettings],
+  );
+
+  const completeAiSetup = useCallback(
+    (config: AiConfig) => {
+      setAiConfig(config);
+      setAiWizardOpen(false);
+      applyLayoutPreset(config);
+      setStatusMessage(
+        config.userName
+          ? `Welcome, ${config.userName}. AI assistant ready.`
+          : "AI assistant ready.",
+      );
+    },
+    [applyLayoutPreset],
+  );
+
   const toggleSpellCheckerEnabled = useCallback(
     (enabled: boolean) => {
       if (!spellCheckerSettings) {
@@ -7903,6 +8093,29 @@ ${macroEnd}
 
   return (
     <div className="app-shell" data-theme={settings.colorTheme}>
+      {(!aiConfig.setupComplete || aiWizardOpen) && (
+        <SetupWizard
+          initialConfig={aiConfig}
+          isDesktop={aiIsDesktop}
+          onApplyTheme={(theme) =>
+            setSettings((current) => ({ ...current, colorTheme: theme }))
+          }
+          onComplete={completeAiSetup}
+        />
+      )}
+      {profileOpen && (
+        <ProfileDialog
+          profile={aiConfig.profile}
+          onChange={(profile) => setAiConfig((c) => ({ ...c, profile }))}
+          onClose={() => setProfileOpen(false)}
+          onOpenExternal={(url) =>
+            (
+              window as { latexdo?: { openExternal?: (u: string) => void } }
+            ).latexdo?.openExternal?.(url) ??
+            window.open(url, "_blank", "noopener")
+          }
+        />
+      )}
       <header className="titlebar">
         <div className="titlebar-drag">
           <AppIcon className="app-mark" />
@@ -8043,6 +8256,15 @@ ${macroEnd}
               <History size={21} />
             </button>
             <button
+              className={`activity-button ${
+                sidebarVisible && activeSidebar === "ai" ? "active" : ""
+              }`}
+              onClick={() => openSidebar("ai")}
+              title="AI assistant"
+            >
+              <Sparkles size={21} />
+            </button>
+            <button
               className={`activity-button ${tikzCanvasOpen ? "active" : ""}`}
               onClick={() => setTikzCanvasOpen((open) => !open)}
               title="Draw"
@@ -8101,6 +8323,16 @@ ${macroEnd}
           <div>
             <button
               type="button"
+              className={`activity-button ${profileOpen ? "active" : ""}`}
+              onClick={() => setProfileOpen(true)}
+              title="Researcher profile"
+              aria-label="Open researcher profile"
+              aria-pressed={profileOpen}
+            >
+              <User size={21} />
+            </button>
+            <button
+              type="button"
               className={`activity-button ${settingsOpen ? "active" : ""}`}
               onClick={() => setSettingsOpen(true)}
               title="Settings"
@@ -8113,6 +8345,17 @@ ${macroEnd}
         </nav>
 
         {sidebarVisible ? (
+          activeSidebar === "ai" ? (
+            <aside className="sidebar" data-view="ai">
+              <AiSidebar
+                config={aiConfig}
+                ctx={agentContext}
+                isDesktop={aiIsDesktop}
+                onOpenSettings={() => setAiWizardOpen(true)}
+                onUpdateConfig={setAiConfig}
+              />
+            </aside>
+          ) : (
           <aside
             className={`sidebar ${activeSidebar === "sourceControl" ? "source-control-sidebar" : ""}`}
             data-view={activeSidebar}
@@ -8717,6 +8960,7 @@ ${macroEnd}
               </div>
             ) : null}
           </aside>
+          )
         ) : null}
 
         <main className="main-area">
@@ -10675,6 +10919,12 @@ ${macroEnd}
                 Editor
               </button>
               <button
+                className={`settings-tab ${settingsTab === "ai" ? "active" : ""}`}
+                onClick={() => setSettingsTab("ai")}
+              >
+                AI Assistant
+              </button>
+              <button
                 className={`settings-tab ${settingsTab === "extensions" ? "active" : ""}`}
                 onClick={() => setSettingsTab("extensions")}
               >
@@ -10755,6 +11005,137 @@ ${macroEnd}
             </div>
 
             <div className="settings-list">
+              {settingsTab === "ai" ? (
+                <div className="ai-settings-panel">
+                  <div className="settings-section-heading">AI Assistant</div>
+                  <p className="settings-hint">
+                    {aiConfig.provider === "off"
+                      ? "The AI assistant is turned off."
+                      : `Provider: ${aiConfig.provider}${
+                          aiConfig.provider === "local"
+                            ? ` · ${aiConfig.modelId}${
+                                aiConfig.modelDownloaded ? " (ready)" : " (not downloaded)"
+                              }`
+                            : aiConfig.provider === "cloud"
+                              ? ` · ${aiConfig.cloud.vendor} / ${aiConfig.cloud.model}${
+                                  aiConfig.cloud.apiKey ? "" : " (no API key)"
+                                }`
+                              : ` · ${aiConfig.ollamaModel}`
+                        }`}
+                  </p>
+                  <p className="settings-hint">
+                    Setup is optional — you can skip it and configure the assistant
+                    here at any time, or re-run the guided setup to finish or change
+                    your choices.
+                  </p>
+                  <div className="ai-settings-actions">
+                    <button
+                      className="ai-wizard-primary"
+                      onClick={() => {
+                        setSettingsOpen(false);
+                        setAiWizardOpen(true);
+                      }}
+                    >
+                      {aiConfig.setupComplete
+                        ? "Re-run setup wizard"
+                        : "Complete AI setup"}
+                    </button>
+                    {aiConfig.provider === "off" ? (
+                      <button
+                        className="ai-wizard-ghost"
+                        onClick={() =>
+                          setAiConfig((c) => ({
+                            ...c,
+                            provider: aiIsDesktop ? "local" : "cloud",
+                          }))
+                        }
+                      >
+                        Turn AI on
+                      </button>
+                    ) : (
+                      <button
+                        className="ai-wizard-ghost"
+                        onClick={() =>
+                          setAiConfig((c) => ({ ...c, provider: "off" }))
+                        }
+                      >
+                        Turn AI off
+                      </button>
+                    )}
+                  </div>
+                  <div className="settings-section-heading">
+                    Cloud provider
+                  </div>
+                  <p className="settings-hint">
+                    Connect Claude, ChatGPT, Gemini, Groq, DeepSeek, Mistral,
+                    OpenRouter, or any OpenAI-compatible endpoint with your own key.
+                    {aiConfig.provider !== "cloud" &&
+                      " Switch to cloud below to use it as your active provider."}
+                  </p>
+                  <CloudProviderForm
+                    cloud={aiConfig.cloud}
+                    onChange={(cloud) => setAiConfig((c) => ({ ...c, cloud }))}
+                    onOpenExternal={(url) =>
+                      (
+                        window as {
+                          latexdo?: { openExternal?: (u: string) => void };
+                        }
+                      ).latexdo?.openExternal?.(url) ??
+                      window.open(url, "_blank", "noopener")
+                    }
+                  />
+                  {aiConfig.provider !== "cloud" && aiConfig.cloud.apiKey && (
+                    <button
+                      className="ai-wizard-ghost"
+                      onClick={() =>
+                        setAiConfig((c) => ({ ...c, provider: "cloud" }))
+                      }
+                    >
+                      Use this cloud provider
+                    </button>
+                  )}
+
+                  <div className="settings-section-heading">Autonomy</div>
+                  <p className="settings-hint">
+                    Choose how much the agent does on its own. You can also flip this
+                    any time from the toggle at the top of the AI panel.
+                  </p>
+                  <label className="ai-autonomy-option">
+                    <input
+                      type="radio"
+                      name="ai-autonomy"
+                      checked={!aiConfig.autoApproveEdits}
+                      onChange={() =>
+                        setAiConfig((c) => ({ ...c, autoApproveEdits: false }))
+                      }
+                    />
+                    <span>
+                      <strong>Ask me at each step</strong> — the agent pauses before
+                      every change and waits for you to approve or decline it.
+                    </span>
+                  </label>
+                  <label className="ai-autonomy-option">
+                    <input
+                      type="radio"
+                      name="ai-autonomy"
+                      checked={aiConfig.autoApproveEdits}
+                      onChange={() =>
+                        setAiConfig((c) => ({ ...c, autoApproveEdits: true }))
+                      }
+                    />
+                    <span>
+                      <strong>Fully autonomous</strong> — the agent reads, edits, and
+                      compiles on its own without asking. All edits stay undoable.
+                    </span>
+                  </label>
+                  {!aiIsDesktop && (
+                    <p className="settings-hint">
+                      This is the browser build — local models need the desktop app.
+                      Choose a cloud provider in the wizard to use AI here.
+                    </p>
+                  )}
+                </div>
+              ) : null}
               {settingsTab === "editor" ? (
                 <>
                   <div className="settings-section-heading">

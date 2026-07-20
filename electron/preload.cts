@@ -1204,5 +1204,56 @@ const terminalApi = {
 
 contextBridge.exposeInMainWorld("terminalApi", terminalApi);
 
+// --- AI bridge -----------------------------------------------------------
+// Local (node-llama-cpp) + Ollama generation and model management. Cloud
+// generation runs directly in the renderer, so it isn't proxied here.
+const aiApi = {
+  generateStep: (req: unknown): Promise<unknown> =>
+    ipcRenderer.invoke("ai:generate-step", req),
+
+  subscribeTokens: (
+    callback: (payload: { requestId: string; text: string }) => void,
+  ) => {
+    const listener = (
+      _event: unknown,
+      payload: { requestId: string; text: string },
+    ) => callback(payload);
+    ipcRenderer.on("ai:token", listener);
+    return () => ipcRenderer.removeListener("ai:token", listener);
+  },
+
+  abort: (requestId: string): Promise<void> =>
+    ipcRenderer.invoke("ai:abort", requestId),
+
+  listModels: (): Promise<unknown[]> => ipcRenderer.invoke("ai:list-models"),
+
+  downloadModel: (
+    modelId: string,
+    url: string,
+    fileName: string,
+  ): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke("ai:download-model", modelId, url, fileName),
+
+  cancelDownload: (modelId: string): Promise<void> =>
+    ipcRenderer.invoke("ai:cancel-download", modelId),
+
+  subscribeDownload: (callback: (payload: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on("ai:download-progress", listener);
+    return () => ipcRenderer.removeListener("ai:download-progress", listener);
+  },
+
+  deleteModel: (fileName: string): Promise<void> =>
+    ipcRenderer.invoke("ai:delete-model", fileName),
+
+  detectOllama: (
+    baseUrl: string,
+  ): Promise<{ available: boolean; models: string[] }> =>
+    ipcRenderer.invoke("ai:detect-ollama", baseUrl),
+};
+
+contextBridge.exposeInMainWorld("aiApi", aiApi);
+
 export type LatexDoApi = typeof api;
 export type TerminalApi = typeof terminalApi;
+export type AiApi = typeof aiApi;

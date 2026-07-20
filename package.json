@@ -36,6 +36,7 @@
     "lucide-react": "^0.468.0",
     "mathjax-full": "^3.2.1",
     "monaco-editor": "^0.52.2",
+    "node-llama-cpp": "^3.7.0",
     "node-pty": "^1.1.0",
     "pdfjs-dist": "^4.10.38",
     "react": "^19.0.0",
@@ -74,6 +75,10 @@
     "productName": "LatexDo",
     "icon": "build/icon.png",
     "npmRebuild": true,
+    "asarUnpack": [
+      "**/node_modules/node-llama-cpp/**",
+      "**/node_modules/@node-llama-cpp/**"
+    ],
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
