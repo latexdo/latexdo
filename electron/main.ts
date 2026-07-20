@@ -77,6 +77,7 @@ import {
   runGitText,
 } from "./git.js";
 import { registerTerminalIpc } from "./terminal.js";
+import { registerAiIpc } from "./ai/aiIpc.js";
 import { listProject } from "./projectTree.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -3666,6 +3667,8 @@ app.whenReady().then(async () => {
   }
   registerTerminalIpc({ getProjectRoot });
   console.log("[latexdo] app:terminal-registered");
+  registerAiIpc();
+  console.log("[latexdo] app:ai-registered");
   buildApplicationMenu();
   console.log("[latexdo] app:menu-built");
   ipcMain.handle("project:open", async (event, ...rawArgs: unknown[]) => {
