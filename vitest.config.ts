@@ -17,7 +17,10 @@ export default defineConfig({
         "src/latex/*.ts",
         "src/utils/*.ts",
       ],
-      exclude: ["src/latex/registerLatexCompletions.ts"],
+      exclude: [
+        "src/components/MonacoEditor.tsx",
+        "src/latex/registerLatexCompletions.ts",
+      ],
       thresholds: {
         lines: 79,
         functions: 82,

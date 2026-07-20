@@ -101,7 +101,9 @@ function int(value: unknown, fallback: number, min: number, max: number): number
 }
 
 function isProvider(value: unknown): value is AiProvider {
-  return value === "local" || value === "ollama" || value === "cloud" || value === "off";
+  return (
+    value === "local" || value === "ollama" || value === "cloud" || value === "off"
+  );
 }
 function isVendor(value: unknown): value is CloudVendor {
   return value === "openai" || value === "anthropic";
@@ -182,9 +184,24 @@ export interface LayoutFlags {
 }
 
 export const layoutPresetFlags: Record<LayoutPreset, LayoutFlags> = {
-  focus: { sidebarVisible: false, previewVisible: true, panelVisible: false, minimap: false },
-  balanced: { sidebarVisible: true, previewVisible: true, panelVisible: false, minimap: true },
-  power: { sidebarVisible: true, previewVisible: true, panelVisible: true, minimap: true },
+  focus: {
+    sidebarVisible: false,
+    previewVisible: true,
+    panelVisible: false,
+    minimap: false,
+  },
+  balanced: {
+    sidebarVisible: true,
+    previewVisible: true,
+    panelVisible: false,
+    minimap: true,
+  },
+  power: {
+    sidebarVisible: true,
+    previewVisible: true,
+    panelVisible: true,
+    minimap: true,
+  },
 };
 
 export const layoutPresetInfo: {
@@ -205,7 +222,8 @@ export const layoutPresetInfo: {
   {
     id: "power",
     name: "Power",
-    description: "Everything on: sidebar, preview, and the bottom problems/output panel.",
+    description:
+      "Everything on: sidebar, preview, and the bottom problems/output panel.",
   },
 ];
 

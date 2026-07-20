@@ -13,10 +13,7 @@ import {
   Link2,
 } from "lucide-react";
 import type { ResearcherProfile } from "../features/ai/researcherProfile";
-import {
-  generateScholarToken,
-  tokenCodename,
-} from "../features/ai/researcherProfile";
+import { generateScholarToken, tokenCodename } from "../features/ai/researcherProfile";
 import { fetchOrcidProfile, isValidOrcid } from "../features/ai/orcid";
 
 interface ProfileDialogProps {
@@ -37,8 +34,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
   const [error, setError] = React.useState("");
   const [copied, setCopied] = React.useState(false);
 
-  const patch = (part: Partial<ResearcherProfile>) =>
-    onChange({ ...profile, ...part });
+  const patch = (part: Partial<ResearcherProfile>) => onChange({ ...profile, ...part });
 
   const regenerate = () => patch({ token: generateScholarToken() });
 
@@ -96,8 +92,8 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         </div>
 
         <p className="settings-hint">
-          The AI uses this to understand who it's helping — your field, prior
-          work, and terminology. Stored locally; you control it.
+          The AI uses this to understand who it's helping — your field, prior work, and
+          terminology. Stored locally; you control it.
         </p>
 
         <div className="profile-mode-tabs">

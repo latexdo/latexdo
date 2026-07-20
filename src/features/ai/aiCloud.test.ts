@@ -18,16 +18,20 @@ afterEach(() => {
 
 describe("generateStepCloud — provider routing", () => {
   it("calls the Anthropic Messages API with x-api-key", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({ content: [{ type: "text", text: "ok" }] }),
-        { status: 200 },
-      ),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), {
+          status: 200,
+        }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
     const step = await generateStepCloud(
-      req({ cloudVendor: "anthropic", cloudModel: "claude-haiku-4-5", cloudApiKey: "sk-ant" }),
+      req({
+        cloudVendor: "anthropic",
+        cloudModel: "claude-haiku-4-5",
+        cloudApiKey: "sk-ant",
+      }),
       () => {},
     );
 
@@ -38,11 +42,11 @@ describe("generateStepCloud — provider routing", () => {
   });
 
   it("calls an OpenAI-compatible endpoint with a Bearer token and honors baseUrl", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(
-        JSON.stringify({ choices: [{ message: { content: "ok" } }] }),
-        { status: 200 },
-      ),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+          status: 200,
+        }),
     );
     vi.stubGlobal("fetch", fetchMock);
 

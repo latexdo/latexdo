@@ -78,7 +78,10 @@ function toHistory(messages: ChatMessage[]): {
     if (m.role === "assistant") {
       history.push({ type: "model", text: m.content });
     } else if (m.role === "tool") {
-      history.push({ type: "user", text: `Tool ${m.name ?? ""} result:\n${m.content}` });
+      history.push({
+        type: "user",
+        text: `Tool ${m.name ?? ""} result:\n${m.content}`,
+      });
     } else {
       history.push({ type: "user", text: m.content });
     }
@@ -109,10 +112,7 @@ export async function generateLocalStep(
         systemPrompt,
       });
       if (history.length) {
-        const wrapped = [
-          { type: "system", text: systemPrompt },
-          ...history,
-        ];
+        const wrapped = [{ type: "system", text: systemPrompt }, ...history];
         session.setChatHistory(wrapped);
       }
 

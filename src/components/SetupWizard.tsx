@@ -12,10 +12,7 @@ import {
   ArrowLeft,
   Loader2,
 } from "lucide-react";
-import {
-  colorThemeOptions,
-  type ColorTheme,
-} from "../features/settings/settings";
+import { colorThemeOptions, type ColorTheme } from "../features/settings/settings";
 import {
   layoutPresetInfo,
   type AiConfig,
@@ -31,8 +28,7 @@ import { downloadModel, subscribeDownload } from "../features/ai/aiClient";
 import { CloudProviderForm } from "./CloudProviderForm";
 
 function openExternalUrl(url: string): void {
-  const api = (window as { latexdo?: { openExternal?: (u: string) => void } })
-    .latexdo;
+  const api = (window as { latexdo?: { openExternal?: (u: string) => void } }).latexdo;
   if (api?.openExternal) api.openExternal(url);
   else window.open(url, "_blank", "noopener");
 }
@@ -68,7 +64,10 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   const [stepIndex, setStepIndex] = React.useState(0);
   const [config, setConfig] = React.useState<AiConfig>(initialConfig);
   const [downloading, setDownloading] = React.useState(false);
-  const [progress, setProgress] = React.useState<{ received: number; total: number | null }>({
+  const [progress, setProgress] = React.useState<{
+    received: number;
+    total: number | null;
+  }>({
     received: 0,
     total: null,
   });
@@ -135,10 +134,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   const canFinish =
     config.provider === "cloud"
       ? config.cloud.apiKey.trim().length > 0
-      : config.provider === "off" ||
-        !isDesktop ||
-        downloaded ||
-        config.modelDownloaded;
+      : config.provider === "off" || !isDesktop || downloaded || config.modelDownloaded;
 
   return (
     <div className="ai-wizard-overlay">
@@ -152,9 +148,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
             {steps.map((s, i) => (
               <li
                 key={s}
-                className={
-                  i === stepIndex ? "active" : i < stepIndex ? "done" : ""
-                }
+                className={i === stepIndex ? "active" : i < stepIndex ? "done" : ""}
               >
                 <span className="ai-wizard-step-dot">
                   {i < stepIndex ? <Check size={12} /> : i + 1}
@@ -182,9 +176,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                 <Sparkles size={40} className="ai-wizard-hero-icon" />
                 <h2>Let's set up your AI assistant</h2>
                 <p className="ai-wizard-lead">
-                  LatexDo can run a local AI agent that reads, edits, compiles,
-                  and debugs your LaTeX right inside the editor — privately, on
-                  your machine. This quick setup gets it ready.
+                  LatexDo can run a local AI agent that reads, edits, compiles, and
+                  debugs your LaTeX right inside the editor — privately, on your
+                  machine. This quick setup gets it ready.
                 </p>
               </div>
             )}
@@ -309,8 +303,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                     </span>
                   </div>
                   <div className="ai-wizard-model-desc">
-                    Connect Claude, ChatGPT, Gemini, and others with your own API
-                    key. Works in the browser too.
+                    Connect Claude, ChatGPT, Gemini, and others with your own API key.
+                    Works in the browser too.
                   </div>
                 </button>
 
@@ -384,7 +378,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                   onClick={finish}
                   disabled={!canFinish}
                   title={
-                    canFinish ? "" : "Download the model or pick a cloud provider first."
+                    canFinish
+                      ? ""
+                      : "Download the model or pick a cloud provider first."
                   }
                 >
                   Finish <Check size={15} />

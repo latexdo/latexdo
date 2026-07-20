@@ -16,9 +16,9 @@ export const CloudProviderForm: React.FC<CloudProviderFormProps> = ({
   onOpenExternal,
 }) => {
   const preset = findCloudProvider(cloud.providerId);
-  const [testState, setTestState] = React.useState<
-    "idle" | "testing" | "ok" | "error"
-  >("idle");
+  const [testState, setTestState] = React.useState<"idle" | "testing" | "ok" | "error">(
+    "idle",
+  );
   const [testMessage, setTestMessage] = React.useState("");
 
   const selectProvider = (providerId: string) => {

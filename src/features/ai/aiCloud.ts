@@ -62,7 +62,10 @@ async function generateAnthropic(
   });
 
   if (!res.ok) {
-    return { type: "error", content: `Anthropic API ${res.status}: ${await res.text()}` };
+    return {
+      type: "error",
+      content: `Anthropic API ${res.status}: ${await res.text()}`,
+    };
   }
   const data = (await res.json()) as {
     content: Array<
@@ -91,9 +94,7 @@ function anthropicMessage(m: ChatMessage): Record<string, unknown> {
   if (m.role === "tool") {
     return {
       role: "user",
-      content: [
-        { type: "tool_result", tool_use_id: m.toolCallId, content: m.content },
-      ],
+      content: [{ type: "tool_result", tool_use_id: m.toolCallId, content: m.content }],
     };
   }
   if (m.role === "assistant" && m.toolCalls?.length) {

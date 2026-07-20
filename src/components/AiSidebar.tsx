@@ -167,9 +167,7 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
                     ))}
                   </div>
                 )}
-                <div className="ai-msg-text">
-                  {m.text || (m.pending ? "…" : "")}
-                </div>
+                <div className="ai-msg-text">{m.text || (m.pending ? "…" : "")}</div>
               </div>
             ))}
             {isRunning && status && <div className="ai-sidebar-status">{status}</div>}
