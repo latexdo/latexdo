@@ -1214,10 +1214,8 @@ const aiApi = {
   subscribeTokens: (
     callback: (payload: { requestId: string; text: string }) => void,
   ) => {
-    const listener = (
-      _event: unknown,
-      payload: { requestId: string; text: string },
-    ) => callback(payload);
+    const listener = (_event: unknown, payload: { requestId: string; text: string }) =>
+      callback(payload);
     ipcRenderer.on("ai:token", listener);
     return () => ipcRenderer.removeListener("ai:token", listener);
   },
@@ -1246,9 +1244,7 @@ const aiApi = {
   deleteModel: (fileName: string): Promise<void> =>
     ipcRenderer.invoke("ai:delete-model", fileName),
 
-  detectOllama: (
-    baseUrl: string,
-  ): Promise<{ available: boolean; models: string[] }> =>
+  detectOllama: (baseUrl: string): Promise<{ available: boolean; models: string[] }> =>
     ipcRenderer.invoke("ai:detect-ollama", baseUrl),
 };
 

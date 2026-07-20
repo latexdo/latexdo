@@ -16,7 +16,9 @@ import { generateStepCloud } from "./aiCloud";
 /** Shape of the `ai` object exposed by preload on window.electronApi. */
 export interface AiBridge {
   generateStep(req: GenerateRequest): Promise<GenerationStep>;
-  subscribeTokens(cb: (payload: { requestId: string; text: string }) => void): () => void;
+  subscribeTokens(
+    cb: (payload: { requestId: string; text: string }) => void,
+  ): () => void;
   abort(requestId: string): Promise<void>;
   listModels(): Promise<ModelStatus[]>;
   downloadModel(

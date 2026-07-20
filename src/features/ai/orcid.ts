@@ -83,9 +83,7 @@ export interface OrcidFetchResult {
 }
 
 /** Fetch a researcher's public name + works. Throws on network/HTTP failure. */
-export async function fetchOrcidProfile(
-  orcidInput: string,
-): Promise<OrcidFetchResult> {
+export async function fetchOrcidProfile(orcidInput: string): Promise<OrcidFetchResult> {
   const id = normalizeOrcidInput(orcidInput);
   if (!id) {
     throw new Error("That doesn't look like a valid ORCID iD (0000-0000-0000-0000).");

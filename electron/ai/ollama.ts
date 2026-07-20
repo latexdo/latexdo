@@ -19,7 +19,11 @@ interface ToolSchema {
 
 type GenerationStep =
   | { type: "text"; content: string }
-  | { type: "tool_calls"; content: string; toolCalls: { id: string; name: string; args: Record<string, unknown> }[] }
+  | {
+      type: "tool_calls";
+      content: string;
+      toolCalls: { id: string; name: string; args: Record<string, unknown> }[];
+    }
   | { type: "error"; content: string };
 
 export async function detectOllama(
@@ -104,7 +108,9 @@ export async function generateOllamaStep(
     const data = (await res.json()) as {
       message?: {
         content?: string;
-        tool_calls?: { function: { name: string; arguments: Record<string, unknown> } }[];
+        tool_calls?: {
+          function: { name: string; arguments: Record<string, unknown> };
+        }[];
       };
     };
     const text = data.message?.content ?? "";

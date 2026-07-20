@@ -1,9 +1,5 @@
-import Editor, {
-  DiffEditor,
-  loader,
-  type DiffEditorProps,
-  type EditorProps,
-} from "@monaco-editor/react";
+import Editor, { DiffEditor, loader } from "@monaco-editor/react";
+import type { DiffEditorProps, EditorProps } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 
 loader.config({ monaco });

@@ -84,7 +84,10 @@ export const agentToolSchemas: ToolSchema[] = [
       "Insert LaTeX at the current cursor position (e.g. a generated table, figure, or paragraph).",
     params: {
       text: { type: "string", description: "LaTeX to insert." },
-      explanation: { type: "string", description: "Short description of the insertion." },
+      explanation: {
+        type: "string",
+        description: "Short description of the insertion.",
+      },
     },
     required: ["text"],
   },
@@ -108,8 +111,7 @@ export const agentToolSchemas: ToolSchema[] = [
   },
   {
     name: "run_checks",
-    description:
-      "Run LatexDo's built-in checkers and return their findings as text.",
+    description: "Run LatexDo's built-in checkers and return their findings as text.",
     params: {
       kind: {
         type: "string",
@@ -170,9 +172,7 @@ export async function executeTool(
       }
       case "get_selection": {
         const sel = ctx.selection();
-        return sel.hasSelection
-          ? ok(sel.text)
-          : ok("(nothing selected)");
+        return sel.hasSelection ? ok(sel.text) : ok("(nothing selected)");
       }
       case "get_active_document": {
         const path = ctx.activeFilePath();

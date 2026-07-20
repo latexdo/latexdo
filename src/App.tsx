@@ -5963,10 +5963,7 @@ ${macroEnd}
         return;
       }
       // replace-file
-      if (
-        proposal.path === activeTextDocument?.relativePath &&
-        editor?.getModel()
-      ) {
+      if (proposal.path === activeTextDocument?.relativePath && editor?.getModel()) {
         editor.getModel()?.setValue(proposal.newText);
       } else if (projectId) {
         await window.latexdo.writeFile(projectId, proposal.path, proposal.newText);
@@ -6008,9 +6005,7 @@ ${macroEnd}
         await window.latexdo.writeFile(projectId, path, content);
       },
       documentText: () =>
-        editorRef.current?.getModel()?.getValue() ??
-        activeTextDocument?.content ??
-        "",
+        editorRef.current?.getModel()?.getValue() ?? activeTextDocument?.content ?? "",
       selection: () => {
         const editor = editorRef.current;
         const selection = editor?.getSelection();
@@ -8111,8 +8106,7 @@ ${macroEnd}
           onOpenExternal={(url) =>
             (
               window as { latexdo?: { openExternal?: (u: string) => void } }
-            ).latexdo?.openExternal?.(url) ??
-            window.open(url, "_blank", "noopener")
+            ).latexdo?.openExternal?.(url) ?? window.open(url, "_blank", "noopener")
           }
         />
       )}
@@ -8356,610 +8350,616 @@ ${macroEnd}
               />
             </aside>
           ) : (
-          <aside
-            className={`sidebar ${activeSidebar === "sourceControl" ? "source-control-sidebar" : ""}`}
-            data-view={activeSidebar}
-          >
-            <div className="sidebar-header">
-              <span>
-                {activeSidebar === "explorer"
-                  ? "EXPLORER"
-                  : activeSidebar === "sourceControl"
-                    ? "SOURCE CONTROL"
-                    : activeSidebar === "history"
-                      ? "HISTORY"
-                      : "SEARCH"}
-              </span>
-              <div>
-                {activeSidebar === "explorer" ? (
-                  <>
+            <aside
+              className={`sidebar ${activeSidebar === "sourceControl" ? "source-control-sidebar" : ""}`}
+              data-view={activeSidebar}
+            >
+              <div className="sidebar-header">
+                <span>
+                  {activeSidebar === "explorer"
+                    ? "EXPLORER"
+                    : activeSidebar === "sourceControl"
+                      ? "SOURCE CONTROL"
+                      : activeSidebar === "history"
+                        ? "HISTORY"
+                        : "SEARCH"}
+                </span>
+                <div>
+                  {activeSidebar === "explorer" ? (
+                    <>
+                      <button
+                        className="small-icon"
+                        onClick={openProject}
+                        title="Open project"
+                      >
+                        <FolderOpen size={14} />
+                      </button>
+                      <button
+                        className="small-icon"
+                        onClick={() => openCreateDialog("file")}
+                        title="New file"
+                        disabled={!hasVisibleProject}
+                      >
+                        <FilePlus2 size={15} />
+                      </button>
+                      <button
+                        className="small-icon"
+                        onClick={() => openCreateDialog("folder")}
+                        title="New folder"
+                        disabled={!hasVisibleProject}
+                      >
+                        <FolderPlus size={15} />
+                      </button>
+                      <button
+                        className="small-icon"
+                        onClick={() => void importDocx()}
+                        title="Import DOCX"
+                        disabled={docxImporting}
+                      >
+                        <FileUp size={15} />
+                      </button>
+                      <button
+                        className="small-icon"
+                        onClick={() => void importMarkdown()}
+                        title="Import Markdown"
+                        disabled={markdownImporting}
+                      >
+                        <Code2 size={15} />
+                      </button>
+                      <button
+                        className="small-icon"
+                        onClick={() => void refreshProject()}
+                        title="Refresh"
+                        disabled={!hasVisibleProject}
+                      >
+                        <RefreshCw size={14} />
+                      </button>
+                    </>
+                  ) : activeSidebar === "search" ? (
                     <button
                       className="small-icon"
-                      onClick={openProject}
-                      title="Open project"
-                    >
-                      <FolderOpen size={14} />
-                    </button>
-                    <button
-                      className="small-icon"
-                      onClick={() => openCreateDialog("file")}
-                      title="New file"
-                      disabled={!hasVisibleProject}
-                    >
-                      <FilePlus2 size={15} />
-                    </button>
-                    <button
-                      className="small-icon"
-                      onClick={() => openCreateDialog("folder")}
-                      title="New folder"
-                      disabled={!hasVisibleProject}
-                    >
-                      <FolderPlus size={15} />
-                    </button>
-                    <button
-                      className="small-icon"
-                      onClick={() => void importDocx()}
-                      title="Import DOCX"
-                      disabled={docxImporting}
-                    >
-                      <FileUp size={15} />
-                    </button>
-                    <button
-                      className="small-icon"
-                      onClick={() => void importMarkdown()}
-                      title="Import Markdown"
-                      disabled={markdownImporting}
-                    >
-                      <Code2 size={15} />
-                    </button>
-                    <button
-                      className="small-icon"
-                      onClick={() => void refreshProject()}
-                      title="Refresh"
-                      disabled={!hasVisibleProject}
+                      onClick={() => {
+                        setProjectSearchRefreshNonce((value) => value + 1);
+                      }}
+                      title="Rescan project search index"
+                      disabled={!hasVisibleProject || projectSearchLoading}
                     >
                       <RefreshCw size={14} />
                     </button>
-                  </>
-                ) : activeSidebar === "search" ? (
-                  <button
-                    className="small-icon"
-                    onClick={() => {
-                      setProjectSearchRefreshNonce((value) => value + 1);
-                    }}
-                    title="Rescan project search index"
-                    disabled={!hasVisibleProject || projectSearchLoading}
-                  >
-                    <RefreshCw size={14} />
-                  </button>
-                ) : activeSidebar === "sourceControl" ? (
-                  <button
-                    className="small-icon"
-                    onClick={() => void refreshGitData()}
-                    title="Refresh source control"
-                  >
-                    <RefreshCw size={14} />
-                  </button>
-                ) : activeSidebar === "history" ? (
-                  <button
-                    className="small-icon"
-                    onClick={() => captureActiveHistorySnapshot("manual")}
-                    title="Capture current state"
-                    disabled={!activeTextDocument}
-                  >
-                    <Plus size={14} />
-                  </button>
-                ) : null}
+                  ) : activeSidebar === "sourceControl" ? (
+                    <button
+                      className="small-icon"
+                      onClick={() => void refreshGitData()}
+                      title="Refresh source control"
+                    >
+                      <RefreshCw size={14} />
+                    </button>
+                  ) : activeSidebar === "history" ? (
+                    <button
+                      className="small-icon"
+                      onClick={() => captureActiveHistorySnapshot("manual")}
+                      title="Capture current state"
+                      disabled={!activeTextDocument}
+                    >
+                      <Plus size={14} />
+                    </button>
+                  ) : null}
+                </div>
               </div>
-            </div>
-            {activeSidebar === "explorer" ? (
-              <>
-                <button className="project-heading" onClick={openProject}>
-                  <ChevronDown size={13} />
-                  <span>{projectName.toUpperCase()}</span>
-                </button>
-                <div className="file-tree">
+              {activeSidebar === "explorer" ? (
+                <>
+                  <button className="project-heading" onClick={openProject}>
+                    <ChevronDown size={13} />
+                    <span>{projectName.toUpperCase()}</span>
+                  </button>
+                  <div className="file-tree">
+                    {!hasVisibleProject ? (
+                      <div className="sidebar-empty-state">
+                        No project open. Create a project or open an existing folder.
+                      </div>
+                    ) : mode === "author" ? (
+                      <FileTree
+                        entries={projectEntries}
+                        activePath={activePath}
+                        onOpen={openDocument}
+                        onCompileFile={(entry) => void compileEntry(entry)}
+                        onSetRootFile={(entry) => {
+                          setRootFile(entry.relativePath);
+                          rootFileRef.current = entry.relativePath;
+                          setStatusMessage(
+                            `Main file set to ${pathForDisplay(entry.relativePath)}`,
+                          );
+                        }}
+                        onMoveEntry={(sourcePath, destination) =>
+                          void moveEntry(sourcePath, destination)
+                        }
+                        onImportExternalFiles={(files, destination) =>
+                          void importExternalFiles(files, destination)
+                        }
+                        onChooseImportFilesInDirectory={chooseImportFiles}
+                        onCreateFileInDirectory={(entry) =>
+                          openCreateDialogInDirectory("file", entry)
+                        }
+                        onCreateFolderInDirectory={(entry) =>
+                          openCreateDialogInDirectory("folder", entry)
+                        }
+                        onCopyRelativePath={(entry) => void copyRelativePath(entry)}
+                        onInsertFileReference={insertImageReference}
+                        onRevealFile={(entry) => void revealGitFile(entry.relativePath)}
+                      />
+                    ) : mode === "reviewer" ? (
+                      <ReviewSidebar
+                        chats={reviewChats}
+                        onAddChat={handleAddReviewChat}
+                        onAddComment={handleAddReviewComment}
+                        onDeleteChat={handleDeleteReviewChat}
+                        onJumpToSelection={handleJumpToReviewSelection}
+                        onInsertIntoTex={(chat) =>
+                          void handleInsertReviewChatIntoTex(chat)
+                        }
+                      />
+                    ) : (
+                      <RebuttalSidebar
+                        items={rebuttalItems}
+                        onAddItem={handleAddRebuttalItem}
+                        onAddRebuttalToSource={handleAddRebuttalToSource}
+                        onUpdateItem={handleUpdateRebuttalItem}
+                        onDeleteItem={handleDeleteRebuttalItem}
+                        onGenerateLetter={handleGenerateRebuttalLetter}
+                      />
+                    )}
+                  </div>
+                </>
+              ) : activeSidebar === "search" ? (
+                <div className="sidebar-panel">
                   {!hasVisibleProject ? (
                     <div className="sidebar-empty-state">
-                      No project open. Create a project or open an existing folder.
+                      No project open. Open a folder to search across project files.
                     </div>
-                  ) : mode === "author" ? (
-                    <FileTree
-                      entries={projectEntries}
-                      activePath={activePath}
-                      onOpen={openDocument}
-                      onCompileFile={(entry) => void compileEntry(entry)}
-                      onSetRootFile={(entry) => {
-                        setRootFile(entry.relativePath);
-                        rootFileRef.current = entry.relativePath;
-                        setStatusMessage(
-                          `Main file set to ${pathForDisplay(entry.relativePath)}`,
-                        );
-                      }}
-                      onMoveEntry={(sourcePath, destination) =>
-                        void moveEntry(sourcePath, destination)
-                      }
-                      onImportExternalFiles={(files, destination) =>
-                        void importExternalFiles(files, destination)
-                      }
-                      onChooseImportFilesInDirectory={chooseImportFiles}
-                      onCreateFileInDirectory={(entry) =>
-                        openCreateDialogInDirectory("file", entry)
-                      }
-                      onCreateFolderInDirectory={(entry) =>
-                        openCreateDialogInDirectory("folder", entry)
-                      }
-                      onCopyRelativePath={(entry) => void copyRelativePath(entry)}
-                      onInsertFileReference={insertImageReference}
-                      onRevealFile={(entry) => void revealGitFile(entry.relativePath)}
-                    />
-                  ) : mode === "reviewer" ? (
-                    <ReviewSidebar
-                      chats={reviewChats}
-                      onAddChat={handleAddReviewChat}
-                      onAddComment={handleAddReviewComment}
-                      onDeleteChat={handleDeleteReviewChat}
-                      onJumpToSelection={handleJumpToReviewSelection}
-                      onInsertIntoTex={(chat) =>
-                        void handleInsertReviewChatIntoTex(chat)
-                      }
-                    />
                   ) : (
-                    <RebuttalSidebar
-                      items={rebuttalItems}
-                      onAddItem={handleAddRebuttalItem}
-                      onAddRebuttalToSource={handleAddRebuttalToSource}
-                      onUpdateItem={handleUpdateRebuttalItem}
-                      onDeleteItem={handleDeleteRebuttalItem}
-                      onGenerateLetter={handleGenerateRebuttalLetter}
+                    <ProjectSearchPanel
+                      files={projectSearchFiles}
+                      loading={projectSearchLoading}
+                      error={projectSearchError}
+                      activePath={activeDocument?.relativePath}
+                      onOpenMatch={(match) => {
+                        void handleOpenProjectSearchMatch(match);
+                      }}
+                      onRefresh={() => {
+                        setProjectSearchRefreshNonce((value) => value + 1);
+                      }}
                     />
                   )}
                 </div>
-              </>
-            ) : activeSidebar === "search" ? (
-              <div className="sidebar-panel">
-                {!hasVisibleProject ? (
-                  <div className="sidebar-empty-state">
-                    No project open. Open a folder to search across project files.
+              ) : activeSidebar === "sourceControl" ? (
+                <div className="sidebar-panel source-control-panel">
+                  <div className="scm-head">
+                    <div className="scm-branch">
+                      <GitBranch size={14} />
+                      <span>{gitStatus?.branch || "No repository"}</span>
+                    </div>
+                    <span className="scm-change-count">
+                      {gitLoading
+                        ? "Refreshing"
+                        : gitStatus?.isRepo
+                          ? `${modifiedFiles} changed`
+                          : "Unavailable"}
+                    </span>
                   </div>
-                ) : (
-                  <ProjectSearchPanel
-                    files={projectSearchFiles}
-                    loading={projectSearchLoading}
-                    error={projectSearchError}
-                    activePath={activeDocument?.relativePath}
-                    onOpenMatch={(match) => {
-                      void handleOpenProjectSearchMatch(match);
-                    }}
-                    onRefresh={() => {
-                      setProjectSearchRefreshNonce((value) => value + 1);
-                    }}
-                  />
-                )}
-              </div>
-            ) : activeSidebar === "sourceControl" ? (
-              <div className="sidebar-panel source-control-panel">
-                <div className="scm-head">
-                  <div className="scm-branch">
-                    <GitBranch size={14} />
-                    <span>{gitStatus?.branch || "No repository"}</span>
-                  </div>
-                  <span className="scm-change-count">
-                    {gitLoading
-                      ? "Refreshing"
-                      : gitStatus?.isRepo
-                        ? `${modifiedFiles} changed`
-                        : "Unavailable"}
-                  </span>
-                </div>
-                {gitStatus?.isRepo ? (
-                  <div className="scm-commit-box">
-                    <textarea
-                      value={gitCommitMessage}
-                      onChange={(event) => setGitCommitMessage(event.target.value)}
-                      placeholder="Commit message"
-                    />
-                    <button
-                      className="scm-commit-action"
-                      onClick={() => void commitGitChanges()}
-                      disabled={gitActionBusy === "commit" || !gitCommitMessage.trim()}
-                    >
-                      <Check size={13} />
-                      <span>
-                        {gitActionBusy === "commit" ? "Committing..." : "Commit"}
-                      </span>
-                      <ChevronDown size={13} className="scm-commit-chevron" />
-                    </button>
-                  </div>
-                ) : null}
-                <div className="sidebar-list source-control-list">
                   {gitStatus?.isRepo ? (
-                    <>
-                      {gitStatus.entries.length ? (
-                        <>
-                          <div className="scm-section-header">
-                            <span>
-                              Staged Changes <b>{stagedGitEntries.length}</b>
-                            </span>
-                            <button
-                              type="button"
-                              className="scm-icon-action"
-                              onClick={() => void unstageAllGitEntries()}
-                              disabled={
-                                !stagedGitEntries.length ||
-                                gitActionBusy === "unstage-all"
-                              }
-                              title="Unstage all"
-                              aria-label="Unstage all changes"
-                            >
-                              <Minus size={13} />
-                            </button>
-                          </div>
-                          {stagedGitEntries.length ? (
-                            stagedGitGroups.map((group) =>
-                              renderGitChangeGroup(group, "staged"),
-                            )
-                          ) : (
-                            <div className="sidebar-empty-state compact">
-                              No staged changes.
-                            </div>
-                          )}
-                          <div className="scm-section-header">
-                            <span>
-                              Changes <b>{unstagedGitEntries.length}</b>
-                            </span>
-                            <div className="scm-section-actions">
+                    <div className="scm-commit-box">
+                      <textarea
+                        value={gitCommitMessage}
+                        onChange={(event) => setGitCommitMessage(event.target.value)}
+                        placeholder="Commit message"
+                      />
+                      <button
+                        className="scm-commit-action"
+                        onClick={() => void commitGitChanges()}
+                        disabled={
+                          gitActionBusy === "commit" || !gitCommitMessage.trim()
+                        }
+                      >
+                        <Check size={13} />
+                        <span>
+                          {gitActionBusy === "commit" ? "Committing..." : "Commit"}
+                        </span>
+                        <ChevronDown size={13} className="scm-commit-chevron" />
+                      </button>
+                    </div>
+                  ) : null}
+                  <div className="sidebar-list source-control-list">
+                    {gitStatus?.isRepo ? (
+                      <>
+                        {gitStatus.entries.length ? (
+                          <>
+                            <div className="scm-section-header">
+                              <span>
+                                Staged Changes <b>{stagedGitEntries.length}</b>
+                              </span>
                               <button
                                 type="button"
                                 className="scm-icon-action"
-                                onClick={() => void stageAllGitEntries()}
+                                onClick={() => void unstageAllGitEntries()}
                                 disabled={
-                                  !unstagedGitEntries.length ||
-                                  gitActionBusy === "stage-all"
+                                  !stagedGitEntries.length ||
+                                  gitActionBusy === "unstage-all"
                                 }
-                                title="Stage all"
-                                aria-label="Stage all changes"
+                                title="Unstage all"
+                                aria-label="Unstage all changes"
                               >
-                                <Plus size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                className="scm-icon-action danger"
-                                onClick={() => void discardAllGitEntries()}
-                                disabled={
-                                  !unstagedGitEntries.length ||
-                                  gitActionBusy === "discard-all"
-                                }
-                                title="Discard all unstaged changes"
-                                aria-label="Discard all unstaged changes"
-                              >
-                                <X size={13} />
+                                <Minus size={13} />
                               </button>
                             </div>
-                          </div>
-                          {unstagedGitEntries.length ? (
-                            unstagedGitGroups.map((group) =>
-                              renderGitChangeGroup(group, "changes"),
-                            )
-                          ) : (
-                            <div className="sidebar-empty-state compact">
-                              No unstaged changes.
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="sidebar-empty-state">
-                          Working tree is clean.
-                        </div>
-                      )}
-                      <div className="scm-section-header">
-                        <span>Timeline</span>
-                      </div>
-                      <div className="scm-timeline">
-                        <GitGraph
-                          commits={gitRepositoryCommits}
-                          selectedHash={selectedGitCommitHash}
-                          loading={gitLoading && !gitRepoHistory}
-                          onSelectCommit={(commit: GitGraphCommit) => {
-                            void openGitCommitDetails(commit.hash);
-                          }}
-                          emptyMessage="No repository history available."
-                        />
-                      </div>
-                      {gitFileHistoryPath ? (
-                        <>
-                          <div className="scm-section-header">
-                            <span title={gitFileHistoryPath}>
-                              File History ({fileName(gitFileHistoryPath)})
-                            </span>
-                          </div>
-                          <div className="scm-file-history">
-                            {gitFileCommits.length ? (
-                              gitFileCommits.slice(0, 6).map((commit) => (
-                                <div
-                                  key={`${commit.hash}:${gitFileHistoryPath}`}
-                                  className="scm-file-history-row"
-                                >
-                                  <strong>{commit.subject}</strong>
-                                  <span>
-                                    {commit.shortHash} · {commit.authorName} ·{" "}
-                                    {formatGitDate(commit.authoredAt)}
-                                  </span>
-                                  <div className="scm-file-history-actions">
-                                    <button
-                                      className="sidebar-mini-action subtle"
-                                      onClick={() =>
-                                        void openGitCommitDetails(commit.hash)
-                                      }
-                                    >
-                                      Details
-                                    </button>
-                                    <button
-                                      className="sidebar-mini-action subtle"
-                                      onClick={() =>
-                                        void openGitCommitRevisionDiff(
-                                          commit.hash,
-                                          gitFileHistoryPath,
-                                        )
-                                      }
-                                      disabled={
-                                        gitActionBusy ===
-                                        `commit-diff:${commit.hash}:${gitFileHistoryPath}`
-                                      }
-                                    >
-                                      {gitActionBusy ===
-                                      `commit-diff:${commit.hash}:${gitFileHistoryPath}`
-                                        ? "Opening…"
-                                        : "Open Diff"}
-                                    </button>
-                                  </div>
-                                </div>
-                              ))
+                            {stagedGitEntries.length ? (
+                              stagedGitGroups.map((group) =>
+                                renderGitChangeGroup(group, "staged"),
+                              )
                             ) : (
                               <div className="sidebar-empty-state compact">
-                                No file history for {fileName(gitFileHistoryPath)}.
+                                No staged changes.
                               </div>
                             )}
-                          </div>
-                        </>
-                      ) : null}
-                      <div className="scm-section-header">
-                        <span>Commit Details</span>
-                      </div>
-                      <div className="scm-commit-details">
-                        {gitCommitDetails ? (
-                          <>
-                            <h3>{gitCommitDetails.summary || gitCommitDetails.hash}</h3>
-                            {gitCommitDetails.body ? (
-                              <p className="scm-commit-body">{gitCommitDetails.body}</p>
-                            ) : null}
-                            <dl>
-                              <dt>Commit</dt>
-                              <dd title={gitCommitDetails.hash}>
-                                {gitCommitDetails.hash}
-                              </dd>
-                              <dt>Author</dt>
-                              <dd>
-                                {gitCommitDetails.authorName} &lt;
-                                {gitCommitDetails.authorEmail}&gt;
-                              </dd>
-                              <dt>Authored</dt>
-                              <dd>{formatGitDate(gitCommitDetails.authoredAt)}</dd>
-                              <dt>Committed</dt>
-                              <dd>{formatGitDate(gitCommitDetails.committedAt)}</dd>
-                              <dt>Parents</dt>
-                              <dd title={gitCommitDetails.parents.join(" ")}>
-                                {gitCommitDetails.parents.length
-                                  ? gitCommitDetails.parents
-                                      .map((parent) => parent.slice(0, 8))
-                                      .join(", ")
-                                  : "Root commit"}
-                              </dd>
-                            </dl>
-                            {gitCommitDetails.refs.length ? (
-                              <div className="scm-detail-refs">
-                                {gitCommitDetails.refs.map((ref) => (
-                                  <span
-                                    key={`${ref.kind}:${ref.name}`}
-                                    className={ref.kind}
-                                  >
-                                    {ref.name}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : null}
-                            {gitCommitDetails.parents.length > 1 ? (
-                              <label className="scm-parent-selector">
-                                <span>Compare with parent</span>
-                                <select
-                                  value={gitCommitParentHash}
-                                  onChange={(event) =>
-                                    setGitCommitParentHash(event.target.value)
+                            <div className="scm-section-header">
+                              <span>
+                                Changes <b>{unstagedGitEntries.length}</b>
+                              </span>
+                              <div className="scm-section-actions">
+                                <button
+                                  type="button"
+                                  className="scm-icon-action"
+                                  onClick={() => void stageAllGitEntries()}
+                                  disabled={
+                                    !unstagedGitEntries.length ||
+                                    gitActionBusy === "stage-all"
                                   }
+                                  title="Stage all"
+                                  aria-label="Stage all changes"
                                 >
-                                  {gitCommitDetails.parents.map((parent, index) => (
-                                    <option key={parent} value={parent}>
-                                      Parent {index + 1} · {parent.slice(0, 8)}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                            ) : null}
-                            <div
-                              className="scm-detail-files"
-                              aria-label="Changed files"
-                            >
-                              {gitCommitDetails.changedFiles.map((file) => {
-                                const code = gitDiffStatusCode(file.status);
-                                return (
-                                  <button
-                                    key={`${file.oldPath ?? ""}:${file.path}`}
-                                    type="button"
-                                    onClick={() =>
-                                      void openGitCommitRevisionDiff(
-                                        gitCommitDetails.hash,
-                                        file.path,
-                                        gitCommitParentHash,
-                                      )
-                                    }
-                                    title={`Open ${file.path} diff`}
-                                  >
-                                    <span
-                                      className={`scm-status-badge ${gitStatusClass(code)}`}
-                                    >
-                                      {code}
-                                    </span>
-                                    <span>
-                                      <strong>{fileName(file.path)}</strong>
-                                      <small>
-                                        {file.oldPath
-                                          ? `${file.oldPath} → ${file.path}`
-                                          : fileDirectory(file.path)}
-                                      </small>
-                                    </span>
-                                  </button>
-                                );
-                              })}
+                                  <Plus size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="scm-icon-action danger"
+                                  onClick={() => void discardAllGitEntries()}
+                                  disabled={
+                                    !unstagedGitEntries.length ||
+                                    gitActionBusy === "discard-all"
+                                  }
+                                  title="Discard all unstaged changes"
+                                  aria-label="Discard all unstaged changes"
+                                >
+                                  <X size={13} />
+                                </button>
+                              </div>
                             </div>
+                            {unstagedGitEntries.length ? (
+                              unstagedGitGroups.map((group) =>
+                                renderGitChangeGroup(group, "changes"),
+                              )
+                            ) : (
+                              <div className="sidebar-empty-state compact">
+                                No unstaged changes.
+                              </div>
+                            )}
                           </>
                         ) : (
-                          <div className="sidebar-empty-state compact">
-                            Select a commit to inspect it here.
+                          <div className="sidebar-empty-state">
+                            Working tree is clean.
                           </div>
                         )}
+                        <div className="scm-section-header">
+                          <span>Timeline</span>
+                        </div>
+                        <div className="scm-timeline">
+                          <GitGraph
+                            commits={gitRepositoryCommits}
+                            selectedHash={selectedGitCommitHash}
+                            loading={gitLoading && !gitRepoHistory}
+                            onSelectCommit={(commit: GitGraphCommit) => {
+                              void openGitCommitDetails(commit.hash);
+                            }}
+                            emptyMessage="No repository history available."
+                          />
+                        </div>
+                        {gitFileHistoryPath ? (
+                          <>
+                            <div className="scm-section-header">
+                              <span title={gitFileHistoryPath}>
+                                File History ({fileName(gitFileHistoryPath)})
+                              </span>
+                            </div>
+                            <div className="scm-file-history">
+                              {gitFileCommits.length ? (
+                                gitFileCommits.slice(0, 6).map((commit) => (
+                                  <div
+                                    key={`${commit.hash}:${gitFileHistoryPath}`}
+                                    className="scm-file-history-row"
+                                  >
+                                    <strong>{commit.subject}</strong>
+                                    <span>
+                                      {commit.shortHash} · {commit.authorName} ·{" "}
+                                      {formatGitDate(commit.authoredAt)}
+                                    </span>
+                                    <div className="scm-file-history-actions">
+                                      <button
+                                        className="sidebar-mini-action subtle"
+                                        onClick={() =>
+                                          void openGitCommitDetails(commit.hash)
+                                        }
+                                      >
+                                        Details
+                                      </button>
+                                      <button
+                                        className="sidebar-mini-action subtle"
+                                        onClick={() =>
+                                          void openGitCommitRevisionDiff(
+                                            commit.hash,
+                                            gitFileHistoryPath,
+                                          )
+                                        }
+                                        disabled={
+                                          gitActionBusy ===
+                                          `commit-diff:${commit.hash}:${gitFileHistoryPath}`
+                                        }
+                                      >
+                                        {gitActionBusy ===
+                                        `commit-diff:${commit.hash}:${gitFileHistoryPath}`
+                                          ? "Opening…"
+                                          : "Open Diff"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="sidebar-empty-state compact">
+                                  No file history for {fileName(gitFileHistoryPath)}.
+                                </div>
+                              )}
+                            </div>
+                          </>
+                        ) : null}
+                        <div className="scm-section-header">
+                          <span>Commit Details</span>
+                        </div>
+                        <div className="scm-commit-details">
+                          {gitCommitDetails ? (
+                            <>
+                              <h3>
+                                {gitCommitDetails.summary || gitCommitDetails.hash}
+                              </h3>
+                              {gitCommitDetails.body ? (
+                                <p className="scm-commit-body">
+                                  {gitCommitDetails.body}
+                                </p>
+                              ) : null}
+                              <dl>
+                                <dt>Commit</dt>
+                                <dd title={gitCommitDetails.hash}>
+                                  {gitCommitDetails.hash}
+                                </dd>
+                                <dt>Author</dt>
+                                <dd>
+                                  {gitCommitDetails.authorName} &lt;
+                                  {gitCommitDetails.authorEmail}&gt;
+                                </dd>
+                                <dt>Authored</dt>
+                                <dd>{formatGitDate(gitCommitDetails.authoredAt)}</dd>
+                                <dt>Committed</dt>
+                                <dd>{formatGitDate(gitCommitDetails.committedAt)}</dd>
+                                <dt>Parents</dt>
+                                <dd title={gitCommitDetails.parents.join(" ")}>
+                                  {gitCommitDetails.parents.length
+                                    ? gitCommitDetails.parents
+                                        .map((parent) => parent.slice(0, 8))
+                                        .join(", ")
+                                    : "Root commit"}
+                                </dd>
+                              </dl>
+                              {gitCommitDetails.refs.length ? (
+                                <div className="scm-detail-refs">
+                                  {gitCommitDetails.refs.map((ref) => (
+                                    <span
+                                      key={`${ref.kind}:${ref.name}`}
+                                      className={ref.kind}
+                                    >
+                                      {ref.name}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                              {gitCommitDetails.parents.length > 1 ? (
+                                <label className="scm-parent-selector">
+                                  <span>Compare with parent</span>
+                                  <select
+                                    value={gitCommitParentHash}
+                                    onChange={(event) =>
+                                      setGitCommitParentHash(event.target.value)
+                                    }
+                                  >
+                                    {gitCommitDetails.parents.map((parent, index) => (
+                                      <option key={parent} value={parent}>
+                                        Parent {index + 1} · {parent.slice(0, 8)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              ) : null}
+                              <div
+                                className="scm-detail-files"
+                                aria-label="Changed files"
+                              >
+                                {gitCommitDetails.changedFiles.map((file) => {
+                                  const code = gitDiffStatusCode(file.status);
+                                  return (
+                                    <button
+                                      key={`${file.oldPath ?? ""}:${file.path}`}
+                                      type="button"
+                                      onClick={() =>
+                                        void openGitCommitRevisionDiff(
+                                          gitCommitDetails.hash,
+                                          file.path,
+                                          gitCommitParentHash,
+                                        )
+                                      }
+                                      title={`Open ${file.path} diff`}
+                                    >
+                                      <span
+                                        className={`scm-status-badge ${gitStatusClass(code)}`}
+                                      >
+                                        {code}
+                                      </span>
+                                      <span>
+                                        <strong>{fileName(file.path)}</strong>
+                                        <small>
+                                          {file.oldPath
+                                            ? `${file.oldPath} → ${file.path}`
+                                            : fileDirectory(file.path)}
+                                        </small>
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="sidebar-empty-state compact">
+                              Select a commit to inspect it here.
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="sidebar-empty-state">
+                        {gitStatus?.error || "Git status is unavailable."}
                       </div>
-                    </>
-                  ) : (
-                    <div className="sidebar-empty-state">
-                      {gitStatus?.error || "Git status is unavailable."}
-                    </div>
-                  )}
-                </div>
-                {gitContextMenu ? (
-                  <div
-                    className="scm-context-menu"
-                    role="menu"
-                    aria-label={`Actions for ${gitContextMenu.entry.path}`}
-                    style={{
-                      left: Math.min(gitContextMenu.x, window.innerWidth - 210),
-                      top: Math.min(gitContextMenu.y, window.innerHeight - 260),
-                    }}
-                    onContextMenu={(event) => event.preventDefault()}
-                  >
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        const { entry, area } = gitContextMenu;
-                        setGitContextMenu(null);
-                        void openGitDiffEditor(entry, area);
+                    )}
+                  </div>
+                  {gitContextMenu ? (
+                    <div
+                      className="scm-context-menu"
+                      role="menu"
+                      aria-label={`Actions for ${gitContextMenu.entry.path}`}
+                      style={{
+                        left: Math.min(gitContextMenu.x, window.innerWidth - 210),
+                        top: Math.min(gitContextMenu.y, window.innerHeight - 260),
                       }}
+                      onContextMenu={(event) => event.preventDefault()}
                     >
-                      Open Diff
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        const path = gitContextMenu.entry.path;
-                        setGitContextMenu(null);
-                        void openGitFile(path);
-                      }}
-                    >
-                      Open File
-                    </button>
-                    {gitContextMenu.area === "staged" ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          const { entry, area } = gitContextMenu;
+                          setGitContextMenu(null);
+                          void openGitDiffEditor(entry, area);
+                        }}
+                      >
+                        Open Diff
+                      </button>
                       <button
                         type="button"
                         role="menuitem"
                         onClick={() => {
                           const path = gitContextMenu.entry.path;
                           setGitContextMenu(null);
-                          void unstageGitEntry(path);
+                          void openGitFile(path);
                         }}
                       >
-                        Unstage Changes
+                        Open File
                       </button>
-                    ) : (
-                      <>
+                      {gitContextMenu.area === "staged" ? (
                         <button
                           type="button"
                           role="menuitem"
                           onClick={() => {
                             const path = gitContextMenu.entry.path;
                             setGitContextMenu(null);
-                            void stageGitEntry(path);
+                            void unstageGitEntry(path);
                           }}
                         >
-                          Stage Changes
+                          Unstage Changes
                         </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          className="danger"
-                          onClick={() => {
-                            const path = gitContextMenu.entry.path;
-                            setGitContextMenu(null);
-                            void discardGitEntry(path);
-                          }}
-                        >
-                          Discard Changes
-                        </button>
-                      </>
-                    )}
-                    <span className="scm-context-menu-separator" />
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        const path = gitContextMenu.entry.path;
-                        setGitContextMenu(null);
-                        void revealGitFile(path);
-                      }}
-                    >
-                      Reveal in File Manager
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        const path = gitContextMenu.entry.path;
-                        setGitContextMenu(null);
-                        void copyGitPath(path);
-                      }}
-                    >
-                      <Copy size={13} /> Copy Path
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        const path = gitContextMenu.entry.path;
-                        setGitContextMenu(null);
-                        void openGitFileHistory(path);
-                      }}
-                    >
-                      Open File History
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            ) : activeSidebar === "history" ? (
-              <div className="sidebar-panel history-panel">
-                <HistorySidebar
-                  activeFilePath={activeTextDocument?.relativePath}
-                  activeFileContent={activeTextDocument?.content}
-                  activeFileSnapshotCount={activeDocumentHistoryCount}
-                  totalSnapshotCount={documentHistory.length}
-                  snapshots={documentHistory}
-                  onCaptureSnapshot={() => captureActiveHistorySnapshot("manual")}
-                  onLoadSnapshotContent={hydrateHistorySnapshotContent}
-                  onRestoreSnapshot={handleRestoreHistorySnapshot}
-                  onDeleteSnapshot={handleDeleteHistorySnapshot}
-                />
-              </div>
-            ) : null}
-          </aside>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              const path = gitContextMenu.entry.path;
+                              setGitContextMenu(null);
+                              void stageGitEntry(path);
+                            }}
+                          >
+                            Stage Changes
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="danger"
+                            onClick={() => {
+                              const path = gitContextMenu.entry.path;
+                              setGitContextMenu(null);
+                              void discardGitEntry(path);
+                            }}
+                          >
+                            Discard Changes
+                          </button>
+                        </>
+                      )}
+                      <span className="scm-context-menu-separator" />
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          const path = gitContextMenu.entry.path;
+                          setGitContextMenu(null);
+                          void revealGitFile(path);
+                        }}
+                      >
+                        Reveal in File Manager
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          const path = gitContextMenu.entry.path;
+                          setGitContextMenu(null);
+                          void copyGitPath(path);
+                        }}
+                      >
+                        <Copy size={13} /> Copy Path
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          const path = gitContextMenu.entry.path;
+                          setGitContextMenu(null);
+                          void openGitFileHistory(path);
+                        }}
+                      >
+                        Open File History
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : activeSidebar === "history" ? (
+                <div className="sidebar-panel history-panel">
+                  <HistorySidebar
+                    activeFilePath={activeTextDocument?.relativePath}
+                    activeFileContent={activeTextDocument?.content}
+                    activeFileSnapshotCount={activeDocumentHistoryCount}
+                    totalSnapshotCount={documentHistory.length}
+                    snapshots={documentHistory}
+                    onCaptureSnapshot={() => captureActiveHistorySnapshot("manual")}
+                    onLoadSnapshotContent={hydrateHistorySnapshotContent}
+                    onRestoreSnapshot={handleRestoreHistorySnapshot}
+                    onDeleteSnapshot={handleDeleteHistorySnapshot}
+                  />
+                </div>
+              ) : null}
+            </aside>
           )
         ) : null}
 
@@ -11014,7 +11014,9 @@ ${macroEnd}
                       : `Provider: ${aiConfig.provider}${
                           aiConfig.provider === "local"
                             ? ` · ${aiConfig.modelId}${
-                                aiConfig.modelDownloaded ? " (ready)" : " (not downloaded)"
+                                aiConfig.modelDownloaded
+                                  ? " (ready)"
+                                  : " (not downloaded)"
                               }`
                             : aiConfig.provider === "cloud"
                               ? ` · ${aiConfig.cloud.vendor} / ${aiConfig.cloud.model}${
@@ -11024,9 +11026,9 @@ ${macroEnd}
                         }`}
                   </p>
                   <p className="settings-hint">
-                    Setup is optional — you can skip it and configure the assistant
-                    here at any time, or re-run the guided setup to finish or change
-                    your choices.
+                    Setup is optional — you can skip it and configure the assistant here
+                    at any time, or re-run the guided setup to finish or change your
+                    choices.
                   </p>
                   <div className="ai-settings-actions">
                     <button
@@ -11055,17 +11057,13 @@ ${macroEnd}
                     ) : (
                       <button
                         className="ai-wizard-ghost"
-                        onClick={() =>
-                          setAiConfig((c) => ({ ...c, provider: "off" }))
-                        }
+                        onClick={() => setAiConfig((c) => ({ ...c, provider: "off" }))}
                       >
                         Turn AI off
                       </button>
                     )}
                   </div>
-                  <div className="settings-section-heading">
-                    Cloud provider
-                  </div>
+                  <div className="settings-section-heading">Cloud provider</div>
                   <p className="settings-hint">
                     Connect Claude, ChatGPT, Gemini, Groq, DeepSeek, Mistral,
                     OpenRouter, or any OpenAI-compatible endpoint with your own key.
@@ -11087,9 +11085,7 @@ ${macroEnd}
                   {aiConfig.provider !== "cloud" && aiConfig.cloud.apiKey && (
                     <button
                       className="ai-wizard-ghost"
-                      onClick={() =>
-                        setAiConfig((c) => ({ ...c, provider: "cloud" }))
-                      }
+                      onClick={() => setAiConfig((c) => ({ ...c, provider: "cloud" }))}
                     >
                       Use this cloud provider
                     </button>
