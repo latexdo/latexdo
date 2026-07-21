@@ -74,16 +74,19 @@ function resetAgent(overrides: Partial<typeof agentMock.state> = {}) {
 function renderSidebar(config = makeConfig(), isDesktop = true) {
   const onOpenSettings = vi.fn();
   const onUpdateConfig = vi.fn();
+  const onToggleExpanded = vi.fn();
   render(
     <AiSidebar
       config={config}
       ctx={ctx}
       isDesktop={isDesktop}
+      expanded={false}
+      onToggleExpanded={onToggleExpanded}
       onOpenSettings={onOpenSettings}
       onUpdateConfig={onUpdateConfig}
     />,
   );
-  return { onOpenSettings, onUpdateConfig };
+  return { onOpenSettings, onUpdateConfig, onToggleExpanded };
 }
 
 describe("AiSidebar", () => {
@@ -124,13 +127,16 @@ describe("AiSidebar", () => {
       provider: "ollama",
       ollamaModel: "qwen2.5-coder:3b",
     });
-    const { onOpenSettings, onUpdateConfig } = renderSidebar(config);
+    const { onOpenSettings, onUpdateConfig, onToggleExpanded } = renderSidebar(config);
 
     expect(screen.getByText("Ollama · qwen2.5-coder:3b")).toBeVisible();
     expect(screen.getByText("Ask me to…")).toBeVisible();
 
     fireEvent.click(screen.getByTitle("AI settings"));
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTitle("Expand AI chat"));
+    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByTitle("New chat"));
     expect(agentMock.state.reset).toHaveBeenCalledTimes(1);

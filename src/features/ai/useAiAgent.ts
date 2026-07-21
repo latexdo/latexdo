@@ -22,6 +22,9 @@ export interface UiMessage {
   pending?: boolean;
 }
 
+const accessDenied = (setting: string) =>
+  Promise.reject(new Error(`${setting} access is disabled in AI settings.`));
+
 function newId(): string {
   return `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -35,11 +38,12 @@ function providerFor(config: AiConfig): "local" | "ollama" | "cloud" {
     : "cloud";
 }
 
-function supportsNativeTools(config: AiConfig): boolean {
+export function supportsNativeTools(config: AiConfig): boolean {
   if (config.provider === "cloud") return true;
   if (config.provider === "ollama") return true;
-  const model = findLocalModel(config.modelId);
-  return model?.supportsTools ?? false;
+  // The Electron local-model adapter currently exposes only plain chat text.
+  // Even tool-capable GGUF models need the JSON fallback protocol here.
+  return false;
 }
 
 function buildRequest(
@@ -120,15 +124,25 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext) {
       const text = userText.trim();
       if (!text || isRunning) return;
 
-      const sel = ctx.selection();
+      const access = config.access;
+      const sel = access.currentEditor
+        ? ctx.selection()
+        : { text: "", hasSelection: false };
       const system = buildSystemPrompt({
         userName: config.userName || config.profile.displayName,
         projectName: ctx.projectName(),
-        activeFilePath: ctx.activeFilePath(),
+        activeFilePath: access.currentEditor ? ctx.activeFilePath() : null,
         hasSelection: sel.hasSelection,
         providerSupportsNativeTools: supportsNativeTools(config),
-        researchContext: buildResearchContext(config.profile),
+        access,
+        researchContext: access.researcherProfile
+          ? buildResearchContext(config.profile)
+          : null,
       });
+
+      if (!access.chatHistory) {
+        historyRef.current = [];
+      }
 
       if (historyRef.current.length === 0) {
         historyRef.current.push({ role: "system", content: system });
@@ -209,11 +223,35 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext) {
       // mode, autoApprove short-circuits and requestApproval is never called.
       const effectiveCtx: AgentContext = {
         ...ctx,
+        activeFilePath: () => (access.currentEditor ? ctx.activeFilePath() : null),
+        listFiles: () =>
+          access.projectFiles ? ctx.listFiles() : accessDenied("Project files"),
+        readFile: (path) =>
+          access.projectFiles ? ctx.readFile(path) : accessDenied("Project files"),
+        writeFile: (path, content) =>
+          access.projectFiles
+            ? ctx.writeFile(path, content)
+            : accessDenied("Project files"),
+        documentText: () => (access.currentEditor ? ctx.documentText() : ""),
+        selection: () =>
+          access.currentEditor ? ctx.selection() : { text: "", hasSelection: false },
+        applyEdit: (proposal) =>
+          access.currentEditor
+            ? ctx.applyEdit(proposal)
+            : accessDenied("Current editor"),
+        insertCitation: (query) =>
+          access.bibliography
+            ? ctx.insertCitation(query)
+            : accessDenied("Bibliography"),
+        recommendCitations: (passage) =>
+          access.bibliography
+            ? ctx.recommendCitations(passage)
+            : accessDenied("Bibliography"),
         requestApproval: requestApprovalInteractive,
       };
 
       try {
-        await runAgent({
+        const updatedHistory = await runAgent({
           messages: historyRef.current,
           ctx: effectiveCtx,
           generate,
@@ -222,6 +260,7 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext) {
           signal: controller.signal,
           onEvent,
         });
+        historyRef.current = access.chatHistory ? updatedHistory : [];
       } finally {
         setIsRunning(false);
         setStatus("");

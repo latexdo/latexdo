@@ -28,6 +28,19 @@ export interface CloudConfig {
   apiKey: string;
 }
 
+export interface AiAccessConfig {
+  /** Send prior chat turns to the model. The current user prompt is always sent. */
+  chatHistory: boolean;
+  /** Allow the agent to inspect and edit the currently open editor document. */
+  currentEditor: boolean;
+  /** Allow the agent to list, read, and write project files. */
+  projectFiles: boolean;
+  /** Allow the agent to inspect citation indexes and bibliography entries. */
+  bibliography: boolean;
+  /** Allow the configured researcher profile and fetched papers in prompts. */
+  researcherProfile: boolean;
+}
+
 export interface AiConfig {
   version: 1;
   setupComplete: boolean;
@@ -50,6 +63,8 @@ export interface AiConfig {
 
   /** Researcher identity (ORCID / anonymous token) fed to the agent. */
   profile: ResearcherProfile;
+  /** Controls which local project/profile context the AI agent may inspect. */
+  access: AiAccessConfig;
 
   /** Agent may write files / run compiles without per-step confirmation. */
   autoApproveEdits: boolean;
@@ -84,6 +99,13 @@ export const defaultAiConfig: AiConfig = {
   },
 
   profile: defaultResearcherProfile,
+  access: {
+    chatHistory: true,
+    currentEditor: true,
+    projectFiles: true,
+    bibliography: true,
+    researcherProfile: true,
+  },
 
   autoApproveEdits: false,
   maxAgentSteps: 12,
@@ -126,6 +148,20 @@ function normalizeCloud(value: unknown): CloudConfig {
   };
 }
 
+function normalizeAccess(value: unknown): AiAccessConfig {
+  const raw = (value ?? {}) as Partial<AiAccessConfig>;
+  return {
+    chatHistory: bool(raw.chatHistory, defaultAiConfig.access.chatHistory),
+    currentEditor: bool(raw.currentEditor, defaultAiConfig.access.currentEditor),
+    projectFiles: bool(raw.projectFiles, defaultAiConfig.access.projectFiles),
+    bibliography: bool(raw.bibliography, defaultAiConfig.access.bibliography),
+    researcherProfile: bool(
+      raw.researcherProfile,
+      defaultAiConfig.access.researcherProfile,
+    ),
+  };
+}
+
 export function normalizeAiConfig(raw: unknown): AiConfig {
   const saved = (raw ?? {}) as Partial<AiConfig>;
   const modelId = findLocalModel(str(saved.modelId, defaultAiConfig.modelId))
@@ -156,6 +192,7 @@ export function normalizeAiConfig(raw: unknown): AiConfig {
     ollamaModel: str(saved.ollamaModel, defaultAiConfig.ollamaModel),
     cloud: normalizeCloud(saved.cloud),
     profile: normalizeResearcherProfile(saved.profile),
+    access: normalizeAccess(saved.access),
     autoApproveEdits: bool(saved.autoApproveEdits, defaultAiConfig.autoApproveEdits),
     maxAgentSteps: int(saved.maxAgentSteps, defaultAiConfig.maxAgentSteps, 1, 50),
   };

@@ -4,6 +4,8 @@ import {
   Send,
   Square,
   Plus,
+  Maximize2,
+  Minimize2,
   Settings2,
   Wrench,
   Check,
@@ -22,6 +24,8 @@ interface AiSidebarProps {
   config: AiConfig;
   ctx: AgentContext;
   isDesktop: boolean;
+  expanded: boolean;
+  onToggleExpanded: () => void;
   onOpenSettings: () => void;
   onUpdateConfig: (config: AiConfig) => void;
 }
@@ -57,6 +61,8 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
   config,
   ctx,
   isDesktop,
+  expanded,
+  onToggleExpanded,
   onOpenSettings,
   onUpdateConfig,
 }) => {
@@ -97,6 +103,15 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
           <span>AI Assistant</span>
         </div>
         <div className="ai-sidebar-actions">
+          <button
+            className="small-icon"
+            title={expanded ? "Collapse AI chat" : "Expand AI chat"}
+            aria-label={expanded ? "Collapse AI chat" : "Expand AI chat"}
+            aria-pressed={expanded}
+            onClick={onToggleExpanded}
+          >
+            {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          </button>
           <button className="small-icon" title="New chat" onClick={reset}>
             <Plus size={15} />
           </button>

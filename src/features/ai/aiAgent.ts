@@ -56,14 +56,38 @@ export function parseJsonToolCall(text: string): ToolCall | null {
   }
 }
 
-export async function runAgent(args: RunAgentArgs): Promise<void> {
+export function looksLikeProjectAccessRefusal(text: string): boolean {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (!normalized) return false;
+
+  const deniesAccess =
+    /\b(?:do not|don't|dont|cannot|can't|cant|won't|wont)\s+(?:currently\s+)?(?:have\s+)?access\b/i.test(
+      normalized,
+    ) ||
+    /\b(?:cannot|can't|cant)\s+(?:access|read|view|open|inspect)\b/i.test(normalized);
+  if (!deniesAccess) return false;
+
+  const projectContext =
+    /\b(?:current|conversation|discussion|topic|file|files|document|documents|project|workspace|latex|tex|bib|bibliography|publication|publications|paper|papers|citation|citations|reference|references)\b/i.test(
+      normalized,
+    );
+  const asksUserForExistingContext =
+    /\b(?:please|could you|can you|i(?:'| a)m going to need you to|i need you to)\s+(?:share|upload|provide|paste|send)\b/i.test(
+      normalized,
+    );
+
+  return projectContext || asksUserForExistingContext;
+}
+
+export async function runAgent(args: RunAgentArgs): Promise<ChatMessage[]> {
   const { ctx, generate, autoApprove, maxSteps, signal, onEvent } = args;
   const messages = [...args.messages];
+  let retriedProjectAccessRefusal = false;
 
   for (let step = 0; step < maxSteps; step += 1) {
     if (signal?.aborted) {
       onEvent({ type: "done", reason: "aborted" });
-      return;
+      return messages;
     }
     onEvent({ type: "step", index: step });
 
@@ -77,17 +101,17 @@ export async function runAgent(args: RunAgentArgs): Promise<void> {
         type: "error",
         message: error instanceof Error ? error.message : String(error),
       });
-      return;
+      return messages;
     }
 
     if (signal?.aborted) {
       onEvent({ type: "done", reason: "aborted" });
-      return;
+      return messages;
     }
 
     if (result.type === "error") {
       onEvent({ type: "error", message: result.content });
-      return;
+      return messages;
     }
 
     // Some local models signal tools via JSON text instead of the tool channel.
@@ -101,10 +125,24 @@ export async function runAgent(args: RunAgentArgs): Promise<void> {
 
     if (!toolCalls || toolCalls.length === 0) {
       const finalText = result.content.trim();
+      if (
+        !retriedProjectAccessRefusal &&
+        step + 1 < maxSteps &&
+        looksLikeProjectAccessRefusal(finalText)
+      ) {
+        retriedProjectAccessRefusal = true;
+        messages.push({ role: "assistant", content: finalText });
+        messages.push({
+          role: "user",
+          content:
+            "Correction: you are embedded in LatexDo and can access the current project through tools. Do not ask me to share project files. Use list_files, read_file, get_active_document, insert_citation, or recommend_citations as needed, then answer from the inspected context.",
+        });
+        continue;
+      }
       onEvent({ type: "assistant-message", text: finalText });
       messages.push({ role: "assistant", content: finalText });
       onEvent({ type: "done", reason: "completed" });
-      return;
+      return messages;
     }
 
     // Record the assistant turn that requested tools.
@@ -117,7 +155,7 @@ export async function runAgent(args: RunAgentArgs): Promise<void> {
     for (const call of toolCalls) {
       if (signal?.aborted) {
         onEvent({ type: "done", reason: "aborted" });
-        return;
+        return messages;
       }
       onEvent({ type: "tool-start", call });
       const toolResult = await executeTool(call.name, call.args, ctx, { autoApprove });
@@ -138,4 +176,5 @@ export async function runAgent(args: RunAgentArgs): Promise<void> {
   }
 
   onEvent({ type: "done", reason: "max-steps" });
+  return messages;
 }

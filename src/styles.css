@@ -10734,6 +10734,19 @@ button {
 }
 
 /* ----- AI Sidebar ----- */
+.sidebar[data-view="ai"] {
+  width: 304px;
+  min-width: 260px;
+  flex-basis: 304px;
+  background: var(--bg-sidebar);
+}
+
+.sidebar[data-view="ai"].ai-sidebar-expanded {
+  width: min(520px, calc(100vw - 48px));
+  min-width: min(420px, calc(100vw - 48px));
+  flex-basis: min(520px, calc(100vw - 48px));
+}
+
 .ai-sidebar {
   display: flex;
   flex-direction: column;
@@ -10748,14 +10761,21 @@ button {
 }
 .ai-sidebar-title {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 7px;
   font-weight: 600;
   color: var(--text-primary);
   font-size: 13px;
 }
+.ai-sidebar-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ai-sidebar-actions {
   display: flex;
+  flex-shrink: 0;
   gap: 4px;
 }
 .ai-sidebar-model {
@@ -10897,6 +10917,12 @@ button {
   justify-content: space-between;
   gap: 8px;
 }
+.ai-sidebar-model > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ai-autonomy-toggle {
   display: inline-flex;
   align-items: center;
@@ -10992,6 +11018,15 @@ button {
 }
 .ai-autonomy-option input {
   margin-top: 3px;
+}
+
+@media (max-width: 900px) {
+  .sidebar[data-view="ai"],
+  .sidebar[data-view="ai"].ai-sidebar-expanded {
+    width: min(360px, calc(100vw - 48px));
+    min-width: min(260px, calc(100vw - 48px));
+    flex-basis: min(360px, calc(100vw - 48px));
+  }
 }
 
 /* ----- Cloud provider form ----- */
