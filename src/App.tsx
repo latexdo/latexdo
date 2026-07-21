@@ -99,6 +99,7 @@ import {
   loadAiConfig,
   saveAiConfig,
   layoutPresetFlags,
+  type AiAccessConfig,
   type AiConfig,
 } from "./features/ai/aiConfig";
 import type { AgentContext, EditProposal } from "./features/ai/aiTools";
@@ -693,11 +694,21 @@ export default function App() {
   ]);
   const [activeSidebar, setActiveSidebar] = useState<SidebarView>("explorer");
   const [aiConfig, setAiConfig] = useState<AiConfig>(loadAiConfig);
+  const [aiSidebarExpanded, setAiSidebarExpanded] = useState(false);
   const [aiWizardOpen, setAiWizardOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   useEffect(() => {
     saveAiConfig(aiConfig);
   }, [aiConfig]);
+  const setAiAccess = useCallback(
+    (key: keyof AiAccessConfig, value: boolean) => {
+      setAiConfig((current) => ({
+        ...current,
+        access: { ...current.access, [key]: value },
+      }));
+    },
+    [setAiConfig],
+  );
   const editorPreviewRef = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<Engine>(settings.defaultEngine);
   const [rootFile, setRootFile] = useState("main.tex");
@@ -8440,11 +8451,16 @@ ${macroEnd}
 
         {sidebarVisible ? (
           activeSidebar === "ai" ? (
-            <aside className="sidebar" data-view="ai">
+            <aside
+              className={`sidebar ${aiSidebarExpanded ? "ai-sidebar-expanded" : ""}`}
+              data-view="ai"
+            >
               <AiSidebar
                 config={aiConfig}
                 ctx={agentContext}
                 isDesktop={aiIsDesktop}
+                expanded={aiSidebarExpanded}
+                onToggleExpanded={() => setAiSidebarExpanded((expanded) => !expanded)}
                 onOpenSettings={() => setAiWizardOpen(true)}
                 onUpdateConfig={setAiConfig}
               />
@@ -11219,6 +11235,93 @@ ${macroEnd}
                       Use this cloud provider
                     </button>
                   )}
+
+                  <div className="settings-section-heading">
+                    <strong>Context access</strong>
+                    <span>
+                      Choose what local LatexDo context the assistant can inspect.
+                    </span>
+                  </div>
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Chat history</strong>
+                      <small>
+                        Send previous messages and tool results in this AI chat. The
+                        current prompt is always sent.
+                      </small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={aiConfig.access.chatHistory}
+                      onChange={(event) =>
+                        setAiAccess("chatHistory", event.target.checked)
+                      }
+                    />
+                  </label>
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Current editor</strong>
+                      <small>
+                        Let the assistant inspect the open file, selected text, and
+                        cursor target.
+                      </small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={aiConfig.access.currentEditor}
+                      onChange={(event) =>
+                        setAiAccess("currentEditor", event.target.checked)
+                      }
+                    />
+                  </label>
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Project files</strong>
+                      <small>
+                        Let the assistant list, read, and write files in the open
+                        project.
+                      </small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={aiConfig.access.projectFiles}
+                      onChange={(event) =>
+                        setAiAccess("projectFiles", event.target.checked)
+                      }
+                    />
+                  </label>
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Bibliography and citations</strong>
+                      <small>
+                        Let the assistant use bibliography entries, citation keys, and
+                        citation recommendations.
+                      </small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={aiConfig.access.bibliography}
+                      onChange={(event) =>
+                        setAiAccess("bibliography", event.target.checked)
+                      }
+                    />
+                  </label>
+                  <label className="settings-row settings-toggle">
+                    <span>
+                      <strong>Researcher profile</strong>
+                      <small>
+                        Include your configured name, affiliation, ORCID, and fetched
+                        publications in the AI prompt.
+                      </small>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={aiConfig.access.researcherProfile}
+                      onChange={(event) =>
+                        setAiAccess("researcherProfile", event.target.checked)
+                      }
+                    />
+                  </label>
 
                   <div className="settings-section-heading">Autonomy</div>
                   <p className="settings-hint">

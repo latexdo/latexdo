@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { parseJsonToolCall, runAgent, type AgentEvent } from "./aiAgent";
+import {
+  looksLikeProjectAccessRefusal,
+  parseJsonToolCall,
+  runAgent,
+  type AgentEvent,
+} from "./aiAgent";
 import { executeTool, type AgentContext } from "./aiTools";
 import type { ChatMessage, GenerationStep, ToolSchema } from "./aiTypes";
 
@@ -31,6 +36,28 @@ describe("parseJsonToolCall", () => {
 
   it("returns null for plain prose", () => {
     expect(parseJsonToolCall("Here is your rewritten paragraph.")).toBeNull();
+  });
+});
+
+describe("looksLikeProjectAccessRefusal", () => {
+  it("detects project/file access refusals", () => {
+    expect(
+      looksLikeProjectAccessRefusal(
+        "I'm sorry, but I don't have access to your publications. Please share the content/conclusion.tex file.",
+      ),
+    ).toBe(true);
+  });
+
+  it("detects current conversation/topic access refusals", () => {
+    expect(
+      looksLikeProjectAccessRefusal(
+        "I don't have access to your current conversation or current topic.",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not flag ordinary questions that need clarification", () => {
+    expect(looksLikeProjectAccessRefusal("Which venue should I target?")).toBe(false);
   });
 });
 
@@ -75,6 +102,40 @@ describe("runAgent", () => {
     expect(finalMsg).toMatchObject({ text: "Done reading the file." });
   });
 
+  it("returns the updated model-facing transcript", async () => {
+    const history = await runAgent({
+      messages: [
+        { role: "system", content: "sys" },
+        { role: "user", content: "read main.tex" },
+      ],
+      ctx: stubContext(),
+      generate: async (_messages, _tools) => ({
+        type: "tool_calls",
+        content: "",
+        toolCalls: [{ id: "c1", name: "read_file", args: { path: "main.tex" } }],
+      }),
+      autoApprove: true,
+      maxSteps: 1,
+      onEvent: () => {},
+    });
+
+    expect(history).toEqual([
+      { role: "system", content: "sys" },
+      { role: "user", content: "read main.tex" },
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "c1", name: "read_file", args: { path: "main.tex" } }],
+      },
+      {
+        role: "tool",
+        content: "\\documentclass{article}",
+        toolCallId: "c1",
+        name: "read_file",
+      },
+    ]);
+  });
+
   it("recovers a JSON tool call emitted as plain text", async () => {
     const steps: GenerationStep[] = [
       { type: "text", content: '{"tool":"compile","args":{}}' },
@@ -91,6 +152,39 @@ describe("runAgent", () => {
       onEvent: () => {},
     });
     expect(compile).toHaveBeenCalledOnce();
+  });
+
+  it("retries once when the model wrongly claims it cannot access project files", async () => {
+    const steps: GenerationStep[] = [
+      {
+        type: "text",
+        content:
+          "I'm sorry, but I don't have access to your personal information or publications. Please share the LaTeX file.",
+      },
+      {
+        type: "tool_calls",
+        content: "",
+        toolCalls: [{ id: "c1", name: "read_file", args: { path: "main.tex" } }],
+      },
+      { type: "text", content: "The project contains one publication entry." },
+    ];
+    let i = 0;
+    const readFile = vi.fn(async () => "\\bibliography{references}");
+    const events: AgentEvent[] = [];
+
+    await runAgent({
+      messages: [{ role: "user", content: "what publications do I have?" }],
+      ctx: stubContext({ readFile }),
+      generate: async () => steps[i++],
+      autoApprove: true,
+      maxSteps: 6,
+      onEvent: (e) => events.push(e),
+    });
+
+    expect(readFile).toHaveBeenCalledWith("main.tex");
+    expect(events.find((e) => e.type === "assistant-message")).toMatchObject({
+      text: "The project contains one publication entry.",
+    });
   });
 
   it("stops at the step budget", async () => {
