@@ -35,44 +35,89 @@ const CODENAME_ADJECTIVES = [
   "cosmic",
   "lunar",
   "nebular",
-  "photon",
+  "photonic",
   "crimson",
   "auroral",
   "tidal",
   "prismatic",
-  "gravity",
   "solar",
   "arctic",
   "obsidian",
   "electric",
   "verdant",
-  "sable",
   "radiant",
   "spectral",
   "kinetic",
+  "analytic",
+  "harmonic",
+  "modular",
+  "affine",
+  "tensorial",
+  "vectorial",
+  "lattice",
+  "axiomatic",
+  "recursive",
+  "canonical",
+  "syntactic",
+  "semantic",
+  "noetherian",
+  "euclidean",
+  "bayesian",
+  "gaussian",
+  "fourier",
+  "hilbertian",
+  "riemannian",
+  "newtonian",
+  "discrete",
+  "lucid",
 ];
 const CODENAME_NOUNS = [
-  "quokka",
-  "axolotl",
-  "narwhal",
-  "pangolin",
-  "lynx",
-  "heron",
-  "manta",
-  "ibex",
-  "falcon",
-  "otter",
-  "tapir",
-  "comet",
-  "quasar",
-  "lantern",
-  "meridian",
-  "cipher",
   "atlas",
-  "orchid",
   "beacon",
   "harbor",
+  "cipher",
+  "compass",
+  "engine",
+  "theorem",
+  "archive",
+  "folio",
+  "ledger",
+  "quill",
+  "signal",
+  "aperture",
+  "meridian",
+  "vector",
+  "matrix",
+  "kernel",
+  "proof",
+  "axiom",
+  "lemma",
+  "corollary",
+  "tensor",
+  "prism",
+  "spectrum",
+  "quasar",
+  "comet",
+  "orbit",
+  "nova",
+  "nebula",
+  "manifold",
+  "gradient",
+  "integral",
+  "equation",
+  "diagram",
+  "preprint",
+  "notebook",
+  "observatory",
+  "manuscript",
+  "citation",
+  "dataset",
+  "pipeline",
+  "compiler",
 ];
+
+export const scholarCodenameCombinationCount =
+  CODENAME_ADJECTIVES.length * CODENAME_NOUNS.length;
 
 function randomBytes(length: number): Uint8Array {
   const out = new Uint8Array(length);
@@ -103,14 +148,25 @@ function toCrockford(bytes: Uint8Array): string {
   return output;
 }
 
+function randomUint32(): number {
+  const bytes = randomBytes(4);
+  return bytes[0] * 0x1000000 + bytes[1] * 0x10000 + bytes[2] * 0x100 + bytes[3];
+}
+
 function pick<T>(list: T[]): T {
-  return list[randomBytes(1)[0] % list.length];
+  if (list.length === 0) throw new Error("Cannot pick from an empty list.");
+  const bucketSize = Math.floor(0x100000000 / list.length);
+  const limit = bucketSize * list.length;
+  let value = randomUint32();
+  while (value >= limit) value = randomUint32();
+  return list[value % list.length];
 }
 
 /**
  * Generate a cool, high-entropy anonymous identity token, e.g.
- * "sch-cosmic-quokka-7F3KMQ2N9VXABJ8RT4WPGH6C5D". The suffix carries 128 bits
- * of randomness, so it's genuinely hard to guess; the codename is just flavor.
+ * "sch-cosmic-beacon-7F3KMQ2N9VXABJ8RT4WPGH6C5D". The codename pool has more
+ * than 1,000 adjective/noun combinations. The suffix carries 128 bits of
+ * randomness, so it's genuinely hard to guess; the codename is just flavor.
  */
 export function generateScholarToken(): string {
   const suffix = toCrockford(randomBytes(16));

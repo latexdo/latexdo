@@ -11213,3 +11213,287 @@ button {
   cursor: pointer;
   margin-top: 4px;
 }
+
+/* ---------- Knowledge graph ---------- */
+.kg-modal-content {
+  padding: 0;
+}
+.kg-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  color: var(--text-primary);
+  background: var(--bg-root);
+}
+.kg-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.kg-search {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 6px;
+  color: var(--text-muted);
+  flex: 1 1 140px;
+  min-width: 120px;
+}
+.kg-search input {
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  outline: none;
+  width: 100%;
+  font-size: 12px;
+}
+.kg-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.kg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-button-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.kg-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.kg-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.kg-stats {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-basis: 100%;
+}
+.kg-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+.kg-controls-relations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.kg-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.kg-slider input {
+  width: 100%;
+}
+.kg-canvas-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.kg-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+  background:
+    radial-gradient(circle at 50% 40%, var(--bg-surface), var(--bg-panel));
+}
+.kg-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.kg-edge {
+  stroke: var(--border-default);
+  opacity: 0.5;
+}
+.kg-edge.active {
+  stroke: var(--accent);
+  opacity: 0.95;
+}
+.kg-node {
+  cursor: pointer;
+}
+.kg-node circle {
+  fill: var(--bg-badge-soft);
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+  transition: fill 0.1s ease;
+}
+.kg-node.cited circle {
+  fill: var(--accent);
+  stroke: var(--accent-hover);
+}
+.kg-node.uncited circle {
+  fill: var(--bg-elevated);
+  stroke: var(--text-dim);
+}
+.kg-node.selected circle {
+  stroke: var(--text-heading);
+  stroke-width: 3;
+}
+.kg-node.match circle {
+  stroke: var(--warning-border, #e0a000);
+  stroke-width: 3;
+}
+.kg-node.dim {
+  opacity: 0.25;
+}
+.kg-label {
+  fill: var(--text-secondary);
+  font-size: 10px;
+  text-anchor: middle;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: var(--bg-panel);
+  stroke-width: 3px;
+}
+.kg-inspector {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 260px;
+  max-height: calc(100% - 20px);
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.28);
+  font-size: 12px;
+}
+.kg-inspector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.kg-inspector-head strong {
+  color: var(--text-heading);
+}
+.kg-icon {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+}
+.kg-icon:hover {
+  color: var(--text-primary);
+}
+.kg-inspector-body {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.kg-title {
+  margin: 0;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+.kg-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+  margin: 0;
+}
+.kg-meta dt {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.kg-meta dd {
+  margin: 0;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+.kg-cite-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  cursor: pointer;
+  font-size: 12px;
+}
+.kg-cite-btn:hover {
+  background: var(--accent-hover);
+}
+.kg-neighbors {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.kg-neighbors-head {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.kg-neighbor {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+  padding: 5px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.kg-neighbor:hover {
+  background: var(--bg-hover);
+}
+.kg-neighbor-label {
+  color: var(--text-primary);
+}
+.kg-neighbor-why {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.kg-muted {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin: 0;
+}

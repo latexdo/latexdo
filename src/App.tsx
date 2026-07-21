@@ -53,6 +53,7 @@ import {
   Settings,
   Sigma,
   Sparkles,
+  Waypoints,
   Table2,
   TerminalSquare,
   Underline,
@@ -172,6 +173,15 @@ import {
   type CitationProjectFile,
 } from "./latex/citationAnalysis";
 import {
+  recommendCitations,
+  formatRecommendations,
+} from "./features/graph/citationRecommender";
+import {
+  buildKnowledgeGraph,
+  type KnowledgeGraphParams,
+} from "./features/graph/knowledgeGraph";
+import { KnowledgeGraphView } from "./components/KnowledgeGraphView";
+import {
   isProjectSearchablePath,
   type ProjectSearchFile,
   type ProjectSearchMatch,
@@ -230,6 +240,8 @@ import {
   hasProjectTreeLimitEntry,
   loadBookmarkStore,
   loadCollaborationDisplayName,
+  loadKnowledgeGraphParams,
+  storeKnowledgeGraphParams,
   maxProjectTreeDepth,
   maxProjectTreeEntries,
   minProjectTreeDepth,
@@ -1039,6 +1051,25 @@ export default function App() {
     () => analyzeCitationLibrary(citationProjectFiles),
     [citationProjectFiles],
   );
+  const [knowledgeGraphParams, setKnowledgeGraphParams] =
+    useState<KnowledgeGraphParams>(loadKnowledgeGraphParams);
+  const knowledgeGraph = useMemo(
+    () =>
+      buildKnowledgeGraph(
+        citationAnalysis.entries,
+        citationAnalysis.citedKeys,
+        knowledgeGraphParams,
+      ),
+    [citationAnalysis, knowledgeGraphParams],
+  );
+  const citationEntriesByKey = useMemo(
+    () => new Map(citationAnalysis.entries.map((entry) => [entry.key, entry])),
+    [citationAnalysis],
+  );
+  const [knowledgeGraphOpen, setKnowledgeGraphOpen] = useState(false);
+  useEffect(() => {
+    storeKnowledgeGraphParams(knowledgeGraphParams);
+  }, [knowledgeGraphParams]);
   const rootFileExists = useMemo(
     () =>
       hasVisibleProject &&
@@ -3266,6 +3297,7 @@ ${macroEnd}
         const hasClosableSurface =
           createDialog !== null ||
           settingsOpen ||
+          knowledgeGraphOpen ||
           tikzCanvasOpen ||
           tableCanvasOpen ||
           tikzConverterOpen ||
@@ -3278,6 +3310,7 @@ ${macroEnd}
         event.preventDefault();
         setCreateDialog(null);
         setSettingsOpen(false);
+        setKnowledgeGraphOpen(false);
         setTikzCanvasOpen(false);
         setTableCanvasOpen(false);
         setTikzConverterOpen(false);
@@ -3293,6 +3326,7 @@ ${macroEnd}
     compile,
     createDialog,
     gitContextMenu,
+    knowledgeGraphOpen,
     notationManagerOpen,
     saveActiveAndCompile,
     settingsOpen,
@@ -5972,6 +6006,60 @@ ${macroEnd}
     [activeTextDocument, projectId],
   );
 
+  const insertCitationKey = useCallback(
+    (key: string) => {
+      const editor = editorRef.current;
+      const position = editor?.getPosition();
+      if (!editor || !position) {
+        setStatusMessage(
+          `Open a .tex file and place the cursor where you want \\cite{${key}}.`,
+        );
+        return;
+      }
+      editor.executeEdits("knowledge-graph", [
+        {
+          range: {
+            startLineNumber: position.lineNumber,
+            startColumn: position.column,
+            endLineNumber: position.lineNumber,
+            endColumn: position.column,
+          },
+          text: `\\cite{${key}}`,
+        },
+      ]);
+      editor.focus();
+      setStatusMessage(`Inserted \\cite{${key}}.`);
+    },
+    [setStatusMessage],
+  );
+
+  const recommendCitationsForSelection = useCallback(() => {
+    const editor = editorRef.current;
+    const selection = editor?.getSelection();
+    const passage =
+      selection && editor
+        ? (editor.getModel()?.getValueInRange(selection) ?? "")
+        : "";
+    const text = passage.trim();
+    if (!text) {
+      setStatusMessage("Select a sentence or paragraph first to recommend citations.");
+      return;
+    }
+    const recommendations = recommendCitations(text, citationAnalysis.entries, {
+      citedKeys: citationAnalysis.citedKeys,
+      limit: 6,
+    });
+    if (recommendations.length === 0) {
+      setStatusMessage("No matching references found for the selected text.");
+      return;
+    }
+    setStatusMessage(
+      `Suggested citations: ${recommendations
+        .map((rec) => `\\cite{${rec.key}}`)
+        .join(", ")}`,
+    );
+  }, [citationAnalysis, setStatusMessage]);
+
   const flattenProjectFiles = useCallback((entries: ProjectEntry[]): string[] => {
     const out: string[] = [];
     const walk = (list: ProjectEntry[]) => {
@@ -6054,6 +6142,14 @@ ${macroEnd}
         }
         return `No bibliography entry matched "${query}". Add it to a .bib file first.`;
       },
+      recommendCitations: async (passage) => {
+        const recommendations = recommendCitations(
+          passage,
+          citationAnalysis.entries,
+          { citedKeys: citationAnalysis.citedKeys },
+        );
+        return formatRecommendations(recommendations);
+      },
       // Edits flow through Monaco (visible + undoable); a diff-approval UI is a
       // planned follow-up, so for now we apply and rely on undo.
       requestApproval: async () => true,
@@ -6067,6 +6163,7 @@ ${macroEnd}
       compile,
       applyAgentEdit,
       flattenProjectFiles,
+      citationAnalysis,
     ],
   );
 
@@ -8250,6 +8347,13 @@ ${macroEnd}
               <History size={21} />
             </button>
             <button
+              className={`activity-button ${knowledgeGraphOpen ? "active" : ""}`}
+              onClick={() => setKnowledgeGraphOpen((open) => !open)}
+              title="Knowledge graph"
+            >
+              <Waypoints size={21} />
+            </button>
+            <button
               className={`activity-button ${
                 sidebarVisible && activeSidebar === "ai" ? "active" : ""
               }`}
@@ -9693,6 +9797,35 @@ ${macroEnd}
               </>
             ) : null}
           </div>
+
+          {knowledgeGraphOpen && (
+            <div className="tikz-modal-overlay kg-modal-overlay">
+              <div className="tikz-modal-header">
+                <span className="tikz-modal-title">Knowledge Graph</span>
+                <button
+                  className="tikz-modal-close"
+                  onClick={() => setKnowledgeGraphOpen(false)}
+                  aria-label="Close Knowledge Graph"
+                  title="Close Knowledge Graph (Esc)"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="tikz-modal-content kg-modal-content">
+                <KnowledgeGraphView
+                  graph={knowledgeGraph}
+                  params={knowledgeGraphParams}
+                  onParamsChange={setKnowledgeGraphParams}
+                  entriesByKey={citationEntriesByKey}
+                  onInsertCitation={(key) => {
+                    insertCitationKey(key);
+                    setKnowledgeGraphOpen(false);
+                  }}
+                  onRecommendForSelection={recommendCitationsForSelection}
+                />
+              </div>
+            </div>
+          )}
 
           {tikzCanvasOpen && (
             <div className="tikz-modal-overlay">

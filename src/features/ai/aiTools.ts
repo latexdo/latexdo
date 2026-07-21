@@ -33,6 +33,11 @@ export interface AgentContext {
   compile: () => Promise<{ ok: boolean; log: string; diagnostics: string[] }>;
   runChecks: (kind: string) => Promise<string>;
   insertCitation: (query: string) => Promise<string>;
+  /**
+   * Rank the project bibliography against a passage of prose and return
+   * \cite-ready suggestions (used by the knowledge-graph citation recommender).
+   */
+  recommendCitations: (passage: string) => Promise<string>;
   /** Returns true if the user approved the edit (bypassed when auto-approve). */
   requestApproval: (proposal: EditProposal) => Promise<boolean>;
 }
@@ -137,6 +142,19 @@ export const agentToolSchemas: ToolSchema[] = [
       query: { type: "string", description: "Author, title words, or topic to match." },
     },
     required: ["query"],
+  },
+  {
+    name: "recommend_citations",
+    description:
+      "Given a passage of the paper's prose, rank the project bibliography and return the most relevant references (with \\cite keys and reasons). Use this to suggest which papers to cite in a paragraph, then insert the best ones with edit_selection or insert_at_cursor.",
+    params: {
+      passage: {
+        type: "string",
+        description:
+          "The sentence or paragraph to find supporting citations for. Pass the actual prose, not a topic keyword.",
+      },
+    },
+    required: ["passage"],
   },
 ];
 
@@ -253,6 +271,12 @@ export async function executeTool(
         if (!query) return fail("Missing 'query'.");
         const key = await ctx.insertCitation(query);
         return ok(key);
+      }
+      case "recommend_citations": {
+        const passage = argStr(args, "passage");
+        if (!passage.trim()) return fail("Missing 'passage'.");
+        const report = await ctx.recommendCitations(passage);
+        return ok(report);
       }
       default:
         return fail(`Unknown tool: ${name}`);

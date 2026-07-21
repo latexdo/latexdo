@@ -34,7 +34,8 @@ Guidelines:
 - After making edits that could break the build, call compile to verify, then fix any diagnostics.
 - Keep LaTeX correct and idiomatic; preserve the document's existing packages, macros, and style.
 - Be concise in your chat replies. Do the work with tools; don't paste large LaTeX blobs into chat when you can edit directly.
-- Never fabricate citation keys — use insert_citation to find real ones.`;
+- Never fabricate citation keys — use insert_citation to find real ones.
+- When the user asks what to cite, or a paragraph makes a claim that needs support, call recommend_citations with the actual prose to rank the project bibliography, then insert the best keys with edit_selection or insert_at_cursor. Explain briefly why each fits.`;
 
   const withProfile = ctx.researchContext
     ? `${base}\n\n${ctx.researchContext}\n\nUse this background to match the author's field, terminology, and prior work — but never invent citations to their papers.`

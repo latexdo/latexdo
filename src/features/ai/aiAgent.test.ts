@@ -16,6 +16,7 @@ function stubContext(overrides: Partial<AgentContext> = {}): AgentContext {
     compile: async () => ({ ok: true, log: "", diagnostics: [] }),
     runChecks: async () => "ok",
     insertCitation: async () => "\\cite{x}",
+    recommendCitations: async () => "1. \\cite{x} (score 0.5)",
     requestApproval: async () => true,
     ...overrides,
   };
@@ -128,6 +129,7 @@ describe("step-by-step approval", () => {
     compile: async () => ({ ok: true, log: "", diagnostics: [] }),
     runChecks: async () => "",
     insertCitation: async () => "",
+    recommendCitations: async () => "",
     requestApproval: async () => approve,
   });
 
