@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Quote, Search, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import type { CitationEntry } from "../latex/latexIndex";
 import {
@@ -73,9 +67,7 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
     let nodes = graph.nodes;
     if (citedOnly) nodes = nodes.filter((node) => node.cited);
     if (nodes.length > maxRenderedNodes) {
-      nodes = [...nodes]
-        .sort((a, b) => b.degree - a.degree)
-        .slice(0, maxRenderedNodes);
+      nodes = [...nodes].sort((a, b) => b.degree - a.degree).slice(0, maxRenderedNodes);
     }
     const keySet = new Set(nodes.map((node) => node.key));
     const edges = graph.edges.filter(
@@ -148,7 +140,7 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
           const dx = b.x - a.x;
           const dy = b.y - a.y;
           const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
-          const force = ((dist - target) * 0.02) * alpha.current;
+          const force = (dist - target) * 0.02 * alpha.current;
           const fx = (dx / dist) * force;
           const fy = (dy / dist) * force;
           a.vx += fx;
@@ -375,8 +367,8 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
       <div className="kg-canvas-wrap">
         {rendered.nodes.length === 0 ? (
           <div className="kg-empty">
-            No bibliography entries yet. Add a <code>.bib</code> file (or citations)
-            to build the knowledge graph.
+            No bibliography entries yet. Add a <code>.bib</code> file (or citations) to
+            build the knowledge graph.
           </div>
         ) : (
           <svg

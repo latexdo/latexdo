@@ -47,9 +47,24 @@ describe("titleTokens", () => {
 describe("buildKnowledgeGraph", () => {
   it("links papers that share an author", () => {
     const graph = buildKnowledgeGraph([
-      entry({ key: "a", author: "Smith, Jane", year: "2020", title: "Quantum sensors" }),
-      entry({ key: "b", author: "Smith, Jane", year: "2021", title: "Optical lattices" }),
-      entry({ key: "c", author: "Doe, John", year: "2019", title: "Unrelated cooking" }),
+      entry({
+        key: "a",
+        author: "Smith, Jane",
+        year: "2020",
+        title: "Quantum sensors",
+      }),
+      entry({
+        key: "b",
+        author: "Smith, Jane",
+        year: "2021",
+        title: "Optical lattices",
+      }),
+      entry({
+        key: "c",
+        author: "Doe, John",
+        year: "2019",
+        title: "Unrelated cooking",
+      }),
     ]);
 
     const edge = graph.edges.find(
@@ -65,8 +80,16 @@ describe("buildKnowledgeGraph", () => {
 
   it("links papers with similar titles and records the relation", () => {
     const graph = buildKnowledgeGraph([
-      entry({ key: "t1", author: "A, A", title: "Deep reinforcement learning for robotics control" }),
-      entry({ key: "t2", author: "B, B", title: "Reinforcement learning robotics control policies" }),
+      entry({
+        key: "t1",
+        author: "A, A",
+        title: "Deep reinforcement learning for robotics control",
+      }),
+      entry({
+        key: "t2",
+        author: "B, B",
+        title: "Reinforcement learning robotics control policies",
+      }),
     ]);
     const edge = graph.edges[0];
     expect(edge).toBeDefined();
@@ -114,7 +137,12 @@ describe("buildKnowledgeGraph", () => {
   it("caps edges per node", () => {
     // One hub author on 10 papers; cap of 2 should limit the hub's degree.
     const entries = Array.from({ length: 10 }, (_, i) =>
-      entry({ key: `p${i}`, author: "Hub, H", year: "2020", title: `Paper ${i} topic` }),
+      entry({
+        key: `p${i}`,
+        author: "Hub, H",
+        year: "2020",
+        title: `Paper ${i} topic`,
+      }),
     );
     const graph = buildKnowledgeGraph(entries, [], {
       ...defaultKnowledgeGraphParams,
@@ -162,9 +190,26 @@ describe("buildKnowledgeGraph", () => {
 
   it("exposes neighbors sorted by weight", () => {
     const graph = buildKnowledgeGraph([
-      entry({ key: "hub", author: "Smith, J", journal: "Nature", year: "2020", title: "Core topic study" }),
-      entry({ key: "strong", author: "Smith, J", journal: "Nature", year: "2020", title: "Core topic study two" }),
-      entry({ key: "weak", author: "Other, O", year: "2020", title: "Different subject" }),
+      entry({
+        key: "hub",
+        author: "Smith, J",
+        journal: "Nature",
+        year: "2020",
+        title: "Core topic study",
+      }),
+      entry({
+        key: "strong",
+        author: "Smith, J",
+        journal: "Nature",
+        year: "2020",
+        title: "Core topic study two",
+      }),
+      entry({
+        key: "weak",
+        author: "Other, O",
+        year: "2020",
+        title: "Different subject",
+      }),
     ]);
     const neighbors = neighborsOf(graph, "hub");
     expect(neighbors.length).toBeGreaterThan(0);

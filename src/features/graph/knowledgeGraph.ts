@@ -61,9 +61,7 @@ function clamp(value: number, min: number, max: number): number {
  * falling back to defaults for any missing or out-of-range field. Pure so it can
  * be unit-tested and reused by the settings loader.
  */
-export function normalizeKnowledgeGraphParams(
-  value: unknown,
-): KnowledgeGraphParams {
+export function normalizeKnowledgeGraphParams(value: unknown): KnowledgeGraphParams {
   const source =
     value && typeof value === "object" && !Array.isArray(value)
       ? (value as Record<string, unknown>)
@@ -152,11 +150,51 @@ export interface KnowledgeGraph {
 const maxGraphNodes = 2000;
 
 const titleStopWords = new Set([
-  "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "into",
-  "is", "of", "on", "or", "the", "to", "via", "with", "using", "toward",
-  "towards", "based", "approach", "method", "methods", "study", "analysis",
-  "novel", "new", "model", "models", "system", "systems",
-  "all", "you", "your", "our", "we", "can", "not", "but", "how", "why",
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "by",
+  "for",
+  "from",
+  "in",
+  "into",
+  "is",
+  "of",
+  "on",
+  "or",
+  "the",
+  "to",
+  "via",
+  "with",
+  "using",
+  "toward",
+  "towards",
+  "based",
+  "approach",
+  "method",
+  "methods",
+  "study",
+  "analysis",
+  "novel",
+  "new",
+  "model",
+  "models",
+  "system",
+  "systems",
+  "all",
+  "you",
+  "your",
+  "our",
+  "we",
+  "can",
+  "not",
+  "but",
+  "how",
+  "why",
 ]);
 
 function stripBraces(value: string): string {
@@ -173,7 +211,7 @@ export function authorLastNames(author: string | undefined): string[] {
       // "Last, First" -> Last ; otherwise take the final whitespace token.
       const last = cleaned.includes(",")
         ? cleaned.split(",")[0]
-        : cleaned.split(/\s+/).filter(Boolean).pop() ?? "";
+        : (cleaned.split(/\s+/).filter(Boolean).pop() ?? "");
       return last.toLowerCase().replace(/[^a-z]/g, "");
     })
     .filter((name) => name.length >= 2);
@@ -207,7 +245,10 @@ function venueOf(entry: CitationEntry): string | undefined {
 }
 
 function normalizedVenue(venue: string | undefined): string {
-  return (venue ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
+  return (venue ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+    .trim();
 }
 
 function jaccard(a: Set<string>, b: Set<string>): number {
@@ -326,11 +367,7 @@ export function buildKnowledgeGraph(
         weight += weights["shared-venue"];
         edgeRelations.push("shared-venue");
       }
-      if (
-        relations["shared-year"] &&
-        a.year !== null &&
-        a.year === b.year
-      ) {
+      if (relations["shared-year"] && a.year !== null && a.year === b.year) {
         weight += weights["shared-year"];
         edgeRelations.push("shared-year");
       }
