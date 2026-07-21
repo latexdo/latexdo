@@ -25,10 +25,47 @@ export interface RecommendOptions {
 }
 
 const passageStopWords = new Set([
-  "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "into",
-  "is", "it", "its", "of", "on", "or", "that", "the", "this", "to", "was",
-  "we", "were", "with", "which", "these", "those", "our", "their", "such",
-  "can", "has", "have", "been", "also", "more", "than", "then", "they",
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "by",
+  "for",
+  "from",
+  "in",
+  "into",
+  "is",
+  "it",
+  "its",
+  "of",
+  "on",
+  "or",
+  "that",
+  "the",
+  "this",
+  "to",
+  "was",
+  "we",
+  "were",
+  "with",
+  "which",
+  "these",
+  "those",
+  "our",
+  "their",
+  "such",
+  "can",
+  "has",
+  "have",
+  "been",
+  "also",
+  "more",
+  "than",
+  "then",
+  "they",
 ]);
 
 function escapeRegExp(value: string): string {
@@ -44,7 +81,7 @@ function rawLastNames(author: string | undefined): string[] {
       const cleaned = name.replace(/[{}]/g, "").trim();
       const last = cleaned.includes(",")
         ? cleaned.split(",")[0].trim()
-        : cleaned.split(/\s+/).filter(Boolean).pop() ?? "";
+        : (cleaned.split(/\s+/).filter(Boolean).pop() ?? "");
       return last.replace(/[^A-Za-z-]/g, "");
     })
     .filter((name) => name.length >= 2);
@@ -152,9 +189,7 @@ export function recommendCitations(
     });
   }
 
-  return recommendations
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+  return recommendations.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
 /** Format a ranked list as plain text for the AI tool result / logs. */

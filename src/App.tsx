@@ -6037,9 +6037,7 @@ ${macroEnd}
     const editor = editorRef.current;
     const selection = editor?.getSelection();
     const passage =
-      selection && editor
-        ? (editor.getModel()?.getValueInRange(selection) ?? "")
-        : "";
+      selection && editor ? (editor.getModel()?.getValueInRange(selection) ?? "") : "";
     const text = passage.trim();
     if (!text) {
       setStatusMessage("Select a sentence or paragraph first to recommend citations.");
@@ -6143,11 +6141,9 @@ ${macroEnd}
         return `No bibliography entry matched "${query}". Add it to a .bib file first.`;
       },
       recommendCitations: async (passage) => {
-        const recommendations = recommendCitations(
-          passage,
-          citationAnalysis.entries,
-          { citedKeys: citationAnalysis.citedKeys },
-        );
+        const recommendations = recommendCitations(passage, citationAnalysis.entries, {
+          citedKeys: citationAnalysis.citedKeys,
+        });
         return formatRecommendations(recommendations);
       },
       // Edits flow through Monaco (visible + undoable); a diff-approval UI is a
