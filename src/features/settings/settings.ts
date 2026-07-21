@@ -10,6 +10,10 @@ import type {
   ProjectListOptions,
 } from "../../types";
 import { normalizeRelativePath } from "../project/projectUtils";
+import {
+  normalizeKnowledgeGraphParams,
+  type KnowledgeGraphParams,
+} from "../graph/knowledgeGraph";
 
 export type ColorTheme =
   | "graphite"
@@ -1161,6 +1165,28 @@ export function loadSettings(): AppSettings {
 }
 
 export const bookmarksStorageKey = "latexdo.bookmarks.v1";
+export const knowledgeGraphParamsStorageKey = "latexdo.knowledgeGraph.params.v1";
+
+/** Load the knowledge-graph parameters, repairing anything invalid to defaults. */
+export function loadKnowledgeGraphParams(): KnowledgeGraphParams {
+  try {
+    const raw = window.localStorage.getItem(knowledgeGraphParamsStorageKey);
+    return normalizeKnowledgeGraphParams(raw ? JSON.parse(raw) : undefined);
+  } catch {
+    return normalizeKnowledgeGraphParams(undefined);
+  }
+}
+
+export function storeKnowledgeGraphParams(params: KnowledgeGraphParams): void {
+  try {
+    window.localStorage.setItem(
+      knowledgeGraphParamsStorageKey,
+      JSON.stringify(normalizeKnowledgeGraphParams(params)),
+    );
+  } catch {
+    /* localStorage unavailable (e.g. private mode) — params stay in-memory. */
+  }
+}
 
 export function getSetting(key: string, settings: AppSettings): boolean {
   return (settings as unknown as Record<string, boolean>)[key] ?? true;

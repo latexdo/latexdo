@@ -2777,10 +2777,19 @@ async function fetchDownloadsManifestUpdatePayload(
     downloadsManifestUrl,
     headers,
   );
+  const files = updateFilesFromPayload(payload.files);
+  const result = updateResultFromDownloadsManifestPayload(payload, currentVersion);
+  // The downloads manifest is served over HTTPS from latexdo.org and every
+  // installer it lists is restricted to a trusted host (safeUpdateDownloadUrl)
+  // and verified against its published sha256 after download. That is enough to
+  // download, verify, and launch the installer in place, so the user gets a
+  // progress bar and an automatic relaunch instead of a manual reinstall.
+  const automaticInstallAvailable =
+    result.updateAvailable && selectUpdateFile(files) !== null;
   return {
-    result: updateResultFromDownloadsManifestPayload(payload, currentVersion),
-    files: updateFilesFromPayload(payload.files),
-    automaticInstallTrusted: false,
+    result: { ...result, automaticInstallAvailable },
+    files,
+    automaticInstallTrusted: true,
   };
 }
 

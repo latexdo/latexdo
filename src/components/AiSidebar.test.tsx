@@ -35,6 +35,7 @@ const ctx: AgentContext = {
   compile: vi.fn().mockResolvedValue({ ok: true, log: "", diagnostics: [] }),
   runChecks: vi.fn().mockResolvedValue("ok"),
   insertCitation: vi.fn().mockResolvedValue("\\cite{smith2026}"),
+  recommendCitations: vi.fn().mockResolvedValue("1. \\cite{smith2026} (score 0.5)"),
   requestApproval: vi.fn().mockResolvedValue(true),
 };
 

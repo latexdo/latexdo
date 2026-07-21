@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   generateScholarToken,
+  scholarCodenameCombinationCount,
   tokenCodename,
   buildResearchContext,
   normalizeResearcherProfile,
@@ -11,6 +12,10 @@ describe("generateScholarToken", () => {
   it("produces a cool-but-strong token: sch-<adj>-<noun>-<base32>", () => {
     const token = generateScholarToken();
     expect(token).toMatch(/^sch-[a-z]+-[a-z]+-[0-9A-HJKMNP-TV-Z]{20,}$/);
+  });
+
+  it("offers at least 1000 readable codename combinations", () => {
+    expect(scholarCodenameCombinationCount).toBeGreaterThanOrEqual(1000);
   });
 
   it("uses an unambiguous alphabet (no I, L, O, U in the suffix)", () => {
