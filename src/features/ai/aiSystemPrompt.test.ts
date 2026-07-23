@@ -54,6 +54,64 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("Otherwise use the available tools");
   });
 
+  it("lists project files so the model knows the layout up front", () => {
+    const prompt = buildSystemPrompt({
+      ...baseContext,
+      projectFiles: ["main.tex", "sections/intro.tex", "refs.bib"],
+    });
+
+    expect(prompt).toContain("Project files (relative paths");
+    expect(prompt).toContain("sections/intro.tex");
+    expect(prompt).toContain("Files the user referenced with @");
+  });
+
+  it("caps the file listing and points to list_files for the rest", () => {
+    const many = Array.from({ length: 250 }, (_, i) => `chapter${i}.tex`);
+    const prompt = buildSystemPrompt({ ...baseContext, projectFiles: many });
+
+    expect(prompt).toContain("chapter199.tex");
+    expect(prompt).not.toContain("chapter200.tex\n");
+    expect(prompt).toContain("and 50 more (use list_files for the rest)");
+  });
+
+  it("omits the listing when project access is off or empty", () => {
+    expect(buildSystemPrompt({ ...baseContext, projectFiles: null })).not.toContain(
+      "Project files (relative paths",
+    );
+    expect(buildSystemPrompt({ ...baseContext, projectFiles: [] })).not.toContain(
+      "Project files (relative paths",
+    );
+  });
+
+  it("inlines the active document content when provided", () => {
+    const prompt = buildSystemPrompt({
+      ...baseContext,
+      providerSupportsNativeTools: false,
+      activeDocument: {
+        path: "main.tex",
+        text: "\\section{Related Work}\nResearch on code completion has grown.",
+      },
+    });
+
+    expect(prompt).toContain('the current full content of "main.tex"');
+    expect(prompt).toContain("Research on code completion has grown.");
+    expect(prompt).toContain("Never ask the user to paste or provide text");
+  });
+
+  it("truncates huge inlined documents and omits empty ones", () => {
+    const long = buildSystemPrompt({
+      ...baseContext,
+      activeDocument: { path: "main.tex", text: "x".repeat(20000) },
+    });
+    expect(long).toContain("truncated — use read_file for the rest");
+
+    const empty = buildSystemPrompt({
+      ...baseContext,
+      activeDocument: { path: "main.tex", text: "   " },
+    });
+    expect(empty).not.toContain("Active document");
+  });
+
   it("includes the JSON tool protocol for local plain-chat providers", () => {
     const prompt = buildSystemPrompt({
       ...baseContext,

@@ -12,6 +12,11 @@ import { buildResearchContext } from "./researcherProfile";
 import { generateStep, abortGeneration } from "./aiClient";
 import { findLocalModel } from "./aiModels";
 import { runAgent, type AgentEvent } from "./aiAgent";
+import {
+  attachMentionedFiles,
+  expandSlashCommand,
+  extractFileMentions,
+} from "./aiMentions";
 
 export interface UiMessage {
   id: string;
@@ -125,20 +130,51 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext) {
       if (!text || isRunning) return;
 
       const access = config.access;
+      // Give the model the project layout up front so it can answer questions
+      // about any file in the project without being told which one.
+      let projectFiles: string[] = [];
+      if (access.projectFiles) {
+        try {
+          projectFiles = await ctx.listFiles();
+        } catch {
+          projectFiles = [];
+        }
+      }
       const sel = access.currentEditor
         ? ctx.selection()
         : { text: "", hasSelection: false };
+      // Small local models are unreliable at tool calling, so inline the open
+      // document into the system prompt (replaced each turn, so only one copy
+      // ever lives in the transcript). Tool-capable providers read on demand.
+      const nativeTools = supportsNativeTools(config);
+      const activePath = access.currentEditor ? ctx.activeFilePath() : null;
+      const activeDocument =
+        !nativeTools && activePath
+          ? { path: activePath, text: ctx.documentText() }
+          : null;
       const system = buildSystemPrompt({
         userName: config.userName || config.profile.displayName,
         projectName: ctx.projectName(),
-        activeFilePath: access.currentEditor ? ctx.activeFilePath() : null,
+        activeFilePath: activePath,
         hasSelection: sel.hasSelection,
-        providerSupportsNativeTools: supportsNativeTools(config),
+        providerSupportsNativeTools: nativeTools,
         access,
         researchContext: access.researcherProfile
           ? buildResearchContext(config.profile)
           : null,
+        projectFiles: access.projectFiles ? projectFiles : null,
+        activeDocument,
       });
+
+      // `\command` expands to its full instruction; `@file` mentions get the
+      // referenced files' contents attached to the model-facing message. The
+      // UI keeps showing exactly what the user typed.
+      const mentions = extractFileMentions(text, projectFiles);
+      const modelText = await attachMentionedFiles(
+        expandSlashCommand(text),
+        mentions,
+        ctx.readFile,
+      );
 
       if (!access.chatHistory) {
         historyRef.current = [];
@@ -149,7 +185,7 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext) {
       } else {
         historyRef.current[0] = { role: "system", content: system };
       }
-      historyRef.current.push({ role: "user", content: text });
+      historyRef.current.push({ role: "user", content: modelText });
 
       const userMsg: UiMessage = {
         id: newId(),
