@@ -122,7 +122,10 @@ describe("SetupWizard", () => {
     const onComplete = vi.fn();
     render(
       <SetupWizard
-        initialConfig={makeConfig({ provider: "local", modelDownloaded: false })}
+        initialConfig={makeConfig({
+          provider: "local",
+          modelDownloaded: false,
+        })}
         isDesktop
         onApplyTheme={vi.fn()}
         onComplete={onComplete}
@@ -161,7 +164,10 @@ describe("SetupWizard", () => {
     });
     render(
       <SetupWizard
-        initialConfig={makeConfig({ provider: "local", modelDownloaded: false })}
+        initialConfig={makeConfig({
+          provider: "local",
+          modelDownloaded: false,
+        })}
         isDesktop
         onApplyTheme={vi.fn()}
         onComplete={vi.fn()}

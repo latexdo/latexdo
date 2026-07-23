@@ -6,6 +6,7 @@
 
 import type { ColorTheme } from "../settings/settings";
 import { defaultLocalModelId, defaultInlineModelId, findLocalModel } from "./aiModels";
+import { defaultCloudProviderId, findCloudProvider } from "./cloudProviders";
 import {
   defaultResearcherProfile,
   normalizeResearcherProfile,
@@ -74,6 +75,15 @@ export interface AiConfig {
 
 export const aiConfigStorageKey = "latexdo.ai.config.v1";
 
+const defaultCloudProvider = findCloudProvider(defaultCloudProviderId);
+const defaultCloudConfig: CloudConfig = {
+  providerId: defaultCloudProvider?.id ?? defaultCloudProviderId,
+  vendor: defaultCloudProvider?.apiShape ?? "anthropic",
+  model: defaultCloudProvider?.defaultModel ?? "claude-haiku-4-5",
+  baseUrl: defaultCloudProvider?.baseUrl ?? "",
+  apiKey: "",
+};
+
 export const defaultAiConfig: AiConfig = {
   version: 1,
   setupComplete: false,
@@ -90,13 +100,7 @@ export const defaultAiConfig: AiConfig = {
   ollamaBaseUrl: "http://127.0.0.1:11434",
   ollamaModel: "qwen2.5-coder:3b",
 
-  cloud: {
-    providerId: "anthropic",
-    vendor: "anthropic",
-    model: "claude-haiku-4-5",
-    baseUrl: "",
-    apiKey: "",
-  },
+  cloud: defaultCloudConfig,
 
   profile: defaultResearcherProfile,
   access: {

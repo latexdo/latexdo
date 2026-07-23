@@ -69,7 +69,12 @@ export function parseOrcidWorks(worksJson: unknown): PaperRef[] {
       (id) => (id["external-id-type"] ?? "").toLowerCase() === "doi",
     )?.["external-id-value"];
 
-    papers.push({ title, year: year || undefined, journal, doi: doi || undefined });
+    papers.push({
+      title,
+      year: year || undefined,
+      journal,
+      doi: doi || undefined,
+    });
   }
 
   // Newest first when years are present.

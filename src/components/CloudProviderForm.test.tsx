@@ -24,7 +24,10 @@ function cloud(overrides: Partial<CloudConfig> = {}): CloudConfig {
 describe("CloudProviderForm", () => {
   beforeEach(() => {
     cloudMock.generateStepCloud.mockReset();
-    cloudMock.generateStepCloud.mockResolvedValue({ type: "text", content: " ok\n" });
+    cloudMock.generateStepCloud.mockResolvedValue({
+      type: "text",
+      content: " ok\n",
+    });
   });
 
   it("selects provider presets and opens provider key pages", () => {

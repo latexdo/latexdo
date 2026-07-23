@@ -147,8 +147,15 @@ describe("AiSidebar", () => {
       autoApproveEdits: true,
     });
 
+<<<<<<< Updated upstream
     const input = screen.getByPlaceholderText(/Ask the AI to edit/i);
     fireEvent.change(input, { target: { value: "  Fix the compile errors  " } });
+=======
+    const input = screen.getByPlaceholderText(/Ask the AI/i);
+    fireEvent.change(input, {
+      target: { value: "  Fix the compile errors  " },
+    });
+>>>>>>> Stashed changes
     fireEvent.keyDown(input, { key: "Enter" });
 
     expect(agentMock.state.send).toHaveBeenCalledWith("Fix the compile errors");

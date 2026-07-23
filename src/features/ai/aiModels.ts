@@ -1,37 +1,12 @@
-// Catalog of local models offered by the LatexDo setup wizard.
-//
-// The renderer owns this catalog (including download URLs); the Electron main
-// process is told "download <url> to <fileName>" so it never needs a copy.
-// All sizes target a ~4 GB end-user RAM budget: 3-4B params at 4-bit, plus a
-// lighter fallback tier and a tiny inline-completion tier.
+// AI model catalog facade. The data is generated from the public ai.latexdo.org
+// catalog during the build and baked into normal desktop releases.
 
-export type ModelTier = "recommended" | "balanced" | "light" | "inline";
+import { aiCatalog } from "./aiCatalog.generated";
+import type { LocalModelInfo, ModelTier } from "./aiCatalog";
 
-export interface LocalModelInfo {
-  /** Stable id stored in config; also used as the local file stem. */
-  id: string;
-  name: string;
-  /** Short marketing-free description shown in the wizard. */
-  description: string;
-  params: string;
-  /** Approximate on-disk size of the GGUF file. */
-  downloadSize: string;
-  /** Approximate resident RAM with an 8k context. */
-  ramEstimate: string;
-  /** Minimum system RAM we recommend before offering this model. */
-  minSystemRamGb: number;
-  tier: ModelTier;
-  quant: string;
-  /** Direct GGUF download URL (Hugging Face resolve link). */
-  downloadUrl: string;
-  /** File name written into the models directory. */
-  fileName: string;
-  /** Whether the model reliably supports structured tool/function calling. */
-  supportsTools: boolean;
-  /** Best-fit tasks, surfaced as chips in the wizard. */
-  strengths: string[];
-}
+export type { LocalModelInfo, ModelTier } from "./aiCatalog";
 
+<<<<<<< Updated upstream
 // NOTE: point releases move quickly. Verify the latest revisions at build time;
 // these are the correct size tier and the URLs follow the stable HF layout.
 export const localModelCatalog: LocalModelInfo[] = [
@@ -141,6 +116,11 @@ export const localModelCatalog: LocalModelInfo[] = [
 
 export const defaultLocalModelId = "qwen2.5-coder-3b";
 export const defaultInlineModelId = "llama-3.2-1b";
+=======
+export const localModelCatalog: readonly LocalModelInfo[] = aiCatalog.localModels;
+export const defaultLocalModelId = aiCatalog.defaultLocalModelId;
+export const defaultInlineModelId = aiCatalog.defaultInlineModelId;
+>>>>>>> Stashed changes
 
 export function findLocalModel(id: string): LocalModelInfo | undefined {
   return localModelCatalog.find((model) => model.id === id);

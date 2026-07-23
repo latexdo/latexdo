@@ -151,7 +151,12 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext) {
       }
       historyRef.current.push({ role: "user", content: text });
 
-      const userMsg: UiMessage = { id: newId(), role: "user", text, activity: [] };
+      const userMsg: UiMessage = {
+        id: newId(),
+        role: "user",
+        text,
+        activity: [],
+      };
       const assistantMsg: UiMessage = {
         id: newId(),
         role: "assistant",
