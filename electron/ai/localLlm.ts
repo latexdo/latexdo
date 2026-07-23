@@ -62,9 +62,17 @@ async function loadModel(fileName: string): Promise<any> {
   return model;
 }
 
-function toHistory(messages: ChatMessage[]): {
+// node-llama-cpp ChatHistoryItem shapes: user/system carry `text`, but model
+// turns carry `response: string[]` — passing `text` there crashes the library
+// ("Cannot read properties of undefined (reading 'filter')").
+export type LlamaHistoryItem =
+  | { type: "system"; text: string }
+  | { type: "user"; text: string }
+  | { type: "model"; response: string[] };
+
+export function toHistory(messages: ChatMessage[]): {
   systemPrompt: string;
-  history: { type: "system" | "user" | "model"; text: string }[];
+  history: LlamaHistoryItem[];
   lastPrompt: string;
 } {
   const systemPrompt = messages
@@ -73,10 +81,10 @@ function toHistory(messages: ChatMessage[]): {
     .join("\n\n");
 
   const nonSystem = messages.filter((m) => m.role !== "system");
-  const history: { type: "user" | "model"; text: string }[] = [];
+  const history: LlamaHistoryItem[] = [];
   for (const m of nonSystem) {
     if (m.role === "assistant") {
-      history.push({ type: "model", text: m.content });
+      history.push({ type: "model", response: [m.content] });
     } else if (m.role === "tool") {
       history.push({
         type: "user",
@@ -88,8 +96,10 @@ function toHistory(messages: ChatMessage[]): {
   }
   // The last user/tool turn is the live prompt; the rest is prior history.
   let lastPrompt = "";
-  if (history.length && history[history.length - 1].type === "user") {
-    lastPrompt = history.pop()!.text;
+  const last = history[history.length - 1];
+  if (last && last.type === "user") {
+    lastPrompt = last.text;
+    history.pop();
   }
   return { systemPrompt, history, lastPrompt };
 }

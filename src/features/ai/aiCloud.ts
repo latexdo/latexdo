@@ -70,7 +70,12 @@ async function generateAnthropic(
   const data = (await res.json()) as {
     content: Array<
       | { type: "text"; text: string }
-      | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
+      | {
+          type: "tool_use";
+          id: string;
+          name: string;
+          input: Record<string, unknown>;
+        }
     >;
   };
 
@@ -81,7 +86,11 @@ async function generateAnthropic(
       textParts.push(block.text);
       onToken(block.text);
     } else if (block.type === "tool_use") {
-      toolCalls.push({ id: block.id, name: block.name, args: block.input ?? {} });
+      toolCalls.push({
+        id: block.id,
+        name: block.name,
+        args: block.input ?? {},
+      });
     }
   }
   if (toolCalls.length) {
@@ -110,7 +119,10 @@ function anthropicMessage(m: ChatMessage): Record<string, unknown> {
     }
     return { role: "assistant", content };
   }
-  return { role: m.role === "assistant" ? "assistant" : "user", content: m.content };
+  return {
+    role: m.role === "assistant" ? "assistant" : "user",
+    content: m.content,
+  };
 }
 
 // ---- OpenAI-compatible --------------------------------------------------
@@ -148,7 +160,10 @@ async function generateOpenAi(
   });
 
   if (!res.ok) {
-    return { type: "error", content: `OpenAI API ${res.status}: ${await res.text()}` };
+    return {
+      type: "error",
+      content: `OpenAI API ${res.status}: ${await res.text()}`,
+    };
   }
   const data = (await res.json()) as {
     choices: Array<{

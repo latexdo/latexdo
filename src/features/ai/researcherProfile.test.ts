@@ -56,7 +56,10 @@ describe("normalizeResearcherProfile", () => {
 describe("buildResearchContext", () => {
   it("returns null when disabled", () => {
     expect(
-      buildResearchContext({ ...defaultResearcherProfile, includeInContext: false }),
+      buildResearchContext({
+        ...defaultResearcherProfile,
+        includeInContext: false,
+      }),
     ).toBeNull();
   });
 
