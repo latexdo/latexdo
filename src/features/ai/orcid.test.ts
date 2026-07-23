@@ -27,7 +27,10 @@ describe("parseOrcidName", () => {
   it("prefers credit-name, else given + family", () => {
     expect(
       parseOrcidName({
-        name: { "given-names": { value: "Ada" }, "family-name": { value: "Lovelace" } },
+        name: {
+          "given-names": { value: "Ada" },
+          "family-name": { value: "Lovelace" },
+        },
       }),
     ).toBe("Ada Lovelace");
     expect(
@@ -48,7 +51,10 @@ describe("parseOrcidWorks", () => {
               "journal-title": { value: "J. Test" },
               "external-ids": {
                 "external-id": [
-                  { "external-id-type": "doi", "external-id-value": "10.1/older" },
+                  {
+                    "external-id-type": "doi",
+                    "external-id-value": "10.1/older",
+                  },
                 ],
               },
             },

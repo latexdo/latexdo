@@ -10,7 +10,13 @@ export type AgentEvent =
   | { type: "assistant-token"; text: string }
   | { type: "assistant-message"; text: string }
   | { type: "tool-start"; call: ToolCall }
-  | { type: "tool-result"; callId: string; name: string; content: string; ok: boolean }
+  | {
+      type: "tool-result";
+      callId: string;
+      name: string;
+      content: string;
+      ok: boolean;
+    }
   | { type: "step"; index: number }
   | { type: "done"; reason: "completed" | "max-steps" | "aborted" }
   | { type: "error"; message: string };
@@ -158,7 +164,9 @@ export async function runAgent(args: RunAgentArgs): Promise<ChatMessage[]> {
         return messages;
       }
       onEvent({ type: "tool-start", call });
-      const toolResult = await executeTool(call.name, call.args, ctx, { autoApprove });
+      const toolResult = await executeTool(call.name, call.args, ctx, {
+        autoApprove,
+      });
       onEvent({
         type: "tool-result",
         callId: call.id,

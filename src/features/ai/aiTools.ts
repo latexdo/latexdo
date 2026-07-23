@@ -53,7 +53,10 @@ export const agentToolSchemas: ToolSchema[] = [
     name: "read_file",
     description: "Read the full contents of a file in the project by relative path.",
     params: {
-      path: { type: "string", description: "Relative path, e.g. sections/intro.tex" },
+      path: {
+        type: "string",
+        description: "Relative path, e.g. sections/intro.tex",
+      },
     },
     required: ["path"],
   },
@@ -75,7 +78,10 @@ export const agentToolSchemas: ToolSchema[] = [
     description:
       "Replace the current editor selection with new LaTeX. Use for rewriting, fixing, or translating the selected passage.",
     params: {
-      new_text: { type: "string", description: "Replacement LaTeX for the selection." },
+      new_text: {
+        type: "string",
+        description: "Replacement LaTeX for the selection.",
+      },
       explanation: {
         type: "string",
         description: "One short sentence describing the change for the user.",
@@ -103,7 +109,10 @@ export const agentToolSchemas: ToolSchema[] = [
     params: {
       path: { type: "string", description: "Relative path to write." },
       content: { type: "string", description: "Full new file contents." },
-      explanation: { type: "string", description: "Short description of the change." },
+      explanation: {
+        type: "string",
+        description: "Short description of the change.",
+      },
     },
     required: ["path", "content"],
   },
@@ -139,7 +148,10 @@ export const agentToolSchemas: ToolSchema[] = [
     description:
       "Search the project bibliography for a reference matching a query and return a \\cite-ready key.",
     params: {
-      query: { type: "string", description: "Author, title words, or topic to match." },
+      query: {
+        type: "string",
+        description: "Author, title words, or topic to match.",
+      },
     },
     required: ["query"],
   },

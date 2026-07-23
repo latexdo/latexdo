@@ -95,6 +95,34 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
     void send(text);
   };
 
+<<<<<<< Updated upstream
+=======
+  const onInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (suggest) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const delta = e.key === "ArrowDown" ? 1 : -1;
+        setHighlight((h) => (h + delta + suggest.items.length) % suggest.items.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        acceptSuggestion(suggest.items[highlight], suggest.trigger);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSuggest(null);
+        return;
+      }
+    }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      submit();
+    }
+  };
+
+>>>>>>> Stashed changes
   return (
     <div className="ai-sidebar">
       <div className="ai-sidebar-header">

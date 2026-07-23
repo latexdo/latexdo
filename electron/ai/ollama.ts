@@ -103,7 +103,10 @@ export async function generateOllamaStep(
       }),
     });
     if (!res.ok) {
-      return { type: "error", content: `Ollama ${res.status}: ${await res.text()}` };
+      return {
+        type: "error",
+        content: `Ollama ${res.status}: ${await res.text()}`,
+      };
     }
     const data = (await res.json()) as {
       message?: {

@@ -37,6 +37,22 @@ describe("parseJsonToolCall", () => {
   it("returns null for plain prose", () => {
     expect(parseJsonToolCall("Here is your rewritten paragraph.")).toBeNull();
   });
+<<<<<<< Updated upstream
+=======
+
+  it("parses JSON wrapped in markdown fences", () => {
+    const call = parseJsonToolCall('Sure!\n```json\n{"tool":"compile","args":{}}\n```');
+    expect(call?.name).toBe("compile");
+  });
+
+  it("parses the OpenAI-style name/arguments shape", () => {
+    const call = parseJsonToolCall(
+      '{"name":"read_file","arguments":{"path":"main.tex"}}',
+    );
+    expect(call?.name).toBe("read_file");
+    expect(call?.args).toEqual({ path: "main.tex" });
+  });
+>>>>>>> Stashed changes
 });
 
 describe("looksLikeProjectAccessRefusal", () => {
