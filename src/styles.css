@@ -10858,11 +10858,70 @@ button {
   font-style: italic;
 }
 .ai-sidebar-input {
+  position: relative;
   display: flex;
   gap: 8px;
   padding: 10px 12px;
   border-top: 1px solid var(--border-subtle);
   align-items: flex-end;
+}
+.ai-sidebar-hints-tip {
+  margin-top: 10px;
+}
+.ai-sidebar-hints-tip code {
+  background: var(--bg-button-secondary);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.ai-mention-popup {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 12px;
+  right: 12px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg-input);
+  border: 1px solid var(--border-card);
+  border-radius: 10px;
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.18);
+  padding: 4px;
+  z-index: 30;
+}
+.ai-mention-popup-title {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 5px 8px 3px;
+}
+.ai-mention-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  background: none;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+.ai-mention-item.active {
+  background: var(--accent-soft);
+}
+.ai-mention-value {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-mention-hint {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  flex-shrink: 0;
 }
 .ai-sidebar-input textarea {
   flex: 1;

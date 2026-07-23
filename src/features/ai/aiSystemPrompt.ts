@@ -10,6 +10,43 @@ export interface PromptContext {
   access?: AiAccessConfig;
   /** Optional researcher/profile context (name, affiliation, papers). */
   researchContext?: string | null;
+  /**
+   * Relative paths of every file in the open project, so the model knows the
+   * project layout up front instead of having to call list_files first.
+   * Null/empty when project-file access is disabled or no project is open.
+   */
+  projectFiles?: string[] | null;
+  /**
+   * Full text of the open document, inlined for providers that are unreliable
+   * at tool calling (small local models) so they can answer content questions
+   * without a tool round trip. Null for providers with native tool support.
+   */
+  activeDocument?: { path: string; text: string } | null;
+}
+
+const maxListedFiles = 200;
+
+function fileListing(files: string[] | null | undefined): string {
+  if (!files || files.length === 0) return "";
+  const shown = files.slice(0, maxListedFiles);
+  const more =
+    files.length > shown.length
+      ? `\n… and ${files.length - shown.length} more (use list_files for the rest).`
+      : "";
+  return `\n\nProject files (relative paths — read any of them with read_file):\n${shown.join("\n")}${more}`;
+}
+
+const maxInlineDocChars = 12000;
+
+function activeDocSection(
+  doc: { path: string; text: string } | null | undefined,
+): string {
+  if (!doc || !doc.text.trim()) return "";
+  const clipped =
+    doc.text.length > maxInlineDocChars
+      ? `${doc.text.slice(0, maxInlineDocChars)}\n… (truncated — use read_file for the rest)`
+      : doc.text;
+  return `\n\nActive document — the current full content of "${doc.path}" is included below. Answer questions about the open document, its sections, paragraphs, or prose DIRECTLY from this content. Never ask the user to paste or provide text that appears here.\n"""\n${clipped}\n"""`;
 }
 
 /**
@@ -33,12 +70,15 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   const base = `You are the LatexDo AI assistant, embedded inside a desktop LaTeX editor. ${who}You help write, edit, debug, and improve LaTeX documents.
 
 Project: "${ctx.projectName}". ${file} ${sel}
-${accessSummary}
+${accessSummary}${fileListing(ctx.projectFiles)}${activeDocSection(ctx.activeDocument)}
 
 Guidelines:
 - You are an *agent* with tool access to the user's currently open LaTeX project. You can list project files, read .tex/.bib files, inspect the active document, edit text, and compile.
 - Do not say you lack access to the user's files, document, bibliography, publications, or current project. Do not ask the user to upload, paste, or share files that are already in the project. Use list_files, read_file, get_active_document, insert_citation, or recommend_citations to inspect the available context.
 - If a requested context source is disabled in AI settings, say exactly that and name the setting. Otherwise use the available tools.
+- Files the user referenced with @ are attached to their message; use them directly. For any other file in the listing above, call read_file — never claim a listed file is unavailable.
+- Questions about "this project" mean the open project, whatever it is: consult the file listing, read the relevant files, and answer from their actual contents.
+- Never describe or summarize the project from file names alone — that produces vague guesses. When asked what the project/paper is about, first read the main .tex file (and the abstract/introduction) with read_file or get_active_document, then answer with concrete specifics: the actual topic, claims, and section contents.
 - Read files before editing them.
 - For small changes to selected text, use edit_selection. For new content at the cursor, use insert_at_cursor. Only overwrite whole files with write_file when necessary.
 - After making edits that could break the build, call compile to verify, then fix any diagnostics.
@@ -73,6 +113,18 @@ TOOL PROTOCOL (this model has no native tool API):
 To call a tool, reply with ONLY a single JSON object on its own, no prose:
 {"tool": "<name>", "args": { ... }}
 To reply to the user in natural language, just write text (no JSON).
+
+Rules:
+- One JSON object per reply, nothing else — no prose before or after it, no markdown fences.
+- After each tool result arrives, either call another tool or write your final prose answer.
+- Prefer calling a tool over asking the user for anything that could be in the project.
+
+Example session:
+User: what is the introduction about?
+You: {"tool": "read_file", "args": {"path": "main.tex"}}
+Tool read_file result: \\section{Introduction} We study …
+You: The introduction presents … (prose answer based on the file contents)
+
 Available tools:
 ${toolList}`;
 }
