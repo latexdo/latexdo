@@ -37,24 +37,38 @@ export interface RunAgentArgs {
   onEvent: (event: AgentEvent) => void;
 }
 
-/** Try to recover a tool call from a plain-text JSON protocol response. */
+/**
+ * Try to recover a tool call from a plain-text JSON protocol response.
+ * Tolerates the shapes small models actually emit: markdown code fences,
+ * OpenAI-style {"name": …, "arguments": …}, and prose around the object.
+ */
 export function parseJsonToolCall(text: string): ToolCall | null {
-  const trimmed = text.trim();
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
+  // Strip ```json … ``` fences before hunting for the object.
+  const unfenced = text.replace(/```(?:json)?\s*([\s\S]*?)```/g, "$1").trim();
+  const start = unfenced.indexOf("{");
+  const end = unfenced.lastIndexOf("}");
   if (start === -1 || end <= start) return null;
   try {
-    const obj = JSON.parse(trimmed.slice(start, end + 1)) as {
+    const obj = JSON.parse(unfenced.slice(start, end + 1)) as {
       tool?: unknown;
       args?: unknown;
+      name?: unknown;
+      arguments?: unknown;
     };
-    if (typeof obj.tool !== "string") return null;
+    const name =
+      typeof obj.tool === "string"
+        ? obj.tool
+        : typeof obj.name === "string"
+          ? obj.name
+          : null;
+    if (!name) return null;
+    const rawArgs = obj.tool != null ? obj.args : (obj.arguments ?? obj.args);
     return {
       id: `call_${Math.random().toString(36).slice(2, 10)}`,
-      name: obj.tool,
+      name,
       args:
-        obj.args && typeof obj.args === "object"
-          ? (obj.args as Record<string, unknown>)
+        rawArgs && typeof rawArgs === "object"
+          ? (rawArgs as Record<string, unknown>)
           : {},
     };
   } catch {
@@ -71,18 +85,26 @@ export function looksLikeProjectAccessRefusal(text: string): boolean {
       normalized,
     ) ||
     /\b(?:cannot|can't|cant)\s+(?:access|read|view|open|inspect)\b/i.test(normalized);
-  if (!deniesAccess) return false;
+
+  // Small models often don't refuse outright — they deflect by asking the user
+  // to paste content that is already in the project ("Please provide the text
+  // of the first paragraph…").
+  const asksUserToSupply =
+    /\b(?:please|could you|can you|i(?:'| a)m going to need you to|i need you to|i(?:'l| wi)l?l need(?: you)?(?: to)?)\s+(?:share|upload|provide|paste|send)\b/i.test(
+      normalized,
+    ) ||
+    /\b(?:share|upload|provide|paste|send)\s+(?:me\s+)?(?:the|your|that|this)\b/i.test(
+      normalized,
+    );
+
+  if (!deniesAccess && !asksUserToSupply) return false;
 
   const projectContext =
-    /\b(?:current|conversation|discussion|topic|file|files|document|documents|project|workspace|latex|tex|bib|bibliography|publication|publications|paper|papers|citation|citations|reference|references)\b/i.test(
-      normalized,
-    );
-  const asksUserForExistingContext =
-    /\b(?:please|could you|can you|i(?:'| a)m going to need you to|i need you to)\s+(?:share|upload|provide|paste|send)\b/i.test(
+    /\b(?:current|conversation|discussion|topic|file|files|document|documents|text|contents?|paragraphs?|sections?|abstract|chapters?|project|workspace|latex|tex|bib|bibliography|publication|publications|paper|papers|citation|citations|reference|references)\b/i.test(
       normalized,
     );
 
-  return projectContext || asksUserForExistingContext;
+  return projectContext || (deniesAccess && asksUserToSupply);
 }
 
 export async function runAgent(args: RunAgentArgs): Promise<ChatMessage[]> {
@@ -141,7 +163,7 @@ export async function runAgent(args: RunAgentArgs): Promise<ChatMessage[]> {
         messages.push({
           role: "user",
           content:
-            "Correction: you are embedded in LatexDo and can access the current project through tools. Do not ask me to share project files. Use list_files, read_file, get_active_document, insert_citation, or recommend_citations as needed, then answer from the inspected context.",
+            "Correction: you are embedded in LatexDo and already have the project context. Never ask me to paste, share, or provide text. If the active document's content is included in your system prompt, answer directly from it now. Otherwise call read_file or get_active_document, then answer from what you read.",
         });
         continue;
       }
@@ -154,7 +176,7 @@ export async function runAgent(args: RunAgentArgs): Promise<ChatMessage[]> {
     // Record the assistant turn that requested tools.
     messages.push({
       role: "assistant",
-      content: result.type === "text" ? result.content : result.content,
+      content: result.content,
       toolCalls,
     });
 

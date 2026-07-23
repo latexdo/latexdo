@@ -37,8 +37,6 @@ describe("parseJsonToolCall", () => {
   it("returns null for plain prose", () => {
     expect(parseJsonToolCall("Here is your rewritten paragraph.")).toBeNull();
   });
-<<<<<<< Updated upstream
-=======
 
   it("parses JSON wrapped in markdown fences", () => {
     const call = parseJsonToolCall('Sure!\n```json\n{"tool":"compile","args":{}}\n```');
@@ -52,7 +50,6 @@ describe("parseJsonToolCall", () => {
     expect(call?.name).toBe("read_file");
     expect(call?.args).toEqual({ path: "main.tex" });
   });
->>>>>>> Stashed changes
 });
 
 describe("looksLikeProjectAccessRefusal", () => {
@@ -74,6 +71,27 @@ describe("looksLikeProjectAccessRefusal", () => {
 
   it("does not flag ordinary questions that need clarification", () => {
     expect(looksLikeProjectAccessRefusal("Which venue should I target?")).toBe(false);
+  });
+
+  it("detects paste-the-text deflections without an explicit refusal", () => {
+    expect(
+      looksLikeProjectAccessRefusal(
+        "To help you understand the authors' first paragraph of the related work, I'll need to read and analyze the relevant section of the document. Please provide the text of the first paragraph, and I'll do my best to explain it.",
+      ),
+    ).toBe(true);
+    expect(
+      looksLikeProjectAccessRefusal(
+        "Yes, I have access to the project files. Please provide the text of the first paragraph of the related work.",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not flag answers that merely mention documents or sections", () => {
+    expect(
+      looksLikeProjectAccessRefusal(
+        "The related-work section compares three code-completion benchmarks and argues the paper's approach generalizes better.",
+      ),
+    ).toBe(false);
   });
 });
 

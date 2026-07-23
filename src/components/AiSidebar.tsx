@@ -19,6 +19,24 @@ import type { AiConfig } from "../features/ai/aiConfig";
 import type { AgentContext } from "../features/ai/aiTools";
 import { findLocalModel } from "../features/ai/aiModels";
 import { useAiAgent } from "../features/ai/useAiAgent";
+import {
+  detectTrigger,
+  filterCommandSuggestions,
+  filterFileSuggestions,
+  type MentionTrigger,
+} from "../features/ai/aiMentions";
+
+interface Suggestion {
+  /** Text inserted after the trigger character. */
+  value: string;
+  /** Secondary line (command hint or file directory). */
+  hint?: string;
+}
+
+interface SuggestState {
+  trigger: MentionTrigger;
+  items: Suggestion[];
+}
 
 interface AiSidebarProps {
   config: AiConfig;
@@ -78,8 +96,73 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
   } = useAiAgent(config, ctx);
   const [input, setInput] = React.useState("");
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const inputRef = React.useRef<HTMLTextAreaElement>(null);
   const configured = isConfigured(config, isDesktop);
   const autonomous = config.autoApproveEdits;
+
+  // `@` file mentions and `\` quick commands: an autocomplete popup driven by
+  // the caret position. Project files are (re)fetched when a file popup opens.
+  const [suggest, setSuggest] = React.useState<SuggestState | null>(null);
+  const [highlight, setHighlight] = React.useState(0);
+  const filesRef = React.useRef<string[]>([]);
+  const filesLoading = React.useRef(false);
+
+  const refreshFiles = React.useCallback(() => {
+    if (filesLoading.current) return;
+    filesLoading.current = true;
+    ctx
+      .listFiles()
+      .then((files) => {
+        filesRef.current = files;
+      })
+      .catch(() => {
+        filesRef.current = [];
+      })
+      .finally(() => {
+        filesLoading.current = false;
+      });
+  }, [ctx]);
+
+  const updateSuggestions = React.useCallback(
+    (value: string, caret: number) => {
+      const trigger = detectTrigger(value, caret);
+      if (!trigger) {
+        setSuggest(null);
+        return;
+      }
+      let items: Suggestion[];
+      if (trigger.kind === "file") {
+        if (filesRef.current.length === 0) refreshFiles();
+        items = filterFileSuggestions(filesRef.current, trigger.query).map((path) => ({
+          value: path,
+        }));
+      } else {
+        items = filterCommandSuggestions(trigger.query).map((c) => ({
+          value: c.name,
+          hint: c.hint,
+        }));
+      }
+      setSuggest(items.length ? { trigger, items } : null);
+      setHighlight(0);
+    },
+    [refreshFiles],
+  );
+
+  const acceptSuggestion = React.useCallback(
+    (item: Suggestion, trigger: MentionTrigger) => {
+      const mark = trigger.kind === "file" ? "@" : "\\";
+      const prefix = `${input.slice(0, trigger.start)}${mark}${item.value} `;
+      setInput(prefix + input.slice(trigger.end));
+      setSuggest(null);
+      requestAnimationFrame(() => {
+        const ta = inputRef.current;
+        if (!ta) return;
+        ta.focus();
+        ta.selectionStart = ta.selectionEnd = prefix.length;
+      });
+    },
+    [input],
+  );
 
   const toggleAutonomy = () =>
     onUpdateConfig({ ...config, autoApproveEdits: !config.autoApproveEdits });
@@ -92,11 +175,10 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
     const text = input.trim();
     if (!text || isRunning) return;
     setInput("");
+    setSuggest(null);
     void send(text);
   };
 
-<<<<<<< Updated upstream
-=======
   const onInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (suggest) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -122,7 +204,6 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
     }
   };
 
->>>>>>> Stashed changes
   return (
     <div className="ai-sidebar">
       <div className="ai-sidebar-header">
@@ -191,6 +272,10 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
                   <li>“Add a related-work paragraph with a citation”</li>
                   <li>“Run the reproducibility checklist”</li>
                 </ul>
+                <p className="ai-sidebar-hints-tip">
+                  Type <code>@</code> to attach a project file, or <code>\</code> for
+                  quick commands. I can read every file in the project either way.
+                </p>
               </div>
             )}
             {messages.map((m) => (
@@ -252,17 +337,50 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
           )}
 
           <div className="ai-sidebar-input">
+            {suggest && (
+              <div className="ai-mention-popup" role="listbox">
+                <div className="ai-mention-popup-title">
+                  {suggest.trigger.kind === "file"
+                    ? "Attach a project file"
+                    : "Quick commands"}
+                </div>
+                {suggest.items.map((item, i) => (
+                  <button
+                    key={item.value}
+                    role="option"
+                    aria-selected={i === highlight}
+                    className={`ai-mention-item ${i === highlight ? "active" : ""}`}
+                    onMouseEnter={() => setHighlight(i)}
+                    // onMouseDown so the textarea keeps focus.
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      acceptSuggestion(item, suggest.trigger);
+                    }}
+                  >
+                    <span className="ai-mention-value">
+                      {suggest.trigger.kind === "file" ? "@" : "\\"}
+                      {item.value}
+                    </span>
+                    {item.hint && <span className="ai-mention-hint">{item.hint}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
             <textarea
+              ref={inputRef}
               value={input}
-              placeholder="Ask the AI to edit, fix, or explain…"
+              placeholder="Ask the AI… @ attaches a file, \ for commands"
               rows={2}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  submit();
-                }
+              onChange={(e) => {
+                setInput(e.target.value);
+                updateSuggestions(e.target.value, e.target.selectionStart ?? 0);
               }}
+              onSelect={(e) => {
+                const ta = e.currentTarget;
+                updateSuggestions(ta.value, ta.selectionStart ?? 0);
+              }}
+              onBlur={() => setSuggest(null)}
+              onKeyDown={onInputKeyDown}
             />
             {isRunning ? (
               <button className="ai-send-button stop" onClick={abort} title="Stop">
