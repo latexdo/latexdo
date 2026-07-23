@@ -2826,6 +2826,7 @@ button {
 
 .welcome-hero,
 .welcome-grid,
+.welcome-command-center,
 .welcome-tip {
   position: relative;
   z-index: 1;
@@ -2852,7 +2853,7 @@ button {
   color: var(--text-primary);
   font-size: 32px;
   font-weight: 650;
-  letter-spacing: -0.035em;
+  letter-spacing: 0;
 }
 
 .welcome-hero p {
@@ -2860,6 +2861,69 @@ button {
   color: var(--text-muted);
   font-size: 14px;
   font-weight: 350;
+}
+
+.welcome-kicker {
+  margin: 0 0 5px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.welcome-command-center {
+  margin-bottom: 30px;
+  padding: 14px;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-card) 78%, transparent);
+}
+
+.welcome-command-center h2 {
+  margin: 0 0 12px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.welcome-command-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.welcome-command-item {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: var(--bg-surface);
+}
+
+.welcome-command-item span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.welcome-command-item strong {
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.welcome-command-item small {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.35;
 }
 
 .welcome-grid {
@@ -5904,6 +5968,10 @@ button {
   .welcome-grid {
     grid-template-columns: 1fr;
     gap: 30px;
+  }
+
+  .welcome-command-grid {
+    grid-template-columns: 1fr;
   }
 
   .welcome-template-grid {

@@ -1,3 +1,4 @@
+import { productIsPro } from "../../productConfig";
 import {
   categoryLabel,
   type LatexDoExtensionManifest,
@@ -77,7 +78,7 @@ export const colorThemeOptions: {
   },
 ];
 
-export const welcomeTemplates: WelcomeTemplate[] = [
+const baseWelcomeTemplates: WelcomeTemplate[] = [
   {
     id: "article",
     name: "Clean Article",
@@ -360,6 +361,256 @@ We thank the reviewers for their careful reading and constructive feedback.
 `,
   },
 ];
+
+const businessWelcomeTemplates: WelcomeTemplate[] = [
+  {
+    id: "business-proposal",
+    name: "Client Proposal",
+    summary: "A structured proposal with scope, schedule, pricing, and acceptance.",
+    files: "main.tex + references.bib",
+    mainTex: String.raw`\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{microtype}
+
+\title{Client Proposal}
+\author{Company Name}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section*{Executive Summary}
+
+Summarize the client's business problem, the proposed outcome, and the measurable value.
+
+\section{Objectives}
+
+\begin{itemize}[leftmargin=*]
+  \item Define the first business objective.
+  \item Define the second business objective.
+  \item Define the success criteria for acceptance.
+\end{itemize}
+
+\section{Scope of Work}
+
+Describe the deliverables, assumptions, exclusions, and responsibilities.
+
+\section{Timeline}
+
+\begin{tabular}{lll}
+\toprule
+Phase & Duration & Output \\
+\midrule
+Discovery & 2 weeks & Requirements and risk register \\
+Delivery & 6 weeks & Working solution and documentation \\
+Handover & 1 week & Training and acceptance pack \\
+\bottomrule
+\end{tabular}
+
+\section{Commercial Terms}
+
+State pricing, payment milestones, validity period, and change control.
+
+\section{Acceptance}
+
+Approval confirms that both parties agree to the scope, timeline, and terms.
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}
+`,
+    bibTex: String.raw`@misc{company2026,
+  author = {Company Name},
+  title = {Proposal Reference Pack},
+  year = {2026},
+  note = {Replace with client or industry reference}
+}
+`,
+  },
+  {
+    id: "board-report",
+    name: "Board Report",
+    summary: "Decision-ready reporting with KPIs, risks, asks, and next actions.",
+    files: "main.tex",
+    mainTex: String.raw`\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{microtype}
+
+\title{Board Report}
+\author{Business Unit}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section*{Executive Summary}
+
+Give the board the essential status, decision required, and business impact.
+
+\section{Performance Snapshot}
+
+\begin{tabular}{lrrr}
+\toprule
+Metric & Current & Target & Status \\
+\midrule
+Revenue & \$0.0M & \$0.0M & On track \\
+Gross margin & 0\% & 0\% & Watch \\
+Customer retention & 0\% & 0\% & On track \\
+\bottomrule
+\end{tabular}
+
+\section{Decisions Required}
+
+\begin{enumerate}[leftmargin=*]
+  \item State the decision, recommendation, and deadline.
+  \item State the tradeoff and expected financial impact.
+\end{enumerate}
+
+\section{Risks and Mitigations}
+
+\begin{tabular}{lll}
+\toprule
+Risk & Exposure & Mitigation \\
+\midrule
+Market timing & Medium & Stage rollout by segment \\
+Delivery capacity & Low & Reserve specialist support \\
+\bottomrule
+\end{tabular}
+
+\section{Next Actions}
+
+List owners, dates, and operating checkpoints.
+
+\end{document}
+`,
+  },
+  {
+    id: "policy-document",
+    name: "Company Policy",
+    summary:
+      "Controlled policy format with ownership, rules, exceptions, and review cadence.",
+    files: "main.tex",
+    mainTex: String.raw`\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{microtype}
+
+\title{Company Policy}
+\author{Owner: Department or Function}
+\date{Effective date: \today}
+
+\begin{document}
+
+\maketitle
+
+\section*{Document Control}
+
+\begin{tabular}{ll}
+\toprule
+Owner & Department or function \\
+Approver & Executive sponsor \\
+Review cycle & Annual \\
+Classification & Internal \\
+\bottomrule
+\end{tabular}
+
+\section{Purpose}
+
+Explain the risk, obligation, or operating standard this policy addresses.
+
+\section{Scope}
+
+Define the people, teams, systems, and geographies covered by this policy.
+
+\section{Policy Requirements}
+
+\begin{enumerate}[leftmargin=*]
+  \item State the mandatory requirement.
+  \item State the control or evidence required.
+  \item State the escalation path for exceptions.
+\end{enumerate}
+
+\section{Exceptions}
+
+Describe how exceptions are requested, reviewed, approved, and logged.
+
+\section{Review}
+
+Name the owner responsible for periodic review and version updates.
+
+\end{document}
+`,
+  },
+  {
+    id: "technical-brief",
+    name: "Technical Brief",
+    summary:
+      "Business-facing technical note with decision context and implementation detail.",
+    files: "main.tex",
+    mainTex: String.raw`\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{microtype}
+
+\title{Technical Brief}
+\author{Team or Author}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section*{Decision Context}
+
+Summarize the business decision, constraints, and recommended technical direction.
+
+\section{Current State}
+
+Describe the current system, process, cost, or operational issue.
+
+\section{Options}
+
+\begin{tabular}{lll}
+\toprule
+Option & Benefit & Tradeoff \\
+\midrule
+Option A & Fastest delivery & Higher operating cost \\
+Option B & Lower risk & Longer rollout \\
+\bottomrule
+\end{tabular}
+
+\section{Recommendation}
+
+State the recommended option, rationale, and implementation owner.
+
+\section{Validation Plan}
+
+Define measurements, acceptance criteria, rollback plan, and reporting cadence.
+
+\end{document}
+`,
+  },
+];
+
+export const welcomeTemplates = productIsPro
+  ? [...businessWelcomeTemplates, ...baseWelcomeTemplates]
+  : baseWelcomeTemplates;
 
 function isColorTheme(value: unknown): value is ColorTheme {
   return colorThemeOptions.some((theme) => theme.id === value);

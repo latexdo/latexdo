@@ -83,23 +83,54 @@ import { listProject } from "./projectTree.js";
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
 const appIconPath = path.join(currentDirectory, "..", "build", "icon.png");
+const executableProductName = path.basename(process.execPath).replace(/\.exe$/i, "");
+const isProEdition =
+  envString("LATEXDO_EDITION") === "pro" ||
+  envString("LATEXDO_EDITION") === "business" ||
+  envString("VITE_LATEXDO_EDITION") === "pro" ||
+  envString("VITE_LATEXDO_EDITION") === "business" ||
+  app.getName().toLowerCase().includes("pro") ||
+  app.getName().toLowerCase().includes("business") ||
+  executableProductName.toLowerCase().includes("pro") ||
+  executableProductName.toLowerCase().includes("business");
+const productName =
+  envString("LATEXDO_PRODUCT_NAME") ??
+  (isProEdition ? "LatexDo Pro" : "LatexDo");
+const expectedUpdateProduct = envString("LATEXDO_UPDATE_PRODUCT") ?? productName;
 const packagedRendererOrigin = "latexdo://app";
 const packagedRendererRoot = path.resolve(currentDirectory, "..", "dist");
 const startupSmokeTest = process.argv.includes("--smoke-test");
 const startupSmokeTimeoutMs = 20_000;
 const extensionCatalogFetchTimeoutMs = 4_500;
-const downloadsPageUrl = "https://latexdo.org/downloads/";
-const downloadsManifestUrl = "https://latexdo.org/downloads/manifest.json";
-const updatesFeedUrl = "https://latexdo.org/updates/latest.json";
-const extensionStoreUrl = "https://store.latexdo.org/";
-const extensionStoreCatalogUrl = "https://store.latexdo.org/extensions/catalog.json";
-const privacyInfoUrl = "https://latexdo.org/privacy.html";
+const downloadsPageUrl =
+  envString("LATEXDO_DOWNLOADS_URL") ?? "https://latexdo.org/downloads/";
+const downloadsManifestUrl =
+  envString("LATEXDO_DOWNLOADS_MANIFEST_URL") ??
+  "https://latexdo.org/downloads/manifest.json";
+const updatesFeedUrl =
+  envString("LATEXDO_UPDATES_FEED_URL") ??
+  "https://latexdo.org/updates/latest.json";
+const extensionStoreUrl =
+  envString("LATEXDO_EXTENSION_STORE_URL") ?? "https://store.latexdo.org/";
+const extensionStoreCatalogUrl =
+  envString("LATEXDO_EXTENSION_CATALOG_URL") ??
+  "https://store.latexdo.org/extensions/catalog.json";
+const privacyInfoUrl =
+  envString("LATEXDO_PRIVACY_URL") ?? "https://latexdo.org/privacy.html";
 const externalUrlHosts = new Set([
   "github.com",
   "latexdo.org",
   "store.latexdo.org",
   "www.latexdo.org",
 ]);
+for (const configuredExternalUrl of [
+  downloadsPageUrl,
+  extensionStoreUrl,
+  privacyInfoUrl,
+]) {
+  const host = safeUrlHost(configuredExternalUrl);
+  if (host) externalUrlHosts.add(host);
+}
 const updateRedirectHosts = new Set([
   "github.com",
   "objects.githubusercontent.com",
@@ -571,6 +602,19 @@ function userDataFilePath(fileName: string): string {
   return path.join(app.getPath("userData"), fileName);
 }
 
+function envString(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value ? value : undefined;
+}
+
+function safeUrlHost(value: string): string | null {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return null;
+  }
+}
+
 async function readUserDataJson<T>(fileName: string): Promise<T | null> {
   try {
     const content = await readFile(userDataFilePath(fileName), "utf8");
@@ -619,12 +663,12 @@ async function ensurePrivacyConsent(
     defaultId: 0,
     cancelId: 2,
     noLink: true,
-    title: "LatexDo Privacy and Consent",
-    message: "Review LatexDo privacy and consent",
+    title: `${productName} Privacy and Consent`,
+    message: `Review ${productName} privacy and consent`,
     detail:
-      "LatexDo does not currently collect personal analytics, sell user data, or track your documents.\n\n" +
-      "LatexDo stores app settings, trusted folder choices, editor preferences, spell checker settings, proofreading settings, and extension choices on this device. Project files and PDFs stay on your device unless you choose a feature or external service that sends a request.\n\n" +
-      "LatexDo reads and writes files only in folders you create, open, or trust. Update checks, the extension catalog, external links, downloads, and optional proofreading can contact LatexDo services or the provider you configure.\n\n" +
+      `${productName} does not currently collect personal analytics, sell user data, or track your documents.\n\n` +
+      `${productName} stores app settings, trusted folder choices, editor preferences, spell checker settings, proofreading settings, and extension choices on this device. Project files and PDFs stay on your device unless you choose a feature or external service that sends a request.\n\n` +
+      `${productName} reads and writes files only in folders you create, open, or trust. Update checks, the extension catalog, external links, downloads, and optional proofreading can contact ${productName} services or the provider you configure.\n\n` +
       "Choose Agree and Continue to consent to this use.",
   } satisfies Electron.MessageBoxOptions;
 
@@ -739,7 +783,7 @@ async function ensureWorkspaceTrust(
     message: "Do you trust the authors of the files in this folder?",
     detail:
       `Folder:\n${canonicalRoot}\n\n` +
-      "Trusting this folder lets LatexDo read and write files, compile LaTeX, use Git, and start integrated terminals for this workspace. Only trust folders whose contents and authors you trust.",
+      `Trusting this folder lets ${productName} read and write files, compile LaTeX, use Git, and start integrated terminals for this workspace. Only trust folders whose contents and authors you trust.`,
     checkboxLabel: "Remember trust for this folder",
     checkboxChecked: true,
   } satisfies Electron.MessageBoxOptions;
@@ -928,7 +972,7 @@ function sanitizeProjectFolderName(value: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^\.+$/, "");
-  return sanitized || "LatexDo Project";
+  return sanitized || `${productName} Project`;
 }
 
 function parseCreateProjectOptions(
@@ -2183,13 +2227,13 @@ function buildApplicationMenu(): void {
           },
         },
         {
-          label: "LatexDo Downloads",
+          label: `${productName} Downloads`,
           click: () => {
             void shell.openExternal(downloadsPageUrl);
           },
         },
         {
-          label: "LatexDo Store",
+          label: `${productName} Store`,
           click: () => {
             void shell.openExternal(extensionStoreUrl);
           },
@@ -2404,8 +2448,8 @@ function updateResultFromWebsitePayload(
   payload: WebsiteUpdatePayload,
   currentVersion: string,
 ): UpdateCheckResult {
-  if (payload.schemaVersion !== 2 || payload.product !== "LatexDo") {
-    throw new Error("Website update payload is not a LatexDo update feed.");
+  if (payload.schemaVersion !== 2 || payload.product !== expectedUpdateProduct) {
+    throw new Error(`Website update payload is not a ${productName} update feed.`);
   }
 
   const latestVersion = payloadString(payload.version)?.replace(/^v/i, "") ?? null;
@@ -2432,8 +2476,8 @@ function updateResultFromDownloadsManifestPayload(
   payload: WebsiteUpdatePayload,
   currentVersion: string,
 ): UpdateCheckResult {
-  if (payload.schemaVersion !== 1 || payload.product !== "LatexDo") {
-    throw new Error("Website downloads manifest is not a LatexDo manifest.");
+  if (payload.schemaVersion !== 1 || payload.product !== expectedUpdateProduct) {
+    throw new Error(`Website downloads manifest is not a ${productName} manifest.`);
   }
 
   const manifestVersion = payloadString(payload.version)?.replace(/^v/i, "") ?? null;
@@ -3164,7 +3208,7 @@ async function updateNow(
         fileLabel: updateFile.label,
         transferredBytes: 1,
         totalBytes: 1,
-        message: "Restarting LatexDo",
+        message: `Restarting ${productName}`,
       }),
     );
     scheduleApplicationRestart();
@@ -3314,7 +3358,7 @@ async function confirmGitDiscard(
     noLink: true,
     message,
     detail:
-      "LatexDo will save recovery data in .latexdo/recovery before discarding changes.",
+      `${productName} will save recovery data in .latexdo/recovery before discarding changes.`,
   };
   const result = targetWindow
     ? await dialog.showMessageBox(targetWindow, options)
@@ -3528,7 +3572,7 @@ function createWindow(): BrowserWindow {
     height: 940,
     minWidth: 980,
     minHeight: 680,
-    title: "LatexDo",
+    title: productName,
     icon: appIconPath,
     titleBarStyle: "hiddenInset",
     backgroundColor: "#111318",
@@ -3617,21 +3661,22 @@ async function runStartupSmokeTest(window: BrowserWindow): Promise<void> {
       return {
         title: document.title,
         rootChildCount: root?.childElementCount ?? 0,
-        hasLatexDoText: document.body?.innerText?.includes("LatexDo") ?? false,
+        hasProductText:
+          document.body?.innerText?.includes(${JSON.stringify(productName)}) ?? false,
         origin: window.location.origin,
       };
     })()
   `)) as {
     title?: string;
     rootChildCount?: number;
-    hasLatexDoText?: boolean;
+    hasProductText?: boolean;
     origin?: string;
   };
 
   if (
-    result.title !== "LatexDo" ||
+    result.title !== productName ||
     !result.rootChildCount ||
-    result.hasLatexDoText !== true ||
+    result.hasProductText !== true ||
     result.origin !== packagedRendererOrigin
   ) {
     throw new Error(`Renderer smoke test failed: ${JSON.stringify(result)}`);
