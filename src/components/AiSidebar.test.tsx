@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultAiConfig, type AiConfig } from "../features/ai/aiConfig";
 import type { AgentContext, EditProposal } from "../features/ai/aiTools";
@@ -89,12 +89,26 @@ function renderSidebar(config = makeConfig(), isDesktop = true) {
   return { onOpenSettings, onUpdateConfig, onToggleExpanded };
 }
 
+function typeInAiInput(value: string) {
+  const input = screen.getByPlaceholderText(/Ask the AI/i) as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value } });
+  input.setSelectionRange(value.length, value.length);
+  fireEvent.select(input);
+  return input;
+}
+
 describe("AiSidebar", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     resetAgent();
+    vi.mocked(ctx.listFiles).mockResolvedValue(["main.tex"]);
     Object.defineProperty(HTMLElement.prototype, "scrollTo", {
       configurable: true,
       value: vi.fn(),
+    });
+    vi.stubGlobal("requestAnimationFrame", (cb: (time: number) => void) => {
+      cb(0);
+      return 1;
     });
   });
 
@@ -155,6 +169,98 @@ describe("AiSidebar", () => {
 
     expect(agentMock.state.send).toHaveBeenCalledWith("Fix the compile errors");
     expect(input).toHaveValue("");
+  });
+
+  it("offers quick command suggestions and accepts them from the keyboard", () => {
+    renderSidebar(
+      makeConfig({
+        provider: "ollama",
+        ollamaModel: "qwen2.5-coder:3b",
+      }),
+    );
+
+    const input = typeInAiInput("\\f");
+
+    expect(screen.getByRole("listbox")).toBeVisible();
+    expect(screen.getByText("Quick commands")).toBeVisible();
+    expect(screen.getByRole("option", { name: /\\fix/i })).toBeVisible();
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(input).toHaveValue("\\fix ");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("closes quick command suggestions with Escape or blur", () => {
+    renderSidebar(
+      makeConfig({
+        provider: "ollama",
+        ollamaModel: "qwen2.5-coder:3b",
+      }),
+    );
+
+    const input = typeInAiInput("\\c");
+    expect(screen.getByRole("listbox")).toBeVisible();
+
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+
+    typeInAiInput("\\r");
+    expect(screen.getByRole("listbox")).toBeVisible();
+
+    fireEvent.blur(input);
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("loads project file suggestions and accepts them with the mouse", async () => {
+    vi.mocked(ctx.listFiles).mockResolvedValue([
+      "main.tex",
+      "sections/intro.tex",
+      "refs/bibliography.bib",
+    ]);
+    renderSidebar(
+      makeConfig({
+        provider: "ollama",
+        ollamaModel: "qwen2.5-coder:3b",
+      }),
+    );
+
+    const input = typeInAiInput("@m");
+
+    await waitFor(() => expect(ctx.listFiles).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    typeInAiInput("@ma");
+
+    expect(screen.getByRole("listbox")).toBeVisible();
+    expect(screen.getByText("Attach a project file")).toBeVisible();
+    const mainOption = screen.getByRole("option", { name: /@main\.tex/i });
+
+    fireEvent.mouseEnter(mainOption);
+    expect(mainOption).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.mouseDown(mainOption);
+
+    expect(input).toHaveValue("@main.tex ");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
+  it("keeps file suggestions closed when project files cannot be listed", async () => {
+    vi.mocked(ctx.listFiles).mockRejectedValueOnce(new Error("No project"));
+    renderSidebar(
+      makeConfig({
+        provider: "ollama",
+        ollamaModel: "qwen2.5-coder:3b",
+      }),
+    );
+
+    typeInAiInput("@m");
+
+    await waitFor(() => expect(ctx.listFiles).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    typeInAiInput("@ma");
+
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
   it("renders activity, running status, abort, and edit approval controls", () => {
