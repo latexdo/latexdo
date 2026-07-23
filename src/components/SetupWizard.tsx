@@ -144,11 +144,11 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   return (
     <div className="ai-wizard-overlay">
       <div className="ai-wizard">
-          <div className="ai-wizard-rail">
-            <div className="ai-wizard-brand">
-              <Sparkles size={18} />
-              <span>{productAiName}</span>
-            </div>
+        <div className="ai-wizard-rail">
+          <div className="ai-wizard-brand">
+            <Sparkles size={18} />
+            <span>{productAiName}</span>
+          </div>
           <ul className="ai-wizard-steps">
             {steps.map((s, i) => (
               <li

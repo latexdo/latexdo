@@ -25,9 +25,7 @@ export interface ProductConfig {
 
 const requestedEdition = import.meta.env.VITE_LATEXDO_EDITION;
 const edition: ProductEdition =
-  requestedEdition === "pro" || requestedEdition === "business"
-    ? "pro"
-    : "personal";
+  requestedEdition === "pro" || requestedEdition === "business" ? "pro" : "personal";
 
 const configuredName = import.meta.env.VITE_LATEXDO_PRODUCT_NAME?.trim();
 
