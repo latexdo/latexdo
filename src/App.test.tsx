@@ -384,7 +384,7 @@ async function openProjectFromWelcome() {
     expect(window.latexdo.openProject).toHaveBeenCalledTimes(1);
   });
   await waitFor(() => {
-    expect(screen.getByText("Ready")).toBeVisible();
+    expect(screen.getByText("Ready", { selector: ".status-message" })).toBeVisible();
   });
 }
 

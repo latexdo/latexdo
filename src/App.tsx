@@ -10763,9 +10763,9 @@ ${macroEnd}
           <div className="update-banner-main">
             <Download size={17} />
             <span>
-          <strong>
-            {productConfig.shortName} {availableUpdateVersion} is available
-          </strong>
+              <strong>
+                {productConfig.shortName} {availableUpdateVersion} is available
+              </strong>
               <small>
                 {updateProgressActive && updateProgressLabel
                   ? updateProgressLabel

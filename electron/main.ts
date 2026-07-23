@@ -94,8 +94,7 @@ const isProEdition =
   executableProductName.toLowerCase().includes("pro") ||
   executableProductName.toLowerCase().includes("business");
 const productName =
-  envString("LATEXDO_PRODUCT_NAME") ??
-  (isProEdition ? "LatexDo Pro" : "LatexDo");
+  envString("LATEXDO_PRODUCT_NAME") ?? (isProEdition ? "LatexDo Pro" : "LatexDo");
 const expectedUpdateProduct = envString("LATEXDO_UPDATE_PRODUCT") ?? productName;
 const packagedRendererOrigin = "latexdo://app";
 const packagedRendererRoot = path.resolve(currentDirectory, "..", "dist");
@@ -108,8 +107,7 @@ const downloadsManifestUrl =
   envString("LATEXDO_DOWNLOADS_MANIFEST_URL") ??
   "https://latexdo.org/downloads/manifest.json";
 const updatesFeedUrl =
-  envString("LATEXDO_UPDATES_FEED_URL") ??
-  "https://latexdo.org/updates/latest.json";
+  envString("LATEXDO_UPDATES_FEED_URL") ?? "https://latexdo.org/updates/latest.json";
 const extensionStoreUrl =
   envString("LATEXDO_EXTENSION_STORE_URL") ?? "https://store.latexdo.org/";
 const extensionStoreCatalogUrl =
@@ -3357,8 +3355,7 @@ async function confirmGitDiscard(
     cancelId: 0,
     noLink: true,
     message,
-    detail:
-      `${productName} will save recovery data in .latexdo/recovery before discarding changes.`,
+    detail: `${productName} will save recovery data in .latexdo/recovery before discarding changes.`,
   };
   const result = targetWindow
     ? await dialog.showMessageBox(targetWindow, options)
