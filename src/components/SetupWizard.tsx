@@ -38,10 +38,13 @@ interface SetupWizardProps {
   isDesktop: boolean;
   onApplyTheme: (theme: ColorTheme) => void;
   onComplete: (config: AiConfig) => void;
+  productName?: string;
+  productAiName?: string;
 }
 
 type Step = "welcome" | "name" | "layout" | "theme" | "model";
 const steps: Step[] = ["welcome", "name", "layout", "theme", "model"];
+const defaultProductName = "LatexDo";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -60,6 +63,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   isDesktop,
   onApplyTheme,
   onComplete,
+  productName = defaultProductName,
+  productAiName = `${defaultProductName} AI`,
 }) => {
   const [stepIndex, setStepIndex] = React.useState(0);
   const [config, setConfig] = React.useState<AiConfig>(initialConfig);
@@ -139,11 +144,11 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   return (
     <div className="ai-wizard-overlay">
       <div className="ai-wizard">
-        <div className="ai-wizard-rail">
-          <div className="ai-wizard-brand">
-            <Sparkles size={18} />
-            <span>LatexDo AI</span>
-          </div>
+          <div className="ai-wizard-rail">
+            <div className="ai-wizard-brand">
+              <Sparkles size={18} />
+              <span>{productAiName}</span>
+            </div>
           <ul className="ai-wizard-steps">
             {steps.map((s, i) => (
               <li
@@ -176,8 +181,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                 <Sparkles size={40} className="ai-wizard-hero-icon" />
                 <h2>Let's set up your AI assistant</h2>
                 <p className="ai-wizard-lead">
-                  LatexDo can run a local AI agent that reads, edits, compiles, and
-                  debugs your LaTeX right inside the editor — privately, on your
+                  {productName} can run a local AI agent that reads, edits, compiles,
+                  and debugs your LaTeX right inside the editor, privately on your
                   machine. This quick setup gets it ready.
                 </p>
               </div>

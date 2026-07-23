@@ -76,6 +76,7 @@ import {
 } from "react";
 import appIconUrl from "../build/icon.svg";
 import FileTree from "./FileTree";
+import { productConfig } from "./productConfig";
 import type { PdfClickLocation } from "./PdfPreview";
 import TikzCanvas from "./TikzCanvas";
 import TableCanvas from "./TableCanvas";
@@ -599,6 +600,10 @@ function AppIcon({ className }: { className?: string }) {
 
 export default function App() {
   const collaboration = useCollaborationContext();
+  useEffect(() => {
+    document.title = productConfig.documentTitle;
+  }, []);
+
   const {
     projectId,
     setProjectId,
@@ -627,7 +632,9 @@ export default function App() {
   } = useProject();
   const { documents, setDocuments, activePath, setActivePath, activeDocument } =
     useDocuments();
-  const [statusMessage, setStatusMessage] = useState("Welcome to LatexDo");
+  const [statusMessage, setStatusMessage] = useState(
+    () => `Welcome to ${productConfig.shortName}`,
+  );
   const {
     settings,
     setSettings,
@@ -5457,6 +5464,14 @@ ${macroEnd}
     switch (template.id) {
       case "beamer":
         return <Play size={17} />;
+      case "board-report":
+        return <Table2 size={17} />;
+      case "business-proposal":
+        return <Waypoints size={17} />;
+      case "policy-document":
+        return <Lock size={17} />;
+      case "technical-brief":
+        return <Box size={17} />;
       case "letter":
         return <MessageCircle size={17} />;
       case "research":
@@ -5877,7 +5892,7 @@ ${macroEnd}
     setWelcomeOpen(true);
     setActivePath("");
     activePathRef.current = "";
-    setStatusMessage("Welcome to LatexDo");
+    setStatusMessage(`Welcome to ${productConfig.shortName}`);
   };
 
   const loadSpellCheckerSettings = useCallback(async () => {
@@ -8200,6 +8215,8 @@ ${macroEnd}
             setSettings((current) => ({ ...current, colorTheme: theme }))
           }
           onComplete={completeAiSetup}
+          productName={productConfig.shortName}
+          productAiName={productConfig.aiName}
         />
       )}
       {profileOpen && (
@@ -8219,7 +8236,7 @@ ${macroEnd}
           <AppIcon className="app-mark" />
           <span className="title-project">{projectName}</span>
           <span className="title-separator">—</span>
-          <span>LatexDo</span>
+          <span>{productConfig.shortName}</span>
         </div>
         <div className="title-actions">
           <button
@@ -9449,10 +9466,29 @@ ${macroEnd}
                   <div className="welcome-hero">
                     <AppIcon className="welcome-brand" />
                     <div>
-                      <h1>LatexDo</h1>
-                      <p>Start from a working LaTeX document. Compile locally.</p>
+                      <p className="welcome-kicker">{productConfig.welcomeKicker}</p>
+                      <h1>{productConfig.welcomeTitle}</h1>
+                      <p>{productConfig.welcomeSubtitle}</p>
                     </div>
                   </div>
+
+                  <section
+                    className="welcome-command-center"
+                    aria-labelledby="welcome-command-title"
+                  >
+                    <h2 id="welcome-command-title">
+                      {productConfig.commandCenterTitle}
+                    </h2>
+                    <div className="welcome-command-grid">
+                      {productConfig.commandCenterItems.map((item) => (
+                        <div className="welcome-command-item" key={item.label}>
+                          <span>{item.label}</span>
+                          <strong>{item.value}</strong>
+                          <small>{item.detail}</small>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
 
                   <div className="welcome-grid">
                     <section className="welcome-section">
@@ -9463,8 +9499,8 @@ ${macroEnd}
                       >
                         <Plus size={18} />
                         <span>
-                          <strong>New LaTeX Project</strong>
-                          <small>Create a project with a ready-to-build main.tex</small>
+                          <strong>{productConfig.newProjectTitle}</strong>
+                          <small>{productConfig.newProjectDescription}</small>
                         </span>
                       </button>
                       {hasVisibleProject ? (
@@ -9514,7 +9550,7 @@ ${macroEnd}
                       </button>
                     </section>
                     <section className="welcome-section welcome-template-section">
-                      <h2>Template gallery</h2>
+                      <h2>{productConfig.templateGalleryTitle}</h2>
                       <div className="welcome-template-grid">
                         {availableWelcomeTemplates.map((template) => (
                           <button
@@ -9545,7 +9581,7 @@ ${macroEnd}
                   <div className="welcome-tip">
                     <Command size={14} />
                     <span>
-                      Compile anytime with <kbd>⌘</kbd> <kbd>Enter</kbd>
+                      {productConfig.compileTip} <kbd>⌘</kbd> <kbd>Enter</kbd>
                     </span>
                   </div>
                 </div>
@@ -10727,7 +10763,9 @@ ${macroEnd}
           <div className="update-banner-main">
             <Download size={17} />
             <span>
-              <strong>LatexDo {availableUpdateVersion} is available</strong>
+          <strong>
+            {productConfig.shortName} {availableUpdateVersion} is available
+          </strong>
               <small>
                 {updateProgressActive && updateProgressLabel
                   ? updateProgressLabel
@@ -10800,7 +10838,7 @@ ${macroEnd}
         <div>
           <span className="status-brand">
             <AppIcon className="status-brand-icon" />
-            LatexDo
+            {productConfig.shortName}
           </span>
           {updateInfo?.updateAvailable ? (
             <button
