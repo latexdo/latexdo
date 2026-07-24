@@ -75,16 +75,16 @@ Data (projects, files, share tokens) lives in
 
 All of these are enforced in `server.mjs` and tunable via the env file:
 
-| Risk | Protection |
-|------|------------|
-| Flood of requests / project creation | Per-IP rate limit (`RATE_MAX`, `CREATE_RATE_MAX`) + nginx `limit_req` |
-| Disk fill via unlimited projects | Global project cap (`MAX_PROJECTS`) |
-| Disk/RAM fill via one huge document | Per-document size cap (`MAX_DOC_CHARS`), enforced on both HTTP and live edits |
-| Files/dirs flooding a project | `maxProjectFiles` / project byte quota |
-| Memory leak from open documents | Idle rooms are evicted from memory |
-| Held-open idle sockets | WebSocket idle timeout + heartbeat, connection caps |
-| Token leakage in logs | Query strings stripped from both app and nginx logs |
-| Cross-site API calls | `ALLOWED_ORIGINS` allow-list (set to your real origins, never `*`) |
+| Risk                                 | Protection                                                                    |
+| ------------------------------------ | ----------------------------------------------------------------------------- |
+| Flood of requests / project creation | Per-IP rate limit (`RATE_MAX`, `CREATE_RATE_MAX`) + nginx `limit_req`         |
+| Disk fill via unlimited projects     | Global project cap (`MAX_PROJECTS`)                                           |
+| Disk/RAM fill via one huge document  | Per-document size cap (`MAX_DOC_CHARS`), enforced on both HTTP and live edits |
+| Files/dirs flooding a project        | `maxProjectFiles` / project byte quota                                        |
+| Memory leak from open documents      | Idle rooms are evicted from memory                                            |
+| Held-open idle sockets               | WebSocket idle timeout + heartbeat, connection caps                           |
+| Token leakage in logs                | Query strings stripped from both app and nginx logs                           |
+| Cross-site API calls                 | `ALLOWED_ORIGINS` allow-list (set to your real origins, never `*`)            |
 
 ## Alternative: Docker
 

@@ -120,10 +120,7 @@ export function usesLatexDoTrackedChanges(content: string): boolean {
   return trackedChangeCommandPattern.test(content);
 }
 
-function replaceTrackedChanges(
-  content: string,
-  mode: "accept" | "reject",
-): string {
+function replaceTrackedChanges(content: string, mode: "accept" | "reject"): string {
   let output = "";
   let cursor = 0;
 
@@ -188,9 +185,7 @@ export function rejectLatexDoTrackedChanges(content: string): string {
   return replaceTrackedChanges(content, "reject");
 }
 
-export function summarizeLatexDoTrackedChanges(
-  content: string,
-): TrackedChangeSummary {
+export function summarizeLatexDoTrackedChanges(content: string): TrackedChangeSummary {
   const summary: TrackedChangeSummary = {
     insertions: 0,
     deletions: 0,

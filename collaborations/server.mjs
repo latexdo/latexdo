@@ -1567,7 +1567,12 @@ server.listen(port, host, () => {
 
 function shutdown(signal) {
   console.log(
-    JSON.stringify({ level: "info", msg: "shutdown", signal, time: new Date().toISOString() }),
+    JSON.stringify({
+      level: "info",
+      msg: "shutdown",
+      signal,
+      time: new Date().toISOString(),
+    }),
   );
   clearInterval(heartbeatTimer);
   clearInterval(rateBucketTimer);
