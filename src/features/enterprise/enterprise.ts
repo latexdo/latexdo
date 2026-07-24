@@ -208,11 +208,7 @@ export interface BusinessAiCheck {
   id: string;
   name: string;
   enabled: boolean;
-  category:
-    | "compliance"
-    | "citation-verification"
-    | "style"
-    | "technical-writing";
+  category: "compliance" | "citation-verification" | "style" | "technical-writing";
 }
 
 export interface WritingAssistant {
@@ -944,9 +940,7 @@ export function normalizeEnterpriseState(value: unknown): EnterpriseState {
   const identity = isObject(value.identity) ? value.identity : {};
   const admin = isObject(value.admin) ? value.admin : {};
   const storage = isObject(admin.storage) ? admin.storage : {};
-  const backupRetention = isObject(admin.backupRetention)
-    ? admin.backupRetention
-    : {};
+  const backupRetention = isObject(admin.backupRetention) ? admin.backupRetention : {};
   const publishing = isObject(value.publishing) ? value.publishing : {};
 
   return {
@@ -1105,11 +1099,15 @@ export function enterpriseSummary(state: EnterpriseState): EnterpriseSummary {
       (total, library) => total + library.entries,
       0,
     ),
-    assetCount: state.assetLibraries.reduce((total, library) => total + library.assets, 0),
+    assetCount: state.assetLibraries.reduce(
+      (total, library) => total + library.assets,
+      0,
+    ),
     pendingApprovals: state.collaboration.approvalRequests.filter(
       (request) => request.status === "pending",
     ).length,
-    openTasks: state.collaboration.tasks.filter((task) => task.status !== "done").length,
+    openTasks: state.collaboration.tasks.filter((task) => task.status !== "done")
+      .length,
     activeLocks: state.collaboration.documentLocks.length,
     unresolvedMentions: state.collaboration.comments.filter(
       (comment) => !comment.resolved && comment.mentions.length > 0,
@@ -1207,7 +1205,9 @@ export function buildEnterpriseComplianceReport(
     `- DOI records: ${state.publishing.doiRecords.length}`,
     "",
     "## Risk Items",
-    ...(risks.length ? risks.map((risk) => `- ${risk}`) : ["- No high-priority risks detected."]),
+    ...(risks.length
+      ? risks.map((risk) => `- ${risk}`)
+      : ["- No high-priority risks detected."]),
     "",
   ].filter((line) => line !== "");
 

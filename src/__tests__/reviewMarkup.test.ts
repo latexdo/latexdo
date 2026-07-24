@@ -55,9 +55,7 @@ describe("review markup", () => {
       "This \\latexdoinsert{new claim} and " +
       "\\latexdodelete{old claim} plus \\latexdochange{less}{more}.";
 
-    expect(rejectLatexDoTrackedChanges(source)).toBe(
-      "This  and old claim plus less.",
-    );
+    expect(rejectLatexDoTrackedChanges(source)).toBe("This  and old claim plus less.");
   });
 
   it("keeps malformed tracked-change commands untouched", () => {

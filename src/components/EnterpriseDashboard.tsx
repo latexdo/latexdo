@@ -73,7 +73,9 @@ const sections: {
   { id: "publishing", label: "Publish", icon: FileOutput },
 ];
 
-function cycleProviderStatus(status: IdentityProvider["status"]): IdentityProvider["status"] {
+function cycleProviderStatus(
+  status: IdentityProvider["status"],
+): IdentityProvider["status"] {
   if (status === "not-configured") return "configured";
   if (status === "configured") return "enforced";
   return "not-configured";
@@ -434,7 +436,9 @@ export function EnterpriseDashboard({
                 ? {
                     ...item,
                     status:
-                      item.status === "not-configured" ? "configured" : "not-configured",
+                      item.status === "not-configured"
+                        ? "configured"
+                        : "not-configured",
                   }
                 : item,
             ),
@@ -714,7 +718,10 @@ export function EnterpriseDashboard({
             <select
               value={task.status}
               onChange={(event) =>
-                updateTaskStatus(task.id, event.target.value as EnterpriseTask["status"])
+                updateTaskStatus(
+                  task.id,
+                  event.target.value as EnterpriseTask["status"],
+                )
               }
             >
               <option value="todo">Todo</option>
@@ -773,9 +780,21 @@ export function EnterpriseDashboard({
     <>
       <div className="enterprise-grid">
         {metric("Active users", state.admin.usage.activeUsers, <Users size={14} />)}
-        {metric("Docs edited", state.admin.usage.documentsEdited, <FileCheck2 size={14} />)}
-        {metric("Reviews", state.admin.usage.reviewsCompleted, <ClipboardCheck size={14} />)}
-        {metric("AI requests", state.admin.usage.aiRequests, <BrainCircuit size={14} />)}
+        {metric(
+          "Docs edited",
+          state.admin.usage.documentsEdited,
+          <FileCheck2 size={14} />,
+        )}
+        {metric(
+          "Reviews",
+          state.admin.usage.reviewsCompleted,
+          <ClipboardCheck size={14} />,
+        )}
+        {metric(
+          "AI requests",
+          state.admin.usage.aiRequests,
+          <BrainCircuit size={14} />,
+        )}
       </div>
 
       <section className="enterprise-section">
@@ -812,7 +831,9 @@ export function EnterpriseDashboard({
         <h4>Backup and Retention</h4>
         <article className="enterprise-card">
           <strong>
-            {state.admin.backupRetention.backupEnabled ? "Backups enabled" : "Backups disabled"}
+            {state.admin.backupRetention.backupEnabled
+              ? "Backups enabled"
+              : "Backups disabled"}
           </strong>
           <span>{state.admin.backupRetention.retentionDays} day retention</span>
           <small>Last backup {state.admin.backupRetention.lastBackup}</small>
@@ -822,7 +843,11 @@ export function EnterpriseDashboard({
       <section className="enterprise-section">
         <div className="enterprise-section-title">
           <h4>Compliance Reports</h4>
-          <button type="button" className="sidebar-mini-action" onClick={onExportReport}>
+          <button
+            type="button"
+            className="sidebar-mini-action"
+            onClick={onExportReport}
+          >
             Export
           </button>
         </div>
@@ -846,10 +871,29 @@ export function EnterpriseDashboard({
   const renderAi = () => (
     <>
       <div className="enterprise-grid">
-        {metric("Private models", state.aiBusiness.privateModels.length, <BrainCircuit size={14} />)}
-        {metric("Knowledge docs", state.aiBusiness.knowledgeSources.reduce((total, source) => total + source.indexedDocuments, 0), <SearchCheck size={14} />)}
-        {metric("Style guides", state.aiBusiness.styleGuides.length, <BookMarked size={14} />)}
-        {metric("AI checks", state.aiBusiness.checks.filter((check) => check.enabled).length, <CheckCircle2 size={14} />)}
+        {metric(
+          "Private models",
+          state.aiBusiness.privateModels.length,
+          <BrainCircuit size={14} />,
+        )}
+        {metric(
+          "Knowledge docs",
+          state.aiBusiness.knowledgeSources.reduce(
+            (total, source) => total + source.indexedDocuments,
+            0,
+          ),
+          <SearchCheck size={14} />,
+        )}
+        {metric(
+          "Style guides",
+          state.aiBusiness.styleGuides.length,
+          <BookMarked size={14} />,
+        )}
+        {metric(
+          "AI checks",
+          state.aiBusiness.checks.filter((check) => check.enabled).length,
+          <CheckCircle2 size={14} />,
+        )}
       </div>
 
       <section className="enterprise-section">
@@ -917,10 +961,22 @@ export function EnterpriseDashboard({
   const renderPublishing = () => (
     <>
       <div className="enterprise-grid">
-        {metric("Company templates", state.publishing.companyTemplates.length, <BriefcaseBusiness size={14} />)}
-        {metric("Journals", state.publishing.journalWorkflows.length, <BookMarked size={14} />)}
+        {metric(
+          "Company templates",
+          state.publishing.companyTemplates.length,
+          <BriefcaseBusiness size={14} />,
+        )}
+        {metric(
+          "Journals",
+          state.publishing.journalWorkflows.length,
+          <BookMarked size={14} />,
+        )}
         {metric("Export targets", summary.activeExportTargets, <Database size={14} />)}
-        {metric("DOI records", state.publishing.doiRecords.length, <BadgeCheck size={14} />)}
+        {metric(
+          "DOI records",
+          state.publishing.doiRecords.length,
+          <BadgeCheck size={14} />,
+        )}
       </div>
 
       <section className="enterprise-section">

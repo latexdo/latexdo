@@ -61,9 +61,7 @@ describe("enterprise state", () => {
   });
 
   it("appends bounded audit events and reports storage percentage", () => {
-    vi.spyOn(Date.prototype, "toISOString").mockReturnValue(
-      "2026-07-24T12:30:00.000Z",
-    );
+    vi.spyOn(Date.prototype, "toISOString").mockReturnValue("2026-07-24T12:30:00.000Z");
     const next = appendAuditEvent(
       defaultEnterpriseState,
       "admin@company.example",

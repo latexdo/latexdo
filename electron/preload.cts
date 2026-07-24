@@ -34,7 +34,8 @@ import type {
   UpdateInstallResult,
 } from "./types.js" with { "resolution-mode": "import" };
 
-const requestedEdition = process.env.VITE_LATEXDO_EDITION || process.env.LATEXDO_EDITION;
+const requestedEdition =
+  process.env.VITE_LATEXDO_EDITION || process.env.LATEXDO_EDITION;
 const proEdition = requestedEdition === "pro" || requestedEdition === "business";
 const defaultCollaborationApiBaseUrl = proEdition
   ? "https://teams.latexdo.org"

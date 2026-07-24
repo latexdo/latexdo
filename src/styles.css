@@ -11680,7 +11680,11 @@ button {
   padding: 14px;
   border-bottom: 1px solid var(--border-subtle);
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 70%, transparent), transparent 56%),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--accent-soft) 70%, transparent),
+      transparent 56%
+    ),
     var(--bg-sidebar);
 }
 
