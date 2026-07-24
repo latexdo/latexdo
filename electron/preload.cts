@@ -34,9 +34,17 @@ import type {
   UpdateInstallResult,
 } from "./types.js" with { "resolution-mode": "import" };
 
+const requestedEdition = process.env.VITE_LATEXDO_EDITION || process.env.LATEXDO_EDITION;
+const proEdition = requestedEdition === "pro" || requestedEdition === "business";
+const defaultCollaborationApiBaseUrl = proEdition
+  ? "https://teams.latexdo.org"
+  : "https://collaborations.latexdo.org";
 const collaborationApiBaseUrl =
-  process.env.VITE_LATEXDO_API_BASE_URL?.trim() || "https://collaborations.latexdo.org";
-const hostedEditorUrl = "https://editor.latexdo.org/";
+  process.env.VITE_LATEXDO_API_BASE_URL?.trim() || defaultCollaborationApiBaseUrl;
+const hostedEditorUrl =
+  process.env.VITE_LATEXDO_HOSTED_EDITOR_URL?.trim() ||
+  process.env.LATEXDO_HOSTED_EDITOR_URL?.trim() ||
+  (proEdition ? "https://workspace.latexdo.org/" : "https://editor.latexdo.org/");
 const cloudSessionKey = "latexdo.cloud.session";
 const cloudClientKey = "latexdo.cloud.client";
 const cloudClientNameKey = "latexdo.cloud.clientName";

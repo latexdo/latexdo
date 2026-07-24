@@ -2,6 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCloudLatexDoApi } from "./cloudApi";
 import { resetCollaborationApiBaseUrlForTests } from "./collaboration/collaborationApi";
 
+const proEdition =
+  import.meta.env.VITE_LATEXDO_EDITION === "pro" ||
+  import.meta.env.VITE_LATEXDO_EDITION === "business";
+const defaultCollaborationApiBaseUrl = proEdition
+  ? "https://teams.latexdo.org"
+  : "https://collaborations.latexdo.org";
+const encodedDefaultCollaborationApiBaseUrl = encodeURIComponent(
+  defaultCollaborationApiBaseUrl,
+);
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -38,7 +48,7 @@ function installFilePicker(
 
 describe("cloud API request policies", () => {
   beforeEach(() => {
-    vi.stubEnv("VITE_LATEXDO_API_BASE_URL", "https://collaborations.latexdo.org");
+    vi.stubEnv("VITE_LATEXDO_API_BASE_URL", defaultCollaborationApiBaseUrl);
     resetCollaborationApiBaseUrlForTests();
     window.localStorage.clear();
     window.history.replaceState(null, "", "/");
@@ -128,7 +138,7 @@ describe("cloud API request policies", () => {
     expect(window.location.hash).toBe("");
     expect(
       window.localStorage.getItem(
-        "latexdo.cloud.shareToken.v2:https%3A%2F%2Fcollaborations.latexdo.org:project-1",
+        `latexdo.cloud.shareToken.v2:${encodedDefaultCollaborationApiBaseUrl}:project-1`,
       ),
     ).toBe("share-secret");
   });
@@ -360,7 +370,7 @@ describe("hosted backend resilience", () => {
     const calls = fetchMock.mock.calls.map((call) => String(call[0]));
     expect(calls[0]).toBe("https://editor.example/api/health");
     expect(calls[1]).toBe(
-      "https://collaborations.latexdo.org/api/projects/project-1/files",
+      `${defaultCollaborationApiBaseUrl}/api/projects/project-1/files`,
     );
   });
 

@@ -45,6 +45,29 @@ const maxWebSocketFrameBytes = numberEnv(
 const presenceTtlMs = numberEnv("LATEXDO_COLLAB_PRESENCE_TTL_MS", 45_000);
 const roomPersistDelayMs = numberEnv("LATEXDO_COLLAB_ROOM_PERSIST_DELAY_MS", 250);
 
+// --- Abuse / resource limits (safe defaults; override via environment) -------
+// Per-IP request rate limiting. `trustProxyHeader` MUST stay true only when the
+// server sits behind a reverse proxy you control (nginx), otherwise a client can
+// spoof X-Forwarded-For to dodge the limit.
+const trustProxyHeader = boolEnv("LATEXDO_COLLAB_TRUST_PROXY", true);
+const rateLimitWindowMs = numberEnv("LATEXDO_COLLAB_RATE_WINDOW_MS", 60_000);
+const rateLimitMax = numberEnv("LATEXDO_COLLAB_RATE_MAX", 600);
+const createRateLimitMax = numberEnv("LATEXDO_COLLAB_CREATE_RATE_MAX", 30);
+// Caps that bound disk and memory growth for the whole server.
+const maxProjectsGlobal = numberEnv("LATEXDO_COLLAB_MAX_PROJECTS", 250_000);
+const maxRoomsInMemory = numberEnv("LATEXDO_COLLAB_MAX_ROOMS", 20_000);
+const maxConnectionsTotal = numberEnv("LATEXDO_COLLAB_MAX_CONNECTIONS", 30_000);
+const maxConnectionsPerRoom = numberEnv("LATEXDO_COLLAB_MAX_ROOM_CONNECTIONS", 80);
+// A live-edited document may not grow past this many characters. This closes the
+// quota-bypass where WebSocket edits skipped the HTTP size checks.
+const maxCollabDocChars = numberEnv("LATEXDO_COLLAB_MAX_DOC_CHARS", 5_000_000);
+// Idle WebSocket connections are pinged and then dropped so they cannot be held
+// open cheaply (slowloris-style).
+const wsIdleTimeoutMs = numberEnv("LATEXDO_COLLAB_WS_IDLE_MS", 120_000);
+const wsHeartbeatMs = numberEnv("LATEXDO_COLLAB_WS_HEARTBEAT_MS", 30_000);
+const roomEvictionDelayMs = numberEnv("LATEXDO_COLLAB_ROOM_EVICTION_MS", 30_000);
+const accessLogEnabled = boolEnv("LATEXDO_COLLAB_ACCESS_LOG", true);
+
 const wsGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const messageSync = 0;
 const messageAwareness = 1;
@@ -63,6 +86,63 @@ class HttpError extends Error {
 function numberEnv(name, fallback) {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function boolEnv(name, fallback) {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (raw === undefined || raw === "") return fallback;
+  if (["1", "true", "yes", "on"].includes(raw)) return true;
+  if (["0", "false", "no", "off"].includes(raw)) return false;
+  return fallback;
+}
+
+// --- Per-IP rate limiting ----------------------------------------------------
+// A fixed-window counter per client IP. Cheap, in-process, and good enough to
+// stop scripted floods; pair it with an nginx/WAF limit for network-level abuse.
+const rateBuckets = new Map();
+let totalConnections = 0;
+
+function clientIp(request) {
+  if (trustProxyHeader) {
+    const header = request.headers["x-forwarded-for"];
+    const forwarded = Array.isArray(header) ? header[0] : header;
+    const first = typeof forwarded === "string" ? forwarded.split(",")[0].trim() : "";
+    if (first) return first;
+  }
+  return request.socket?.remoteAddress || "unknown";
+}
+
+function checkRateLimit(ip, kind = "general") {
+  const timestamp = now();
+  let bucket = rateBuckets.get(ip);
+  if (!bucket || bucket.resetAt <= timestamp) {
+    bucket = { count: 0, createCount: 0, resetAt: timestamp + rateLimitWindowMs };
+    rateBuckets.set(ip, bucket);
+  }
+  bucket.count += 1;
+  if (kind === "create") bucket.createCount += 1;
+  if (bucket.count > rateLimitMax) return false;
+  if (kind === "create" && bucket.createCount > createRateLimitMax) return false;
+  return true;
+}
+
+function pruneRateBuckets() {
+  const timestamp = now();
+  for (const [ip, bucket] of rateBuckets) {
+    if (bucket.resetAt <= timestamp) rateBuckets.delete(ip);
+  }
+}
+
+// The number of projects on disk, counted once at startup and kept in sync so
+// creation stays O(1) instead of scanning the data directory on every request.
+let knownProjectCount = null;
+
+async function ensureProjectCount() {
+  if (knownProjectCount !== null) return knownProjectCount;
+  const root = path.join(dataDir, "projects");
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  knownProjectCount = entries.filter((entry) => entry.isDirectory()).length;
+  return knownProjectCount;
 }
 
 function parseCsv(value) {
@@ -160,6 +240,9 @@ async function writeProjectMeta(meta) {
 }
 
 async function createProject(identity, folderName) {
+  if ((await ensureProjectCount()) >= maxProjectsGlobal) {
+    throw new HttpError(507, "The collaboration server has reached its project limit.");
+  }
   const timestamp = now();
   const projectId = randomId("project");
   const name = cleanProjectName(folderName) || "LatexDo Shared Project";
@@ -184,6 +267,7 @@ async function createProject(identity, folderName) {
   };
   await mkdir(projectFilesDir(projectId), { recursive: true });
   await writeProjectMeta(meta);
+  if (knownProjectCount !== null) knownProjectCount += 1;
   return openProject(meta);
 }
 
@@ -549,12 +633,29 @@ async function listDirectory(root, relativePath) {
   return result;
 }
 
+async function countProjectEntries(projectId) {
+  const root = projectFilesDir(projectId);
+  let count = 0;
+  async function walk(directory) {
+    const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      count += 1;
+      if (entry.isDirectory()) await walk(path.join(directory, entry.name));
+    }
+  }
+  await walk(root);
+  return count;
+}
+
 async function createEntry(projectId, relativePath, type) {
   const fullPath = filePathFor(projectId, relativePath);
   if (await exists(fullPath)) {
     throw new HttpError(409, `"${relativePath}" already exists.`);
   }
   if (type === "directory") {
+    if ((await countProjectEntries(projectId)) >= maxProjectFiles) {
+      throw new HttpError(413, "Project has too many entries.");
+    }
     await mkdir(fullPath, { recursive: true });
     return relativePath;
   }
@@ -600,12 +701,15 @@ async function handleHttp(request, response) {
     request.url || "/",
     publicOrigin || `http://${request.headers.host}`,
   );
-  if (!isAllowedOrigin(request.headers.origin)) {
-    throw new HttpError(403, "Origin is not allowed.");
-  }
   if (request.method === "OPTIONS") {
     sendEmpty(response, request);
     return;
+  }
+  if (!isAllowedOrigin(request.headers.origin)) {
+    throw new HttpError(403, "Origin is not allowed.");
+  }
+  if (!checkRateLimit(clientIp(request))) {
+    throw new HttpError(429, "Too many requests. Please slow down and try again.");
   }
 
   const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -629,6 +733,9 @@ async function handleHttp(request, response) {
       return;
     }
     if (request.method === "POST") {
+      if (!checkRateLimit(clientIp(request), "create")) {
+        throw new HttpError(429, "Too many new projects. Please try again shortly.");
+      }
       const identity = requestIdentity(request, url);
       const body = await readJsonBody(request);
       const project = await createProject(identity, body.folderName || body.name);
@@ -654,6 +761,9 @@ async function handleHttp(request, response) {
         openProject(await readProjectMeta(projects[0].id)),
       );
       return;
+    }
+    if (!checkRateLimit(clientIp(request), "create")) {
+      throw new HttpError(429, "Too many new projects. Please try again shortly.");
     }
     sendJson(response, request, 200, await createProject(identity));
     return;
@@ -928,6 +1038,8 @@ async function getRoom(projectId, relativePath) {
     awareness,
     conns,
     persistTimer: null,
+    evictTimer: null,
+    lastActivityAt: now(),
     closeAll(code, reason) {
       for (const conn of Array.from(conns)) {
         conn.close(code, reason);
@@ -935,6 +1047,18 @@ async function getRoom(projectId, relativePath) {
       doc.destroy();
     },
   };
+
+  // Bound how many documents live in memory. When over the cap, drop rooms that
+  // currently have no connections (oldest first) before adding a new one.
+  if (rooms.size >= maxRoomsInMemory) {
+    const idle = [...rooms.values()]
+      .filter((candidate) => candidate.conns.size === 0)
+      .sort((left, right) => left.lastActivityAt - right.lastActivityAt);
+    for (const candidate of idle) {
+      if (rooms.size < maxRoomsInMemory) break;
+      evictRoom(candidate);
+    }
+  }
 
   doc.on("update", (update, origin) => {
     scheduleRoomPersist(room);
@@ -976,6 +1100,16 @@ function scheduleRoomPersist(room) {
   if (room.persistTimer) clearTimeout(room.persistTimer);
   room.persistTimer = setTimeout(() => {
     room.persistTimer = null;
+    // Never write past the document cap. Live edits share this limit with the
+    // HTTP write path so a WebSocket session cannot grow a file without bound.
+    if (room.text.length > maxCollabDocChars) {
+      console.warn("Skipping oversize collaboration persist", {
+        projectId: room.projectId,
+        relativePath: room.relativePath,
+        length: room.text.length,
+      });
+      return;
+    }
     void atomicWriteText(
       filePathFor(room.projectId, room.relativePath),
       room.text.toString(),
@@ -987,6 +1121,37 @@ function scheduleRoomPersist(room) {
       });
     });
   }, roomPersistDelayMs);
+}
+
+function evictRoom(room) {
+  const key = roomKey(room.projectId, room.relativePath);
+  if (rooms.get(key) !== room) return;
+  if (room.evictTimer) {
+    clearTimeout(room.evictTimer);
+    room.evictTimer = null;
+  }
+  if (room.persistTimer) {
+    clearTimeout(room.persistTimer);
+    room.persistTimer = null;
+    if (room.text.length <= maxCollabDocChars) {
+      void atomicWriteText(
+        filePathFor(room.projectId, room.relativePath),
+        room.text.toString(),
+      ).catch(() => {});
+    }
+  }
+  rooms.delete(key);
+  room.doc.destroy();
+}
+
+// When the last collaborator leaves, keep the document briefly (a quick
+// reconnect reuses it) then release it so idle rooms cannot accumulate.
+function scheduleRoomEviction(room) {
+  if (room.evictTimer) clearTimeout(room.evictTimer);
+  room.evictTimer = setTimeout(() => {
+    room.evictTimer = null;
+    if (room.conns.size === 0) evictRoom(room);
+  }, roomEvictionDelayMs);
 }
 
 function broadcastRoom(room, message, origin) {
@@ -1038,6 +1203,12 @@ async function handleUpgrade(request, socket, head) {
     ) {
       throw new HttpError(404, "WebSocket route not found.");
     }
+    if (!checkRateLimit(clientIp(request))) {
+      throw new HttpError(429, "Too many requests. Please slow down and try again.");
+    }
+    if (totalConnections >= maxConnectionsTotal) {
+      throw new HttpError(503, "The collaboration server is at capacity.");
+    }
     const projectId = parts[2];
     const relativePath = normalizeRelativePath(url.searchParams.get("path"));
     const auth = await authorizeProject(request, url, projectId, "viewer");
@@ -1055,8 +1226,17 @@ async function handleUpgrade(request, socket, head) {
     );
 
     const room = await getRoom(projectId, relativePath);
+    if (room.conns.size >= maxConnectionsPerRoom) {
+      throw new HttpError(503, "This document has too many active collaborators.");
+    }
+    if (room.evictTimer) {
+      clearTimeout(room.evictTimer);
+      room.evictTimer = null;
+    }
     const conn = new CollaborationConnection(socket, room, auth.identity, auth.role);
     room.conns.add(conn);
+    totalConnections += 1;
+    room.lastActivityAt = now();
     updatePresence(auth.meta, auth.identity, relativePath);
     await writeProjectMeta(auth.meta);
     broadcastProjectPresence(projectId, activePresence(auth.meta));
@@ -1080,6 +1260,7 @@ class CollaborationConnection {
     this.buffer = Buffer.alloc(0);
     this.controlledAwarenessIds = new Set();
     this.closed = false;
+    this.lastActivityAt = now();
 
     socket.on("data", (chunk) => this.receive(chunk));
     socket.on("close", () => void this.destroy());
@@ -1088,6 +1269,8 @@ class CollaborationConnection {
 
   receive(chunk) {
     if (this.closed) return;
+    this.lastActivityAt = now();
+    this.room.lastActivityAt = this.lastActivityAt;
     this.buffer = Buffer.concat([this.buffer, chunk]);
     while (this.buffer.length) {
       let frame;
@@ -1143,6 +1326,12 @@ class CollaborationConnection {
       try {
         syncProtocol.readSyncMessage(decoder, encoder, this.room.doc, this);
       } catch {
+        return;
+      }
+      // Enforce the shared document-size cap for live edits so a WebSocket
+      // session cannot grow a file past the HTTP write limit.
+      if (this.room.text.length > maxCollabDocChars) {
+        this.close(1009, "Document is too large for collaboration.");
         return;
       }
       if (encoding.length(encoder) > 1) {
@@ -1206,6 +1395,10 @@ class CollaborationConnection {
     if (this.closed) return;
     this.closed = true;
     this.room.conns.delete(this);
+    totalConnections = Math.max(0, totalConnections - 1);
+    if (this.room.conns.size === 0) {
+      scheduleRoomEviction(this.room);
+    }
     if (this.controlledAwarenessIds.size) {
       awarenessProtocol.removeAwarenessStates(
         this.room.awareness,
@@ -1297,7 +1490,31 @@ function encodeWebSocketFrame(opcode, payload) {
   return Buffer.concat([header, payload]);
 }
 
+// Structured, single-line JSON logs so journald / log shippers can parse them.
+// The request path is logged without its query string so session and share
+// tokens (which some clients pass as query params) never land in the logs.
+function logAccess(request, status, startedAt) {
+  if (!accessLogEnabled) return;
+  let pathOnly = request.url || "/";
+  const queryIndex = pathOnly.indexOf("?");
+  if (queryIndex !== -1) pathOnly = pathOnly.slice(0, queryIndex);
+  console.log(
+    JSON.stringify({
+      level: status >= 500 ? "error" : status >= 400 ? "warn" : "info",
+      msg: "request",
+      method: request.method,
+      path: pathOnly,
+      status,
+      ip: clientIp(request),
+      durationMs: Date.now() - startedAt,
+      time: new Date().toISOString(),
+    }),
+  );
+}
+
 const server = http.createServer((request, response) => {
+  const startedAt = Date.now();
+  response.on("finish", () => logAccess(request, response.statusCode, startedAt));
   handleHttp(request, response).catch((error) => {
     const status = error instanceof HttpError ? error.status : 500;
     const message =
@@ -1311,14 +1528,63 @@ server.on("upgrade", (request, socket, head) => {
   void handleUpgrade(request, socket, head);
 });
 
+// Heartbeat: ping live connections and drop ones that have gone idle, so a
+// client cannot hold a socket open indefinitely without sending anything.
+const heartbeatTimer = setInterval(() => {
+  const cutoff = now() - wsIdleTimeoutMs;
+  for (const room of rooms.values()) {
+    for (const conn of Array.from(room.conns)) {
+      if (conn.lastActivityAt < cutoff) {
+        conn.close(1001, "Idle timeout");
+      } else {
+        conn.sendFrame(9);
+      }
+    }
+  }
+}, wsHeartbeatMs);
+heartbeatTimer.unref?.();
+
+// Drop expired rate-limit buckets so the map cannot grow without bound.
+const rateBucketTimer = setInterval(pruneRateBuckets, rateLimitWindowMs);
+rateBucketTimer.unref?.();
+
 await mkdir(dataDir, { recursive: true });
+await ensureProjectCount();
 
 server.listen(port, host, () => {
   console.log(
-    `LatexDo collaborations listening on http://${host}:${port} with data ${dataDir}`,
+    JSON.stringify({
+      level: "info",
+      msg: "listening",
+      host,
+      port,
+      dataDir,
+      projects: knownProjectCount,
+      time: new Date().toISOString(),
+    }),
   );
 });
 
-process.on("SIGTERM", () => {
+function shutdown(signal) {
+  console.log(
+    JSON.stringify({ level: "info", msg: "shutdown", signal, time: new Date().toISOString() }),
+  );
+  clearInterval(heartbeatTimer);
+  clearInterval(rateBucketTimer);
+  for (const room of rooms.values()) {
+    if (room.persistTimer) {
+      clearTimeout(room.persistTimer);
+      if (room.text.length <= maxCollabDocChars) {
+        void atomicWriteText(
+          filePathFor(room.projectId, room.relativePath),
+          room.text.toString(),
+        ).catch(() => {});
+      }
+    }
+  }
   server.close(() => process.exit(0));
-});
+  setTimeout(() => process.exit(0), 5_000).unref?.();
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

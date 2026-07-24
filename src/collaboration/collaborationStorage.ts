@@ -1,6 +1,10 @@
 import type { CollaborationIdentity } from "./collaborationTypes";
 
-const defaultApiOrigin = "https://collaborations.latexdo.org";
+const requestedEdition = import.meta.env.VITE_LATEXDO_EDITION;
+const proEdition = requestedEdition === "pro" || requestedEdition === "business";
+const defaultApiOrigin = proEdition
+  ? "https://teams.latexdo.org"
+  : "https://collaborations.latexdo.org";
 const cloudSessionKey = "latexdo.cloud.session";
 const cloudClientKey = "latexdo.cloud.client";
 const cloudClientNameKey = "latexdo.cloud.clientName";

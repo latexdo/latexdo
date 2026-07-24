@@ -42,7 +42,7 @@ type BrowserTreeNode = {
 
 const browserStoreKey = "latexdo.browser.workspace.v1";
 const extensionStoreCatalogUrl =
-  import.meta.env.VITE_LATEXDO_EXTENSION_CATALOG_URL?.trim() ||
+  import.meta.env?.VITE_LATEXDO_EXTENSION_CATALOG_URL?.trim() ||
   "https://store.latexdo.org/extensions/catalog.json";
 const starterDocument = String.raw`\documentclass[11pt]{article}
 

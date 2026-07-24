@@ -2,6 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { collaborationHeaders, collaborationWebSocketUrl } from "./collaborationApi";
 import type { CollaborationRoomOptions } from "./collaborationTypes";
 
+const proEdition =
+  import.meta.env.VITE_LATEXDO_EDITION === "pro" ||
+  import.meta.env.VITE_LATEXDO_EDITION === "business";
+const defaultCollaborationApiBaseUrl = proEdition
+  ? "https://teams.latexdo.org"
+  : "https://collaborations.latexdo.org";
+const defaultCollaborationApiHost = new URL(defaultCollaborationApiBaseUrl).host;
+
 function roomOptions(
   overrides: Partial<CollaborationRoomOptions> = {},
 ): CollaborationRoomOptions {
@@ -81,7 +89,7 @@ describe("collaboration authentication and WebSocket URLs", () => {
       const url = new URL(await collaborationWebSocketUrl(roomOptions({ apiBaseUrl })));
 
       expect(url.protocol).toBe("wss:");
-      expect(url.host).toBe("collaborations.latexdo.org");
+      expect(url.host).toBe(defaultCollaborationApiHost);
     }
   });
 });
