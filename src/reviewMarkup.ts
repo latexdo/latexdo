@@ -1,5 +1,14 @@
 const latexDoReviewCommandPattern =
-  /\\(?:reviewercomment|latexdoreviewercomment|rebuttal)\s*\{/;
+  /\\(?:reviewercomment|latexdoreviewercomment|rebuttal|latexdoinsert|latexdodelete|latexdochange)\s*\{/;
+
+const trackedChangeCommandPattern =
+  /\\(?:latexdoinsert|latexdodelete|latexdochange)\s*\{/;
+
+export interface TrackedChangeSummary {
+  insertions: number;
+  deletions: number;
+  replacements: number;
+}
 
 export function escapeLatexText(value: string): string {
   return value.replace(/[\\&%#$_{}~^]/g, (character) => {
@@ -105,6 +114,134 @@ function splitTrailingPunctuation(
 
 export function usesLatexDoReviewMacros(content: string): boolean {
   return latexDoReviewCommandPattern.test(content);
+}
+
+export function usesLatexDoTrackedChanges(content: string): boolean {
+  return trackedChangeCommandPattern.test(content);
+}
+
+function replaceTrackedChanges(
+  content: string,
+  mode: "accept" | "reject",
+): string {
+  let output = "";
+  let cursor = 0;
+
+  while (cursor < content.length) {
+    const commandMatch = /\\(?:latexdoinsert|latexdodelete|latexdochange)\s*\{/.exec(
+      content.slice(cursor),
+    );
+    if (!commandMatch || commandMatch.index === undefined) {
+      output += content.slice(cursor);
+      break;
+    }
+
+    const commandIndex = cursor + commandMatch.index;
+    const command = commandMatch[0].startsWith("\\latexdoinsert")
+      ? "\\latexdoinsert"
+      : commandMatch[0].startsWith("\\latexdodelete")
+        ? "\\latexdodelete"
+        : "\\latexdochange";
+    const firstArgumentStart = skipWhitespace(content, commandIndex + command.length);
+    const firstArgument = readBraceArgument(content, firstArgumentStart);
+
+    if (!firstArgument) {
+      output += content.slice(cursor, commandIndex + command.length);
+      cursor = commandIndex + command.length;
+      continue;
+    }
+
+    output += content.slice(cursor, commandIndex);
+
+    if (command === "\\latexdoinsert") {
+      output += mode === "accept" ? firstArgument.value : "";
+      cursor = firstArgument.endIndex;
+      continue;
+    }
+
+    if (command === "\\latexdodelete") {
+      output += mode === "accept" ? "" : firstArgument.value;
+      cursor = firstArgument.endIndex;
+      continue;
+    }
+
+    const secondArgumentStart = skipWhitespace(content, firstArgument.endIndex);
+    const secondArgument = readBraceArgument(content, secondArgumentStart);
+    if (!secondArgument) {
+      output += content.slice(commandIndex, firstArgument.endIndex);
+      cursor = firstArgument.endIndex;
+      continue;
+    }
+
+    output += mode === "accept" ? secondArgument.value : firstArgument.value;
+    cursor = secondArgument.endIndex;
+  }
+
+  return output;
+}
+
+export function acceptLatexDoTrackedChanges(content: string): string {
+  return replaceTrackedChanges(content, "accept");
+}
+
+export function rejectLatexDoTrackedChanges(content: string): string {
+  return replaceTrackedChanges(content, "reject");
+}
+
+export function summarizeLatexDoTrackedChanges(
+  content: string,
+): TrackedChangeSummary {
+  const summary: TrackedChangeSummary = {
+    insertions: 0,
+    deletions: 0,
+    replacements: 0,
+  };
+  let cursor = 0;
+
+  while (cursor < content.length) {
+    const commandMatch = /\\(?:latexdoinsert|latexdodelete|latexdochange)\s*\{/.exec(
+      content.slice(cursor),
+    );
+    if (!commandMatch || commandMatch.index === undefined) {
+      break;
+    }
+
+    const commandIndex = cursor + commandMatch.index;
+    const command = commandMatch[0].startsWith("\\latexdoinsert")
+      ? "\\latexdoinsert"
+      : commandMatch[0].startsWith("\\latexdodelete")
+        ? "\\latexdodelete"
+        : "\\latexdochange";
+    const firstArgumentStart = skipWhitespace(content, commandIndex + command.length);
+    const firstArgument = readBraceArgument(content, firstArgumentStart);
+    if (!firstArgument) {
+      cursor = commandIndex + command.length;
+      continue;
+    }
+
+    if (command === "\\latexdoinsert") {
+      summary.insertions += 1;
+      cursor = firstArgument.endIndex;
+      continue;
+    }
+
+    if (command === "\\latexdodelete") {
+      summary.deletions += 1;
+      cursor = firstArgument.endIndex;
+      continue;
+    }
+
+    const secondArgumentStart = skipWhitespace(content, firstArgument.endIndex);
+    const secondArgument = readBraceArgument(content, secondArgumentStart);
+    if (!secondArgument) {
+      cursor = firstArgument.endIndex;
+      continue;
+    }
+    summary.replacements += 1;
+    cursor = secondArgument.endIndex;
+  }
+
+  return summary;
 }
 
 export function normalizeLatexDoReviewMarkup(content: string): string {

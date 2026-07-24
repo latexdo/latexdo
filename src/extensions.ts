@@ -105,10 +105,10 @@ export interface ExtensionCatalogLoadResult {
 type ExtensionCatalogJsonLoader = (catalogUrl: string) => Promise<unknown>;
 
 export const extensionStoreSiteUrl =
-  import.meta.env.VITE_LATEXDO_EXTENSION_STORE_URL?.trim() ||
+  import.meta.env?.VITE_LATEXDO_EXTENSION_STORE_URL?.trim() ||
   "https://store.latexdo.org/";
 export const extensionStoreCatalogUrl =
-  import.meta.env.VITE_LATEXDO_EXTENSION_CATALOG_URL?.trim() ||
+  import.meta.env?.VITE_LATEXDO_EXTENSION_CATALOG_URL?.trim() ||
   "https://store.latexdo.org/extensions/catalog.json";
 
 export const extensionCategories: ExtensionCategory[] = [

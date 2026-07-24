@@ -32,7 +32,7 @@ const cloudSpellCheckerSettingsKey = "latexdo.cloud.spellchecker";
 const cloudProofreadingSettingsKey = "latexdo.cloud.proofreading";
 const cloudActiveProjectKey = "latexdo.cloud.activeProject";
 const extensionStoreCatalogUrl =
-  import.meta.env.VITE_LATEXDO_EXTENSION_CATALOG_URL?.trim() ||
+  import.meta.env?.VITE_LATEXDO_EXTENSION_CATALOG_URL?.trim() ||
   "https://store.latexdo.org/extensions/catalog.json";
 const defaultRequestTimeoutMs = 15_000;
 const binaryRequestTimeoutMs = 30_000;

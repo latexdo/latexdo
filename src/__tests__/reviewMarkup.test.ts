@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  acceptLatexDoTrackedChanges,
   escapeLatexText,
   normalizeLatexDoReviewMarkup,
+  rejectLatexDoTrackedChanges,
+  summarizeLatexDoTrackedChanges,
   usesLatexDoReviewMacros,
+  usesLatexDoTrackedChanges,
 } from "../reviewMarkup";
 
 describe("review markup", () => {
@@ -19,7 +23,48 @@ describe("review markup", () => {
   it("detects old and new LatexDo review commands", () => {
     expect(usesLatexDoReviewMacros("\\reviewercomment{text}{comment}")).toBe(true);
     expect(usesLatexDoReviewMacros("\\latexdoreviewercomment{comment}")).toBe(true);
+    expect(usesLatexDoReviewMacros("\\latexdoinsert{new text}")).toBe(true);
     expect(usesLatexDoReviewMacros("plain text")).toBe(false);
+  });
+
+  it("detects and summarizes LatexDo tracked changes", () => {
+    const source =
+      "A \\latexdoinsert{new} B \\latexdodelete{old} C \\latexdochange{weak}{strong}.";
+
+    expect(usesLatexDoTrackedChanges(source)).toBe(true);
+    expect(usesLatexDoTrackedChanges("plain text")).toBe(false);
+    expect(summarizeLatexDoTrackedChanges(source)).toEqual({
+      insertions: 1,
+      deletions: 1,
+      replacements: 1,
+    });
+  });
+
+  it("accepts tracked changes while preserving nested LaTeX arguments", () => {
+    const source =
+      "This \\latexdoinsert{new \\textbf{claim}} and " +
+      "\\latexdodelete{old claim} plus \\latexdochange{less}{more \\emph{precise}}.";
+
+    expect(acceptLatexDoTrackedChanges(source)).toBe(
+      "This new \\textbf{claim} and  plus more \\emph{precise}.",
+    );
+  });
+
+  it("rejects tracked changes back to the previous text", () => {
+    const source =
+      "This \\latexdoinsert{new claim} and " +
+      "\\latexdodelete{old claim} plus \\latexdochange{less}{more}.";
+
+    expect(rejectLatexDoTrackedChanges(source)).toBe(
+      "This  and old claim plus less.",
+    );
+  });
+
+  it("keeps malformed tracked-change commands untouched", () => {
+    const source = "Broken \\latexdochange{old} command";
+
+    expect(acceptLatexDoTrackedChanges(source)).toBe(source);
+    expect(rejectLatexDoTrackedChanges(source)).toBe(source);
   });
 
   it("escapes every LaTeX special character in plain review text", () => {

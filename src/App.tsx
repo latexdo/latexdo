@@ -8,6 +8,7 @@ import {
   BookOpenText,
   Box,
   Bold,
+  Building2,
   Check,
   ChevronDown,
   CircleAlert,
@@ -76,7 +77,7 @@ import {
 } from "react";
 import appIconUrl from "../build/icon.svg";
 import FileTree from "./FileTree";
-import { productConfig } from "./productConfig";
+import { productConfig, productIsPro } from "./productConfig";
 import type { PdfClickLocation } from "./PdfPreview";
 import TikzCanvas from "./TikzCanvas";
 import TableCanvas from "./TableCanvas";
@@ -93,6 +94,7 @@ import {
 } from "./components/CitationManager";
 import { ProjectSearchPanel } from "./components/ProjectSearchPanel";
 import { AiSidebar } from "./components/AiSidebar";
+import { EnterpriseDashboard } from "./components/EnterpriseDashboard";
 import { SetupWizard } from "./components/SetupWizard";
 import { CloudProviderForm } from "./components/CloudProviderForm";
 import { ProfileDialog } from "./components/ProfileDialog";
@@ -103,6 +105,12 @@ import {
   type AiAccessConfig,
   type AiConfig,
 } from "./features/ai/aiConfig";
+import {
+  buildEnterpriseComplianceReport,
+  loadEnterpriseState,
+  saveEnterpriseState,
+  type EnterpriseState,
+} from "./features/enterprise/enterprise";
 import type { AgentContext, EditProposal } from "./features/ai/aiTools";
 import { generateRebuttalLetter } from "./rebuttalGenerator";
 import {
@@ -353,7 +361,13 @@ type PanelKind =
   | "checkAnalysis"
   | "structureReport"
   | "pdfReport";
-type SidebarView = "explorer" | "sourceControl" | "history" | "search" | "ai";
+type SidebarView =
+  | "explorer"
+  | "sourceControl"
+  | "history"
+  | "search"
+  | "ai"
+  | "enterprise";
 const collaborationProjectReconciliationMs = 5 * 60_000;
 const startupUpdateCheckDelayMs = import.meta.env.MODE === "test" ? 0 : 2_000;
 type LatexToolbarCommand =
@@ -701,12 +715,19 @@ export default function App() {
   ]);
   const [activeSidebar, setActiveSidebar] = useState<SidebarView>("explorer");
   const [aiConfig, setAiConfig] = useState<AiConfig>(loadAiConfig);
+  const [enterpriseState, setEnterpriseState] =
+    useState<EnterpriseState>(loadEnterpriseState);
   const [aiSidebarExpanded, setAiSidebarExpanded] = useState(false);
   const [aiWizardOpen, setAiWizardOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   useEffect(() => {
     saveAiConfig(aiConfig);
   }, [aiConfig]);
+  useEffect(() => {
+    if (productIsPro) {
+      saveEnterpriseState(enterpriseState);
+    }
+  }, [enterpriseState]);
   const setAiAccess = useCallback(
     (key: keyof AiAccessConfig, value: boolean) => {
       setAiConfig((current) => ({
@@ -999,6 +1020,25 @@ export default function App() {
   const projectName = hasVisibleProject
     ? fileName(projectPath) || "Project"
     : "No Folder";
+  const exportEnterpriseReport = useCallback(() => {
+    const report = buildEnterpriseComplianceReport(enterpriseState, {
+      projectName,
+      activeDocumentPath: activeTextDocument?.relativePath,
+    });
+    const blob = new Blob([report.markdown], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const downloadName = productConfig.shortName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+
+    link.href = url;
+    link.download = `${downloadName || "latexdo-pro"}-enterprise-compliance.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setStatusMessage("Enterprise compliance report exported");
+  }, [activeTextDocument?.relativePath, enterpriseState, projectName]);
   const activeDocumentHistoryCount = activeTextDocument
     ? documentHistory.filter(
         (snapshot) => snapshot.filePath === activeTextDocument.relativePath,
@@ -8370,6 +8410,17 @@ ${macroEnd}
             >
               <History size={21} />
             </button>
+            {productIsPro ? (
+              <button
+                className={`activity-button ${
+                  sidebarVisible && activeSidebar === "enterprise" ? "active" : ""
+                }`}
+                onClick={() => openSidebar("enterprise")}
+                title="Enterprise"
+              >
+                <Building2 size={21} />
+              </button>
+            ) : null}
             <button
               className={`activity-button ${knowledgeGraphOpen ? "active" : ""}`}
               onClick={() => setKnowledgeGraphOpen((open) => !open)}
@@ -8495,10 +8546,20 @@ ${macroEnd}
                       ? "SOURCE CONTROL"
                       : activeSidebar === "history"
                         ? "HISTORY"
-                        : "SEARCH"}
+                        : activeSidebar === "enterprise"
+                          ? "ENTERPRISE"
+                          : "SEARCH"}
                 </span>
                 <div>
-                  {activeSidebar === "explorer" ? (
+                  {activeSidebar === "enterprise" ? (
+                    <button
+                      className="small-icon"
+                      onClick={exportEnterpriseReport}
+                      title="Export compliance report"
+                    >
+                      <Download size={14} />
+                    </button>
+                  ) : activeSidebar === "explorer" ? (
                     <>
                       <button
                         className="small-icon"
@@ -8579,7 +8640,18 @@ ${macroEnd}
                   ) : null}
                 </div>
               </div>
-              {activeSidebar === "explorer" ? (
+              {activeSidebar === "enterprise" ? (
+                <div className="sidebar-panel enterprise-panel">
+                  <EnterpriseDashboard
+                    state={enterpriseState}
+                    projectName={projectName}
+                    activeDocumentPath={activeTextDocument?.relativePath}
+                    onChange={setEnterpriseState}
+                    onExportReport={exportEnterpriseReport}
+                    onStatusMessage={setStatusMessage}
+                  />
+                </div>
+              ) : activeSidebar === "explorer" ? (
                 <>
                   <button className="project-heading" onClick={openProject}>
                     <ChevronDown size={13} />

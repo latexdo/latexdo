@@ -6,7 +6,11 @@ import {
 } from "./collaborationStorage";
 import type { CollaborationRoomOptions } from "./collaborationTypes";
 
-const defaultCollaborationApiBaseUrl = "https://collaborations.latexdo.org";
+const requestedEdition = import.meta.env.VITE_LATEXDO_EDITION;
+const proEdition = requestedEdition === "pro" || requestedEdition === "business";
+const defaultCollaborationApiBaseUrl = proEdition
+  ? "https://teams.latexdo.org"
+  : "https://collaborations.latexdo.org";
 
 export class CollaborationApiError extends Error {
   constructor(
