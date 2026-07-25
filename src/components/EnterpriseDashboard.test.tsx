@@ -62,8 +62,9 @@ describe("EnterpriseDashboard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Google Workspace/i }));
     expect(
-      getState().identity.providers.find((provider) => provider.id === "google-workspace")
-        ?.status,
+      getState().identity.providers.find(
+        (provider) => provider.id === "google-workspace",
+      )?.status,
     ).toBe("enforced");
     expect(onStatusMessage).toHaveBeenLastCalledWith("Google Workspace status updated");
 
@@ -113,7 +114,9 @@ describe("EnterpriseDashboard", () => {
     expect(getState().collaboration.tasks[0].title).toBe("Check appendix");
     expect(screen.getByText("Check appendix")).toBeVisible();
 
-    const existingTask = screen.getByText("Verify high-risk citations").closest("article");
+    const existingTask = screen
+      .getByText("Verify high-risk citations")
+      .closest("article");
     expect(existingTask).not.toBeNull();
     fireEvent.change(within(existingTask as HTMLElement).getByRole("combobox"), {
       target: { value: "done" },
