@@ -306,6 +306,18 @@ jobs:
           --publish never
           --config.directories.output=release/linux-appimage
 
+      - name: Test Linux AppImage
+        shell: bash
+        run: |
+          package_path="$(find release/linux-appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          if [ -z "$package_path" ]; then
+            echo "No Linux AppImage was produced."
+            exit 1
+          fi
+
+          chmod +x "$package_path"
+          xvfb-run -a "$package_path" --smoke-test
+
       - name: Prepare Linux artifact
         shell: bash
         run: |
