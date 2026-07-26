@@ -7,6 +7,7 @@ const [
   installer,
   websiteInstaller,
   publicKey,
+  appPackage,
   cliPackage,
   electronMain,
   ciWorkflow,
@@ -25,6 +26,7 @@ const [
   readFile("cli/install.sh", "utf8"),
   readFile("website/install.sh", "utf8"),
   readFile("build/update-public-key.pem", "utf8"),
+  readFile("package.json", "utf8").then(JSON.parse),
   readFile("cli/package.json", "utf8").then(JSON.parse),
   readFile("electron/main.ts", "utf8"),
   readFile(".github/workflows/ci.yml", "utf8"),
@@ -47,6 +49,20 @@ if (!cli.includes(publicKey.trim())) {
 }
 if (cliPackage.engines?.node !== ">=22.17.0") {
   throw new Error("CLI Node.js minimum must remain pinned to >=22.17.0.");
+}
+if (appPackage.build?.toolsets?.appimage !== "1.0.3") {
+  throw new Error("Linux AppImage builds must use the static appimage toolset.");
+}
+for (const nativeModuleUnpackPattern of [
+  "**/node_modules/node-pty/**",
+  "**/node_modules/node-llama-cpp/**",
+  "**/node_modules/@node-llama-cpp/**",
+]) {
+  if (!appPackage.build?.asarUnpack?.includes(nativeModuleUnpackPattern)) {
+    throw new Error(
+      `Native module unpack rule is missing: ${nativeModuleUnpackPattern}`,
+    );
+  }
 }
 for (const requiredProtection of [
   "feed freshness window is invalid or expired",
@@ -94,6 +110,15 @@ for (const forbiddenCiDispatchControl of [
     );
   }
 }
+for (const requiredCiPackageControl of [
+  "Test Linux AppImage",
+  'chmod +x "$package_path"',
+  'xvfb-run -a "$package_path" --smoke-test',
+]) {
+  if (!ciWorkflow.includes(requiredCiPackageControl)) {
+    throw new Error(`CI package control is missing: ${requiredCiPackageControl}`);
+  }
+}
 for (const requiredReleaseControl of [
   "workflow_run:",
   'workflows: ["latexdo-ci"]',
@@ -109,6 +134,9 @@ for (const requiredReleaseControl of [
   "steps.windows_signing.outputs.signed == 'true'",
   "bash scripts/verify-macos-release.sh",
   "bash scripts/verify-macos-adhoc-release.sh",
+  "Test Linux AppImage",
+  'chmod +x "$pkg"',
+  'xvfb-run -a "$pkg" --smoke-test',
   "Signed update feed disabled; LATEXDO_UPDATE_SIGNING_KEY is not configured.",
   "LATEXDO_UPDATE_FEED_ENABLED: ${{ steps.publication_credentials.outputs.update_feed_enabled }}",
   "rm -f public-downloads/downloads/index.html",

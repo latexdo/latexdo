@@ -425,6 +425,14 @@ jobs:
           --publish never
           --config.directories.output=release/linux-appimage
 
+      - name: Test Linux AppImage
+        shell: bash
+        run: |
+          pkg="$(find release/linux-appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          [ -n "$pkg" ] || { echo "No AppImage produced"; exit 1; }
+          chmod +x "$pkg"
+          xvfb-run -a "$pkg" --smoke-test
+
       - name: Prepare artifact
         shell: bash
         run: |
