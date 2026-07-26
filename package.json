@@ -71,6 +71,18 @@
     "vitest": "^4.1.9",
     "wait-on": "^8.0.1"
   },
+  "overrides": {
+    "@electron/asar": "4.2.1",
+    "@electron/universal": "3.0.6",
+    "brace-expansion": "5.0.8",
+    "dir-compare": "5.0.0",
+    "electron-winstaller": "5.4.4",
+    "filelist": "2.0.2",
+    "glob": "13.0.2",
+    "minimatch": "10.2.5",
+    "postcss": "8.5.23",
+    "tar": "7.5.22"
+  },
   "build": {
     "appId": "com.latexdo.editor",
     "productName": "LatexDo",
