@@ -88,7 +88,9 @@ export interface OrcidFetchResult {
 }
 
 /** Fetch a researcher's public name + works. Throws on network/HTTP failure. */
-export async function fetchOrcidProfile(orcidInput: string): Promise<OrcidFetchResult> {
+export async function fetchOrcidProfileDirect(
+  orcidInput: string,
+): Promise<OrcidFetchResult> {
   const id = normalizeOrcidInput(orcidInput);
   if (!id) {
     throw new Error("That doesn't look like a valid ORCID iD (0000-0000-0000-0000).");
@@ -111,4 +113,27 @@ export async function fetchOrcidProfile(orcidInput: string): Promise<OrcidFetchR
   const name = detailsRes.ok ? parseOrcidName(await detailsRes.json()) : "";
   const papers = parseOrcidWorks(await worksRes.json());
   return { name, papers };
+}
+
+function desktopOrcidProfileFetcher():
+  | ((orcidInput: string) => Promise<OrcidFetchResult>)
+  | null {
+  if (typeof window === "undefined") return null;
+  const api = (
+    window as {
+      latexdo?: {
+        fetchOrcidProfile?: (orcidInput: string) => Promise<OrcidFetchResult>;
+      };
+    }
+  ).latexdo;
+  return api?.fetchOrcidProfile ?? null;
+}
+
+/** Fetch a researcher's public name + works. Throws on network/HTTP failure. */
+export async function fetchOrcidProfile(orcidInput: string): Promise<OrcidFetchResult> {
+  const fetchFromDesktop = desktopOrcidProfileFetcher();
+  if (fetchFromDesktop) {
+    return fetchFromDesktop(orcidInput);
+  }
+  return fetchOrcidProfileDirect(orcidInput);
 }

@@ -28,9 +28,34 @@ import { downloadModel, subscribeDownload } from "../features/ai/aiClient";
 import { CloudProviderForm } from "./CloudProviderForm";
 
 function openExternalUrl(url: string): void {
-  const api = (window as { latexdo?: { openExternal?: (u: string) => void } }).latexdo;
-  if (api?.openExternal) api.openExternal(url);
-  else window.open(url, "_blank", "noopener");
+  const api = (
+    window as {
+      latexdo?: {
+        openExternalUrl?: (u: string) => unknown;
+        openExternal?: (u: string) => unknown;
+      };
+    }
+  ).latexdo;
+  const openInBrowser = () => window.open(url, "_blank", "noopener,noreferrer");
+  void (async () => {
+    if (api?.openExternalUrl) {
+      try {
+        await api.openExternalUrl(url);
+        return;
+      } catch {
+        // Fall back below so provider links never fail silently.
+      }
+    }
+    if (api?.openExternal) {
+      try {
+        await api.openExternal(url);
+        return;
+      } catch {
+        // Fall back to the browser runtime.
+      }
+    }
+    openInBrowser();
+  })();
 }
 
 interface SetupWizardProps {

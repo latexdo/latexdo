@@ -144,7 +144,7 @@ describe("ProfileDialog", () => {
         name: /Don't have one\? Register at orcid\.org/i,
       }),
     );
-    expect(onOpenExternal).toHaveBeenCalledWith("https://orcid.org/");
+    expect(onOpenExternal).toHaveBeenCalledWith("https://orcid.org/register");
   });
 
   it("renders linked paper summaries and refreshes ORCID data", async () => {

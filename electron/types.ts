@@ -7,6 +7,18 @@ export interface ProjectEntry {
   limited?: boolean;
 }
 
+export interface OrcidPaperRef {
+  title: string;
+  year?: string;
+  doi?: string;
+  journal?: string;
+}
+
+export interface OrcidProfileResult {
+  name: string;
+  papers: OrcidPaperRef[];
+}
+
 export interface ProjectListOptions {
   ignoredNames?: string[];
   maxDepth?: number;
