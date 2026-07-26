@@ -18,6 +18,7 @@ import {
 import type { AiConfig } from "../features/ai/aiConfig";
 import type { AgentContext } from "../features/ai/aiTools";
 import { findLocalModel } from "../features/ai/aiModels";
+import { findCloudProvider } from "../features/ai/cloudProviders";
 import { useAiAgent } from "../features/ai/useAiAgent";
 import {
   detectTrigger,
@@ -46,6 +47,8 @@ interface AiSidebarProps {
   onToggleExpanded: () => void;
   onOpenSettings: () => void;
   onUpdateConfig: (config: AiConfig) => void;
+  onOpenExternal?: (url: string) => void;
+  storageKey?: string;
 }
 
 const editKindLabel: Record<string, string> = {
@@ -83,6 +86,8 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
   onToggleExpanded,
   onOpenSettings,
   onUpdateConfig,
+  onOpenExternal,
+  storageKey,
 }) => {
   const {
     messages,
@@ -93,12 +98,14 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
     reset,
     pendingApproval,
     resolveApproval,
-  } = useAiAgent(config, ctx);
+  } = useAiAgent(config, ctx, storageKey);
   const [input, setInput] = React.useState("");
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
   const configured = isConfigured(config, isDesktop);
   const autonomous = config.autoApproveEdits;
+  const cloudProvider =
+    config.provider === "cloud" ? findCloudProvider(config.cloud.providerId) : null;
 
   // `@` file mentions and `\` quick commands: an autocomplete popup driven by
   // the caret position. Project files are (re)fetched when a file popup opens.
@@ -259,6 +266,15 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
           <button className="ai-wizard-primary" onClick={onOpenSettings}>
             Open AI settings
           </button>
+          {config.provider === "cloud" && cloudProvider?.apiKeyUrl ? (
+            <button
+              type="button"
+              className="cloud-form-link"
+              onClick={() => onOpenExternal?.(cloudProvider.apiKeyUrl)}
+            >
+              Get API key
+            </button>
+          ) : null}
         </div>
       ) : (
         <>

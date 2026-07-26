@@ -20,6 +20,7 @@ import type {
   GitStatusSummary,
   ImportedProjectEntry,
   OpenProject,
+  OrcidProfileResult,
   PermissionUpdate,
   ProofreadingResult,
   ProofreadingRequestOptions,
@@ -997,6 +998,8 @@ const api = {
     ipcRenderer.invoke("app:open-releases", releaseUrl),
   openExternalUrl: (url: string): Promise<void> =>
     ipcRenderer.invoke("app:open-external", url),
+  fetchOrcidProfile: (orcidInput: string): Promise<OrcidProfileResult> =>
+    ipcRenderer.invoke("orcid:fetch-profile", orcidInput),
   fetchExtensionCatalog: (): Promise<unknown> =>
     ipcRenderer.invoke("extensions:get-catalog"),
   getSpellCheckerSettings: (): Promise<SpellCheckerSettings> =>
@@ -1252,6 +1255,8 @@ const aiApi = {
 
   deleteModel: (fileName: string): Promise<void> =>
     ipcRenderer.invoke("ai:delete-model", fileName),
+
+  importModel: (): Promise<unknown | null> => ipcRenderer.invoke("ai:import-model"),
 
   detectOllama: (baseUrl: string): Promise<{ available: boolean; models: string[] }> =>
     ipcRenderer.invoke("ai:detect-ollama", baseUrl),
