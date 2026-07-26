@@ -120,9 +120,9 @@ function normalizeChatMessage(raw: unknown): ChatMessage | null {
 function loadPersistedState(storageKey?: string): PersistedAiAgentState | null {
   if (!storageKey) return null;
   try {
-    const raw = JSON.parse(window.localStorage.getItem(storageKey) ?? "null") as
-      | Partial<PersistedAiAgentState>
-      | null;
+    const raw = JSON.parse(
+      window.localStorage.getItem(storageKey) ?? "null",
+    ) as Partial<PersistedAiAgentState> | null;
     if (!raw || raw.version !== 1) return null;
     const messages = Array.isArray(raw.messages)
       ? raw.messages
