@@ -43,24 +43,8 @@ const personalProductConfig: ProductConfig = {
   newProjectTitle: "New LaTeX Project",
   newProjectDescription: "Create a project with a ready-to-build main.tex",
   templateGalleryTitle: "Template gallery",
-  commandCenterTitle: "Writing system",
-  commandCenterItems: [
-    {
-      label: "Local build",
-      value: "latexmk",
-      detail: "Compile with your installed TeX distribution.",
-    },
-    {
-      label: "Source + PDF",
-      value: "Synced",
-      detail: "Keep editor diagnostics and preview side by side.",
-    },
-    {
-      label: "Review tools",
-      value: "Ready",
-      detail: "Manage citations, comments, responses, and exports.",
-    },
-  ],
+  commandCenterTitle: "",
+  commandCenterItems: [],
   compileTip: "Compile anytime with",
 };
 

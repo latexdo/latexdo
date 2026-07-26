@@ -12,6 +12,7 @@ import type {
 } from "./types";
 import { appVersion } from "./appVersion";
 import { createCloudLatexDoApi } from "./cloudApi";
+import { fetchOrcidProfileDirect } from "./features/ai/orcid";
 
 type BrowserLatexDoApi = LatexDoApi & {
   runtime: "browser";
@@ -716,6 +717,8 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
     async openExternalUrl(url) {
       window.open(url, "_blank", "noopener,noreferrer");
     },
+
+    fetchOrcidProfile: fetchOrcidProfileDirect,
 
     async fetchExtensionCatalog() {
       const response = await fetch(extensionStoreCatalogUrl, {

@@ -23,6 +23,7 @@ import {
   rememberShareToken,
   shareTokenForProject,
 } from "./collaboration/collaborationStorage";
+import { fetchOrcidProfileDirect } from "./features/ai/orcid";
 
 type CloudLatexDoApi = LatexDoApi & {
   runtime: "cloud";
@@ -952,6 +953,8 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
     async openExternalUrl(url) {
       window.open(url, "_blank", "noopener,noreferrer");
     },
+
+    fetchOrcidProfile: fetchOrcidProfileDirect,
 
     async fetchExtensionCatalog() {
       const response = await fetch(extensionStoreCatalogUrl, {

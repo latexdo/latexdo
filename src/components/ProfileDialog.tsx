@@ -84,17 +84,12 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         <div className="profile-header">
           <div className="profile-title">
             <UserCircle2 size={18} />
-            <span>Your researcher identity</span>
+            <span>Identity</span>
           </div>
           <button className="small-icon" onClick={onClose} title="Close">
             <X size={16} />
           </button>
         </div>
-
-        <p className="settings-hint">
-          The AI uses this to understand who it's helping — your field, prior work, and
-          terminology. Stored locally; you control it.
-        </p>
 
         <div className="profile-mode-tabs">
           <button
@@ -128,10 +123,6 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
                 </button>
               </div>
             </div>
-            <p className="settings-hint">
-              A private, hard-to-guess identity (128 bits of randomness) with a
-              memorable codename. Regenerate any time — the old one stops working.
-            </p>
           </div>
         ) : (
           <div className="profile-section">
@@ -166,8 +157,9 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               </div>
             )}
             <button
+              type="button"
               className="cloud-form-link"
-              onClick={() => onOpenExternal?.("https://orcid.org/")}
+              onClick={() => onOpenExternal?.("https://orcid.org/register")}
             >
               <ExternalLink size={12} /> Don't have one? Register at orcid.org
             </button>
