@@ -78,6 +78,8 @@ import {
 } from "./git.js";
 import { registerTerminalIpc } from "./terminal.js";
 import { registerAiIpc } from "./ai/aiIpc.js";
+import { modelsDir } from "./ai/models.js";
+import { fetchOrcidProfile } from "./orcid.js";
 import { listProject } from "./projectTree.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -116,10 +118,19 @@ const extensionStoreCatalogUrl =
 const privacyInfoUrl =
   envString("LATEXDO_PRIVACY_URL") ?? "https://latexdo.org/privacy.html";
 const externalUrlHosts = new Set([
+  "aistudio.google.com",
+  "console.anthropic.com",
+  "console.groq.com",
+  "console.mistral.ai",
+  "openrouter.ai",
+  "orcid.org",
+  "platform.deepseek.com",
+  "platform.openai.com",
   "github.com",
   "latexdo.org",
   "store.latexdo.org",
   "www.latexdo.org",
+  "www.orcid.org",
 ]);
 for (const configuredExternalUrl of [
   downloadsPageUrl,
@@ -3720,6 +3731,47 @@ app.whenReady().then(async () => {
   console.log("[latexdo] app:terminal-registered");
   registerAiIpc();
   console.log("[latexdo] app:ai-registered");
+  ipcMain.handle("ai:import-model", async (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const dialogOptions = {
+      title: "Import GGUF model",
+      properties: ["openFile"],
+      filters: [{ name: "GGUF models", extensions: ["gguf"] }],
+    } satisfies Electron.OpenDialogOptions;
+    const result = window
+      ? await dialog.showOpenDialog(window, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
+    if (result.canceled || result.filePaths.length === 0) return null;
+
+    const sourcePath = result.filePaths[0];
+    if (path.extname(sourcePath).toLowerCase() !== ".gguf") {
+      throw new Error("Only GGUF model files can be imported.");
+    }
+
+    await mkdir(modelsDir(), { recursive: true });
+    const parsed = path.parse(path.basename(sourcePath));
+    let fileName = `${parsed.name}${parsed.ext.toLowerCase()}`;
+    let targetPath = path.join(modelsDir(), fileName);
+    for (let index = 2; ; index += 1) {
+      try {
+        await access(targetPath);
+        fileName = `${parsed.name}-${index}${parsed.ext.toLowerCase()}`;
+        targetPath = path.join(modelsDir(), fileName);
+      } catch {
+        break;
+      }
+    }
+
+    await copyFile(sourcePath, targetPath);
+    const info = await stat(targetPath);
+    return {
+      id: fileName,
+      fileName,
+      downloaded: true,
+      path: targetPath,
+      sizeBytes: info.size,
+    };
+  });
   buildApplicationMenu();
   console.log("[latexdo] app:menu-built");
   ipcMain.handle("project:open", async (event, ...rawArgs: unknown[]) => {
@@ -4327,6 +4379,15 @@ app.whenReady().then(async () => {
       throw new Error("Unsupported external URL.");
     }
     await shell.openExternal(url);
+  });
+  ipcMain.handle("orcid:fetch-profile", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "orcid:fetch-profile";
+    const [rawOrcidInput] = expectIpcArgs(channel, rawArgs, 1);
+    const orcidInput = parseString(channel, rawOrcidInput, {
+      maxLength: 128,
+      rejectControlChars: true,
+    });
+    return fetchOrcidProfile(orcidInput);
   });
   ipcMain.handle("extensions:get-catalog", async (_event, ...rawArgs: unknown[]) => {
     const channel = "extensions:get-catalog";

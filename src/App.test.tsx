@@ -9,6 +9,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { fallbackExtensionCatalog, type LatexDoExtensionCatalog } from "./extensions";
+import { aiConfigStorageKey, defaultAiConfig } from "./features/ai/aiConfig";
 import {
   defaultSettings,
   installedExtensionsStorageKey,
@@ -332,6 +333,7 @@ function installLatexDoMock(options?: {
       vi.fn(),
     ),
     openReleasesPage: vi.fn().mockResolvedValue(undefined),
+    openExternalUrl: vi.fn().mockResolvedValue(undefined),
     getSpellCheckerSettings: vi.fn().mockResolvedValue(defaultSpellCheckerSettings),
     fetchExtensionCatalog: vi
       .fn()
@@ -409,6 +411,10 @@ describe("App critical UI controls", () => {
     editorChangeHandlers.clear();
     editorOptionsByPath.clear();
     window.localStorage.clear();
+    Object.defineProperty(window, "aiApi", {
+      configurable: true,
+      value: undefined,
+    });
     Object.defineProperty(window, "requestAnimationFrame", {
       configurable: true,
       value: (callback: FrameRequestCallback) => {
@@ -1254,6 +1260,389 @@ describe("App critical UI controls", () => {
     await waitFor(() => {
       expect(screen.queryByText("Project Bibliography")).not.toBeInTheDocument();
     });
+  });
+
+  it("opens real AI settings from the unconfigured AI sidebar", async () => {
+    installLatexDoMock();
+    window.localStorage.setItem(
+      aiConfigStorageKey,
+      JSON.stringify({
+        ...defaultAiConfig,
+        setupComplete: false,
+        provider: "cloud",
+        cloud: {
+          ...defaultAiConfig.cloud,
+          apiKey: "",
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(screen.getByText("Let's set up your AI assistant")).toBeVisible();
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => {
+      expect(
+        screen.queryByText("Let's set up your AI assistant"),
+      ).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTitle("AI assistant"));
+    fireEvent.click(await screen.findByTitle("AI settings"));
+
+    const dialog = await screen.findByRole("dialog", { name: /settings/i });
+    expect(within(dialog).getByLabelText("Provider")).toHaveValue(
+      `cloud:${defaultAiConfig.cloud.providerId}`,
+    );
+    expect(
+      within(dialog).queryByText("Let's set up your AI assistant"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens API key and ORCID links through the app external URL API", async () => {
+    const api = installLatexDoMock();
+    window.localStorage.setItem(
+      aiConfigStorageKey,
+      JSON.stringify({
+        ...defaultAiConfig,
+        setupComplete: true,
+        provider: "cloud",
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(screen.getByLabelText(/open settings/i));
+    const settingsDialog = await screen.findByRole("dialog", { name: /settings/i });
+    fireEvent.click(
+      within(settingsDialog).getByRole("button", { name: "AI Assistant" }),
+    );
+    const providerSelect = within(settingsDialog).getByLabelText(
+      "Provider",
+    ) as HTMLSelectElement;
+    const providerKeyUrls = [
+      ["cloud:anthropic", "https://console.anthropic.com/settings/keys"],
+      ["cloud:openai", "https://platform.openai.com/api-keys"],
+      ["cloud:gemini", "https://aistudio.google.com/apikey"],
+      ["cloud:groq", "https://console.groq.com/keys"],
+      ["cloud:deepseek", "https://platform.deepseek.com/api_keys"],
+      ["cloud:mistral", "https://console.mistral.ai/api-keys"],
+      ["cloud:openrouter", "https://openrouter.ai/keys"],
+    ] as const;
+    for (const [provider, url] of providerKeyUrls) {
+      fireEvent.change(providerSelect, { target: { value: provider } });
+      fireEvent.click(
+        within(settingsDialog).getByRole("button", { name: /Get API key/i }),
+      );
+      expect(api.openExternalUrl).toHaveBeenLastCalledWith(url);
+    }
+
+    fireEvent.click(within(settingsDialog).getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByTitle("Researcher profile"));
+    const profileDialog = await screen.findByRole("dialog", {
+      name: /Researcher profile/i,
+    });
+    fireEvent.click(within(profileDialog).getByRole("button", { name: /ORCID/i }));
+    fireEvent.click(
+      within(profileDialog).getByRole("button", {
+        name: /Register at orcid\.org/i,
+      }),
+    );
+
+    expect(api.openExternalUrl).toHaveBeenCalledWith("https://orcid.org/register");
+  });
+
+  it("opens provider API key pages from the unconfigured AI sidebar", async () => {
+    const api = installLatexDoMock();
+    window.localStorage.setItem(
+      aiConfigStorageKey,
+      JSON.stringify({
+        ...defaultAiConfig,
+        setupComplete: true,
+        provider: "cloud",
+        cloud: {
+          ...defaultAiConfig.cloud,
+          providerId: "openai",
+          apiKey: "",
+        },
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(screen.getByTitle("AI assistant"));
+    fireEvent.click(await screen.findByRole("button", { name: "Get API key" }));
+
+    expect(api.openExternalUrl).toHaveBeenCalledWith(
+      "https://platform.openai.com/api-keys",
+    );
+  });
+
+  it("fetches Ollama models and starts with no default Ollama model", async () => {
+    installLatexDoMock();
+    const detectOllama = vi.fn().mockResolvedValue({
+      available: true,
+      models: ["llama3.1:8b", "mistral:latest"],
+    });
+    Object.defineProperty(window, "aiApi", {
+      configurable: true,
+      value: { detectOllama },
+    });
+    window.localStorage.setItem(
+      aiConfigStorageKey,
+      JSON.stringify({
+        ...defaultAiConfig,
+        setupComplete: true,
+        provider: "ollama",
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(screen.getByLabelText(/open settings/i));
+    const dialog = await screen.findByRole("dialog", { name: /settings/i });
+    fireEvent.click(within(dialog).getByRole("button", { name: "AI Assistant" }));
+
+    const modelSelect = (await within(dialog).findByLabelText(
+      "Model",
+    )) as HTMLSelectElement;
+    expect(modelSelect).toHaveValue("");
+
+    await within(dialog).findByRole("option", { name: "llama3.1:8b" });
+    expect(detectOllama).toHaveBeenCalledWith("http://127.0.0.1:11434");
+
+    fireEvent.change(modelSelect, { target: { value: "llama3.1:8b" } });
+    expect(modelSelect).toHaveValue("llama3.1:8b");
+
+    await waitFor(() => {
+      expect(
+        JSON.parse(window.localStorage.getItem(aiConfigStorageKey) ?? "{}")
+          .ollamaModel,
+      ).toBe("llama3.1:8b");
+    });
+  });
+
+  it("splits LatexDo AI downloads from Local Model GGUF imports", async () => {
+    installLatexDoMock();
+    const downloadedLatexDoAiModels = [
+      {
+        id: "qwen2.5-coder-3b",
+        fileName: "qwen2.5-coder-3b-instruct-q4_k_m.gguf",
+        downloaded: true,
+        path: "/models/qwen2.5-coder-3b-instruct-q4_k_m.gguf",
+        sizeBytes: 1024,
+      },
+    ];
+    const importedModels = [
+      ...downloadedLatexDoAiModels,
+      {
+        id: "custom.gguf",
+        fileName: "custom.gguf",
+        downloaded: true,
+        path: "/models/custom.gguf",
+        sizeBytes: 1024,
+      },
+    ];
+    const listModels = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(downloadedLatexDoAiModels)
+      .mockResolvedValue(importedModels);
+    const downloadModel = vi.fn().mockResolvedValue({ ok: true });
+    const importModel = vi.fn().mockResolvedValue({
+      id: "custom.gguf",
+      fileName: "custom.gguf",
+      downloaded: true,
+      path: "/models/custom.gguf",
+      sizeBytes: 1024,
+    });
+    Object.defineProperty(window, "aiApi", {
+      configurable: true,
+      value: {
+        listModels,
+        downloadModel,
+        subscribeDownload: vi.fn(() => vi.fn()),
+        importModel,
+      },
+    });
+    window.localStorage.setItem(
+      aiConfigStorageKey,
+      JSON.stringify({
+        ...defaultAiConfig,
+        setupComplete: true,
+        provider: "local",
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(screen.getByLabelText(/open settings/i));
+    const dialog = await screen.findByRole("dialog", { name: /settings/i });
+    fireEvent.click(within(dialog).getByRole("button", { name: "AI Assistant" }));
+
+    const providerSelect = within(dialog).getByLabelText(
+      "Provider",
+    ) as HTMLSelectElement;
+    expect(providerSelect).toHaveValue("latexdo-ai");
+    expect(within(dialog).getByRole("option", { name: "LatexDo AI" })).toBeVisible();
+    expect(within(dialog).getByRole("option", { name: "Local Model" })).toBeVisible();
+    expect(await within(dialog).findByLabelText("Model")).toBeVisible();
+    expect(
+      within(dialog).queryByRole("button", { name: /Import/i }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: /Download/i }));
+    await waitFor(() => {
+      expect(downloadModel).toHaveBeenCalledWith(
+        "qwen2.5-coder-3b",
+        expect.stringContaining(".gguf"),
+        "qwen2.5-coder-3b-instruct-q4_k_m.gguf",
+      );
+    });
+
+    fireEvent.change(providerSelect, { target: { value: "local-model" } });
+    expect(providerSelect).toHaveValue("local-model");
+    expect(await within(dialog).findByLabelText("Model")).toBeVisible();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: /Import/i }));
+    await waitFor(() => expect(importModel).toHaveBeenCalledTimes(1));
+    await within(dialog).findByRole("option", {
+      name: /custom\s+·\s+GGUF/i,
+    });
+
+    await waitFor(() => {
+      const saved = JSON.parse(window.localStorage.getItem(aiConfigStorageKey) ?? "{}");
+      expect(saved.provider).toBe("local");
+      expect(saved.modelId).toBe("imported-gguf:custom.gguf");
+      expect(saved.modelDownloaded).toBe(true);
+    });
+  });
+
+  it("creates AI chat tabs from the plus button and closes them", async () => {
+    installLatexDoMock();
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    window.localStorage.setItem(
+      aiConfigStorageKey,
+      JSON.stringify({
+        ...defaultAiConfig,
+        setupComplete: true,
+        provider: "cloud",
+        cloud: {
+          ...defaultAiConfig.cloud,
+          apiKey: "sk-test",
+        },
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(screen.getByTitle("AI assistant"));
+    expect(await screen.findByRole("tab", { name: "Chat 1" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    const newChatIcon = screen.getByTitle("New chat").querySelector("svg");
+    expect(newChatIcon).not.toBeNull();
+    fireEvent.click(newChatIcon as SVGSVGElement);
+
+    expect(await screen.findByRole("tab", { name: "Chat 2" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await waitFor(() => {
+      const saved = JSON.parse(
+        window.localStorage.getItem("latexdo.ai.chatTabs.v1") ?? "{}",
+      );
+      expect(saved.chats).toHaveLength(2);
+      expect(saved.activeId).toMatch(/^ai-chat-2-/);
+    });
+    expect(screen.getByRole("tab", { name: "Chat 1" })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close Chat 2" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("tab", { name: "Chat 2" })).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("tab", { name: "Chat 1" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
+  it("restores saved AI chat tabs and messages", async () => {
+    installLatexDoMock();
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    window.localStorage.setItem(
+      aiConfigStorageKey,
+      JSON.stringify({
+        ...defaultAiConfig,
+        setupComplete: true,
+        provider: "cloud",
+        cloud: {
+          ...defaultAiConfig.cloud,
+          apiKey: "sk-test",
+        },
+      }),
+    );
+    window.localStorage.setItem(
+      "latexdo.ai.chatTabs.v1",
+      JSON.stringify({
+        chats: [{ id: "ai-chat-saved", title: "Saved chat" }],
+        activeId: "ai-chat-saved",
+        nextNumber: 2,
+      }),
+    );
+    window.localStorage.setItem(
+      "latexdo.ai.chatState.ai-chat-saved.v1",
+      JSON.stringify({
+        version: 1,
+        messages: [
+          {
+            id: "saved-user-message",
+            role: "user",
+            text: "saved question",
+            activity: [],
+          },
+          {
+            id: "saved-assistant-message",
+            role: "assistant",
+            text: "saved answer",
+            activity: [],
+          },
+        ],
+        history: [
+          { role: "user", content: "saved question" },
+          { role: "assistant", content: "saved answer" },
+        ],
+        updatedAt: Date.now(),
+      }),
+    );
+
+    render(<App />);
+
+    fireEvent.click(screen.getByTitle("AI assistant"));
+    expect(await screen.findByRole("tab", { name: "Saved chat" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(await screen.findByText("saved question")).toBeVisible();
+    expect(screen.getByText("saved answer")).toBeVisible();
+
+    fireEvent.click(screen.getByTitle("Close AI assistant"));
+    fireEvent.click(screen.getByTitle("AI assistant"));
+
+    expect(await screen.findByText("saved question")).toBeVisible();
+    expect(screen.getByText("saved answer")).toBeVisible();
   });
 
   it("creates a project from a welcome template", async () => {

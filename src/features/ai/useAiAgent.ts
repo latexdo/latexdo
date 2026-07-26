@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type SetStateAction } from "react";
 import type { AiConfig } from "./aiConfig";
 import type { AgentContext, EditProposal } from "./aiTools";
 import type {
@@ -27,6 +27,17 @@ export interface UiMessage {
   pending?: boolean;
 }
 
+interface PersistedAiAgentState {
+  version: 1;
+  messages: UiMessage[];
+  history: ChatMessage[];
+  updatedAt: number;
+}
+
+const maxPersistedUiMessages = 80;
+const maxPersistedHistoryMessages = 80;
+const maxPersistedContentLength = 12_000;
+
 const accessDenied = (setting: string) =>
   Promise.reject(new Error(`${setting} access is disabled in AI settings.`));
 
@@ -41,6 +52,133 @@ function providerFor(config: AiConfig): "local" | "ollama" | "cloud" {
     config.provider === "cloud"
     ? config.provider
     : "cloud";
+}
+
+function trimText(value: string): string {
+  return value.length > maxPersistedContentLength
+    ? `${value.slice(0, maxPersistedContentLength)}\n\n[trimmed]`
+    : value;
+}
+
+function normalizeUiMessage(raw: unknown): UiMessage | null {
+  const value = raw as Partial<UiMessage>;
+  if (
+    typeof value.id !== "string" ||
+    (value.role !== "user" && value.role !== "assistant") ||
+    typeof value.text !== "string"
+  ) {
+    return null;
+  }
+  const activity = Array.isArray(value.activity)
+    ? value.activity
+        .map((item) => {
+          const activityItem = item as Partial<UiMessage["activity"][number]>;
+          if (
+            typeof activityItem.name !== "string" ||
+            typeof activityItem.ok !== "boolean" ||
+            typeof activityItem.summary !== "string"
+          ) {
+            return null;
+          }
+          return {
+            name: activityItem.name.slice(0, 120),
+            ok: activityItem.ok,
+            summary: trimText(activityItem.summary).slice(0, 400),
+          };
+        })
+        .filter((item): item is UiMessage["activity"][number] => item !== null)
+    : [];
+  return {
+    id: value.id,
+    role: value.role,
+    text: trimText(value.text),
+    activity,
+    pending: false,
+  };
+}
+
+function normalizeChatMessage(raw: unknown): ChatMessage | null {
+  const value = raw as Partial<ChatMessage>;
+  if (
+    (value.role !== "system" &&
+      value.role !== "user" &&
+      value.role !== "assistant" &&
+      value.role !== "tool") ||
+    typeof value.content !== "string"
+  ) {
+    return null;
+  }
+  return {
+    role: value.role,
+    content: trimText(value.content),
+    toolCalls: Array.isArray(value.toolCalls) ? value.toolCalls : undefined,
+    toolCallId: typeof value.toolCallId === "string" ? value.toolCallId : undefined,
+    name: typeof value.name === "string" ? value.name : undefined,
+  };
+}
+
+function loadPersistedState(storageKey?: string): PersistedAiAgentState | null {
+  if (!storageKey) return null;
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(storageKey) ?? "null") as
+      | Partial<PersistedAiAgentState>
+      | null;
+    if (!raw || raw.version !== 1) return null;
+    const messages = Array.isArray(raw.messages)
+      ? raw.messages
+          .map(normalizeUiMessage)
+          .filter((message): message is UiMessage => message !== null)
+          .slice(-maxPersistedUiMessages)
+      : [];
+    const history = Array.isArray(raw.history)
+      ? raw.history
+          .map(normalizeChatMessage)
+          .filter((message): message is ChatMessage => message !== null)
+          .slice(-maxPersistedHistoryMessages)
+      : [];
+    return {
+      version: 1,
+      messages,
+      history,
+      updatedAt: typeof raw.updatedAt === "number" ? raw.updatedAt : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedState(
+  storageKey: string | undefined,
+  messages: UiMessage[],
+  history: ChatMessage[],
+): void {
+  if (!storageKey) return;
+  const payload: PersistedAiAgentState = {
+    version: 1,
+    messages: messages
+      .map(normalizeUiMessage)
+      .filter((message): message is UiMessage => message !== null)
+      .slice(-maxPersistedUiMessages),
+    history: history
+      .map(normalizeChatMessage)
+      .filter((message): message is ChatMessage => message !== null)
+      .slice(-maxPersistedHistoryMessages),
+    updatedAt: Date.now(),
+  };
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(payload));
+  } catch {
+    // Ignore quota/private-mode failures; chat still works for this session.
+  }
+}
+
+function clearPersistedState(storageKey?: string): void {
+  if (!storageKey) return;
+  try {
+    window.localStorage.removeItem(storageKey);
+  } catch {
+    // Ignore localStorage failures.
+  }
 }
 
 export function supportsNativeTools(config: AiConfig): boolean {
@@ -78,14 +216,43 @@ function buildRequest(
   };
 }
 
-export function useAiAgent(config: AiConfig, ctx: AgentContext) {
-  const [messages, setMessages] = useState<UiMessage[]>([]);
+export function useAiAgent(config: AiConfig, ctx: AgentContext, storageKey?: string) {
+  const persistedStateRef = useRef<PersistedAiAgentState | null>(null);
+  if (persistedStateRef.current === null) {
+    persistedStateRef.current = loadPersistedState(storageKey) ?? {
+      version: 1,
+      messages: [],
+      history: [],
+      updatedAt: 0,
+    };
+  }
+  const [messages, setMessagesState] = useState<UiMessage[]>(
+    () => persistedStateRef.current?.messages ?? [],
+  );
+  const messagesRef = useRef<UiMessage[]>(messages);
   const [isRunning, setIsRunning] = useState(false);
   const [status, setStatus] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const activeRequestId = useRef<string>("");
   // The full model-facing transcript, kept in parallel to the UI messages.
-  const historyRef = useRef<ChatMessage[]>([]);
+  const historyRef = useRef<ChatMessage[]>(persistedStateRef.current?.history ?? []);
+
+  const setMessages = useCallback((next: SetStateAction<UiMessage[]>) => {
+    setMessagesState((current) => {
+      const resolved = typeof next === "function" ? next(current) : next;
+      messagesRef.current = resolved;
+      return resolved;
+    });
+  }, []);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+    if (!storageKey) return;
+    const timer = window.setTimeout(() => {
+      savePersistedState(storageKey, messages, historyRef.current);
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [messages, storageKey]);
 
   // Step-by-step approval: in "ask" mode the agent pauses on each mutating
   // action until the user approves or declines.
@@ -302,21 +469,23 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext) {
           onEvent,
         });
         historyRef.current = access.chatHistory ? updatedHistory : [];
+        savePersistedState(storageKey, messagesRef.current, historyRef.current);
       } finally {
         setIsRunning(false);
         setStatus("");
         abortRef.current = null;
       }
     },
-    [config, ctx, isRunning, requestApprovalInteractive],
+    [config, ctx, isRunning, requestApprovalInteractive, setMessages, storageKey],
   );
 
   const reset = useCallback(() => {
     clearPendingApproval(false);
     historyRef.current = [];
     setMessages([]);
+    clearPersistedState(storageKey);
     setStatus("");
-  }, [clearPendingApproval]);
+  }, [clearPendingApproval, setMessages, storageKey]);
 
   return {
     messages,

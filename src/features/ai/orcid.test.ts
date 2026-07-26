@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
+  fetchOrcidProfile,
   normalizeOrcidInput,
   isValidOrcid,
   parseOrcidName,
@@ -84,5 +85,32 @@ describe("parseOrcidWorks", () => {
   it("skips entries without a title and tolerates junk", () => {
     expect(parseOrcidWorks({})).toEqual([]);
     expect(parseOrcidWorks({ group: [{ "work-summary": [{}] }] })).toEqual([]);
+  });
+});
+
+describe("fetchOrcidProfile", () => {
+  it("uses the desktop ORCID bridge when available", async () => {
+    const originalLatexDo = (window as { latexdo?: unknown }).latexdo;
+    const fetchFromDesktop = vi.fn().mockResolvedValue({
+      name: "Ada Lovelace",
+      papers: [{ title: "Notes", year: "1843" }],
+    });
+    Object.defineProperty(window, "latexdo", {
+      configurable: true,
+      value: { fetchOrcidProfile: fetchFromDesktop },
+    });
+
+    try {
+      await expect(fetchOrcidProfile("0000-0002-1825-0097")).resolves.toEqual({
+        name: "Ada Lovelace",
+        papers: [{ title: "Notes", year: "1843" }],
+      });
+      expect(fetchFromDesktop).toHaveBeenCalledWith("0000-0002-1825-0097");
+    } finally {
+      Object.defineProperty(window, "latexdo", {
+        configurable: true,
+        value: originalLatexDo,
+      });
+    }
   });
 });
