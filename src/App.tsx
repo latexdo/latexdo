@@ -115,11 +115,7 @@ import {
 } from "./features/ai/aiClient";
 import { generateStepCloud } from "./features/ai/aiCloud";
 import { cloudProviders, findCloudProvider } from "./features/ai/cloudProviders";
-import {
-  localModelCatalog,
-  tierLabels,
-  type LocalModelInfo,
-} from "./features/ai/aiModels";
+import { localModelCatalog, type LocalModelInfo } from "./features/ai/aiModels";
 import {
   buildEnterpriseComplianceReport,
   loadEnterpriseState,
@@ -463,7 +459,8 @@ function loadPersistedAiChatTabs(): PersistedAiChatTabs {
       : [];
     if (chats.length === 0) return defaultAiChatTabs();
     const activeId =
-      typeof raw?.activeId === "string" && chats.some((chat) => chat.id === raw.activeId)
+      typeof raw?.activeId === "string" &&
+      chats.some((chat) => chat.id === raw.activeId)
         ? raw.activeId
         : chats[0].id;
     const highestTitleNumber = chats.reduce((highest, chat) => {
@@ -518,7 +515,12 @@ function isCloudProviderSelectValue(
 }
 
 function labelForGgufFile(fileName: string): string {
-  return fileName.replace(/\.gguf$/i, "").replace(/[-_]+/g, " ").trim() || fileName;
+  return (
+    fileName
+      .replace(/\.gguf$/i, "")
+      .replace(/[-_]+/g, " ")
+      .trim() || fileName
+  );
 }
 
 function normalizeCustomLatexDoAiModelRecord(
@@ -558,7 +560,9 @@ function loadCustomLatexDoAiModels(): CustomLatexDoAiModelRecord[] {
     const records = raw
       .map(normalizeCustomLatexDoAiModelRecord)
       .filter((record): record is CustomLatexDoAiModelRecord => record !== null);
-    return Array.from(new Map(records.map((record) => [record.fileName, record])).values());
+    return Array.from(
+      new Map(records.map((record) => [record.fileName, record])).values(),
+    );
   } catch {
     return [];
   }
@@ -989,8 +993,9 @@ export default function App() {
   const [activeSidebar, setActiveSidebar] = useState<SidebarView>("explorer");
   const initialAiConfig = useMemo(() => loadAiConfigForApp(), []);
   const [aiConfig, setAiConfig] = useState<AiConfig>(initialAiConfig);
-  const [localAiProviderMode, setLocalAiProviderMode] =
-    useState<LocalAiProviderMode>(() => loadLocalAiProviderMode(initialAiConfig));
+  const [localAiProviderMode, setLocalAiProviderMode] = useState<LocalAiProviderMode>(
+    () => loadLocalAiProviderMode(initialAiConfig),
+  );
   const [enterpriseState, setEnterpriseState] =
     useState<EnterpriseState>(loadEnterpriseState);
   const [aiSidebarExpanded, setAiSidebarExpanded] = useState(false);
@@ -1013,8 +1018,9 @@ export default function App() {
   const [customLatexDoAiModels, setCustomLatexDoAiModels] = useState(
     loadCustomLatexDoAiModels,
   );
-  const [downloadedLatexDoAiModelFiles, setDownloadedLatexDoAiModelFiles] =
-    useState<Set<string>>(() => new Set());
+  const [downloadedLatexDoAiModelFiles, setDownloadedLatexDoAiModelFiles] = useState<
+    Set<string>
+  >(() => new Set());
   const [latexDoAiDownload, setLatexDoAiDownload] = useState<{
     modelId: string;
     receivedBytes: number;
@@ -1030,7 +1036,7 @@ export default function App() {
       chats: aiChats,
       activeId: aiChats.some((chat) => chat.id === activeAiChatId)
         ? activeAiChatId
-        : aiChats[0]?.id ?? "ai-chat-1",
+        : (aiChats[0]?.id ?? "ai-chat-1"),
       nextNumber: nextAiChatNumberRef.current,
     });
   }, [activeAiChatId, aiChats]);
@@ -1177,11 +1183,13 @@ export default function App() {
     [refreshLatexDoAiModels],
   );
   const importLatexDoAiModel = useCallback(async () => {
-    const ai = (window as {
-      aiApi?: AiBridge & {
-        importModel?: () => Promise<ImportedLatexDoAiModelStatus | null>;
-      };
-    }).aiApi;
+    const ai = (
+      window as {
+        aiApi?: AiBridge & {
+          importModel?: () => Promise<ImportedLatexDoAiModelStatus | null>;
+        };
+      }
+    ).aiApi;
     if (!ai?.importModel) {
       setLatexDoAiModelMessage("GGUF model import requires the desktop app.");
       return;
@@ -1330,7 +1338,7 @@ export default function App() {
       const next = current.filter((chat) => chat.id !== chatId);
       setActiveAiChatId((activeId) =>
         activeId === chatId
-          ? next[Math.min(index, next.length - 1)]?.id ?? next[0].id
+          ? (next[Math.min(index, next.length - 1)]?.id ?? next[0].id)
           : activeId,
       );
       return next;
@@ -8941,8 +8949,8 @@ ${macroEnd}
       : aiConfig.provider === "ollama"
         ? aiConfig.ollamaModel
         : localAiProviderMode === "local-model"
-          ? selectedImportedLocalModel?.id ?? ""
-          : selectedLatexDoAiModel?.id ?? "";
+          ? (selectedImportedLocalModel?.id ?? "")
+          : (selectedLatexDoAiModel?.id ?? "");
   const activeAiModelAvailable =
     aiConfig.provider === "cloud"
       ? Boolean(aiConfig.cloud.model)
@@ -12043,108 +12051,126 @@ ${macroEnd}
                     <strong>AI Assistant</strong>
                   </div>
                   <div className="ai-selection-card">
-                  <label className="settings-row ai-selection-row">
-                    <span>
-                      <strong>Provider</strong>
-                    </span>
-                    <select
-                      aria-label="Provider"
-                      value={activeAiProviderValue}
-                      onChange={(event) => {
-                        const provider = event.target.value as AiProviderSelectValue;
-                        setLatexDoAiModelMessage("");
-                        if (isCloudProviderSelectValue(provider)) {
-                          selectCloudAiProvider(provider.slice("cloud:".length));
-                          return;
-                        }
-                        if (provider === "latexdo-ai") {
-                          const model = selectedLatexDoAiModel ?? latexDoAiModels[0];
-                          setLocalAiProviderMode("latexdo-ai");
-                          setAiConfig((c) => ({
-                            ...c,
-                            provider: "local",
-                            modelId: model?.id ?? c.modelId,
-                            modelDownloaded: model
-                              ? downloadedLatexDoAiModelFiles.has(model.fileName)
-                              : false,
-                          }));
-                          return;
-                        }
-                        if (provider === "local-model") {
-                          const model =
-                            selectedImportedLocalModel ?? importedLocalModels[0] ?? null;
-                          setLocalAiProviderMode("local-model");
-                          setAiConfig((c) => ({
-                            ...c,
-                            provider: "local",
-                            modelId: model?.id ?? "",
-                            modelDownloaded: model
-                              ? downloadedLatexDoAiModelFiles.has(model.fileName) ||
-                                (c.modelId === model.id && c.modelDownloaded)
-                              : false,
-                          }));
-                          return;
-                        }
-                        setAiConfig((c) => ({ ...c, provider }));
-                      }}
-                    >
-                      {cloudProviders.map((provider) => (
-                        <option key={provider.id} value={`cloud:${provider.id}`}>
-                          {provider.label}
+                    <label className="settings-row ai-selection-row">
+                      <span>
+                        <strong>Provider</strong>
+                      </span>
+                      <select
+                        aria-label="Provider"
+                        value={activeAiProviderValue}
+                        onChange={(event) => {
+                          const provider = event.target.value as AiProviderSelectValue;
+                          setLatexDoAiModelMessage("");
+                          if (isCloudProviderSelectValue(provider)) {
+                            selectCloudAiProvider(provider.slice("cloud:".length));
+                            return;
+                          }
+                          if (provider === "latexdo-ai") {
+                            const model = selectedLatexDoAiModel ?? latexDoAiModels[0];
+                            setLocalAiProviderMode("latexdo-ai");
+                            setAiConfig((c) => ({
+                              ...c,
+                              provider: "local",
+                              modelId: model?.id ?? c.modelId,
+                              modelDownloaded: model
+                                ? downloadedLatexDoAiModelFiles.has(model.fileName)
+                                : false,
+                            }));
+                            return;
+                          }
+                          if (provider === "local-model") {
+                            const model =
+                              selectedImportedLocalModel ??
+                              importedLocalModels[0] ??
+                              null;
+                            setLocalAiProviderMode("local-model");
+                            setAiConfig((c) => ({
+                              ...c,
+                              provider: "local",
+                              modelId: model?.id ?? "",
+                              modelDownloaded: model
+                                ? downloadedLatexDoAiModelFiles.has(model.fileName) ||
+                                  (c.modelId === model.id && c.modelDownloaded)
+                                : false,
+                            }));
+                            return;
+                          }
+                          setAiConfig((c) => ({ ...c, provider }));
+                        }}
+                      >
+                        {cloudProviders.map((provider) => (
+                          <option key={provider.id} value={`cloud:${provider.id}`}>
+                            {provider.label}
+                          </option>
+                        ))}
+                        <option value="ollama" disabled={!aiIsDesktop}>
+                          Ollama{aiIsDesktop ? "" : " (desktop only)"}
                         </option>
-                      ))}
-                      <option value="ollama" disabled={!aiIsDesktop}>
-                        Ollama{aiIsDesktop ? "" : " (desktop only)"}
-                      </option>
-                      <option value="latexdo-ai" disabled={!aiIsDesktop}>
-                        LatexDo AI{aiIsDesktop ? "" : " (desktop only)"}
-                      </option>
-                      <option value="local-model" disabled={!aiIsDesktop}>
-                        Local Model{aiIsDesktop ? "" : " (desktop only)"}
-                      </option>
-                      <option value="off">Off</option>
-                    </select>
-                  </label>
-                  <label className="settings-row ai-selection-row">
-                    <span>
-                      <strong>Model</strong>
-                    </span>
-                    <div className="ai-model-control">
-                      {aiConfig.provider === "cloud" &&
-                      selectedCloudProvider?.custom ? (
-                        <input
-                          aria-label="Model"
-                          type="text"
-                          value={aiConfig.cloud.model}
-                          onChange={(event) =>
-                            patchCloudConfig({ model: event.target.value })
-                          }
-                        />
-                      ) : (
-                        <select
-                          aria-label="Model"
-                          value={activeAiModelValue}
-                          disabled={
-                            aiConfig.provider === "off" ||
-                            (aiConfig.provider === "local" &&
-                              localAiProviderMode === "local-model" &&
-                              importedLocalModels.length === 0)
-                          }
-                          onChange={(event) => {
-                            const modelId = event.target.value;
-                            if (aiConfig.provider === "cloud") {
-                              patchCloudConfig({ model: modelId });
-                              return;
+                        <option value="latexdo-ai" disabled={!aiIsDesktop}>
+                          LatexDo AI{aiIsDesktop ? "" : " (desktop only)"}
+                        </option>
+                        <option value="local-model" disabled={!aiIsDesktop}>
+                          Local Model{aiIsDesktop ? "" : " (desktop only)"}
+                        </option>
+                        <option value="off">Off</option>
+                      </select>
+                    </label>
+                    <label className="settings-row ai-selection-row">
+                      <span>
+                        <strong>Model</strong>
+                      </span>
+                      <div className="ai-model-control">
+                        {aiConfig.provider === "cloud" &&
+                        selectedCloudProvider?.custom ? (
+                          <input
+                            aria-label="Model"
+                            type="text"
+                            value={aiConfig.cloud.model}
+                            onChange={(event) =>
+                              patchCloudConfig({ model: event.target.value })
                             }
-                            if (aiConfig.provider === "ollama") {
-                              setAiConfig((c) => ({ ...c, ollamaModel: modelId }));
-                              return;
+                          />
+                        ) : (
+                          <select
+                            aria-label="Model"
+                            value={activeAiModelValue}
+                            disabled={
+                              aiConfig.provider === "off" ||
+                              (aiConfig.provider === "local" &&
+                                localAiProviderMode === "local-model" &&
+                                importedLocalModels.length === 0)
                             }
-                            if (
-                              aiConfig.provider === "local" &&
-                              localAiProviderMode === "local-model"
-                            ) {
-                              const model = importedLocalModels.find(
+                            onChange={(event) => {
+                              const modelId = event.target.value;
+                              if (aiConfig.provider === "cloud") {
+                                patchCloudConfig({ model: modelId });
+                                return;
+                              }
+                              if (aiConfig.provider === "ollama") {
+                                setAiConfig((c) => ({ ...c, ollamaModel: modelId }));
+                                return;
+                              }
+                              if (
+                                aiConfig.provider === "local" &&
+                                localAiProviderMode === "local-model"
+                              ) {
+                                const model = importedLocalModels.find(
+                                  (item) => item.id === modelId,
+                                );
+                                setAiConfig((c) => ({
+                                  ...c,
+                                  provider: "local",
+                                  modelId,
+                                  modelDownloaded: model
+                                    ? downloadedLatexDoAiModelFiles.has(
+                                        model.fileName,
+                                      ) ||
+                                      (c.modelId === model.id && c.modelDownloaded)
+                                    : false,
+                                }));
+                                return;
+                              }
+                              const model = latexDoAiModels.find(
                                 (item) => item.id === modelId,
                               );
                               setAiConfig((c) => ({
@@ -12152,164 +12178,150 @@ ${macroEnd}
                                 provider: "local",
                                 modelId,
                                 modelDownloaded: model
-                                  ? downloadedLatexDoAiModelFiles.has(model.fileName) ||
-                                    (c.modelId === model.id && c.modelDownloaded)
+                                  ? downloadedLatexDoAiModelFiles.has(model.fileName)
                                   : false,
                               }));
-                              return;
-                            }
-                            const model = latexDoAiModels.find(
-                              (item) => item.id === modelId,
-                            );
-                            setAiConfig((c) => ({
-                              ...c,
-                              provider: "local",
-                              modelId,
-                              modelDownloaded: model
-                                ? downloadedLatexDoAiModelFiles.has(model.fileName)
-                                : false,
-                            }));
-                          }}
-                        >
-                          {aiConfig.provider === "cloud" ? (
-                            <>
-                              {aiConfig.cloud.model &&
-                                !cloudModelOptions.includes(aiConfig.cloud.model) && (
-                                  <option value={aiConfig.cloud.model}>
-                                    {aiConfig.cloud.model}
+                            }}
+                          >
+                            {aiConfig.provider === "cloud" ? (
+                              <>
+                                {aiConfig.cloud.model &&
+                                  !cloudModelOptions.includes(aiConfig.cloud.model) && (
+                                    <option value={aiConfig.cloud.model}>
+                                      {aiConfig.cloud.model}
+                                    </option>
+                                  )}
+                                {cloudModelOptions.map((model) => (
+                                  <option key={model} value={model}>
+                                    {model}
                                   </option>
-                                )}
-                              {cloudModelOptions.map((model) => (
-                                <option key={model} value={model}>
-                                  {model}
-                                </option>
-                              ))}
-                            </>
-                          ) : aiConfig.provider === "ollama" ? (
-                            <>
-                              <option value="">Select model</option>
-                              {aiConfig.ollamaModel &&
-                                !ollamaModels.includes(aiConfig.ollamaModel) && (
-                                  <option value={aiConfig.ollamaModel}>
-                                    {aiConfig.ollamaModel}
+                                ))}
+                              </>
+                            ) : aiConfig.provider === "ollama" ? (
+                              <>
+                                <option value="">Select model</option>
+                                {aiConfig.ollamaModel &&
+                                  !ollamaModels.includes(aiConfig.ollamaModel) && (
+                                    <option value={aiConfig.ollamaModel}>
+                                      {aiConfig.ollamaModel}
+                                    </option>
+                                  )}
+                                {ollamaModels.map((model) => (
+                                  <option key={model} value={model}>
+                                    {model}
                                   </option>
-                                )}
-                              {ollamaModels.map((model) => (
-                                <option key={model} value={model}>
-                                  {model}
-                                </option>
-                              ))}
-                            </>
-                          ) : aiConfig.provider === "local" &&
-                            localAiProviderMode === "local-model" ? (
-                            <>
-                              {importedLocalModels.length === 0 ? (
-                                <option value="">No imported GGUF models</option>
-                              ) : null}
-                              {importedLocalModels.map((model) => (
-                                <option key={model.id} value={model.id}>
-                                  {model.name} · GGUF
-                                </option>
-                              ))}
-                            </>
-                          ) : aiConfig.provider === "local" ? (
-                            <>
-                              {latexDoAiModels.map((model) => (
-                                <option key={model.id} value={model.id}>
-                                  {model.name} · {model.params}
-                                </option>
-                              ))}
-                            </>
+                                ))}
+                              </>
+                            ) : aiConfig.provider === "local" &&
+                              localAiProviderMode === "local-model" ? (
+                              <>
+                                {importedLocalModels.length === 0 ? (
+                                  <option value="">No imported GGUF models</option>
+                                ) : null}
+                                {importedLocalModels.map((model) => (
+                                  <option key={model.id} value={model.id}>
+                                    {model.name} · GGUF
+                                  </option>
+                                ))}
+                              </>
+                            ) : aiConfig.provider === "local" ? (
+                              <>
+                                {latexDoAiModels.map((model) => (
+                                  <option key={model.id} value={model.id}>
+                                    {model.name} · {model.params}
+                                  </option>
+                                ))}
+                              </>
+                            ) : (
+                              <option value="">Off</option>
+                            )}
+                          </select>
+                        )}
+                        {aiConfig.provider === "cloud" ? (
+                          activeAiModelAvailable ? (
+                            <span className="ai-model-status ready">
+                              <Check size={13} /> OK
+                            </span>
+                          ) : null
+                        ) : aiConfig.provider === "ollama" ? (
+                          activeAiModelAvailable ? (
+                            <span className="ai-model-status ready">
+                              <Check size={13} /> OK
+                            </span>
                           ) : (
-                            <option value="">Off</option>
-                          )}
-                        </select>
-                      )}
-                      {aiConfig.provider === "cloud" ? (
-                        activeAiModelAvailable ? (
-                          <span className="ai-model-status ready">
-                            <Check size={13} /> OK
-                          </span>
-                        ) : null
-                      ) : aiConfig.provider === "ollama" ? (
-                        activeAiModelAvailable ? (
-                          <span className="ai-model-status ready">
-                            <Check size={13} /> OK
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            className="ai-model-action"
-                            onClick={() => void refreshOllamaModels()}
-                            disabled={ollamaModelFetchState === "loading"}
-                          >
-                            {ollamaModelFetchState === "loading" ? (
-                              <>
-                                <LoaderCircle size={13} className="spin" /> Fetch
-                              </>
-                            ) : (
-                              <>
-                                <RefreshCw size={13} /> Fetch
-                              </>
-                            )}
-                          </button>
-                        )
-                      ) : aiConfig.provider === "local" &&
-                        localAiProviderMode === "local-model" ? (
-                        selectedImportedLocalModelDownloaded ? (
-                          <span className="ai-model-status ready">
-                            <Check size={13} /> OK
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            className="ai-model-action"
-                            onClick={() => void importLatexDoAiModel()}
-                            disabled={importingLatexDoAiModel}
-                          >
-                            {importingLatexDoAiModel ? (
-                              <>
-                                <LoaderCircle size={13} className="spin" /> Import
-                              </>
-                            ) : (
-                              <>
-                                <FileUp size={13} /> Import
-                              </>
-                            )}
-                          </button>
-                        )
-                      ) : aiConfig.provider === "local" && selectedLatexDoAiModel ? (
-                        selectedLatexDoAiModelDownloaded ? (
-                          <span className="ai-model-status ready">
-                            <Check size={13} /> OK
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            className="ai-model-action"
-                            onClick={() =>
-                              void downloadLatexDoAiModel(selectedLatexDoAiModel)
-                            }
-                            disabled={
-                              selectedLatexDoAiModelDownloading ||
-                              !selectedLatexDoAiModel.downloadUrl
-                            }
-                          >
-                            {selectedLatexDoAiModelDownloading ? (
-                              <>
-                                <LoaderCircle size={13} className="spin" />{" "}
-                                {selectedLatexDoAiDownloadLabel || "Download"}
-                              </>
-                            ) : (
-                              <>
-                                <Download size={13} /> Download
-                              </>
-                            )}
-                          </button>
-                        )
-                      ) : null}
-                    </div>
-                  </label>
+                            <button
+                              type="button"
+                              className="ai-model-action"
+                              onClick={() => void refreshOllamaModels()}
+                              disabled={ollamaModelFetchState === "loading"}
+                            >
+                              {ollamaModelFetchState === "loading" ? (
+                                <>
+                                  <LoaderCircle size={13} className="spin" /> Fetch
+                                </>
+                              ) : (
+                                <>
+                                  <RefreshCw size={13} /> Fetch
+                                </>
+                              )}
+                            </button>
+                          )
+                        ) : aiConfig.provider === "local" &&
+                          localAiProviderMode === "local-model" ? (
+                          selectedImportedLocalModelDownloaded ? (
+                            <span className="ai-model-status ready">
+                              <Check size={13} /> OK
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="ai-model-action"
+                              onClick={() => void importLatexDoAiModel()}
+                              disabled={importingLatexDoAiModel}
+                            >
+                              {importingLatexDoAiModel ? (
+                                <>
+                                  <LoaderCircle size={13} className="spin" /> Import
+                                </>
+                              ) : (
+                                <>
+                                  <FileUp size={13} /> Import
+                                </>
+                              )}
+                            </button>
+                          )
+                        ) : aiConfig.provider === "local" && selectedLatexDoAiModel ? (
+                          selectedLatexDoAiModelDownloaded ? (
+                            <span className="ai-model-status ready">
+                              <Check size={13} /> OK
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="ai-model-action"
+                              onClick={() =>
+                                void downloadLatexDoAiModel(selectedLatexDoAiModel)
+                              }
+                              disabled={
+                                selectedLatexDoAiModelDownloading ||
+                                !selectedLatexDoAiModel.downloadUrl
+                              }
+                            >
+                              {selectedLatexDoAiModelDownloading ? (
+                                <>
+                                  <LoaderCircle size={13} className="spin" />{" "}
+                                  {selectedLatexDoAiDownloadLabel || "Download"}
+                                </>
+                              ) : (
+                                <>
+                                  <Download size={13} /> Download
+                                </>
+                              )}
+                            </button>
+                          )
+                        ) : null}
+                      </div>
+                    </label>
                   </div>
 
                   {aiConfig.provider === "cloud" ? (

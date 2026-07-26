@@ -51,18 +51,19 @@ describe("electron ORCID profile fetch", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(fetchOrcidProfile("https://orcid.org/0000-0002-1825-0097"))
-      .resolves.toEqual({
-        name: "Ada Lovelace",
-        papers: [
-          {
-            title: "Notes on the Analytical Engine",
-            year: "1843",
-            journal: "Scientific Memoirs",
-            doi: "10.1000/test",
-          },
-        ],
-      });
+    await expect(
+      fetchOrcidProfile("https://orcid.org/0000-0002-1825-0097"),
+    ).resolves.toEqual({
+      name: "Ada Lovelace",
+      papers: [
+        {
+          title: "Notes on the Analytical Engine",
+          year: "1843",
+          journal: "Scientific Memoirs",
+          doi: "10.1000/test",
+        },
+      ],
+    });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

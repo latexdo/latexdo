@@ -1416,8 +1416,7 @@ describe("App critical UI controls", () => {
 
     await waitFor(() => {
       expect(
-        JSON.parse(window.localStorage.getItem(aiConfigStorageKey) ?? "{}")
-          .ollamaModel,
+        JSON.parse(window.localStorage.getItem(aiConfigStorageKey) ?? "{}").ollamaModel,
       ).toBe("llama3.1:8b");
     });
   });

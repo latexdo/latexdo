@@ -130,9 +130,7 @@ function desktopOrcidProfileFetcher():
 }
 
 /** Fetch a researcher's public name + works. Throws on network/HTTP failure. */
-export async function fetchOrcidProfile(
-  orcidInput: string,
-): Promise<OrcidFetchResult> {
+export async function fetchOrcidProfile(orcidInput: string): Promise<OrcidFetchResult> {
   const fetchFromDesktop = desktopOrcidProfileFetcher();
   if (fetchFromDesktop) {
     return fetchFromDesktop(orcidInput);
