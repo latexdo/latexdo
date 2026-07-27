@@ -510,6 +510,10 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       throw browserUnavailable("Markdown import");
     },
 
+    async importPdf() {
+      throw browserUnavailable("PDF import");
+    },
+
     async moveEntry(projectId, fromRelativePath, toRelativePath) {
       const fromPath = normalizeRelativePath(fromRelativePath);
       const toPath = normalizeRelativePath(toRelativePath);
@@ -830,6 +834,7 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
     onCreateFolderMenu: () => () => {},
     onImportDocxMenu: () => () => {},
     onImportMarkdownMenu: () => () => {},
+    onImportPdfMenu: () => () => {},
     onCloseTabMenu: () => () => {},
   };
 

@@ -88,6 +88,31 @@ export interface MarkdownImportResult {
   project?: OpenProject;
 }
 
+export interface PdfImportStats {
+  sections: number;
+  equations: number;
+  figures: number;
+  tables: number;
+  references: number;
+  citations: number;
+  crossReferences: number;
+  lowConfidenceMath: number;
+}
+
+export interface PdfImportResult {
+  sourcePath: string;
+  relativePath: string;
+  /** Generated bibliography, when the PDF carried a reference list. */
+  bibRelativePath: string | null;
+  assetDirectory: string | null;
+  mediaFiles: string[];
+  converter: "built-in";
+  pageCount: number;
+  stats: PdfImportStats;
+  warnings: string[];
+  project?: OpenProject;
+}
+
 export interface DiagnosticContextLine {
   line: number;
   text: string;

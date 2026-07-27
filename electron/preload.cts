@@ -9,6 +9,7 @@ import type {
   CreateProjectOptions,
   DocxImportResult,
   MarkdownImportResult,
+  PdfImportResult,
   GitBlameLine,
   GitChangedEvent,
   GitCommitDetails,
@@ -506,10 +507,11 @@ async function uploadLocalProjectToCloud(localProjectId: string): Promise<OpenPr
 
 async function importCloudDocument(
   _projectId: string,
-  kind: "docx" | "markdown",
-): Promise<DocxImportResult | MarkdownImportResult | null> {
+  kind: "docx" | "markdown" | "pdf",
+): Promise<DocxImportResult | MarkdownImportResult | PdfImportResult | null> {
+  const label = kind === "docx" ? "DOCX" : kind === "pdf" ? "PDF" : "Markdown";
   throw new Error(
-    `${kind === "docx" ? "DOCX" : "Markdown"} import is not available for shared cloud projects. Open a local folder to import documents.`,
+    `${label} import is not available for shared cloud projects. Open a local folder to import documents.`,
   );
 }
 
@@ -717,6 +719,10 @@ const api = {
           "markdown",
         ) as Promise<MarkdownImportResult | null>)
       : ipcRenderer.invoke("markdown:import", projectId ?? ""),
+  importPdf: (projectId?: string): Promise<PdfImportResult | null> =>
+    projectId && isCloudProject(projectId)
+      ? (importCloudDocument(projectId, "pdf") as Promise<PdfImportResult | null>)
+      : ipcRenderer.invoke("pdf:import", projectId ?? ""),
   moveEntry: (
     projectId: string,
     fromRelativePath: string,
@@ -1158,6 +1164,17 @@ const api = {
 
     return () => {
       ipcRenderer.removeListener("file:import-markdown", listener);
+    };
+  },
+  onImportPdfMenu: (callback: () => void) => {
+    const listener = () => {
+      callback();
+    };
+
+    ipcRenderer.on("file:import-pdf", listener);
+
+    return () => {
+      ipcRenderer.removeListener("file:import-pdf", listener);
     };
   },
   onCloseTabMenu: (callback: () => void) => {
