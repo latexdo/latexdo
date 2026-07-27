@@ -889,6 +889,30 @@ function AppIcon({ className }: { className?: string }) {
   );
 }
 
+function pluralCount(count: number, label: string): string {
+  return `${count} ${label}${count === 1 ? "" : "s"}`;
+}
+
+function pdfImportStatsSummary(stats: {
+  sections: number;
+  equations: number;
+  figures: number;
+  tables: number;
+  references: number;
+  lowConfidenceMath: number;
+}): string {
+  const recovered = [
+    pluralCount(stats.sections, "heading"),
+    pluralCount(stats.equations, "equation"),
+    pluralCount(stats.figures, "figure"),
+    pluralCount(stats.tables, "table"),
+    pluralCount(stats.references, "reference"),
+  ].join(", ");
+  return stats.lowConfidenceMath
+    ? `${recovered}; ${pluralCount(stats.lowConfidenceMath, "formula")} need review`
+    : recovered;
+}
+
 export default function App() {
   const collaboration = useCollaborationContext();
   useEffect(() => {
@@ -918,6 +942,8 @@ export default function App() {
     setDocxImporting,
     markdownImporting,
     setMarkdownImporting,
+    pdfImporting,
+    setPdfImporting,
     templateCreating,
     setTemplateCreating,
   } = useProject();
@@ -6550,6 +6576,50 @@ ${macroEnd}
     }
   }, [openImportedTexDocument]);
 
+  const importPdf = useCallback(async () => {
+    if (typeof window.latexdo.importPdf !== "function") {
+      setStatusMessage(
+        "PDF import is not loaded in this app window. Restart the dev app and try again.",
+      );
+      return;
+    }
+
+    const currentProject =
+      projectIdRef.current && !hideProjectEntriesRef.current
+        ? projectIdRef.current
+        : undefined;
+    if (!currentProject) {
+      setWelcomeOpen(true);
+    }
+
+    setPdfImporting(true);
+    try {
+      const result = await window.latexdo.importPdf(currentProject);
+      if (!result) return;
+
+      await openImportedTexDocument(result, currentProject);
+
+      const warningSummary = result.warnings.length ? ` ${result.warnings[0]}` : "";
+      setStatusMessage(
+        `Reconstructed ${fileName(result.sourcePath)} to ${pathForDisplay(
+          result.relativePath,
+        )} with ${pdfImportStatsSummary(result.stats)}.${warningSummary}`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not import PDF.";
+      if (
+        message.includes("No handler registered") ||
+        message.includes("importPdf is not a function")
+      ) {
+        setStatusMessage("Restart the LatexDo app to finish loading PDF import.");
+        return;
+      }
+      setStatusMessage(message.replace(/^Error invoking remote method '[^']+': /, ""));
+    } finally {
+      setPdfImporting(false);
+    }
+  }, [openImportedTexDocument]);
+
   const closeDocument = (path: string) => {
     const currentDocuments = documentsRef.current;
     const target = currentDocuments.find((document) => document.path === path);
@@ -7026,6 +7096,12 @@ ${macroEnd}
       void importMarkdown();
     });
   }, [importMarkdown]);
+
+  useEffect(() => {
+    return window.latexdo.onImportPdfMenu(() => {
+      void importPdf();
+    });
+  }, [importPdf]);
 
   useEffect(() => {
     return window.latexdo.onCloseTabMenu(() => {
@@ -9346,55 +9422,14 @@ ${macroEnd}
                       <Download size={14} />
                     </button>
                   ) : activeSidebar === "explorer" ? (
-                    <>
-                      <button
-                        className="small-icon"
-                        onClick={openProject}
-                        title="Open project"
-                      >
-                        <FolderOpen size={14} />
-                      </button>
-                      <button
-                        className="small-icon"
-                        onClick={() => openCreateDialog("file")}
-                        title="New file"
-                        disabled={!hasVisibleProject}
-                      >
-                        <FilePlus2 size={15} />
-                      </button>
-                      <button
-                        className="small-icon"
-                        onClick={() => openCreateDialog("folder")}
-                        title="New folder"
-                        disabled={!hasVisibleProject}
-                      >
-                        <FolderPlus size={15} />
-                      </button>
-                      <button
-                        className="small-icon"
-                        onClick={() => void importDocx()}
-                        title="Import DOCX"
-                        disabled={docxImporting}
-                      >
-                        <FileUp size={15} />
-                      </button>
-                      <button
-                        className="small-icon"
-                        onClick={() => void importMarkdown()}
-                        title="Import Markdown"
-                        disabled={markdownImporting}
-                      >
-                        <Code2 size={15} />
-                      </button>
-                      <button
-                        className="small-icon"
-                        onClick={() => void refreshProject()}
-                        title="Refresh"
-                        disabled={!hasVisibleProject}
-                      >
-                        <RefreshCw size={14} />
-                      </button>
-                    </>
+                    <button
+                      className="small-icon"
+                      onClick={() => void refreshProject()}
+                      title="Refresh"
+                      disabled={!hasVisibleProject}
+                    >
+                      <RefreshCw size={14} />
+                    </button>
                   ) : activeSidebar === "search" ? (
                     <button
                       className="small-icon"
@@ -10399,6 +10434,19 @@ ${macroEnd}
                         <span>
                           <strong>Import Markdown</strong>
                           <small>Convert a Markdown file into LaTeX</small>
+                        </span>
+                      </button>
+                      <button
+                        className="welcome-action"
+                        onClick={() => void importPdf()}
+                        disabled={pdfImporting}
+                      >
+                        <FileImage size={18} />
+                        <span>
+                          <strong>Import PDF</strong>
+                          <small>
+                            Rebuild editable LaTeX from a searchable PDF
+                          </small>
                         </span>
                       </button>
                       <button className="welcome-action" onClick={openProject}>

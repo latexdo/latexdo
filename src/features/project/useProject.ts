@@ -13,6 +13,7 @@ export function useProject() {
   const [creating, setCreating] = useState(false);
   const [docxImporting, setDocxImporting] = useState(false);
   const [markdownImporting, setMarkdownImporting] = useState(false);
+  const [pdfImporting, setPdfImporting] = useState(false);
   const [templateCreating, setTemplateCreating] = useState<string | null>(null);
 
   return {
@@ -38,6 +39,8 @@ export function useProject() {
     setDocxImporting,
     markdownImporting,
     setMarkdownImporting,
+    pdfImporting,
+    setPdfImporting,
     templateCreating,
     setTemplateCreating,
   };

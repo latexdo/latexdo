@@ -712,6 +712,10 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       return imported;
     },
 
+    importPdf: async () => {
+      throw cloudUnavailable("PDF import");
+    },
+
     moveEntry: (projectId, fromRelativePath, toRelativePath) =>
       requestJson<{ relativePath: string }>(
         `/api/projects/${projectId}/files/move`,
@@ -1130,6 +1134,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
     onCreateFolderMenu: () => () => {},
     onImportDocxMenu: () => () => {},
     onImportMarkdownMenu: () => () => {},
+    onImportPdfMenu: () => () => {},
     onCloseTabMenu: () => () => {},
   };
 }
