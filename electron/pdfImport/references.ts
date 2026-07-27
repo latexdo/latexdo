@@ -171,7 +171,7 @@ export function rewriteAuthorYearCitations(
 
     // Textual: Smith et al. (2020)
     result = result.replace(
-      /\b([A-Z][A-Za-zÀ-ɏ'\-]+(?:\s+(?:and|&)\s+[A-Z][A-Za-zÀ-ɏ'\-]+)?(?:\s+et\s+al\.?)?)\s+\((1[89]\d{2}|20\d{2})[a-z]?\)/g,
+      /\b([A-Z][A-Za-zÀ-ɏ'-]+(?:\s+(?:and|&)\s+[A-Z][A-Za-zÀ-ɏ'-]+)?(?:\s+et\s+al\.?)?)\s+\((1[89]\d{2}|20\d{2})[a-z]?\)/g,
       (whole, names: string, year: string) => {
         const key = lookup(names, year);
         if (!key) {
