@@ -96,7 +96,6 @@ const tableCaptionPattern =
 const sectionNumberPattern = /^(\d+(?:\.\d+)*)\.?\s+(\S.*)$/;
 const datePattern =
   /^(?:\d{1,2}\s+)?(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}$|^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$|^(?:19|20)\d{2}$/i;
-const appendixPattern = /^(appendix\s+)?([A-Z])(?:\.\d+)*\.?\s+(\S.*)$/;
 const theoremPattern =
   /^(theorem|lemma|proposition|corollary|definition|remark|example|claim|conjecture|proof|assumption|observation|problem|exercise)\s*(\d+(?:\.\d+)*)?\s*[.:)]?\s*/i;
 const unnumberedHeadings = new Set([
@@ -1163,7 +1162,7 @@ export function analyzeStructure(
     if (marker) {
       const items: string[] = [];
       let cursor = index;
-      let ordered = marker.ordered;
+      const ordered = marker.ordered;
       while (cursor < prepared.length) {
         const candidate = prepared[cursor];
         const candidateMarker = listMarker(candidate.lines[0]);
@@ -1182,7 +1181,6 @@ export function analyzeStructure(
         index = cursor - 1;
         continue;
       }
-      ordered = false;
     }
 
     blocks.push({ kind: "paragraph", latex: renderGroup(lines).latex.trim() });

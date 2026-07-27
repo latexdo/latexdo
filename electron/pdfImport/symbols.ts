@@ -303,10 +303,10 @@ const textNormalizations: Array<[RegExp, string]> = [
   [/ﬄ/g, "ffl"],
   [/ﬅ/g, "st"],
   [/ﬆ/g, "st"],
-  [/ /g, "~"],
-  [/­/g, ""],
-  [/​/g, ""],
-  [/﻿/g, ""],
+  [/\u00a0/g, "~"],
+  [/\u00ad/g, ""],
+  [/\u200b/g, ""],
+  [/\ufeff/g, ""],
 ];
 
 const textSymbols = new Map<number, string>([

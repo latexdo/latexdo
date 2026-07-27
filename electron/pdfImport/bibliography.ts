@@ -165,9 +165,9 @@ function splitAuthors(raw: string): string[] {
 
   // Surname-first styles repeat the pattern `Surname, I. I.`, so the separating
   // comma is the one that precedes another capitalised surname.
-  if (/^[A-Z][A-Za-z'\-]+,\s*[A-Z]/.test(text)) {
+  if (/^[A-Z][A-Za-z'-]+,\s*[A-Z]/.test(text)) {
     const parts = text
-      .split(/,\s*(?=[A-Z][A-Za-z'\-]+\s*,)/)
+      .split(/,\s*(?=[A-Z][A-Za-z'-]+\s*,)/)
       .flatMap((part) => part.split(/\s+and\s+/i));
     return parts.map((part) => part.trim().replace(/[.,;]+$/, "")).filter(Boolean);
   }
@@ -207,13 +207,21 @@ function guessEntryType(text: string, journal: string): string {
   return "misc";
 }
 
+const bibEscapes: Record<string, string> = {
+  "\\": "\\textbackslash{}",
+  "{": "\\{",
+  "}": "\\}",
+  "#": "\\#",
+  "$": "\\$",
+  "%": "\\%",
+  "&": "\\&",
+  "_": "\\_",
+  "~": "\\textasciitilde{}",
+  "^": "\\textasciicircum{}",
+};
+
 function escapeBibValue(value: string): string {
-  return value
-    .replace(/[{}]/g, "")
-    .replace(/\\/g, "")
-    .replace(/([#$%&_])/g, "\\$1")
-    .replace(/~/g, "\\textasciitilde{}")
-    .trim();
+  return value.replace(/[\\{}#$%&_~^]/g, (character) => bibEscapes[character]).trim();
 }
 
 /** Protects capitalised words so BibTeX styles do not lower-case them. */
@@ -274,7 +282,7 @@ export function parseReference(lines: TextLine[], usedKeys: Set<string>): Refere
   // Authors run up to the first sentence break that is not an initial, or to the
   // year when the style puts it directly after the author list.
   let authorText = "";
-  let remainder = text;
+  let remainder: string;
   const yearFirst = year ? new RegExp(`^(.{3,160}?)\\s*[(\\[]?${year}[)\\]]?[.,]?\\s+`).exec(text) : null;
   if (yearFirst) {
     authorText = yearFirst[1].replace(/[.,;]+$/, "");
