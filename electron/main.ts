@@ -42,12 +42,14 @@ import {
 } from "./compiler.js";
 import { importDocxIntoProject } from "./docxImport.js";
 import { importMarkdown } from "./markdownImport.js";
+import { importPdfIntoProject } from "./pdfImport/index.js";
 import { backwardSyncTex, forwardSyncTex } from "./synctex.js";
 import { readSafeTextFile } from "./textFile.js";
 import type {
   Diagnostic,
   DocxImportResult,
   MarkdownImportResult,
+  PdfImportResult,
   CompileRequest,
   AsymptoteCompileRequest,
   GitDiscardResult,
@@ -159,6 +161,7 @@ const createFileChannel = "file:create-dialog";
 const createFolderChannel = "folder:create-dialog";
 const importDocxChannel = "file:import-docx";
 const importMarkdownChannel = "file:import-markdown";
+const importPdfChannel = "file:import-pdf";
 const closeTabChannel = "file:close-tab";
 const maxHostedImportFileBytes = 5 * 1024 * 1024;
 
@@ -2144,6 +2147,13 @@ function buildApplicationMenu(): void {
             BrowserWindow.getFocusedWindow()?.webContents.send(importMarkdownChannel);
           },
         },
+        {
+          label: "Import PDF...",
+          accelerator: "CmdOrCtrl+Alt+P",
+          click: () => {
+            BrowserWindow.getFocusedWindow()?.webContents.send(importPdfChannel);
+          },
+        },
         { type: "separator" },
         {
           label: "Close Tab",
@@ -4061,6 +4071,57 @@ app.whenReady().then(async () => {
         }
       }
       const imported = await importMarkdown(project.rootPath, result.filePaths[0]);
+      return {
+        ...imported,
+        project,
+      };
+    },
+  );
+  ipcMain.handle(
+    "pdf:import",
+    async (event, ...rawArgs: unknown[]): Promise<PdfImportResult | null> => {
+      const channel = "pdf:import";
+      const [rawProjectId] = expectIpcArgs(channel, rawArgs, 1);
+      let project: OpenProject | null = null;
+      if (typeof rawProjectId === "string" && rawProjectId.trim()) {
+        const projectId = parseProjectId(channel, rawProjectId);
+        project = openProjects.get(projectId) ?? null;
+        if (!project) {
+          throw new Error("The requested project is not open.");
+        }
+      }
+      const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+      const dialogOptions = {
+        properties: ["openFile"],
+        title: "Import PDF as LaTeX",
+        buttonLabel: "Import PDF",
+        defaultPath: project?.rootPath ?? app.getPath("documents"),
+        filters: [
+          { name: "PDF documents", extensions: ["pdf"] },
+          { name: "All files", extensions: ["*"] },
+        ],
+      } satisfies Electron.OpenDialogOptions;
+      const result = window
+        ? await dialog.showOpenDialog(window, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions);
+
+      if (result.canceled || !result.filePaths[0]) {
+        return null;
+      }
+
+      if (!project) {
+        project = await registerProjectIfTrusted(
+          window ?? null,
+          path.dirname(result.filePaths[0]),
+        );
+        if (!project) {
+          return null;
+        }
+      }
+      const imported = await importPdfIntoProject(
+        project.rootPath,
+        result.filePaths[0],
+      );
       return {
         ...imported,
         project,
