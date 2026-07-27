@@ -139,7 +139,9 @@ function sanitizeLabel(value: string): string {
 function stripOuterStyle(latex: string): string {
   let result = latex.trim();
   for (let pass = 0; pass < 4; pass += 1) {
-    const match = /^\\(textbf|textit|emph|textsc|textrm|texttt)\{([\s\S]*)\}$/.exec(result);
+    const match = /^\\(textbf|textit|emph|textsc|textrm|texttt)\{([\s\S]*)\}$/.exec(
+      result,
+    );
     if (!match) {
       break;
     }
@@ -263,8 +265,8 @@ function findFigureRegion(
 
   // Keep the artwork nearest the caption and everything that touches it, so a plot
   // built from many small paths becomes one region.
-  const sorted = [...chosen].sort((a, b) =>
-    Math.abs(a.y - caption.baseline) - Math.abs(b.y - caption.baseline),
+  const sorted = [...chosen].sort(
+    (a, b) => Math.abs(a.y - caption.baseline) - Math.abs(b.y - caption.baseline),
   );
   let box = {
     left: sorted[0].x,
@@ -375,7 +377,10 @@ function collectRuledTableBody(
   let firstIndex = sorted.indexOf(nearest);
   let lastIndex = firstIndex;
   const maxRuleGap = Math.max(stats.leading * 14, stats.pageHeight * 0.35);
-  while (firstIndex > 0 && sorted[firstIndex].y1 - sorted[firstIndex - 1].y1 < maxRuleGap) {
+  while (
+    firstIndex > 0 &&
+    sorted[firstIndex].y1 - sorted[firstIndex - 1].y1 < maxRuleGap
+  ) {
     firstIndex -= 1;
   }
   while (
@@ -401,7 +406,11 @@ function collectRuledTableBody(
 }
 
 /** Groups consecutive lines into paragraph sized units. */
-function groupLines(layout: PageLayout, lines: TextLine[], stats: DocumentStats): TextLine[][] {
+function groupLines(
+  layout: PageLayout,
+  lines: TextLine[],
+  stats: DocumentStats,
+): TextLine[][] {
   const groups: TextLine[][] = [];
   let current: TextLine[] = [];
 
@@ -431,7 +440,10 @@ function groupLines(layout: PageLayout, lines: TextLine[], stats: DocumentStats)
       split = true;
     } else if (gap > leading * 1.42 || gap < 0) {
       split = true;
-    } else if (Math.abs(line.size - previous.size) > Math.max(previous.size, 1) * 0.09) {
+    } else if (
+      Math.abs(line.size - previous.size) >
+      Math.max(previous.size, 1) * 0.09
+    ) {
       split = true;
     } else if (
       // A short previous line followed by a line starting at the margin closes the
@@ -603,7 +615,9 @@ function listMarker(
   if (consumed >= meaningful.length) {
     return null;
   }
-  const gap = meaningful[consumed].x - (meaningful[consumed - 1].x + meaningful[consumed - 1].width);
+  const gap =
+    meaningful[consumed].x -
+    (meaningful[consumed - 1].x + meaningful[consumed - 1].width);
   if (gap < meaningful[0].size * 0.12) {
     return null;
   }
@@ -715,7 +729,13 @@ export function analyzeStructure(
             }
           }
         }
-        floats.push({ kind: "figure", caption: captionLines, numbering, region, bodyLines });
+        floats.push({
+          kind: "figure",
+          caption: captionLines,
+          numbering,
+          region,
+          bodyLines,
+        });
         for (const consumed of [...captionLines, ...bodyLines]) {
           claimed.add(consumed);
         }
@@ -751,14 +771,20 @@ export function analyzeStructure(
           if (claimed.has(candidate) || captionLines.includes(candidate)) {
             break;
           }
-          if (candidate.column !== line.column || candidate.spanning !== line.spanning) {
+          if (
+            candidate.column !== line.column ||
+            candidate.spanning !== line.spanning
+          ) {
             break;
           }
           const gap = Math.abs(candidate.baseline - reference.baseline);
           if (gap > Math.max(stats.leading, candidate.size) * 3.2) {
             break;
           }
-          if (figureCaptionPattern.test(lineText(candidate)) || tableCaptionPattern.test(lineText(candidate))) {
+          if (
+            figureCaptionPattern.test(lineText(candidate)) ||
+            tableCaptionPattern.test(lineText(candidate))
+          ) {
             break;
           }
           run.push(candidate);
@@ -851,7 +877,8 @@ export function analyzeStructure(
     }
     emittedFloats.add(float);
     const captionText = float.caption.map(lineText).join(" ");
-    const pattern = float.kind === "figure" ? figureCaptionPattern : tableCaptionPattern;
+    const pattern =
+      float.kind === "figure" ? figureCaptionPattern : tableCaptionPattern;
     const stripped = captionText.replace(pattern, "").trim();
     const captionLines = float.caption.map((line, index) =>
       index === 0
@@ -898,7 +925,8 @@ export function analyzeStructure(
         left: Math.min(...float.bodyLines.map((line) => line.left)) - stats.bodySize,
         right: Math.max(...float.bodyLines.map((line) => line.right)) + stats.bodySize,
         top: Math.min(...float.bodyLines.map((line) => line.top)) - stats.bodySize,
-        bottom: Math.max(...float.bodyLines.map((line) => line.bottom)) + stats.bodySize,
+        bottom:
+          Math.max(...float.bodyLines.map((line) => line.bottom)) + stats.bodySize,
       };
       const relevantRules = pageRules.filter(
         (rule) =>
@@ -1044,7 +1072,10 @@ export function analyzeStructure(
             lineIndex === 0
               ? {
                   ...line,
-                  glyphs: dropLeadingCharacters(line, text.length - heading.text.length),
+                  glyphs: dropLeadingCharacters(
+                    line,
+                    text.length - heading.text.length,
+                  ),
                 }
               : line,
           )
@@ -1083,11 +1114,11 @@ export function analyzeStructure(
     const averageMath = median(lines.map(mathShare));
     const indentedOrCentred =
       first.left > column.left + stats.bodySize * 0.9 ||
-      Math.abs(
-        (first.left + first.right) / 2 - (column.left + column.right) / 2,
-      ) < columnWidth * 0.16;
+      Math.abs((first.left + first.right) / 2 - (column.left + column.right) / 2) <
+        columnWidth * 0.16;
     const narrow =
-      Math.max(...lines.map((line) => line.right)) < column.right - stats.bodySize * 0.5;
+      Math.max(...lines.map((line) => line.right)) <
+      column.right - stats.bodySize * 0.5;
     if (averageMath > 0.32 && (indentedOrCentred || narrow) && text.length < 600) {
       const { numbering, glyphs } = extractEquationTag(lines, layout, stats);
       const sizes = glyphs.filter((glyph) => !glyph.space).map((glyph) => glyph.size);
@@ -1130,7 +1161,9 @@ export function analyzeStructure(
     if (isFootnote) {
       const marker = /^[\d*†‡§¶]+/.exec(text)?.[0] ?? "";
       const stripped = lines.map((line, lineIndex) =>
-        lineIndex === 0 ? { ...line, glyphs: dropLeadingCharacters(line, marker.length) } : line,
+        lineIndex === 0
+          ? { ...line, glyphs: dropLeadingCharacters(line, marker.length) }
+          : line,
       );
       pendingFootnotes.push({
         kind: "footnote",
@@ -1142,11 +1175,16 @@ export function analyzeStructure(
 
     // Theorem-like environments.
     const theorem = theoremPattern.exec(text);
-    if (theorem && (boldShare(first) > 0.2 || first.glyphs.some((g) => g.font.smallCaps))) {
+    if (
+      theorem &&
+      (boldShare(first) > 0.2 || first.glyphs.some((g) => g.font.smallCaps))
+    ) {
       const environment = theorem[1].toLowerCase();
       const consumed = theorem[0].length;
       const stripped = lines.map((line, lineIndex) =>
-        lineIndex === 0 ? { ...line, glyphs: dropLeadingCharacters(line, consumed) } : line,
+        lineIndex === 0
+          ? { ...line, glyphs: dropLeadingCharacters(line, consumed) }
+          : line,
       );
       blocks.push({
         kind: "theorem",

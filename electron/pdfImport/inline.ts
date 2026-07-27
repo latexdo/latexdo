@@ -143,7 +143,11 @@ export function segmentLine(line: TextLine, bodySize: number): Span[] {
           continue;
         }
         isMath[cursor] = true;
-        for (let fill = Math.min(index, cursor) + 1; fill < Math.max(index, cursor); fill += 1) {
+        for (
+          let fill = Math.min(index, cursor) + 1;
+          fill < Math.max(index, cursor);
+          fill += 1
+        ) {
           isMath[fill] = true;
         }
         changed = true;
@@ -427,7 +431,9 @@ export function renderInline(lines: TextLine[], context: InlineContext): InlineR
         continue;
       }
 
-      const sizes = span.glyphs.filter((glyph) => !glyph.space).map((glyph) => glyph.size);
+      const sizes = span.glyphs
+        .filter((glyph) => !glyph.space)
+        .map((glyph) => glyph.size);
       const spanContext: MathContext = {
         ...context.math,
         rules: context.rulesByPage[line.pageIndex] ?? [],

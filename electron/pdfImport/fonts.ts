@@ -43,7 +43,10 @@ const familyRules: FamilyRule[] = [
   { pattern: /^(MTSY|MTEX|MATHEMATICALPI)/, role: "symbol" },
   { pattern: /MATH(EMATICAL)?(ITALIC)?$/, role: "variable", italic: true },
   { pattern: /(CAMBRIAMATH|STIXMATH|STIXTWOMATH|XITSMATH|ASANAMATH)/, role: "symbol" },
-  { pattern: /(LATINMODERNMATH|TEXGYRE\w*MATH|LIBERTINUSMATH|FIRAMATH)/, role: "symbol" },
+  {
+    pattern: /(LATINMODERNMATH|TEXGYRE\w*MATH|LIBERTINUSMATH|FIRAMATH)/,
+    role: "symbol",
+  },
   { pattern: /^(SYMBOL|ZAPFDINGBATS|WINGDINGS)/, role: "symbol" },
   // Text families.
   { pattern: /^CM(CSC|FCSC)/, role: "text", smallCaps: true, serif: true },
@@ -65,7 +68,8 @@ const boldPattern =
   /(BOLD|^.*-BD$|-BD[^A-Z]|SEMIBOLD|BLACK|HEAVY|DEMI|MEDI\b|-B$|BX\d)/;
 const italicPattern = /(ITALIC|ITAL|OBLIQUE|-IT$|-IT[^A-Z]|SLANTED|CURSIVE)/;
 const monoPattern = /(MONO|COURIER|CONSOLAS|TYPEWRITER|NIMBUSMON|MENLO|INCONSOLATA)/;
-const sansPattern = /(HELVETICA|ARIAL|NIMBUSSAN|VERDANA|TAHOMA|CALIBRI|SANS|FIRA|LATO|ROBOTO|OPENSANS)/;
+const sansPattern =
+  /(HELVETICA|ARIAL|NIMBUSSAN|VERDANA|TAHOMA|CALIBRI|SANS|FIRA|LATO|ROBOTO|OPENSANS)/;
 const smallCapsPattern = /(SMALLCAPS|SMCAPS|-SC$|CAPS$)/;
 
 /** Strips the six-letter subset prefix PDF producers add, e.g. `GCXKZF+CMMI10`. */
@@ -91,7 +95,11 @@ export function normalizeFontFamily(rawName: string): string {
     .toUpperCase();
 }
 
-export function describeFont(key: string, rawName: string, glyphScale: number): FontDescriptor {
+export function describeFont(
+  key: string,
+  rawName: string,
+  glyphScale: number,
+): FontDescriptor {
   const normalized = normalizeFontFamily(rawName || key);
   const rule = familyRules.find((candidate) => candidate.pattern.test(normalized));
 

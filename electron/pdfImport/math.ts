@@ -59,8 +59,24 @@ interface Unit {
   penalty: number;
 }
 
-const openDelimiters = new Set(["(", "[", "\\{", "\\langle", "\\lceil", "\\lfloor", "\\llbracket"]);
-const closeDelimiters = new Set([")", "]", "\\}", "\\rangle", "\\rceil", "\\rfloor", "\\rrbracket"]);
+const openDelimiters = new Set([
+  "(",
+  "[",
+  "\\{",
+  "\\langle",
+  "\\lceil",
+  "\\lfloor",
+  "\\llbracket",
+]);
+const closeDelimiters = new Set([
+  ")",
+  "]",
+  "\\}",
+  "\\rangle",
+  "\\rceil",
+  "\\rfloor",
+  "\\rrbracket",
+]);
 const delimiterPairs = new Map<string, string>([
   ["(", ")"],
   ["[", "]"],
@@ -168,13 +184,17 @@ function unitFromGlyph(glyph: Glyph, context: MathContext): Unit | null {
     context.packages.add(requires);
   }
 
-  const stretchy =
-    isExtensionFont(glyph.font) || height > context.baseSize * 1.3;
+  const stretchy = isExtensionFont(glyph.font) || height > context.baseSize * 1.3;
   return {
     ...base,
     latex: symbol.latex,
     mathClass: symbol.mathClass,
-    stretchy: stretchy && (openDelimiters.has(symbol.latex) || closeDelimiters.has(symbol.latex) || symbol.latex === "\\mid" || symbol.latex === "\\|"),
+    stretchy:
+      stretchy &&
+      (openDelimiters.has(symbol.latex) ||
+        closeDelimiters.has(symbol.latex) ||
+        symbol.latex === "\\mid" ||
+        symbol.latex === "\\|"),
     // An extension font glyph is drawn much taller than its nominal size, so
     // report a height that reflects what the reader sees.
     top: isExtensionFont(glyph.font) ? glyph.y - height * 1.6 : base.top,
@@ -251,9 +271,7 @@ function extractComposites(
       consumed.add(glyph);
     }
     const body = parseUnits(inside, rules, context, depth + 1);
-    const degree = index.length
-      ? parseUnits(index, rules, context, depth + 1)
-      : null;
+    const degree = index.length ? parseUnits(index, rules, context, depth + 1) : null;
     const baseline = Math.max(...inside.map((glyph) => glyph.y));
     units.push({
       latex: degree
@@ -301,7 +319,8 @@ function extractComposites(
     const nearest = Math.min(
       ...[...above, ...below].map((glyph) => Math.abs(glyph.y - bar.y1)),
     );
-    const scale = median([...above, ...below].map((glyph) => glyph.size)) || context.baseSize;
+    const scale =
+      median([...above, ...below].map((glyph) => glyph.size)) || context.baseSize;
     if (nearest > scale * 1.6) {
       continue;
     }
@@ -377,7 +396,9 @@ function structure(units: Unit[], context: MathContext, depth: number): ParsedUn
   const baselineY = median(
     (fullSize.length ? fullSize : sorted).map((unit) => unit.baseline),
   );
-  const referenceSize = median((fullSize.length ? fullSize : sorted).map((u) => u.size));
+  const referenceSize = median(
+    (fullSize.length ? fullSize : sorted).map((u) => u.size),
+  );
 
   type Relation = "base" | "sup" | "sub";
   const relationOf = (unit: Unit, previous: Unit | null): Relation => {
@@ -544,7 +565,8 @@ function mergeWords(units: Unit[], context: MathContext): Unit[] {
       ...run[0],
       latex,
       letter: undefined,
-      mathClass: mathOperatorNames.has(word) && bigOperators.has(`\\${word}`) ? "bigop" : "ord",
+      mathClass:
+        mathOperatorNames.has(word) && bigOperators.has(`\\${word}`) ? "bigop" : "ord",
       right: run[run.length - 1].right,
       closed: false,
       penalty: 0,

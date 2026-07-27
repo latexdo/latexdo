@@ -924,7 +924,11 @@ export function packagesForSymbols(latexSnippets: string[]): Set<string> {
   const packages = new Set<string>();
   const joined = latexSnippets.join(" ");
   for (const entry of mathSymbols.values()) {
-    if (entry.requires && entry.requires !== "amsmath" && joined.includes(entry.latex)) {
+    if (
+      entry.requires &&
+      entry.requires !== "amsmath" &&
+      joined.includes(entry.latex)
+    ) {
       packages.add(entry.requires);
     }
   }

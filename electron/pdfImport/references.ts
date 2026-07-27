@@ -24,7 +24,10 @@ export interface RewriteStats {
  * Applies `transform` to the prose parts of `latex`, leaving maths, verbatim and
  * the arguments of reference commands untouched.
  */
-export function mapOutsideMath(latex: string, transform: (part: string) => string): string {
+export function mapOutsideMath(
+  latex: string,
+  transform: (part: string) => string,
+): string {
   const guarded =
     /\$\$[\s\S]*?\$\$|\$(?:\\.|[^$\\])*\$|\\begin\{(equation\*?|align\*?|gather\*?|multline\*?|verbatim|lstlisting|tabular)\}[\s\S]*?\\end\{\1\}|\\(?:label|ref|eqref|cite[a-z]*|includegraphics|url|href)\s*(?:\[[^\]]*\])?\{[^}]*\}/g;
 
@@ -74,37 +77,45 @@ export function rewriteNumericCitations(
   }
   return mapOutsideMath(latex, (part) =>
     // Consecutive bracket groups such as [1]--[3] are merged into one citation.
-    part.replace(/\[([\d\s,–—-]{1,60})\](?:\s*[-–—]{1,2}\s*\[([\d\s,–—-]{1,60})\])?/g, (whole, first: string, second?: string) => {
-      const firstNumbers = expandNumberList(first);
-      if (!firstNumbers) {
-        return whole;
-      }
-      let numbers = firstNumbers;
-      if (second) {
-        const secondNumbers = expandNumberList(second);
-        if (!secondNumbers) {
+    part.replace(
+      /\[([\d\s,–—-]{1,60})\](?:\s*[-–—]{1,2}\s*\[([\d\s,–—-]{1,60})\])?/g,
+      (whole, first: string, second?: string) => {
+        const firstNumbers = expandNumberList(first);
+        if (!firstNumbers) {
           return whole;
         }
-        const from = Number.parseInt(firstNumbers[firstNumbers.length - 1], 10);
-        const to = Number.parseInt(secondNumbers[0], 10);
-        if (Number.isFinite(from) && Number.isFinite(to) && to > from && to - from <= 40) {
-          numbers = [...firstNumbers];
-          for (let value = from + 1; value <= to; value += 1) {
-            numbers.push(String(value));
+        let numbers = firstNumbers;
+        if (second) {
+          const secondNumbers = expandNumberList(second);
+          if (!secondNumbers) {
+            return whole;
           }
-        } else {
+          const from = Number.parseInt(firstNumbers[firstNumbers.length - 1], 10);
+          const to = Number.parseInt(secondNumbers[0], 10);
+          if (
+            Number.isFinite(from) &&
+            Number.isFinite(to) &&
+            to > from &&
+            to - from <= 40
+          ) {
+            numbers = [...firstNumbers];
+            for (let value = from + 1; value <= to; value += 1) {
+              numbers.push(String(value));
+            }
+          } else {
+            return whole;
+          }
+        }
+
+        const keys = numbers.map((number) => byMarker.get(number));
+        if (keys.some((key) => !key)) {
+          stats.unresolvedCitations += 1;
           return whole;
         }
-      }
-
-      const keys = numbers.map((number) => byMarker.get(number));
-      if (keys.some((key) => !key)) {
-        stats.unresolvedCitations += 1;
-        return whole;
-      }
-      stats.citations += 1;
-      return `\\cite{${keys.join(",")}}`;
-    }),
+        stats.citations += 1;
+        return `\\cite{${keys.join(",")}}`;
+      },
+    ),
   );
 }
 
@@ -129,7 +140,10 @@ export function rewriteAuthorYearCitations(
   }
 
   const lookup = (names: string, year: string): string | null => {
-    const cleaned = names.replace(etAlPattern, "").replace(/\\emph\{|\}/g, "").trim();
+    const cleaned = names
+      .replace(etAlPattern, "")
+      .replace(/\\emph\{|\}/g, "")
+      .trim();
     for (const candidate of cleaned.split(/\s*(?:,|;|&|\band\b)\s*/i)) {
       const token = candidate.trim().split(/\s+/).pop();
       if (!token) {
@@ -151,7 +165,9 @@ export function rewriteAuthorYearCitations(
         const groups = body.split(/\s*;\s*/);
         const keys: string[] = [];
         for (const group of groups) {
-          const match = /^(.*?)[,\s]+\(?((?:1[89]\d{2}|20\d{2}))[a-z]?\)?$/.exec(group.trim());
+          const match = /^(.*?)[,\s]+\(?((?:1[89]\d{2}|20\d{2}))[a-z]?\)?$/.exec(
+            group.trim(),
+          );
           if (!match) {
             return whole;
           }
@@ -241,7 +257,15 @@ export function rewriteCrossReferences(
     result = mapOutsideMath(result, (part) =>
       part.replace(
         pattern,
-        (whole, word: string, _space: string, open: string, first: string, close: string, rest: string) => {
+        (
+          whole,
+          word: string,
+          _space: string,
+          open: string,
+          first: string,
+          close: string,
+          rest: string,
+        ) => {
           const numbers = [first, ...(rest.match(new RegExp(number, "g")) ?? [])];
           const keys = numbers.map((value) => rule.labels.get(value));
           if (!keys[0]) {

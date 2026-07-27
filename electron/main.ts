@@ -4118,7 +4118,10 @@ app.whenReady().then(async () => {
           return null;
         }
       }
-      const imported = await importPdfIntoProject(project.rootPath, result.filePaths[0]);
+      const imported = await importPdfIntoProject(
+        project.rootPath,
+        result.filePaths[0],
+      );
       return {
         ...imported,
         project,

@@ -110,7 +110,11 @@ function renderBlock(block: Block, options: RenderOptions): string[] {
 
     case "section": {
       const command =
-        block.level <= 1 ? "section" : block.level === 2 ? "subsection" : "subsubsection";
+        block.level <= 1
+          ? "section"
+          : block.level === 2
+            ? "subsection"
+            : "subsubsection";
       const star = block.starred ? "*" : "";
       const lines = [`\\${command}${star}{${block.latex}}`];
       if (block.label && !block.starred) {
@@ -126,9 +130,7 @@ function renderBlock(block: Block, options: RenderOptions): string[] {
     case "equation": {
       const lines: string[] = [];
       if (!block.confident) {
-        lines.push(
-          "% TODO(pdf import): check this formula against the original page.",
-        );
+        lines.push("% TODO(pdf import): check this formula against the original page.");
       }
       if (block.multiline) {
         const environment = block.numbering ? "align" : "align*";

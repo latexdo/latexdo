@@ -111,7 +111,9 @@ export async function importPdfIntoProject(
     structure,
     references,
     sourceAssetPath,
-    bibStem: references.length ? path.posix.basename(targets.bibRelativePath, ".bib") : null,
+    bibStem: references.length
+      ? path.posix.basename(targets.bibRelativePath, ".bib")
+      : null,
     authorYearCitations: rewriteStats.authorYear,
     reportLines,
   });
@@ -247,10 +249,22 @@ function computeGeometry(layouts: PageLayout[], stats: DocumentStats): PageGeome
     paper,
     widthPt: width,
     heightPt: height,
-    left: pick(sample.map((layout) => layout.bodyLeft), 72),
-    right: pick(sample.map((layout) => width - layout.bodyRight), 72),
-    top: pick(sample.map((layout) => layout.bodyTop), 72),
-    bottom: pick(sample.map((layout) => height - layout.bodyBottom), 72),
+    left: pick(
+      sample.map((layout) => layout.bodyLeft),
+      72,
+    ),
+    right: pick(
+      sample.map((layout) => width - layout.bodyRight),
+      72,
+    ),
+    top: pick(
+      sample.map((layout) => layout.bodyTop),
+      72,
+    ),
+    bottom: pick(
+      sample.map((layout) => height - layout.bodyBottom),
+      72,
+    ),
   };
 }
 
@@ -262,7 +276,9 @@ function buildReport(
   rewriteStats: RewriteStats,
   removedHeadFoot: number,
 ): string[] {
-  const equations = structure.blocks.filter((block) => block.kind === "equation").length;
+  const equations = structure.blocks.filter(
+    (block) => block.kind === "equation",
+  ).length;
   const sections = structure.blocks.filter((block) => block.kind === "section").length;
   return [
     `Source: ${pageCount} page${pageCount === 1 ? "" : "s"}, ${stats.columnCount} column${stats.columnCount === 1 ? "" : "s"}, body text at ${stats.bodySize.toFixed(1)}pt.`,
