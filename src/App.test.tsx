@@ -276,6 +276,7 @@ function installLatexDoMock(options?: {
     chooseImportExternalFiles: vi.fn().mockResolvedValue([]),
     importDocx: vi.fn().mockResolvedValue(null),
     importMarkdown: vi.fn().mockResolvedValue(null),
+    importPdf: vi.fn().mockResolvedValue(null),
     moveEntry: vi.fn().mockResolvedValue("main.tex"),
     getGitStatus: vi.fn().mockResolvedValue(
       options?.gitStatus ?? {
@@ -369,6 +370,7 @@ function installLatexDoMock(options?: {
     onCreateFolderMenu: vi.fn(() => vi.fn()),
     onImportDocxMenu: vi.fn((_callback: () => void) => vi.fn()),
     onImportMarkdownMenu: vi.fn(() => vi.fn()),
+    onImportPdfMenu: vi.fn(() => vi.fn()),
     onCloseTabMenu: vi.fn(() => vi.fn()),
   };
 
@@ -493,6 +495,20 @@ describe("App critical UI controls", () => {
 
     await waitFor(() => {
       expect(api.importDocx).toHaveBeenCalledWith(undefined);
+    });
+  });
+
+  it("opens PDF import from the welcome screen without an open project", async () => {
+    const api = installLatexDoMock();
+
+    render(<App />);
+
+    const welcomeImport = screen.getByText("Import PDF").closest("button");
+    expect(welcomeImport).not.toBeNull();
+    fireEvent.click(welcomeImport as HTMLButtonElement);
+
+    await waitFor(() => {
+      expect(api.importPdf).toHaveBeenCalledWith(undefined);
     });
   });
 
@@ -974,6 +990,63 @@ describe("App critical UI controls", () => {
       ((await screen.findByLabelText("mock editor")) as HTMLTextAreaElement).value,
     ).toContain("Imported");
     expect(screen.getByText(/Imported paper\.docx to paper\.tex/i)).toBeVisible();
+  });
+
+  it("opens the reconstructed TeX file after importing PDF into a new project", async () => {
+    const api = installLatexDoMock();
+    const importedProject: OpenProject = {
+      id: "project-2",
+      rootPath: "/Users/omar/imported",
+      name: "imported",
+    };
+    const importedEntries: ProjectEntry[] = [
+      {
+        name: "paper.tex",
+        path: "/Users/omar/imported/paper.tex",
+        relativePath: "paper.tex",
+        type: "file",
+      },
+    ];
+
+    api.importPdf.mockResolvedValue({
+      sourcePath: "/Users/omar/Desktop/paper.pdf",
+      relativePath: "paper.tex",
+      bibRelativePath: null,
+      assetDirectory: null,
+      mediaFiles: [],
+      converter: "built-in",
+      pageCount: 1,
+      stats: {
+        sections: 1,
+        equations: 2,
+        figures: 0,
+        tables: 0,
+        references: 0,
+        citations: 0,
+        crossReferences: 0,
+        lowConfidenceMath: 0,
+      },
+      warnings: [],
+      project: importedProject,
+    });
+    api.listProject.mockImplementation(async (projectId: string) =>
+      projectId === importedProject.id ? importedEntries : entries,
+    );
+    api.readFile.mockResolvedValue(
+      "\\documentclass{article}\n\\begin{document}\nRebuilt\n\\end{document}\n",
+    );
+
+    render(<App />);
+
+    fireEvent.click(screen.getByText("Import PDF").closest("button")!);
+
+    await waitFor(() => {
+      expect(api.readFile).toHaveBeenCalledWith(importedProject.id, "paper.tex");
+    });
+    expect(
+      ((await screen.findByLabelText("mock editor")) as HTMLTextAreaElement).value,
+    ).toContain("Rebuilt");
+    expect(screen.getByText(/Reconstructed paper\.pdf to paper\.tex/i)).toBeVisible();
   });
 
   it("starts the updater from the available update banner", async () => {
