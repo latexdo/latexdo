@@ -33,7 +33,11 @@ interface PdfGlyph {
 interface PdfPageProxy {
   view: number[];
   rotate: number;
-  getViewport(options: { scale: number }): { width: number; height: number; transform: number[] };
+  getViewport(options: { scale: number }): {
+    width: number;
+    height: number;
+    transform: number[];
+  };
   getOperatorList(): Promise<{ fnArray: number[]; argsArray: unknown[][] }>;
   commonObjs: { has(key: string): boolean; get(key: string): unknown };
   objs: { has(key: string): boolean; get(key: string): unknown };
@@ -704,7 +708,9 @@ export async function extractDocument(
   options: ExtractOptions = {},
 ): Promise<DocumentContent> {
   const pdfjs = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown as {
-    getDocument(parameters: Record<string, unknown>): { promise: Promise<PdfDocumentProxy> };
+    getDocument(parameters: Record<string, unknown>): {
+      promise: Promise<PdfDocumentProxy>;
+    };
   };
 
   const loadingTask = pdfjs.getDocument({
@@ -730,7 +736,8 @@ export async function extractDocument(
     const metadata = await document.getMetadata();
     title = String(metadata.info?.Title ?? "").trim();
     author = String(metadata.info?.Author ?? "").trim();
-    producer = `${metadata.info?.Producer ?? ""} ${metadata.info?.Creator ?? ""}`.trim();
+    producer =
+      `${metadata.info?.Producer ?? ""} ${metadata.info?.Creator ?? ""}`.trim();
   } catch {
     // Metadata is optional.
   }
@@ -745,9 +752,7 @@ export async function extractDocument(
   for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
     const page = await document.getPage(pageNumber);
     try {
-      pages.push(
-        await extractPage(page, pageNumber - 1, fonts, warnings, glyphBudget),
-      );
+      pages.push(await extractPage(page, pageNumber - 1, fonts, warnings, glyphBudget));
     } catch (error) {
       warnings.push(
         `Page ${pageNumber} could not be read: ${(error as Error).message ?? "unknown error"}`,

@@ -10444,9 +10444,7 @@ ${macroEnd}
                         <FileImage size={18} />
                         <span>
                           <strong>Import PDF</strong>
-                          <small>
-                            Rebuild editable LaTeX from a searchable PDF
-                          </small>
+                          <small>Rebuild editable LaTeX from a searchable PDF</small>
                         </span>
                       </button>
                       <button className="welcome-action" onClick={openProject}>

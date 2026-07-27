@@ -33,7 +33,8 @@ const doiPattern = /\b(10\.\d{4,9}\/[-._;()/:A-Za-z0-9<>]+)/;
 const arxivPattern = /arXiv[:\s]*(\d{4}\.\d{4,5})(v\d+)?/i;
 const urlPattern = /\bhttps?:\/\/[^\s,;)]+/;
 const pagesPattern = /\bp(?:p|ages)?\.?\s*(\d+)\s*[-–—]{1,2}\s*(\d+)/i;
-const volumeIssuePagesPattern = /\b(\d+)\s*\((\d+)\)\s*[:,]\s*(\d+)\s*[-–—]{1,2}\s*(\d+)/;
+const volumeIssuePagesPattern =
+  /\b(\d+)\s*\((\d+)\)\s*[:,]\s*(\d+)\s*[-–—]{1,2}\s*(\d+)/;
 const volumePattern = /\bvol(?:ume)?\.?\s*(\d+)/i;
 const numberPattern = /\bn(?:o|umber|r)\.?\s*(\d+)/i;
 const editionPattern = /\b(\d+)(?:st|nd|rd|th)\s+ed(?:ition)?\b/i;
@@ -119,7 +120,10 @@ function italicRun(lines: TextLine[]): string {
   if (current.trim().length > best.trim().length) {
     best = current;
   }
-  return best.replace(/\s+/g, " ").trim().replace(/[.,;:]+$/, "");
+  return best
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.,;:]+$/, "");
 }
 
 function joinEntryText(lines: TextLine[]): string {
@@ -160,7 +164,10 @@ function extractSurname(author: string): string | null {
 
 /** Normalises an author list into the `A and B and C` form BibTeX expects. */
 function splitAuthors(raw: string): string[] {
-  let text = raw.trim().replace(/\s*&\s*/g, " and ").replace(/\bet\s+al\.?/i, "others");
+  let text = raw
+    .trim()
+    .replace(/\s*&\s*/g, " and ")
+    .replace(/\bet\s+al\.?/i, "others");
   text = text.replace(/,\s*and\s+/gi, " and ").replace(/\s+and\s+/gi, " and ");
 
   // Surname-first styles repeat the pattern `Surname, I. I.`, so the separating
@@ -189,7 +196,11 @@ function guessEntryType(text: string, journal: string): string {
   if (/technical report|tech\.? rep\.?|\btr-\d/.test(lower)) {
     return "techreport";
   }
-  if (/\bin\s+(?:proc|proceedings)|conference on|workshop on|symposium|\bin:\s/.test(lower)) {
+  if (
+    /\bin\s+(?:proc|proceedings)|conference on|workshop on|symposium|\bin:\s/.test(
+      lower,
+    )
+  ) {
     return "inproceedings";
   }
   if (/arxiv|preprint/.test(lower) && !/\bin\s+proc/.test(lower)) {
@@ -212,10 +223,10 @@ const bibEscapes: Record<string, string> = {
   "{": "\\{",
   "}": "\\}",
   "#": "\\#",
-  "$": "\\$",
+  $: "\\$",
   "%": "\\%",
   "&": "\\&",
-  "_": "\\_",
+  _: "\\_",
   "~": "\\textasciitilde{}",
   "^": "\\textasciicircum{}",
 };
@@ -231,9 +242,12 @@ function protectTitleCase(value: string): string {
 
 export function parseReference(lines: TextLine[], usedKeys: Set<string>): Reference {
   const rawWithMarker = joinEntryText(lines);
-  const markerMatch = markerPattern.exec(rawWithMarker) ?? numberedPattern.exec(rawWithMarker);
+  const markerMatch =
+    markerPattern.exec(rawWithMarker) ?? numberedPattern.exec(rawWithMarker);
   const marker = markerMatch ? markerMatch[1] : null;
-  const text = markerMatch ? rawWithMarker.slice(markerMatch[0].length).trim() : rawWithMarker;
+  const text = markerMatch
+    ? rawWithMarker.slice(markerMatch[0].length).trim()
+    : rawWithMarker;
 
   const fields: Record<string, string> = {};
   const yearMatch = yearPattern.exec(text);
@@ -283,7 +297,9 @@ export function parseReference(lines: TextLine[], usedKeys: Set<string>): Refere
   // year when the style puts it directly after the author list.
   let authorText = "";
   let remainder: string;
-  const yearFirst = year ? new RegExp(`^(.{3,160}?)\\s*[(\\[]?${year}[)\\]]?[.,]?\\s+`).exec(text) : null;
+  const yearFirst = year
+    ? new RegExp(`^(.{3,160}?)\\s*[(\\[]?${year}[)\\]]?[.,]?\\s+`).exec(text)
+    : null;
   if (yearFirst) {
     authorText = yearFirst[1].replace(/[.,;]+$/, "");
     remainder = text.slice(yearFirst[0].length);
@@ -309,7 +325,8 @@ export function parseReference(lines: TextLine[], usedKeys: Set<string>): Refere
       journal && remainder.includes(journal)
         ? remainder.slice(0, remainder.indexOf(journal))
         : remainder;
-    const candidate = untilJournal.split(/(?<=[^A-Z])\.\s+|\bIn\b\s|\bin:\s/)[0] ?? untilJournal;
+    const candidate =
+      untilJournal.split(/(?<=[^A-Z])\.\s+|\bIn\b\s|\bin:\s/)[0] ?? untilJournal;
     title = candidate.replace(/[.,;]+\s*$/, "").trim();
     if (title.length > 300) {
       title = title.slice(0, 300);
