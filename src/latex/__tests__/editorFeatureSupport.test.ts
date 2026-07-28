@@ -13,6 +13,8 @@ describe("editor feature support", () => {
     const source = [
       "\\href{https://latexdo.org/downloads/}{downloads}",
       "See \\url{www.example.com} and https://example.org/docs.",
+      "@misc{k, url={example.com/paper}, doi={10.1000/abc.def}}",
+      "Bare DOI doi:10.2000/raw.",
     ].join("\n");
 
     const links = findLatexDocumentLinks(source);
@@ -21,10 +23,19 @@ describe("editor feature support", () => {
       "https://latexdo.org/downloads/",
       "https://www.example.com",
       "https://example.org/docs",
+      "https://example.com/paper",
+      "https://doi.org/10.1000/abc.def",
+      "https://doi.org/10.2000/raw",
     ]);
     expect(
       findLatexDocumentLinkAtOffset(source, source.indexOf("downloads")),
     ).toMatchObject({ url: "https://latexdo.org/downloads/" });
+    expect(
+      findLatexDocumentLinkAtOffset(source, source.indexOf("example.com/paper")),
+    ).toMatchObject({ url: "https://example.com/paper" });
+    expect(
+      findLatexDocumentLinkAtOffset(source, source.indexOf("10.1000/abc.def")),
+    ).toMatchObject({ url: "https://doi.org/10.1000/abc.def" });
   });
 
   it("builds folding ranges for sections, environments, and comment blocks", () => {

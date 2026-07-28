@@ -4665,22 +4665,24 @@ ${macroEnd}
             })),
         }),
       );
-      providerDisposables.push(
-        instance.languages.registerLinkProvider("latex", {
-          provideLinks: (model) => ({
-            links: findLatexDocumentLinks(model.getValue()).map((link) => ({
-              range: new instance.Range(
-                link.startLine,
-                link.startColumn,
-                link.endLine,
-                link.endColumn,
-              ),
-              url: link.url,
-              tooltip: `Open ${link.url}`,
-            })),
+      for (const language of ["latex", "bibtex"]) {
+        providerDisposables.push(
+          instance.languages.registerLinkProvider(language, {
+            provideLinks: (model) => ({
+              links: findLatexDocumentLinks(model.getValue()).map((link) => ({
+                range: new instance.Range(
+                  link.startLine,
+                  link.startColumn,
+                  link.endLine,
+                  link.endColumn,
+                ),
+                url: link.url,
+                tooltip: `Open ${link.url}`,
+              })),
+            }),
           }),
-        }),
-      );
+        );
+      }
     }
     instance.languages.setMonarchTokensProvider("asymptote", {
       tokenizer: {
@@ -5839,8 +5841,35 @@ ${macroEnd}
     ];
     applyBookmarkDecorations(editor, activeBookmarkLines);
     editorMouseDisposableRef.current = editor.onMouseDown((event) => {
-      if (event.event.detail === 2 && event.target.position) {
-        void forwardSyncRef.current?.(event.target.position);
+      const position = event.target.position;
+      if (position) {
+        const model = editor.getModel();
+        const document = documentsRef.current.find(
+          (item) => item.path === activePathRef.current,
+        );
+        const language = document ? languageFor(document.name) : "";
+        if (
+          model &&
+          document &&
+          isTextDocument(document) &&
+          (language === "latex" || language === "bibtex") &&
+          editorModelMatchesPath(editor, document.path)
+        ) {
+          const link = findLatexDocumentLinkAtOffset(
+            model.getValue(),
+            model.getOffsetAt(position),
+          );
+          if (link) {
+            event.event.preventDefault();
+            event.event.stopPropagation();
+            openExternalLink(link.url);
+            return;
+          }
+        }
+      }
+
+      if (event.event.detail === 2 && position) {
+        void forwardSyncRef.current?.(position);
       }
     });
     requestAnimationFrame(() => {

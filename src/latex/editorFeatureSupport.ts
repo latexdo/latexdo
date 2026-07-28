@@ -459,18 +459,35 @@ function findLastIndex<T>(
   return -1;
 }
 
+function normalizeDoiUrl(rawDoi: string): string | null {
+  const normalizedDoi = rawDoi
+    .trim()
+    .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "")
+    .replace(/^doi:\s*/i, "")
+    .replace(/[),.;:]+$/g, "")
+    .trim();
+  if (!/^10\.\d{4,9}\//i.test(normalizedDoi)) {
+    return null;
+  }
+  return `https://doi.org/${encodeURIComponent(normalizedDoi).replace(/%2F/g, "/")}`;
+}
+
 function normalizeUrl(rawUrl: string): string | null {
   const trimmed = rawUrl.trim().replace(/[),.;:]+$/g, "");
   if (!trimmed) {
     return null;
   }
+  const doiUrl = normalizeDoiUrl(trimmed);
+  if (doiUrl) {
+    return doiUrl;
+  }
   if (/^https?:\/\//i.test(trimmed) || /^mailto:/i.test(trimmed)) {
     return trimmed;
   }
-  if (/^doi:/i.test(trimmed)) {
-    return `https://doi.org/${trimmed.slice(4)}`;
-  }
   if (/^www\./i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  if (/^[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:[/:?#][^\s{}\\]*)?$/i.test(trimmed)) {
     return `https://${trimmed}`;
   }
   return null;
@@ -507,7 +524,7 @@ function overlaps(
 
 export function findLatexDocumentLinks(text: string): LatexDocumentLink[] {
   const links: LatexDocumentLink[] = [];
-  const commandPattern = /\\(?:href|url)\s*\{([^}]+)\}(?:\s*\{([^}]*)\})?/g;
+  const commandPattern = /\\(?:href|url|doi)\s*\{([^}]+)\}(?:\s*\{([^}]*)\})?/g;
   let commandMatch: RegExpExecArray | null;
   while ((commandMatch = commandPattern.exec(text)) !== null) {
     const url = normalizeUrl(commandMatch[1] ?? "");
@@ -524,6 +541,22 @@ export function findLatexDocumentLinks(text: string): LatexDocumentLink[] {
     );
   }
 
+  const bibFieldPattern = /\b(?:url|doi)\s*=\s*(?:\{([^}]*)\}|"([^"]*)")/gi;
+  let bibFieldMatch: RegExpExecArray | null;
+  while ((bibFieldMatch = bibFieldPattern.exec(text)) !== null) {
+    const rawValue = bibFieldMatch[1] ?? bibFieldMatch[2] ?? "";
+    const url = normalizeUrl(rawValue);
+    if (!url) {
+      continue;
+    }
+    const valueStartInMatch = bibFieldMatch[0].indexOf(rawValue);
+    const startOffset = bibFieldMatch.index + valueStartInMatch;
+    const endOffset = startOffset + rawValue.length;
+    if (!overlaps(startOffset, endOffset, links)) {
+      links.push(linkFromOffsets(text, url, startOffset, endOffset));
+    }
+  }
+
   const literalPattern = /\b(?:https?:\/\/|www\.)[^\s{}\\]+/gi;
   let literalMatch: RegExpExecArray | null;
   while ((literalMatch = literalPattern.exec(text)) !== null) {
@@ -534,6 +567,19 @@ export function findLatexDocumentLinks(text: string): LatexDocumentLink[] {
     const endOffset = literalMatch.index + literalMatch[0].length;
     if (!overlaps(literalMatch.index, endOffset, links)) {
       links.push(linkFromOffsets(text, url, literalMatch.index, endOffset));
+    }
+  }
+
+  const doiPattern = /\b(?:doi:\s*)?10\.\d{4,9}\/[^\s{}\\<>"']+/gi;
+  let doiMatch: RegExpExecArray | null;
+  while ((doiMatch = doiPattern.exec(text)) !== null) {
+    const url = normalizeUrl(doiMatch[0]);
+    if (!url) {
+      continue;
+    }
+    const endOffset = doiMatch.index + doiMatch[0].length;
+    if (!overlaps(doiMatch.index, endOffset, links)) {
+      links.push(linkFromOffsets(text, url, doiMatch.index, endOffset));
     }
   }
 
