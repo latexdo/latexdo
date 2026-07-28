@@ -29,6 +29,7 @@ interface PdfPreviewProps {
   onNavigate?: (location: PdfClickLocation) => void;
   citationEntries?: CitationEntry[];
   onShowCitation?: (key: string) => void;
+  onOpenExternal?: (url: string) => void;
 }
 
 interface PdfPageProps {
@@ -492,6 +493,7 @@ export default function PdfPreview({
   onNavigate,
   citationEntries = [],
   onShowCitation,
+  onOpenExternal,
 }: PdfPreviewProps) {
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState("");
@@ -609,6 +611,7 @@ export default function PdfPreview({
                 setBibliographyOpen(false);
                 setSelectedCitationKey(null);
               }}
+              onOpenExternal={onOpenExternal}
               ariaLabel="PDF bibliography preview"
             />
           ) : null}

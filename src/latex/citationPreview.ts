@@ -12,6 +12,11 @@ export type CitationExternalLink = {
   url: string;
 };
 
+export type CitationBibliographyPart = {
+  text: string;
+  link?: CitationExternalLink;
+};
+
 const citationCommandAtLineRegex =
   /\\(?:cite|citep|citet|citealp|citeauthor|citeyear|citeyearpar|parencite|textcite|autocite|footcite|supercite)[a-zA-Z]*\*?(?:\s*\[[^\]]*\])*\s*\{([^}]*)\}/g;
 
@@ -99,21 +104,51 @@ export function citationExternalLinks(entry: CitationEntry): CitationExternalLin
   return links;
 }
 
-export function formatCitationBibliographyLine(entry: CitationEntry): string {
+export function citationBibliographyParts(
+  entry: CitationEntry,
+): CitationBibliographyPart[] {
   const people = formatCitationPeople(entry);
   const year = entry.year ? ` (${entry.year})` : "";
   const title = entry.title || "Untitled reference";
   const venue = citationVenue(entry);
   const venueText = venue === "No venue" ? "" : ` ${venue}.`;
-  const identifier = entry.doi
-    ? ` DOI: ${entry.doi}.`
-    : entry.url
-      ? ` ${entry.url}.`
-      : entry.eprint
-        ? ` ${entry.eprint}.`
-        : "";
+  const base = `${people}${year}. ${title}.${venueText}`.replace(/\s+/g, " ").trim();
+  const links = citationExternalLinks(entry);
+  const doi = entry.doi?.trim();
+  if (doi) {
+    return [
+      { text: `${base} DOI: ` },
+      { text: doi, link: links.find((link) => link.label === "DOI") },
+      { text: "." },
+    ];
+  }
 
-  return `${people}${year}. ${title}.${venueText}${identifier}`
+  const url = entry.url?.trim();
+  if (url) {
+    return [
+      { text: `${base} ` },
+      { text: url, link: links.find((link) => link.label === "URL") },
+      { text: "." },
+    ];
+  }
+
+  const eprint = entry.eprint?.trim();
+  if (eprint) {
+    const label = entry.archivePrefix?.trim() || "eprint";
+    return [
+      { text: `${base} ` },
+      { text: eprint, link: links.find((link) => link.label === label) },
+      { text: "." },
+    ];
+  }
+
+  return [{ text: base }];
+}
+
+export function formatCitationBibliographyLine(entry: CitationEntry): string {
+  return citationBibliographyParts(entry)
+    .map((part) => part.text)
+    .join("")
     .replace(/\s+/g, " ")
     .trim();
 }

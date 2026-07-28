@@ -154,6 +154,12 @@ const fieldVariants = [
     field: "url",
     val: "https://example.com",
   },
+  {
+    desc: "mixed-case DOI",
+    content: "@misc{k,title={T},author={A},year={2020},DoI={10.1000/test},}",
+    field: "doi",
+    val: "10.1000/test",
+  },
 ];
 describe("BibTeX field values — parameterized", () => {
   it.each(fieldVariants)("parses $desc = $val", ({ content, field, val }) => {

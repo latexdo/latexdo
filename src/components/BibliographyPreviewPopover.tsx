@@ -1,6 +1,7 @@
 import { Search, X } from "lucide-react";
 import { useMemo } from "react";
 import {
+  citationBibliographyParts,
   citationSearchText,
   formatCitationBibliographyLine,
 } from "../latex/citationPreview";
@@ -13,6 +14,7 @@ interface BibliographyPreviewPopoverProps {
   onQueryChange: (query: string) => void;
   onSelectKey: (key: string | null) => void;
   onClose: () => void;
+  onOpenExternal?: (url: string) => void;
   className?: string;
   ariaLabel?: string;
 }
@@ -26,6 +28,7 @@ export function BibliographyPreviewPopover({
   onQueryChange,
   onSelectKey,
   onClose,
+  onOpenExternal,
   className = "",
   ariaLabel = "Bibliography preview",
 }: BibliographyPreviewPopoverProps) {
@@ -63,7 +66,29 @@ export function BibliographyPreviewPopover({
       {selectedEntry ? (
         <div className="pdf-bibliography-selected">
           <strong>{selectedEntry.title || "Untitled reference"}</strong>
-          <p>{formatCitationBibliographyLine(selectedEntry)}</p>
+          <p>
+            {citationBibliographyParts(selectedEntry).map((part, index) => {
+              const link = part.link;
+              return link ? (
+                <a
+                  key={`${index}:${link.url}`}
+                  href={link.url}
+                  title={link.url}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (!onOpenExternal) return;
+                    event.preventDefault();
+                    onOpenExternal(link.url);
+                  }}
+                >
+                  {part.text}
+                </a>
+              ) : (
+                <span key={`${index}:${part.text}`}>{part.text}</span>
+              );
+            })}
+          </p>
           <small>{selectedEntry.sourceFile}</small>
           <button type="button" onClick={() => onSelectKey(null)}>
             All references

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CitationEntry } from "./latexIndex";
 import {
+  citationBibliographyParts,
   citationExternalLinks,
   findCitationKeyAtLatexPosition,
   formatCitationBibliographyLine,
@@ -87,5 +88,20 @@ describe("citation preview", () => {
       { label: "URL", url: "https://example.com/paper" },
       { label: "arXiv", url: "https://arxiv.org/abs/2401.12345" },
     ]);
+  });
+
+  it("marks the visible URL text as a clickable bibliography part", () => {
+    const parts = citationBibliographyParts({
+      ...entry,
+      doi: undefined,
+      url: "example.com/paper",
+    });
+    expect(parts.map((part) => part.text).join("")).toBe(
+      "Donald Knuth (1984). The TeXbook. Computers and Typesetting. example.com/paper.",
+    );
+    expect(parts.find((part) => part.text === "example.com/paper")?.link).toEqual({
+      label: "URL",
+      url: "https://example.com/paper",
+    });
   });
 });

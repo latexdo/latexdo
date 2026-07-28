@@ -3302,6 +3302,20 @@ button {
   line-height: 1.45;
 }
 
+.editor-citation-preview p a {
+  color: var(--accent-dim);
+  cursor: pointer;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.editor-citation-preview p a:hover,
+.editor-citation-preview p a:focus-visible {
+  outline: 0;
+  color: var(--text-primary);
+}
+
 .editor-citation-preview small {
   color: var(--text-dim);
   font-size: 11px;
@@ -3876,6 +3890,20 @@ button {
   color: #d8dde6;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.pdf-bibliography-selected p a {
+  color: #91b3ff;
+  cursor: pointer;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pdf-bibliography-selected p a:hover,
+.pdf-bibliography-selected p a:focus-visible {
+  outline: 0;
+  color: #fff;
 }
 
 .pdf-bibliography-selected button {

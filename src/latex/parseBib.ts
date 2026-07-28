@@ -15,6 +15,20 @@ function cleanBibValue(value: unknown): string | undefined {
   return value.replace(/[{}]/g, "").replace(/\s+/g, " ").trim();
 }
 
+function cleanBibFieldValue(
+  entry: ParsedBibEntry,
+  fieldName: string,
+): string | undefined {
+  return cleanBibValue(
+    entry[fieldName] ??
+      entry[fieldName.toUpperCase()] ??
+      entry[fieldName.toLowerCase()] ??
+      Object.entries(entry).find(
+        ([key]) => key.toLowerCase() === fieldName.toLowerCase(),
+      )?.[1],
+  );
+}
+
 export function parseBibFile(content: string, sourceFile: string): CitationEntry[] {
   if (content.length > maxBibtexSourceLength) return [];
 
@@ -33,21 +47,21 @@ export function parseBibFile(content: string, sourceFile: string): CitationEntry
       return {
         key: entry.key,
         type: entry.type ?? "unknown",
-        title: cleanBibValue(tags.TITLE),
-        author: cleanBibValue(tags.AUTHOR),
-        editor: cleanBibValue(tags.EDITOR),
-        year: cleanBibValue(tags.YEAR),
-        journal: cleanBibValue(tags.JOURNAL),
-        booktitle: cleanBibValue(tags.BOOKTITLE),
-        publisher: cleanBibValue(tags.PUBLISHER),
-        school: cleanBibValue(tags.SCHOOL),
-        institution: cleanBibValue(tags.INSTITUTION),
-        doi: cleanBibValue(tags.DOI),
-        url: cleanBibValue(tags.URL),
-        eprint: cleanBibValue(tags.EPRINT),
-        archivePrefix: cleanBibValue(tags.ARCHIVEPREFIX),
-        howpublished: cleanBibValue(tags.HOWPUBLISHED),
-        note: cleanBibValue(tags.NOTE),
+        title: cleanBibFieldValue(tags, "TITLE"),
+        author: cleanBibFieldValue(tags, "AUTHOR"),
+        editor: cleanBibFieldValue(tags, "EDITOR"),
+        year: cleanBibFieldValue(tags, "YEAR"),
+        journal: cleanBibFieldValue(tags, "JOURNAL"),
+        booktitle: cleanBibFieldValue(tags, "BOOKTITLE"),
+        publisher: cleanBibFieldValue(tags, "PUBLISHER"),
+        school: cleanBibFieldValue(tags, "SCHOOL"),
+        institution: cleanBibFieldValue(tags, "INSTITUTION"),
+        doi: cleanBibFieldValue(tags, "DOI"),
+        url: cleanBibFieldValue(tags, "URL"),
+        eprint: cleanBibFieldValue(tags, "EPRINT"),
+        archivePrefix: cleanBibFieldValue(tags, "ARCHIVEPREFIX"),
+        howpublished: cleanBibFieldValue(tags, "HOWPUBLISHED"),
+        note: cleanBibFieldValue(tags, "NOTE"),
         raw: JSON.stringify(tags, null, 2),
         sourceFile,
       } as CitationEntry;

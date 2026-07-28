@@ -195,9 +195,9 @@ import {
   type CitationProjectFile,
 } from "./latex/citationAnalysis";
 import {
+  citationBibliographyParts,
   citationExternalLinks,
   findCitationKeyAtLatexPosition,
-  formatCitationBibliographyLine,
   formatCitationHoverMarkdown,
   formatMissingCitationHoverMarkdown,
 } from "./latex/citationPreview";
@@ -1824,6 +1824,9 @@ export default function App() {
     : null;
   const editorCitationPreviewLinks = editorCitationPreviewEntry
     ? citationExternalLinks(editorCitationPreviewEntry)
+    : [];
+  const editorCitationPreviewParts = editorCitationPreviewEntry
+    ? citationBibliographyParts(editorCitationPreviewEntry)
     : [];
   useEffect(() => {
     if (
@@ -10714,6 +10717,7 @@ ${macroEnd}
                         rotation={pdfRotation}
                         target={null}
                         citationEntries={citationAnalysis.entries}
+                        onOpenExternal={openExternalLink}
                       />
                     </Suspense>
                   ) : activeDocument.assetMimeType === "application/pdf" ? (
@@ -10832,7 +10836,26 @@ ${macroEnd}
                             {editorCitationPreviewEntry.title || "Untitled reference"}
                           </strong>
                           <p>
-                            {formatCitationBibliographyLine(editorCitationPreviewEntry)}
+                            {editorCitationPreviewParts.map((part, index) => {
+                              const link = part.link;
+                              return link ? (
+                                <a
+                                  key={`${index}:${link.url}`}
+                                  href={link.url}
+                                  title={link.url}
+                                  onMouseDown={(event) => event.stopPropagation()}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    event.preventDefault();
+                                    openExternalLink(link.url);
+                                  }}
+                                >
+                                  {part.text}
+                                </a>
+                              ) : (
+                                <span key={`${index}:${part.text}`}>{part.text}</span>
+                              );
+                            })}
                           </p>
                           <small>
                             <code>{editorCitationPreviewEntry.key}</code> from{" "}
@@ -10845,7 +10868,9 @@ ${macroEnd}
                                   key={`${link.label}:${link.url}`}
                                   href={link.url}
                                   title={link.url}
+                                  onMouseDown={(event) => event.stopPropagation()}
                                   onClick={(event) => {
+                                    event.stopPropagation();
                                     event.preventDefault();
                                     openExternalLink(link.url);
                                   }}
@@ -11010,6 +11035,7 @@ ${macroEnd}
                       selectedKey={pdfBibliographySelectedKey}
                       onQueryChange={setPdfBibliographyQuery}
                       onSelectKey={setPdfBibliographySelectedKey}
+                      onOpenExternal={openExternalLink}
                       onClose={() => {
                         setPdfBibliographyOpen(false);
                         setPdfBibliographySelectedKey(null);
@@ -11043,6 +11069,7 @@ ${macroEnd}
                           rotation={pdfRotation}
                           target={pdfTarget}
                           citationEntries={citationAnalysis.entries}
+                          onOpenExternal={openExternalLink}
                           onShowCitation={(key) => {
                             setPdfBibliographySelectedKey(key);
                             setPdfBibliographyOpen(true);
