@@ -14,6 +14,7 @@ describe("parseMathAtPosition", () => {
   it("finds inline dollar math", () => {
     const found = parseMathAtPosition(text, 1, 20);
     expect(found?.tex).toBe("E = mc^2");
+    expect(found?.sourceTex).toBe("$E = mc^2$");
     expect(found?.display).toBe(false);
     expect(found?.startLine).toBe(1);
     expect(found?.startColumn).toBe(17);
@@ -23,6 +24,9 @@ describe("parseMathAtPosition", () => {
   it("finds display environments spanning lines", () => {
     const found = parseMathAtPosition(text, 3, 5);
     expect(found?.tex).toBe("\\frac{a}{b} + \\sqrt{x}");
+    expect(found?.sourceTex).toBe(
+      "\\begin{equation}\n\\frac{a}{b} + \\sqrt{x}\n\\end{equation}",
+    );
     expect(found?.renderTex).toBe(
       "\\begin{equation}\n\\frac{a}{b} + \\sqrt{x}\n\\end{equation}",
     );

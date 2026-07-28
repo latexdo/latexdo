@@ -30,6 +30,8 @@ const texPackages = [
 export interface MathAtPosition {
   /** TeX body without the delimiters. */
   tex: string;
+  /** Exact source range, including delimiters or environment wrappers. */
+  sourceTex: string;
   /** TeX passed to MathJax. Environment math keeps its wrapper here. */
   renderTex: string;
   display: boolean;
@@ -281,11 +283,13 @@ export function parseMathAtPosition(
 
   const tex = text.slice(range.bodyStart, range.bodyEnd).trim();
   if (!tex) return null;
+  const sourceTex = text.slice(range.start, range.end).trim();
 
   const startPosition = positionOf(lines, range.start);
   const endPosition = positionOf(lines, range.end);
   return {
     tex,
+    sourceTex,
     renderTex: range.includeDelimiters
       ? text.slice(range.start, range.end).trim()
       : tex,

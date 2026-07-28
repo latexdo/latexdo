@@ -3367,14 +3367,47 @@ button {
   object-fit: contain;
 }
 
-.editor-equation-preview code {
-  display: block;
-  max-height: 82px;
-  overflow: auto;
-  color: var(--text-dim);
+.editor-equation-preview-fallback {
+  padding: 10px;
+  border: 1px dashed var(--border-card);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-panel) 70%, transparent);
+  color: var(--text-secondary);
   font-size: 11px;
-  line-height: 1.35;
+}
+
+.editor-equation-preview-code {
+  display: grid;
+  gap: 5px;
+}
+
+.editor-equation-preview-code > span {
+  color: var(--accent-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.editor-equation-preview-code pre {
+  max-height: 120px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-panel) 90%, black);
+  color: var(--text-primary);
+  font-size: 11px;
+  line-height: 1.4;
   white-space: pre-wrap;
+}
+
+.editor-equation-preview-code code {
+  display: block;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .editor-drop-zone > * {

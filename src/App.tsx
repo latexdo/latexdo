@@ -683,8 +683,9 @@ type TextOpenDocument = OpenDocument & { kind?: "text" };
 
 type EditorMathPreview = {
   tex: string;
+  sourceTex: string;
   display: boolean;
-  dataUri: string;
+  dataUri: string | null;
 };
 
 const mathPreviewForegrounds: Record<string, string> = {
@@ -5664,15 +5665,12 @@ ${macroEnd}
           foreground,
         );
         if (sequence === editorPreviewSequenceRef.current) {
-          setEditorMathPreview(
-            rendered
-              ? {
-                  tex: mathTarget.tex,
-                  display: mathTarget.display,
-                  dataUri: rendered,
-                }
-              : null,
-          );
+          setEditorMathPreview({
+            tex: mathTarget.tex,
+            sourceTex: mathTarget.sourceTex,
+            display: mathTarget.display,
+            dataUri: rendered,
+          });
         }
       } catch {
         if (sequence === editorPreviewSequenceRef.current) {
@@ -10916,8 +10914,19 @@ ${macroEnd}
                           <X size={13} />
                         </button>
                       </div>
-                      <img src={editorMathPreview.dataUri} alt="Rendered equation" />
-                      <code>{editorMathPreview.tex}</code>
+                      {editorMathPreview.dataUri ? (
+                        <img src={editorMathPreview.dataUri} alt="Rendered equation" />
+                      ) : (
+                        <div className="editor-equation-preview-fallback">
+                          Rendered preview unavailable
+                        </div>
+                      )}
+                      <div className="editor-equation-preview-code">
+                        <span>LaTeX source</span>
+                        <pre>
+                          <code>{editorMathPreview.sourceTex}</code>
+                        </pre>
+                      </div>
                     </div>
                   ) : null}
                 </div>
