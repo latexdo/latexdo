@@ -1,15 +1,18 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import PdfPreview from "./PdfPreview";
+import type { CitationEntry } from "./latex/latexIndex";
 
 const pdfjsMock = vi.hoisted(() => {
   type MockPdfPage = {
     getViewport: (options: { scale: number; rotation?: number }) => {
       width: number;
       height: number;
+      convertToViewportRectangle: (rect: number[]) => number[];
     };
     render: () => { promise: Promise<void>; cancel: ReturnType<typeof vi.fn> };
     getTextContent: () => Promise<{ items: unknown[] }>;
+    getAnnotations: () => Promise<unknown[]>;
   };
 
   type MockPdfDocument = {
@@ -29,7 +32,11 @@ const pdfjsMock = vi.hoisted(() => {
 
   return {
     tasks,
-    createDocument: (_label: string, pages = 1): MockPdfDocument => {
+    createDocument: (
+      _label: string,
+      pages = 1,
+      annotationsByPage: Record<number, unknown[]> = {},
+    ): MockPdfDocument => {
       const pageMap = new Map<number, MockPdfPage>();
       return {
         numPages: pages,
@@ -38,9 +45,14 @@ const pdfjsMock = vi.hoisted(() => {
           let page = pageMap.get(pageNumber);
           if (!page) {
             page = {
-              getViewport: vi.fn(() => ({ width: 100, height: 200 })),
+              getViewport: vi.fn(() => ({
+                width: 100,
+                height: 200,
+                convertToViewportRectangle: (rect: number[]) => rect,
+              })),
               render: () => ({ promise: Promise.resolve(), cancel: vi.fn() }),
               getTextContent: async () => ({ items: [] }),
+              getAnnotations: vi.fn(async () => annotationsByPage[pageNumber] ?? []),
             };
             pageMap.set(pageNumber, page);
           }
@@ -86,6 +98,17 @@ function renderPreview(data: Uint8Array) {
     <PdfPreview data={data} scale={100} target={null} onNavigate={vi.fn()} />,
   );
 }
+
+const citationEntry: CitationEntry = {
+  key: "knuth84",
+  type: "article",
+  title: "The TeXbook",
+  author: "Donald Knuth",
+  year: "1984",
+  journal: "Computers and Typesetting",
+  doi: "10.1000/texbook",
+  sourceFile: "refs.bib",
+};
 
 describe("PdfPreview", () => {
   beforeEach(() => {
@@ -136,8 +159,74 @@ describe("PdfPreview", () => {
     const document = pdfjsMock.createDocument("rotated");
     pdfjsMock.tasks[0].resolve(document);
 
-    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
+    await waitFor(() => expect(document.getPage).toHaveBeenCalledWith(1));
     const page = await document.getPage(1);
-    expect(page.getViewport).toHaveBeenCalledWith({ scale: 1.25, rotation: 90 });
+    await waitFor(() =>
+      expect(page.getViewport).toHaveBeenCalledWith({
+        scale: 1.25,
+        rotation: 90,
+      }),
+    );
+  });
+
+  it("shows project bibliography entries inside the PDF preview", async () => {
+    render(
+      <PdfPreview
+        data={new Uint8Array([1])}
+        scale={100}
+        target={null}
+        citationEntries={[citationEntry]}
+      />,
+    );
+
+    const document = pdfjsMock.createDocument("bibliography");
+    pdfjsMock.tasks[0].resolve(document);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /show bibliography preview/i }),
+      ).toBeVisible(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /show bibliography preview/i }));
+
+    expect(
+      screen.getByRole("dialog", { name: /pdf bibliography preview/i }),
+    ).toBeVisible();
+    expect(screen.getByText("knuth84")).toBeVisible();
+    expect(screen.getByText("The TeXbook")).toBeVisible();
+    expect(screen.getByText(/Donald Knuth \(1984\)/)).toBeVisible();
+  });
+
+  it("opens a bibliography popup from PDF citation annotations", async () => {
+    render(
+      <PdfPreview
+        data={new Uint8Array([1])}
+        scale={100}
+        target={null}
+        citationEntries={[citationEntry]}
+      />,
+    );
+
+    const document = pdfjsMock.createDocument("linked-citations", 1, {
+      1: [{ rect: [10, 20, 30, 35], dest: "cite.knuth84" }],
+    });
+    pdfjsMock.tasks[0].resolve(document);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /show bibliography for knuth84/i }),
+      ).toBeVisible(),
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /show bibliography for knuth84/i }),
+    );
+
+    expect(
+      screen.getByRole("dialog", { name: /pdf bibliography preview/i }),
+    ).toBeVisible();
+    expect(screen.getByText("The TeXbook")).toBeVisible();
+    expect(screen.getByText(/refs\.bib/)).toBeVisible();
   });
 });

@@ -3228,6 +3228,83 @@ button {
   white-space: nowrap;
 }
 
+.editor-citation-preview {
+  position: absolute;
+  z-index: 8;
+  right: 18px;
+  bottom: 18px;
+  display: grid;
+  width: min(420px, calc(100% - 36px));
+  max-height: min(320px, calc(100% - 36px));
+  gap: 7px;
+  overflow: auto;
+  padding: 11px 12px;
+  border: 1px solid var(--border-hover);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-dialog) 96%, black);
+  box-shadow: 0 16px 42px rgb(0 0 0 / 34%);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.editor-citation-preview.missing {
+  border-color: rgba(220, 179, 101, 0.55);
+}
+
+.editor-citation-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 1px;
+  color: var(--accent-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.editor-citation-preview-header button {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  background: var(--bg-button-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  place-items: center;
+}
+
+.editor-citation-preview-header button:hover,
+.editor-citation-preview-header button:focus-visible {
+  outline: 0;
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+
+.editor-citation-preview strong {
+  color: var(--text-heading);
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.editor-citation-preview p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.editor-citation-preview small {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.editor-citation-preview code {
+  font-family: monospace;
+}
+
 .editor-drop-zone > * {
   min-width: 0;
   min-height: 0;
@@ -3335,6 +3412,7 @@ button {
 }
 
 .preview-pane {
+  position: relative;
   display: grid;
   min-width: 0;
   min-height: 0;
@@ -3406,6 +3484,26 @@ button {
 .preview-actions button:hover:not(:disabled) {
   background: #2b3038;
   color: #e2e5ea;
+}
+
+.preview-actions .preview-bibliography-button {
+  width: auto;
+  min-width: 24px;
+  gap: 5px;
+  padding: 0 7px;
+}
+
+.preview-actions .preview-bibliography-button.active {
+  background: #2b3038;
+  color: #e2e5ea;
+}
+
+.preview-actions .preview-action-label {
+  width: auto;
+  color: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  text-align: left;
 }
 
 .preview-actions button:disabled {
@@ -3511,9 +3609,27 @@ button {
   inset: 100% 0 0;
 }
 
+.pdf-citation-anchor {
+  position: absolute;
+  z-index: 3;
+  display: block;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  cursor: help;
+}
+
+.pdf-citation-anchor:hover,
+.pdf-citation-anchor:focus-visible {
+  outline: 0;
+  border-color: rgb(68 111 213 / 80%);
+  background: rgb(93 139 235 / 18%);
+}
+
 .pdf-sync-highlight {
   position: absolute;
-  z-index: 2;
+  z-index: 4;
   border: 1px solid rgb(68 111 213 / 85%);
   border-radius: 2px;
   background: rgb(93 139 235 / 30%);
@@ -3524,7 +3640,7 @@ button {
 
 .pdf-page-number {
   position: absolute;
-  z-index: 3;
+  z-index: 5;
   right: 7px;
   bottom: 6px;
   padding: 2px 5px;
@@ -3533,6 +3649,201 @@ button {
   color: rgb(255 255 255 / 72%);
   font-size: 8px;
   pointer-events: none;
+}
+
+.pdf-bibliography-ui {
+  position: sticky;
+  z-index: 20;
+  top: 12px;
+  display: flex;
+  width: min(380px, calc(100vw - 64px));
+  height: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  align-self: flex-end;
+  pointer-events: none;
+}
+
+.pdf-bibliography-toggle,
+.pdf-bibliography-header button {
+  display: grid;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid rgb(86 94 108 / 70%);
+  border-radius: 7px;
+  background: rgb(27 31 38 / 92%);
+  color: #d6dbe4;
+  cursor: pointer;
+  place-items: center;
+  pointer-events: auto;
+}
+
+.pdf-bibliography-toggle {
+  width: 30px;
+  height: 30px;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 28%);
+}
+
+.pdf-bibliography-toggle:hover,
+.pdf-bibliography-toggle.active,
+.pdf-bibliography-header button:hover {
+  border-color: rgb(115 155 240 / 76%);
+  background: rgb(38 47 64 / 96%);
+  color: #fff;
+}
+
+.pdf-bibliography-popover {
+  width: 100%;
+  max-height: min(520px, 70vh);
+  margin-top: 8px;
+  overflow: hidden;
+  border: 1px solid rgb(89 97 112 / 78%);
+  border-radius: 8px;
+  background: rgb(24 27 33 / 97%);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 42%);
+  color: #e4e8ef;
+  pointer-events: auto;
+}
+
+.pdf-header-bibliography-popover {
+  position: absolute;
+  z-index: 40;
+  top: 43px;
+  right: 10px;
+  width: min(420px, calc(100% - 20px));
+}
+
+.pdf-bibliography-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 10px 8px 12px;
+  border-bottom: 1px solid rgb(78 86 100 / 65%);
+}
+
+.pdf-bibliography-header strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #f4f6fa;
+  font-family: monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-bibliography-header button {
+  width: 24px;
+  height: 24px;
+}
+
+.pdf-bibliography-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 10px 8px;
+  padding: 7px 9px;
+  border: 1px solid rgb(78 86 100 / 72%);
+  border-radius: 7px;
+  background: rgb(14 17 22 / 72%);
+  color: #8f98a7;
+}
+
+.pdf-bibliography-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #eef1f6;
+  font-size: 12px;
+}
+
+.pdf-bibliography-list {
+  max-height: min(360px, 48vh);
+  overflow-y: auto;
+  padding: 0 10px 10px;
+}
+
+.pdf-bibliography-entry {
+  display: grid;
+  width: 100%;
+  gap: 4px;
+  margin: 0 0 7px;
+  padding: 9px 10px;
+  border: 1px solid rgb(78 86 100 / 58%);
+  border-radius: 8px;
+  background: rgb(33 37 45 / 88%);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pdf-bibliography-entry:hover,
+.pdf-bibliography-entry:focus-visible {
+  outline: 0;
+  border-color: rgb(115 155 240 / 76%);
+  background: rgb(40 47 60 / 95%);
+}
+
+.pdf-bibliography-entry span {
+  color: #91b3ff;
+  font-family: monospace;
+  font-size: 11px;
+}
+
+.pdf-bibliography-entry strong,
+.pdf-bibliography-selected strong {
+  color: #f4f6fa;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.pdf-bibliography-entry small,
+.pdf-bibliography-selected small,
+.pdf-bibliography-count {
+  color: #a7afbd;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.pdf-bibliography-selected {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.pdf-bibliography-selected p {
+  margin: 0;
+  color: #d8dde6;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pdf-bibliography-selected button {
+  justify-self: start;
+  padding: 6px 9px;
+  border: 1px solid rgb(78 86 100 / 72%);
+  border-radius: 7px;
+  background: rgb(33 37 45 / 88%);
+  color: #dfe5ef;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.pdf-bibliography-selected button:hover {
+  border-color: rgb(115 155 240 / 76%);
+  background: rgb(40 47 60 / 95%);
+}
+
+.pdf-bibliography-empty,
+.pdf-bibliography-count {
+  padding: 0 12px 12px;
+}
+
+.pdf-bibliography-empty {
+  color: #8992a2;
+  font-size: 12px;
 }
 
 .pdf-loading,

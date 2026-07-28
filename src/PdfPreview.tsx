@@ -6,7 +6,10 @@ import {
   type RenderTask,
 } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { useEffect, useRef, useState } from "react";
+import { BookOpenText } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { BibliographyPreviewPopover } from "./components/BibliographyPreviewPopover";
+import type { CitationEntry } from "./latex/latexIndex";
 import type { SyncTexPdfLocation } from "./types";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -24,6 +27,8 @@ interface PdfPreviewProps {
   rotation?: number;
   target: SyncTexPdfLocation | null;
   onNavigate?: (location: PdfClickLocation) => void;
+  citationEntries?: CitationEntry[];
+  onShowCitation?: (key: string) => void;
 }
 
 interface PdfPageProps {
@@ -33,6 +38,8 @@ interface PdfPageProps {
   rotation: number;
   target: SyncTexPdfLocation | null;
   onNavigate?: (location: PdfClickLocation) => void;
+  citationEntriesByKey: Map<string, CitationEntry>;
+  onShowCitation?: (key: string) => void;
 }
 
 interface HighlightRect {
@@ -41,6 +48,19 @@ interface HighlightRect {
   width: number;
   height: number;
 }
+
+interface CitationAnchor extends HighlightRect {
+  key: string;
+}
+
+type PdfAnnotation = {
+  rect?: unknown;
+  dest?: unknown;
+  url?: unknown;
+  unsafeUrl?: unknown;
+  title?: unknown;
+  contents?: unknown;
+};
 
 const wordPattern = /[\p{L}\p{N}_'-]+/gu;
 
@@ -141,6 +161,125 @@ function findWordHighlight(
   return best?.rect ?? null;
 }
 
+function textValuesFromAnnotationValue(value: unknown): string[] {
+  if (typeof value === "string") {
+    return [value];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap(textValuesFromAnnotationValue);
+  }
+  if (value && typeof value === "object") {
+    const fields = value as { name?: unknown; url?: unknown; unsafeUrl?: unknown };
+    return [
+      ...textValuesFromAnnotationValue(fields.name),
+      ...textValuesFromAnnotationValue(fields.url),
+      ...textValuesFromAnnotationValue(fields.unsafeUrl),
+    ];
+  }
+  return [];
+}
+
+function decodeAnnotationToken(token: string): string {
+  try {
+    return decodeURIComponent(token);
+  } catch {
+    return token;
+  }
+}
+
+function candidateKeysFromAnnotationText(text: string): string[] {
+  const tokens = text.match(/[A-Za-z0-9][A-Za-z0-9_:./-]*/g) ?? [];
+  const candidates: string[] = [];
+
+  for (const token of tokens) {
+    for (const value of [token, decodeAnnotationToken(token)]) {
+      candidates.push(value);
+      candidates.push(value.replace(/^(?:cite|bib)[.:_-]+/i, ""));
+
+      const markerMatch = value.match(/(?:^|[#:./_-])(?:cite|bib)[.:_-]+(.+)$/i);
+      if (markerMatch) {
+        candidates.push(markerMatch[1]);
+      }
+    }
+  }
+
+  return candidates;
+}
+
+function citationKeyFromAnnotation(
+  annotation: PdfAnnotation,
+  citationEntriesByKey: Map<string, CitationEntry>,
+): string | null {
+  if (!citationEntriesByKey.size) {
+    return null;
+  }
+
+  const texts = [
+    annotation.dest,
+    annotation.url,
+    annotation.unsafeUrl,
+    annotation.title,
+    annotation.contents,
+  ].flatMap(textValuesFromAnnotationValue);
+
+  for (const text of texts) {
+    for (const candidate of candidateKeysFromAnnotationText(text)) {
+      if (citationEntriesByKey.has(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  const loweredTexts = texts.map((text) => text.toLowerCase());
+  for (const key of citationEntriesByKey.keys()) {
+    const loweredKey = key.toLowerCase();
+    if (
+      loweredTexts.some(
+        (text) =>
+          text.includes(`cite.${loweredKey}`) ||
+          text.includes(`cite:${loweredKey}`) ||
+          text.includes(`cite_${loweredKey}`) ||
+          text.includes(`bib.${loweredKey}`),
+      )
+    ) {
+      return key;
+    }
+  }
+
+  return null;
+}
+
+function citationAnchorFromAnnotation(
+  annotation: PdfAnnotation,
+  viewport: { convertToViewportRectangle: (rect: number[]) => number[] },
+  citationEntriesByKey: Map<string, CitationEntry>,
+): CitationAnchor | null {
+  const rect = Array.isArray(annotation.rect) ? annotation.rect : null;
+  if (
+    !rect ||
+    rect.length !== 4 ||
+    !rect.every((value): value is number => typeof value === "number")
+  ) {
+    return null;
+  }
+
+  const key = citationKeyFromAnnotation(annotation, citationEntriesByKey);
+  if (!key) {
+    return null;
+  }
+
+  const converted = viewport.convertToViewportRectangle(rect);
+  const left = Math.min(converted[0], converted[2]);
+  const top = Math.min(converted[1], converted[3]);
+  const width = Math.abs(converted[0] - converted[2]);
+  const height = Math.abs(converted[1] - converted[3]);
+  if (width <= 0 || height <= 0) {
+    return null;
+  }
+
+  return { key, left, top, width, height };
+}
+
 function PdfPage({
   document: pdfDocument,
   pageNumber,
@@ -148,12 +287,15 @@ function PdfPage({
   rotation,
   target,
   onNavigate,
+  citationEntriesByKey,
+  onShowCitation,
 }: PdfPageProps) {
   const pageRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
   const [rendered, setRendered] = useState(false);
   const [highlight, setHighlight] = useState<HighlightRect | null>(null);
+  const [citationAnchors, setCitationAnchors] = useState<CitationAnchor[]>([]);
   const cssScale = scale / 100;
 
   useEffect(() => {
@@ -169,6 +311,7 @@ function PdfPage({
     let textLayer: TextLayer | undefined;
     setRendered(false);
     setHighlight(null);
+    setCitationAnchors([]);
     textLayerElement.replaceChildren();
 
     void pdfDocument
@@ -193,6 +336,13 @@ function PdfPage({
           throw new Error("Could not create the PDF canvas context.");
         }
 
+        const annotationsPromise = citationEntriesByKey.size
+          ? page
+              .getAnnotations({ intent: "display" })
+              .then((annotations) => annotations as PdfAnnotation[])
+              .catch(() => [])
+          : Promise.resolve([]);
+
         renderTask = page.render({
           canvasContext,
           viewport,
@@ -205,8 +355,23 @@ function PdfPage({
           viewport,
         });
 
-        await Promise.all([renderTask.promise, textLayer.render()]);
+        const [, , annotations] = await Promise.all([
+          renderTask.promise,
+          textLayer.render(),
+          annotationsPromise,
+        ]);
         if (!cancelled) {
+          setCitationAnchors(
+            annotations
+              .map((annotation) =>
+                citationAnchorFromAnnotation(
+                  annotation,
+                  viewport,
+                  citationEntriesByKey,
+                ),
+              )
+              .filter((anchor): anchor is CitationAnchor => anchor !== null),
+          );
           setRendered(true);
         }
       })
@@ -224,7 +389,7 @@ function PdfPage({
       renderTask?.cancel();
       textLayer?.cancel();
     };
-  }, [cssScale, pageNumber, pdfDocument, rotation]);
+  }, [citationEntriesByKey, cssScale, pageNumber, pdfDocument, rotation]);
 
   useEffect(() => {
     if (!rendered || target?.page !== pageNumber || !pageRef.current) {
@@ -281,6 +446,28 @@ function PdfPage({
     >
       <canvas ref={canvasRef} />
       <div ref={textLayerRef} className="textLayer" />
+      {citationAnchors.map((anchor, index) => (
+        <button
+          key={`${anchor.key}:${index}`}
+          type="button"
+          className="pdf-citation-anchor"
+          style={{
+            left: anchor.left,
+            top: anchor.top,
+            width: anchor.width,
+            height: anchor.height,
+          }}
+          title={`Show bibliography for ${anchor.key}`}
+          aria-label={`Show bibliography for ${anchor.key}`}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onShowCitation?.(anchor.key);
+          }}
+          onFocus={() => onShowCitation?.(anchor.key)}
+          onMouseEnter={() => onShowCitation?.(anchor.key)}
+        />
+      ))}
       {highlight ? (
         <div
           className="pdf-sync-highlight"
@@ -303,10 +490,41 @@ export default function PdfPreview({
   rotation = 0,
   target,
   onNavigate,
+  citationEntries = [],
+  onShowCitation,
 }: PdfPreviewProps) {
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState("");
+  const [bibliographyOpen, setBibliographyOpen] = useState(false);
+  const [bibliographyQuery, setBibliographyQuery] = useState("");
+  const [selectedCitationKey, setSelectedCitationKey] = useState<string | null>(null);
   const pdfDocumentRef = useRef<PDFDocumentProxy | null>(null);
+  const citationEntriesByKey = useMemo(
+    () => new Map(citationEntries.map((entry) => [entry.key, entry])),
+    [citationEntries],
+  );
+  const openCitation = (key: string) => {
+    if (onShowCitation) {
+      onShowCitation(key);
+      return;
+    }
+
+    setSelectedCitationKey(key);
+    setBibliographyOpen(true);
+  };
+
+  useEffect(() => {
+    if (!citationEntries.length) {
+      setBibliographyOpen(false);
+      setSelectedCitationKey(null);
+      setBibliographyQuery("");
+      return;
+    }
+
+    if (selectedCitationKey && !citationEntriesByKey.has(selectedCitationKey)) {
+      setSelectedCitationKey(null);
+    }
+  }, [citationEntries.length, citationEntriesByKey, selectedCitationKey]);
 
   useEffect(() => {
     const loadingTask = getDocument({ data: data.slice() });
@@ -364,6 +582,38 @@ export default function PdfPreview({
 
   return (
     <div className="pdf-document">
+      {citationEntries.length && !onShowCitation ? (
+        <div className="pdf-bibliography-ui">
+          <button
+            type="button"
+            className={`pdf-bibliography-toggle ${bibliographyOpen ? "active" : ""}`}
+            onClick={() => {
+              setSelectedCitationKey(null);
+              setBibliographyOpen((open) => !open);
+            }}
+            title="Show bibliography preview"
+            aria-label="Show bibliography preview"
+            aria-expanded={bibliographyOpen}
+          >
+            <BookOpenText size={14} />
+          </button>
+
+          {bibliographyOpen ? (
+            <BibliographyPreviewPopover
+              entries={citationEntries}
+              query={bibliographyQuery}
+              selectedKey={selectedCitationKey}
+              onQueryChange={setBibliographyQuery}
+              onSelectKey={setSelectedCitationKey}
+              onClose={() => {
+                setBibliographyOpen(false);
+                setSelectedCitationKey(null);
+              }}
+              ariaLabel="PDF bibliography preview"
+            />
+          ) : null}
+        </div>
+      ) : null}
       {Array.from({ length: pdfDocument.numPages }, (_, index) => (
         <PdfPage
           key={index + 1}
@@ -373,6 +623,8 @@ export default function PdfPreview({
           rotation={rotation}
           target={target}
           onNavigate={onNavigate}
+          citationEntriesByKey={citationEntriesByKey}
+          onShowCitation={openCitation}
         />
       ))}
     </div>

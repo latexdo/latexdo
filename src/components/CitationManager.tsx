@@ -16,6 +16,7 @@ import {
   createBibtexStub,
   type CitationLibraryAnalysis,
 } from "../latex/citationAnalysis";
+import { formatCitationPeople } from "../latex/citationPreview";
 
 type CitationManagerTab = "library" | "used" | "gaps" | "quality";
 export type CitationInsertCommand = "cite" | "citep" | "citet" | "parencite";
@@ -65,10 +66,6 @@ function entrySearchText(entry: CitationEntry): string {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
-}
-
-function formatPeople(entry: CitationEntry): string {
-  return entry.author ?? entry.editor ?? "Unknown author";
 }
 
 function entryBibtexPreview(entry: CitationEntry): string {
@@ -335,7 +332,7 @@ export function CitationManager({
                       </div>
                       <h3>{entry.title || "Untitled reference"}</h3>
                       <p>
-                        {formatPeople(entry)}
+                        {formatCitationPeople(entry)}
                         {entry.year ? `, ${entry.year}` : ""} · {citationVenue(entry)}
                       </p>
                       <div className="citation-card-foot">

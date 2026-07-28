@@ -2006,6 +2006,49 @@ describe("App critical UI controls", () => {
     expect(await screen.findByText("Opened main.tex:3 from PDF")).toBeVisible();
   });
 
+  it("opens project bibliography from the PDF header", async () => {
+    const api = installLatexDoMock();
+    const bibliographyEntry: ProjectEntry = {
+      name: "references.bib",
+      path: "/Users/omar/project/references.bib",
+      relativePath: "references.bib",
+      type: "file",
+    };
+    api.listProject.mockResolvedValue([...entries, bibliographyEntry]);
+    api.readFile.mockImplementation(async (_projectId: string, relativePath: string) =>
+      relativePath.endsWith(".bib")
+        ? `
+@article{knuth84,
+  title = {The TeXbook},
+  author = {Donald Knuth},
+  year = {1984},
+  journal = {Computers and Typesetting}
+}
+`
+        : "\\documentclass{article}\n\\begin{document}\nText \\cite{knuth84}\n\\bibliography{references}\n\\end{document}\n",
+    );
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    await waitFor(() => {
+      expect(api.readFile).toHaveBeenCalledWith(project.id, "references.bib");
+    });
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /show bibliography in pdf pane/i,
+      }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", { name: /pdf bibliography preview/i }),
+    ).toBeVisible();
+    expect(screen.getByText("knuth84")).toBeVisible();
+    expect(screen.getByText("The TeXbook")).toBeVisible();
+    expect(screen.getByText(/Donald Knuth \(1984\)/)).toBeVisible();
+  });
+
   it("opens local document history from the titlebar history button", async () => {
     installLatexDoMock();
 

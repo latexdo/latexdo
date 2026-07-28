@@ -82,6 +82,7 @@ import type { PdfClickLocation } from "./PdfPreview";
 import TikzCanvas from "./TikzCanvas";
 import TableCanvas from "./TableCanvas";
 import { FigureToTikzConverter } from "./components/FigureToTikzConverter";
+import { BibliographyPreviewPopover } from "./components/BibliographyPreviewPopover";
 import { ReviewSidebar } from "./components/ReviewSidebar";
 import { RebuttalSidebar } from "./components/RebuttalSidebar";
 import { HistorySidebar } from "./components/HistorySidebar";
@@ -193,6 +194,12 @@ import {
   analyzeCitationLibrary,
   type CitationProjectFile,
 } from "./latex/citationAnalysis";
+import {
+  findCitationKeyAtLatexPosition,
+  formatCitationBibliographyLine,
+  formatCitationHoverMarkdown,
+  formatMissingCitationHoverMarkdown,
+} from "./latex/citationPreview";
 import {
   recommendCitations,
   formatRecommendations,
@@ -1403,6 +1410,14 @@ export default function App() {
   const [tikzConverterOpen, setTikzConverterOpen] = useState(false);
   const [notationManagerOpen, setNotationManagerOpen] = useState(false);
   const [citationManagerOpen, setCitationManagerOpen] = useState(false);
+  const [pdfBibliographyOpen, setPdfBibliographyOpen] = useState(false);
+  const [pdfBibliographyQuery, setPdfBibliographyQuery] = useState("");
+  const [pdfBibliographySelectedKey, setPdfBibliographySelectedKey] = useState<
+    string | null
+  >(null);
+  const [editorCitationPreviewKey, setEditorCitationPreviewKey] = useState<
+    string | null
+  >(null);
   const [citationProjectFiles, setCitationProjectFiles] = useState<
     CitationProjectFile[]
   >([]);
@@ -1780,6 +1795,56 @@ export default function App() {
     () => new Map(citationAnalysis.entries.map((entry) => [entry.key, entry])),
     [citationAnalysis],
   );
+  const citationEntriesByKeyRef = useRef(citationEntriesByKey);
+  useEffect(() => {
+    citationEntriesByKeyRef.current = citationEntriesByKey;
+  }, [citationEntriesByKey]);
+  const editorCitationPreviewEntry = editorCitationPreviewKey
+    ? (citationEntriesByKey.get(editorCitationPreviewKey) ?? null)
+    : null;
+  useEffect(() => {
+    if (
+      !editorCitationPreviewKey ||
+      citationEntriesByKey.has(editorCitationPreviewKey)
+    ) {
+      return;
+    }
+
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    const position = editor?.getPosition();
+    if (!model || !position) {
+      setEditorCitationPreviewKey(null);
+      return;
+    }
+
+    const target = findCitationKeyAtLatexPosition(
+      model.getLineContent(position.lineNumber),
+      position.column,
+    );
+    if (target?.key !== editorCitationPreviewKey) {
+      setEditorCitationPreviewKey(null);
+    }
+  }, [citationEntriesByKey, editorCitationPreviewKey]);
+  useEffect(() => {
+    if (!citationAnalysis.entries.length) {
+      setPdfBibliographyOpen(false);
+      setPdfBibliographyQuery("");
+      setPdfBibliographySelectedKey(null);
+      return;
+    }
+
+    if (
+      pdfBibliographySelectedKey &&
+      !citationEntriesByKey.has(pdfBibliographySelectedKey)
+    ) {
+      setPdfBibliographySelectedKey(null);
+    }
+  }, [
+    citationAnalysis.entries.length,
+    citationEntriesByKey,
+    pdfBibliographySelectedKey,
+  ]);
   const [knowledgeGraphOpen, setKnowledgeGraphOpen] = useState(false);
   useEffect(() => {
     storeKnowledgeGraphParams(knowledgeGraphParams);
@@ -4875,6 +4940,30 @@ ${macroEnd}
       providerDisposables.push(
         instance.languages.registerHoverProvider("latex", {
           provideHover: async (model, position) => {
+            const citationTarget = findCitationKeyAtLatexPosition(
+              model.getLineContent(position.lineNumber),
+              position.column,
+            );
+            if (citationTarget) {
+              const range = new instance.Range(
+                position.lineNumber,
+                citationTarget.startColumn,
+                position.lineNumber,
+                citationTarget.endColumn,
+              );
+              const entry = citationEntriesByKeyRef.current.get(citationTarget.key);
+              return {
+                range,
+                contents: [
+                  {
+                    value: entry
+                      ? formatCitationHoverMarkdown(entry)
+                      : formatMissingCitationHoverMarkdown(citationTarget.key),
+                  },
+                ],
+              };
+            }
+
             try {
               const { parseMathAtPosition, mathPreviewDataUri } =
                 await import("./latex/mathPreview");
@@ -5490,6 +5579,36 @@ ${macroEnd}
     applyEditorBlameDecorations,
   ]);
 
+  const refreshEditorCitationPreview = useCallback((editor = editorRef.current) => {
+    const model = editor?.getModel();
+    const position = editor?.getPosition();
+    const document = documentsRef.current.find(
+      (item) => item.path === activePathRef.current,
+    );
+    if (
+      !editor ||
+      !model ||
+      !position ||
+      !document ||
+      !isTextDocument(document) ||
+      languageFor(document.name) !== "latex" ||
+      !editorModelMatchesPath(editor, document.path)
+    ) {
+      setEditorCitationPreviewKey(null);
+      return;
+    }
+
+    const target = findCitationKeyAtLatexPosition(
+      model.getLineContent(position.lineNumber),
+      position.column,
+    );
+    setEditorCitationPreviewKey(target?.key ?? null);
+  }, []);
+
+  useEffect(() => {
+    refreshEditorCitationPreview();
+  }, [activePath, activeDocumentIsLatex, refreshEditorCitationPreview]);
+
   const handleEditorMount: OnMount = (editor) => {
     editorRef.current = editor;
     editorMouseDisposableRef.current?.dispose();
@@ -5502,13 +5621,19 @@ ${macroEnd}
     editorBlameDisposablesRef.current = [
       editor.onDidChangeCursorPosition(() => {
         applyEditorBlameDecorations();
+        refreshEditorCitationPreview(editor);
       }),
       editor.onDidChangeModel(() => {
         inlineBlameDecorationsRef.current = [];
         fileBlameDecorationsRef.current = [];
         applyEditorBlameDecorations();
+        refreshEditorCitationPreview(editor);
+      }),
+      editor.onDidChangeModelContent(() => {
+        refreshEditorCitationPreview(editor);
       }),
     ];
+    refreshEditorCitationPreview(editor);
     for (const disposable of blameHoverDisposablesRef.current) {
       disposable.dispose();
     }
@@ -10514,6 +10639,7 @@ ${macroEnd}
                         scale={pdfScale}
                         rotation={pdfRotation}
                         target={null}
+                        citationEntries={citationAnalysis.entries}
                       />
                     </Suspense>
                   ) : activeDocument.assetMimeType === "application/pdf" ? (
@@ -10607,6 +10733,49 @@ ${macroEnd}
                       }}
                     />
                   </Suspense>
+                  {activeDocumentIsLatex && editorCitationPreviewKey ? (
+                    <div
+                      className={`editor-citation-preview ${
+                        editorCitationPreviewEntry ? "" : "missing"
+                      }`}
+                      role="dialog"
+                      aria-label="Editor bibliography preview"
+                    >
+                      <div className="editor-citation-preview-header">
+                        <span>Bibliography preview</span>
+                        <button
+                          type="button"
+                          onClick={() => setEditorCitationPreviewKey(null)}
+                          aria-label="Close editor bibliography preview"
+                          title="Close bibliography preview"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                      {editorCitationPreviewEntry ? (
+                        <>
+                          <strong>
+                            {editorCitationPreviewEntry.title || "Untitled reference"}
+                          </strong>
+                          <p>
+                            {formatCitationBibliographyLine(editorCitationPreviewEntry)}
+                          </p>
+                          <small>
+                            <code>{editorCitationPreviewEntry.key}</code> from{" "}
+                            <code>{editorCitationPreviewEntry.sourceFile}</code>
+                          </small>
+                        </>
+                      ) : (
+                        <>
+                          <strong>Missing bibliography entry</strong>
+                          <p>
+                            No .bib entry found for{" "}
+                            <code>{editorCitationPreviewKey}</code>.
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               ) : gitDiffSession ? (
                 <GitDiffWorkbench
@@ -10667,6 +10836,24 @@ ${macroEnd}
                       >
                         <ArrowRightToLine size={15} />
                       </button>
+                      {citationAnalysis.entries.length ? (
+                        <button
+                          type="button"
+                          className={`preview-bibliography-button ${
+                            pdfBibliographyOpen ? "active" : ""
+                          }`}
+                          onClick={() => {
+                            setPdfBibliographySelectedKey(null);
+                            setPdfBibliographyOpen((open) => !open);
+                          }}
+                          title="Show bibliography in PDF pane"
+                          aria-label="Show bibliography in PDF pane"
+                          aria-expanded={pdfBibliographyOpen}
+                        >
+                          <BookOpenText size={14} />
+                          <span className="preview-action-label">Bibliography</span>
+                        </button>
+                      ) : null}
                       <div className="preview-action-divider" aria-hidden="true" />
                       <button
                         onClick={() => setPdfScale((scale) => Math.max(60, scale - 10))}
@@ -10697,6 +10884,21 @@ ${macroEnd}
                       </button>
                     </div>
                   </div>
+                  {pdfBibliographyOpen && citationAnalysis.entries.length ? (
+                    <BibliographyPreviewPopover
+                      entries={citationAnalysis.entries}
+                      query={pdfBibliographyQuery}
+                      selectedKey={pdfBibliographySelectedKey}
+                      onQueryChange={setPdfBibliographyQuery}
+                      onSelectKey={setPdfBibliographySelectedKey}
+                      onClose={() => {
+                        setPdfBibliographyOpen(false);
+                        setPdfBibliographySelectedKey(null);
+                      }}
+                      className="pdf-header-bibliography-popover"
+                      ariaLabel="PDF bibliography preview"
+                    />
+                  ) : null}
                   <div
                     className="pdf-surface"
                     onWheel={(e) => {
@@ -10721,6 +10923,11 @@ ${macroEnd}
                           scale={pdfScale}
                           rotation={pdfRotation}
                           target={pdfTarget}
+                          citationEntries={citationAnalysis.entries}
+                          onShowCitation={(key) => {
+                            setPdfBibliographySelectedKey(key);
+                            setPdfBibliographyOpen(true);
+                          }}
                           onNavigate={(location) => {
                             setPdfTarget(null);
                             setLastPdfLocation(location);
