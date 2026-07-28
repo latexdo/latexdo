@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CitationEntry } from "./latexIndex";
 import {
+  citationExternalLinks,
   findCitationKeyAtLatexPosition,
   formatCitationBibliographyLine,
   formatCitationHoverMarkdown,
@@ -48,7 +49,7 @@ describe("citation preview", () => {
     expect(markdown).toContain("Bibliography preview");
     expect(markdown).toContain("The TeXbook");
     expect(markdown).toContain("Donald Knuth");
-    expect(markdown).toContain("10\\.1000/texbook");
+    expect(markdown).toContain("[DOI](<https://doi.org/10.1000/texbook>)");
     expect(markdown).toContain("`knuth84` from `refs.bib`");
   });
 
@@ -56,5 +57,35 @@ describe("citation preview", () => {
     expect(formatMissingCitationHoverMarkdown("unknown2026")).toBe(
       "**Missing bibliography entry**\n\nNo .bib entry found for `unknown2026`.",
     );
+  });
+
+  it("escapes backslashes and backticks in inline-code Markdown", () => {
+    expect(formatMissingCitationHoverMarkdown("unknown\\bad`key")).toBe(
+      "**Missing bibliography entry**\n\nNo .bib entry found for `unknown\\\\bad\\`key`.",
+    );
+
+    const markdown = formatCitationHoverMarkdown({
+      ...entry,
+      key: "knuth\\bad`key",
+      sourceFile: "refs\\bad`name.bib",
+    });
+    expect(markdown).toContain("`knuth\\\\bad\\`key`");
+    expect(markdown).toContain("`refs\\\\bad\\`name.bib`");
+  });
+
+  it("normalizes clickable DOI, URL, and eprint links", () => {
+    expect(
+      citationExternalLinks({
+        ...entry,
+        doi: "doi:10.1000/texbook",
+        url: "example.com/paper",
+        eprint: "2401.12345",
+        archivePrefix: "arXiv",
+      }),
+    ).toEqual([
+      { label: "DOI", url: "https://doi.org/10.1000/texbook" },
+      { label: "URL", url: "https://example.com/paper" },
+      { label: "arXiv", url: "https://arxiv.org/abs/2401.12345" },
+    ]);
   });
 });

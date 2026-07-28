@@ -23,6 +23,9 @@ describe("parseMathAtPosition", () => {
   it("finds display environments spanning lines", () => {
     const found = parseMathAtPosition(text, 3, 5);
     expect(found?.tex).toBe("\\frac{a}{b} + \\sqrt{x}");
+    expect(found?.renderTex).toBe(
+      "\\begin{equation}\n\\frac{a}{b} + \\sqrt{x}\n\\end{equation}",
+    );
     expect(found?.display).toBe(true);
     expect(found?.startLine).toBe(2);
     expect(found?.endLine).toBe(4);
@@ -43,6 +46,15 @@ describe("parseMathAtPosition", () => {
   it("handles display dollar math", () => {
     const found = parseMathAtPosition("before $$x + y$$ after", 1, 12);
     expect(found?.tex).toBe("x + y");
+    expect(found?.renderTex).toBe("x + y");
+    expect(found?.display).toBe(true);
+  });
+
+  it("keeps align wrappers for MathJax rendering", () => {
+    const source = "\\begin{alignat}{2}\na &= b & c &= d\n\\end{alignat}";
+    const found = parseMathAtPosition(source, 2, 5);
+    expect(found?.tex).toBe("a &= b & c &= d");
+    expect(found?.renderTex).toBe(source);
     expect(found?.display).toBe(true);
   });
 
@@ -64,6 +76,12 @@ describe("mathPreviewDataUri", () => {
     expect(mathPreviewDataUri("\\frac{a}{b}", true, "#000")).toMatch(
       /^data:image\/svg\+xml/,
     );
+  });
+
+  it("renders aligned equation environments", () => {
+    expect(
+      mathPreviewDataUri("\\begin{align}a &= b\\\\ c &= d\\end{align}", true, "#000"),
+    ).toMatch(/^data:image\/svg\+xml/);
   });
 
   it("returns null for invalid TeX", () => {

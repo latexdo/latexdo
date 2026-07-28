@@ -30,6 +30,8 @@ const texPackages = [
 export interface MathAtPosition {
   /** TeX body without the delimiters. */
   tex: string;
+  /** TeX passed to MathJax. Environment math keeps its wrapper here. */
+  renderTex: string;
   display: boolean;
   startLine: number;
   startColumn: number;
@@ -40,15 +42,46 @@ export interface MathAtPosition {
 const displayEnvironments = [
   "equation",
   "equation*",
+  "displaymath",
+  "displaymath*",
   "align",
   "align*",
+  "alignat",
+  "alignat*",
+  "flalign",
+  "flalign*",
+  "xalignat",
+  "xalignat*",
+  "xxalignat",
+  "xxalignat*",
   "gather",
   "gather*",
+  "gathered",
   "multline",
   "multline*",
   "eqnarray",
   "eqnarray*",
+  "aligned",
+  "alignedat",
+  "split",
+  "cases",
+  "matrix",
+  "pmatrix",
+  "bmatrix",
+  "Bmatrix",
+  "vmatrix",
+  "Vmatrix",
 ];
+
+const environmentsWithLeadingArgument = new Set([
+  "alignat",
+  "alignat*",
+  "xalignat",
+  "xalignat*",
+  "xxalignat",
+  "xxalignat*",
+  "alignedat",
+]);
 
 interface OffsetRange {
   start: number;
@@ -56,6 +89,7 @@ interface OffsetRange {
   bodyStart: number;
   bodyEnd: number;
   display: boolean;
+  includeDelimiters: boolean;
 }
 
 function isEscapedAt(text: string, index: number): boolean {
@@ -64,6 +98,56 @@ function isEscapedAt(text: string, index: number): boolean {
     slashes += 1;
   }
   return slashes % 2 === 1;
+}
+
+function skipBalancedGroup(text: string, index: number): number {
+  const open = text[index];
+  const close = open === "{" ? "}" : open === "[" ? "]" : "";
+  if (!close) return index;
+
+  let depth = 0;
+  for (let cursor = index; cursor < text.length; cursor += 1) {
+    const char = text[cursor];
+    if (char === open && !isEscapedAt(text, cursor)) {
+      depth += 1;
+    } else if (char === close && !isEscapedAt(text, cursor)) {
+      depth -= 1;
+      if (depth === 0) {
+        return cursor + 1;
+      }
+    }
+  }
+  return index;
+}
+
+function environmentBodyStart(
+  text: string,
+  index: number,
+  environment: string,
+): number {
+  let cursor = index;
+  while (/\s/.test(text[cursor] ?? "")) {
+    cursor += 1;
+  }
+
+  if (text[cursor] === "[") {
+    const next = skipBalancedGroup(text, cursor);
+    if (next > cursor) {
+      cursor = next;
+      while (/\s/.test(text[cursor] ?? "")) {
+        cursor += 1;
+      }
+    }
+  }
+
+  if (environmentsWithLeadingArgument.has(environment) && text[cursor] === "{") {
+    const next = skipBalancedGroup(text, cursor);
+    if (next > cursor) {
+      cursor = next;
+    }
+  }
+
+  return cursor;
 }
 
 function findDelimitedRanges(text: string): OffsetRange[] {
@@ -86,6 +170,7 @@ function findDelimitedRanges(text: string): OffsetRange[] {
         bodyStart: start + open.length,
         bodyEnd: end,
         display,
+        includeDelimiters: false,
       });
       cursor = end + close.length;
     }
@@ -100,12 +185,14 @@ function findDelimitedRanges(text: string): OffsetRange[] {
       if (start === -1) break;
       const end = text.indexOf(close, start + open.length);
       if (end === -1) break;
+      const bodyStart = environmentBodyStart(text, start + open.length, environment);
       ranges.push({
         start,
         end: end + close.length,
-        bodyStart: start + open.length,
+        bodyStart,
         bodyEnd: end,
         display: true,
+        includeDelimiters: true,
       });
       cursor = end + close.length;
     }
@@ -135,6 +222,7 @@ function findDelimitedRanges(text: string): OffsetRange[] {
         bodyStart: start + 2,
         bodyEnd: dollarPositions[closeIndex],
         display: true,
+        includeDelimiters: false,
       });
       cursor = closeIndex + 2;
       continue;
@@ -145,6 +233,7 @@ function findDelimitedRanges(text: string): OffsetRange[] {
       bodyStart: start + 1,
       bodyEnd: dollarPositions[cursor + 1],
       display: false,
+      includeDelimiters: false,
     });
     cursor += 2;
   }
@@ -197,6 +286,9 @@ export function parseMathAtPosition(
   const endPosition = positionOf(lines, range.end);
   return {
     tex,
+    renderTex: range.includeDelimiters
+      ? text.slice(range.start, range.end).trim()
+      : tex,
     display: range.display,
     startLine: startPosition.line,
     startColumn: startPosition.column,

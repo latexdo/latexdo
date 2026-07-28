@@ -3228,7 +3228,8 @@ button {
   white-space: nowrap;
 }
 
-.editor-citation-preview {
+.editor-citation-preview,
+.editor-equation-preview {
   position: absolute;
   z-index: 8;
   right: 18px;
@@ -3245,6 +3246,10 @@ button {
   box-shadow: 0 16px 42px rgb(0 0 0 / 34%);
   color: var(--text-primary);
   font-size: 12px;
+}
+
+.editor-equation-preview {
+  width: min(520px, calc(100% - 36px));
 }
 
 .editor-citation-preview.missing {
@@ -3284,7 +3289,8 @@ button {
   color: var(--text-primary);
 }
 
-.editor-citation-preview strong {
+.editor-citation-preview strong,
+.editor-equation-preview strong {
   color: var(--text-heading);
   font-size: 13px;
   line-height: 1.3;
@@ -3301,8 +3307,60 @@ button {
   font-size: 11px;
 }
 
-.editor-citation-preview code {
+.editor-citation-preview code,
+.editor-equation-preview code {
   font-family: monospace;
+}
+
+.editor-citation-preview-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 1px;
+}
+
+.editor-citation-preview-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px;
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  background: var(--bg-button-secondary);
+  color: var(--accent-dim);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.editor-citation-preview-links a:hover,
+.editor-citation-preview-links a:focus-visible {
+  outline: 0;
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+
+.editor-equation-preview img {
+  display: block;
+  max-width: 100%;
+  max-height: 180px;
+  overflow: auto;
+  padding: 9px;
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-panel) 78%, transparent);
+  object-fit: contain;
+}
+
+.editor-equation-preview code {
+  display: block;
+  max-height: 82px;
+  overflow: auto;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: pre-wrap;
 }
 
 .editor-drop-zone > * {

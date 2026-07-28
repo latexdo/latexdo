@@ -195,6 +195,7 @@ import {
   type CitationProjectFile,
 } from "./latex/citationAnalysis";
 import {
+  citationExternalLinks,
   findCitationKeyAtLatexPosition,
   formatCitationBibliographyLine,
   formatCitationHoverMarkdown,
@@ -679,6 +680,21 @@ type PendingSourceLocation = {
 };
 
 type TextOpenDocument = OpenDocument & { kind?: "text" };
+
+type EditorMathPreview = {
+  tex: string;
+  display: boolean;
+  dataUri: string;
+};
+
+const mathPreviewForegrounds: Record<string, string> = {
+  graphite: "#d7dce5",
+  midnight: "#dce8f8",
+  forest: "#e1ebe5",
+  sepia: "#eee4d4",
+  studio: "#1f2937",
+  paper: "#252a31",
+};
 
 function isTextDocument(
   document: OpenDocument | null | undefined,
@@ -1418,6 +1434,9 @@ export default function App() {
   const [editorCitationPreviewKey, setEditorCitationPreviewKey] = useState<
     string | null
   >(null);
+  const [editorMathPreview, setEditorMathPreview] = useState<EditorMathPreview | null>(
+    null,
+  );
   const [citationProjectFiles, setCitationProjectFiles] = useState<
     CitationProjectFile[]
   >([]);
@@ -1593,6 +1612,7 @@ export default function App() {
   const reviewDataReadyRef = useRef(false);
   const reviewSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+  const editorPreviewSequenceRef = useRef(0);
   const editorMouseDisposableRef = useRef<Monaco.IDisposable | null>(null);
   const editorActionDisposablesRef = useRef<Monaco.IDisposable[]>([]);
   const documentsRef = useRef<OpenDocument[]>([]);
@@ -1802,6 +1822,9 @@ export default function App() {
   const editorCitationPreviewEntry = editorCitationPreviewKey
     ? (citationEntriesByKey.get(editorCitationPreviewKey) ?? null)
     : null;
+  const editorCitationPreviewLinks = editorCitationPreviewEntry
+    ? citationExternalLinks(editorCitationPreviewEntry)
+    : [];
   useEffect(() => {
     if (
       !editorCitationPreviewKey ||
@@ -4576,15 +4599,6 @@ ${macroEnd}
     updateLatexDecorations();
   }, [updateLatexDecorations]);
 
-  const mathPreviewForegrounds: Record<string, string> = {
-    graphite: "#d7dce5",
-    midnight: "#dce8f8",
-    forest: "#e1ebe5",
-    sepia: "#eee4d4",
-    studio: "#1f2937",
-    paper: "#252a31",
-  };
-
   const configureMonaco: BeforeMount = (instance) => {
     monaco = instance;
     const providerDisposables = prepareMonacoProviderDisposables();
@@ -4976,7 +4990,7 @@ ${macroEnd}
                 const foreground =
                   mathPreviewForegrounds[settingsRef.current.colorTheme] ?? "#d7dce5";
                 const rendered = mathPreviewDataUri(
-                  mathTarget.tex,
+                  mathTarget.renderTex ?? mathTarget.tex,
                   mathTarget.display,
                   foreground,
                 );
@@ -5585,6 +5599,12 @@ ${macroEnd}
     const document = documentsRef.current.find(
       (item) => item.path === activePathRef.current,
     );
+    const clearEditorPreview = () => {
+      editorPreviewSequenceRef.current += 1;
+      setEditorCitationPreviewKey(null);
+      setEditorMathPreview(null);
+    };
+
     if (
       !editor ||
       !model ||
@@ -5594,15 +5614,69 @@ ${macroEnd}
       languageFor(document.name) !== "latex" ||
       !editorModelMatchesPath(editor, document.path)
     ) {
-      setEditorCitationPreviewKey(null);
+      clearEditorPreview();
       return;
     }
 
-    const target = findCitationKeyAtLatexPosition(
+    const citationTarget = findCitationKeyAtLatexPosition(
       model.getLineContent(position.lineNumber),
       position.column,
     );
-    setEditorCitationPreviewKey(target?.key ?? null);
+    if (citationTarget) {
+      editorPreviewSequenceRef.current += 1;
+      setEditorMathPreview(null);
+      setEditorCitationPreviewKey(citationTarget.key);
+      return;
+    }
+
+    setEditorCitationPreviewKey(null);
+    const sequence = ++editorPreviewSequenceRef.current;
+    const text = model.getValue();
+    const lineNumber = position.lineNumber;
+    const column = position.column;
+
+    void (async () => {
+      try {
+        const { parseMathAtPosition, mathPreviewDataUri } =
+          await import("./latex/mathPreview");
+        if (
+          sequence !== editorPreviewSequenceRef.current ||
+          editorRef.current !== editor ||
+          model.isDisposed()
+        ) {
+          return;
+        }
+
+        const mathTarget = parseMathAtPosition(text, lineNumber, column);
+        if (!mathTarget) {
+          setEditorMathPreview(null);
+          return;
+        }
+
+        const foreground =
+          mathPreviewForegrounds[settingsRef.current.colorTheme] ?? "#d7dce5";
+        const rendered = mathPreviewDataUri(
+          mathTarget.renderTex ?? mathTarget.tex,
+          mathTarget.display,
+          foreground,
+        );
+        if (sequence === editorPreviewSequenceRef.current) {
+          setEditorMathPreview(
+            rendered
+              ? {
+                  tex: mathTarget.tex,
+                  display: mathTarget.display,
+                  dataUri: rendered,
+                }
+              : null,
+          );
+        }
+      } catch {
+        if (sequence === editorPreviewSequenceRef.current) {
+          setEditorMathPreview(null);
+        }
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -10764,6 +10838,24 @@ ${macroEnd}
                             <code>{editorCitationPreviewEntry.key}</code> from{" "}
                             <code>{editorCitationPreviewEntry.sourceFile}</code>
                           </small>
+                          {editorCitationPreviewLinks.length ? (
+                            <div className="editor-citation-preview-links">
+                              {editorCitationPreviewLinks.map((link) => (
+                                <a
+                                  key={`${link.label}:${link.url}`}
+                                  href={link.url}
+                                  title={link.url}
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    openExternalLink(link.url);
+                                  }}
+                                >
+                                  <ExternalLink size={11} />
+                                  {link.label}
+                                </a>
+                              ))}
+                            </div>
+                          ) : null}
                         </>
                       ) : (
                         <>
@@ -10774,6 +10866,33 @@ ${macroEnd}
                           </p>
                         </>
                       )}
+                    </div>
+                  ) : null}
+                  {activeDocumentIsLatex &&
+                  !editorCitationPreviewKey &&
+                  editorMathPreview ? (
+                    <div
+                      className="editor-equation-preview"
+                      role="dialog"
+                      aria-label="Editor equation preview"
+                    >
+                      <div className="editor-citation-preview-header">
+                        <span>
+                          {editorMathPreview.display
+                            ? "Equation preview"
+                            : "Math preview"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setEditorMathPreview(null)}
+                          aria-label="Close editor equation preview"
+                          title="Close equation preview"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                      <img src={editorMathPreview.dataUri} alt="Rendered equation" />
+                      <code>{editorMathPreview.tex}</code>
                     </div>
                   ) : null}
                 </div>

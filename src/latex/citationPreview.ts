@@ -7,6 +7,11 @@ export type CitationKeyPosition = {
   endColumn: number;
 };
 
+export type CitationExternalLink = {
+  label: string;
+  url: string;
+};
+
 const citationCommandAtLineRegex =
   /\\(?:cite|citep|citet|citealp|citeauthor|citeyear|citeyearpar|parencite|textcite|autocite|footcite|supercite)[a-zA-Z]*\*?(?:\s*\[[^\]]*\])*\s*\{([^}]*)\}/g;
 
@@ -15,7 +20,12 @@ function escapeMarkdown(value: string): string {
 }
 
 function inlineCode(value: string): string {
-  return `\`${value.replace(/`/g, "\\`")}\``;
+  const escapedValue = value.replace(/\\/g, "\\\\").replace(/`/g, "\\`");
+  return `\`${escapedValue}\``;
+}
+
+function markdownLink(label: string, url: string): string {
+  return `[${escapeMarkdown(label)}](<${url.replace(/>/g, "%3E")}>)`;
 }
 
 export function formatCitationPeople(entry: CitationEntry): string {
@@ -45,6 +55,50 @@ export function citationSearchText(entry: CitationEntry): string {
     .toLowerCase();
 }
 
+export function citationExternalLinks(entry: CitationEntry): CitationExternalLink[] {
+  const links: CitationExternalLink[] = [];
+  const doi = entry.doi?.trim();
+  if (doi) {
+    const normalizedDoi = doi
+      .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "")
+      .replace(/^doi:/i, "")
+      .trim();
+    if (normalizedDoi) {
+      links.push({
+        label: "DOI",
+        url: `https://doi.org/${encodeURIComponent(normalizedDoi).replace(
+          /%2F/g,
+          "/",
+        )}`,
+      });
+    }
+  }
+
+  const url = entry.url?.trim();
+  if (url) {
+    links.push({
+      label: "URL",
+      url: /^https?:\/\//i.test(url) ? url : `https://${url}`,
+    });
+  }
+
+  const eprint = entry.eprint?.trim();
+  if (eprint) {
+    const archivePrefix = entry.archivePrefix?.trim();
+    links.push({
+      label: archivePrefix || "eprint",
+      url:
+        archivePrefix?.toLowerCase() === "arxiv"
+          ? `https://arxiv.org/abs/${encodeURIComponent(eprint)}`
+          : /^https?:\/\//i.test(eprint)
+            ? eprint
+            : `https://www.google.com/search?q=${encodeURIComponent(eprint)}`,
+    });
+  }
+
+  return links;
+}
+
 export function formatCitationBibliographyLine(entry: CitationEntry): string {
   const people = formatCitationPeople(entry);
   const year = entry.year ? ` (${entry.year})` : "";
@@ -72,13 +126,12 @@ export function formatCitationHoverMarkdown(entry: CitationEntry): string {
     venue !== "No venue" ? escapeMarkdown(venue) : undefined,
   ].filter(Boolean);
 
-  const identifier = entry.doi
-    ? `DOI: ${escapeMarkdown(entry.doi)}`
-    : entry.url
-      ? `URL: ${escapeMarkdown(entry.url)}`
-      : entry.eprint
-        ? `eprint: ${escapeMarkdown(entry.eprint)}`
-        : undefined;
+  const links = citationExternalLinks(entry);
+  const identifier = links.length
+    ? links.map((link) => markdownLink(link.label, link.url)).join(" · ")
+    : entry.eprint
+      ? `eprint: ${escapeMarkdown(entry.eprint)}`
+      : undefined;
 
   return [
     "**Bibliography preview**",
