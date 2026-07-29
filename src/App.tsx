@@ -202,6 +202,12 @@ import {
   formatMissingCitationHoverMarkdown,
 } from "./latex/citationPreview";
 import {
+  parseTableAtPosition,
+  tablePreviewMarkdown,
+  type TablePreviewAtPosition,
+} from "./latex/tablePreview";
+import { parseMathAtPosition, type MathAtPosition } from "./latex/mathParse";
+import {
   recommendCitations,
   formatRecommendations,
 } from "./features/graph/citationRecommender";
@@ -357,6 +363,7 @@ const monacoProviderGeneration = Math.random().toString(36);
 type MonacoProviderDisposableStore = typeof globalThis & {
   __latexdoMonacoProviderDisposables?: Monaco.IDisposable[];
   __latexdoMonacoProviderGeneration?: string;
+  __latexdoMonacoInstance?: MonacoNamespace;
 };
 
 function prepareMonacoProviderDisposables(): Monaco.IDisposable[] | null {
@@ -686,6 +693,8 @@ type EditorMathPreview = {
   sourceTex: string;
   display: boolean;
   dataUri: string | null;
+  /** True while the MathJax chunk is still loading or rendering. */
+  rendering: boolean;
 };
 
 const mathPreviewForegrounds: Record<string, string> = {
@@ -1438,6 +1447,8 @@ export default function App() {
   const [editorMathPreview, setEditorMathPreview] = useState<EditorMathPreview | null>(
     null,
   );
+  const [editorTablePreview, setEditorTablePreview] =
+    useState<TablePreviewAtPosition | null>(null);
   const [citationProjectFiles, setCitationProjectFiles] = useState<
     CitationProjectFile[]
   >([]);
@@ -1829,6 +1840,10 @@ export default function App() {
   const editorCitationPreviewParts = editorCitationPreviewEntry
     ? citationBibliographyParts(editorCitationPreviewEntry)
     : [];
+  // Rules-only rows parse to empty cells; they carry nothing to display.
+  const editorTableRows = (editorTablePreview?.rows ?? []).filter((row) =>
+    row.cells.some((cell) => cell.text),
+  );
   useEffect(() => {
     if (
       !editorCitationPreviewKey ||
@@ -4605,6 +4620,9 @@ ${macroEnd}
 
   const configureMonaco: BeforeMount = (instance) => {
     monaco = instance;
+    // Kept on globalThis so a hot update, which resets module state, can still
+    // find the instance and re-register its providers.
+    (globalThis as MonacoProviderDisposableStore).__latexdoMonacoInstance = instance;
     const providerDisposables = prepareMonacoProviderDisposables();
 
     if (!instance.languages.getLanguages().some(({ id }) => id === "latex")) {
@@ -4984,36 +5002,60 @@ ${macroEnd}
               };
             }
 
-            try {
-              const { parseMathAtPosition, mathPreviewDataUri } =
-                await import("./latex/mathPreview");
-              const mathTarget = parseMathAtPosition(
-                model.getValue(),
-                position.lineNumber,
-                position.column,
-              );
-              if (mathTarget) {
+            const mathTarget = parseMathAtPosition(
+              model.getValue(),
+              position.lineNumber,
+              position.column,
+            );
+            if (mathTarget) {
+              let rendered: string | null = null;
+              try {
+                const { mathPreviewDataUri } = await import("./latex/mathPreview");
                 const foreground =
                   mathPreviewForegrounds[settingsRef.current.colorTheme] ?? "#d7dce5";
-                const rendered = mathPreviewDataUri(
+                rendered = mathPreviewDataUri(
                   mathTarget.renderTex ?? mathTarget.tex,
                   mathTarget.display,
                   foreground,
                 );
-                if (rendered) {
-                  return {
-                    range: new instance.Range(
-                      mathTarget.startLine,
-                      mathTarget.startColumn,
-                      mathTarget.endLine,
-                      mathTarget.endColumn,
-                    ),
-                    contents: [{ value: `![equation](${rendered})` }],
-                  };
-                }
+              } catch {
+                // Rendering is best-effort; the source is shown instead.
+                rendered = null;
+              }
+              return {
+                range: new instance.Range(
+                  mathTarget.startLine,
+                  mathTarget.startColumn,
+                  mathTarget.endLine,
+                  mathTarget.endColumn,
+                ),
+                contents: rendered
+                  ? [{ value: `![equation](${rendered})` }]
+                  : // Unrenderable math still shows its source rather than nothing.
+                    [{ value: `\`\`\`latex\n${mathTarget.sourceTex}\n\`\`\`` }],
+              };
+            }
+
+            try {
+              const tableTarget = parseTableAtPosition(
+                model.getValue(),
+                position.lineNumber,
+                position.column,
+              );
+              const markdown = tableTarget ? tablePreviewMarkdown(tableTarget) : null;
+              if (tableTarget && markdown) {
+                return {
+                  range: new instance.Range(
+                    tableTarget.startLine,
+                    tableTarget.startColumn,
+                    tableTarget.endLine,
+                    tableTarget.endColumn,
+                  ),
+                  contents: [{ value: markdown }],
+                };
               }
             } catch {
-              // Equation preview is best-effort; fall through to other hovers.
+              // Table preview is best-effort; fall through to other hovers.
             }
 
             const includeTarget = parseIncludeGraphicsAtPosition(
@@ -5297,6 +5339,19 @@ ${macroEnd}
       });
     }
   };
+
+  // Language providers (hovers, completions, code actions) are registered from
+  // beforeMount, which the editor only ever calls once. A hot update therefore
+  // left the previous build's providers serving the editor until a full reload.
+  // Fast Refresh re-runs mount effects, so re-registering here keeps hover and
+  // completion edits visible without reloading the window. Dev only.
+  useEffect(() => {
+    if (!import.meta.hot) return;
+    const instance = (globalThis as MonacoProviderDisposableStore)
+      .__latexdoMonacoInstance;
+    if (instance) configureMonaco(instance);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const disposeCollaborationBinding = useCallback(() => {
     collaborationBindingRequestIdRef.current += 1;
@@ -5609,6 +5664,7 @@ ${macroEnd}
       editorPreviewSequenceRef.current += 1;
       setEditorCitationPreviewKey(null);
       setEditorMathPreview(null);
+      setEditorTablePreview(null);
     };
 
     if (
@@ -5631,6 +5687,7 @@ ${macroEnd}
     if (citationTarget) {
       editorPreviewSequenceRef.current += 1;
       setEditorMathPreview(null);
+      setEditorTablePreview(null);
       setEditorCitationPreviewKey(citationTarget.key);
       return;
     }
@@ -5640,11 +5697,38 @@ ${macroEnd}
     const text = model.getValue();
     const lineNumber = position.lineNumber;
     const column = position.column;
+    // Parsing is synchronous so the panel shows up immediately. Only the SVG
+    // rendering needs MathJax, which is a large lazily loaded chunk.
+    let mathTarget: MathAtPosition | null = null;
+    let tableTarget: TablePreviewAtPosition | null = null;
+    try {
+      mathTarget = parseMathAtPosition(text, lineNumber, column);
+      // Math wins when the caret sits inside math, even within a table cell.
+      tableTarget = mathTarget ? null : parseTableAtPosition(text, lineNumber, column);
+    } catch {
+      mathTarget = null;
+      tableTarget = null;
+    }
+
+    setEditorTablePreview(tableTarget);
+    if (!mathTarget) {
+      setEditorMathPreview(null);
+      return;
+    }
+
+    const target = mathTarget;
+    setEditorMathPreview({
+      tex: target.tex,
+      sourceTex: target.sourceTex,
+      display: target.display,
+      dataUri: null,
+      rendering: true,
+    });
 
     void (async () => {
+      let dataUri: string | null = null;
       try {
-        const { parseMathAtPosition, mathPreviewDataUri } =
-          await import("./latex/mathPreview");
+        const { mathPreviewDataUri } = await import("./latex/mathPreview");
         if (
           sequence !== editorPreviewSequenceRef.current ||
           editorRef.current !== editor ||
@@ -5652,33 +5736,23 @@ ${macroEnd}
         ) {
           return;
         }
-
-        const mathTarget = parseMathAtPosition(text, lineNumber, column);
-        if (!mathTarget) {
-          setEditorMathPreview(null);
-          return;
-        }
-
         const foreground =
           mathPreviewForegrounds[settingsRef.current.colorTheme] ?? "#d7dce5";
-        const rendered = mathPreviewDataUri(
-          mathTarget.renderTex ?? mathTarget.tex,
-          mathTarget.display,
+        dataUri = mathPreviewDataUri(
+          target.renderTex ?? target.tex,
+          target.display,
           foreground,
         );
-        if (sequence === editorPreviewSequenceRef.current) {
-          setEditorMathPreview({
-            tex: mathTarget.tex,
-            sourceTex: mathTarget.sourceTex,
-            display: mathTarget.display,
-            dataUri: rendered,
-          });
-        }
       } catch {
-        if (sequence === editorPreviewSequenceRef.current) {
-          setEditorMathPreview(null);
-        }
+        dataUri = null;
       }
+
+      if (sequence !== editorPreviewSequenceRef.current) return;
+      setEditorMathPreview((current) =>
+        current && current.sourceTex === target.sourceTex
+          ? { ...current, dataUri, rendering: false }
+          : current,
+      );
     })();
   }, []);
 
@@ -10947,13 +11021,98 @@ ${macroEnd}
                         <img src={editorMathPreview.dataUri} alt="Rendered equation" />
                       ) : (
                         <div className="editor-equation-preview-fallback">
-                          Rendered preview unavailable
+                          {editorMathPreview.rendering
+                            ? "Rendering equation…"
+                            : "Rendered preview unavailable"}
                         </div>
                       )}
                       <div className="editor-equation-preview-code">
                         <span>LaTeX source</span>
                         <pre>
                           <code>{editorMathPreview.sourceTex}</code>
+                        </pre>
+                      </div>
+                    </div>
+                  ) : null}
+                  {activeDocumentIsLatex &&
+                  !editorCitationPreviewKey &&
+                  !editorMathPreview &&
+                  editorTablePreview ? (
+                    <div
+                      className="editor-equation-preview editor-table-preview"
+                      role="dialog"
+                      aria-label="Editor table preview"
+                    >
+                      <div className="editor-citation-preview-header">
+                        <span>Table preview</span>
+                        <button
+                          type="button"
+                          onClick={() => setEditorTablePreview(null)}
+                          aria-label="Close editor table preview"
+                          title="Close table preview"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                      {editorTablePreview.caption ? (
+                        <strong>{editorTablePreview.caption}</strong>
+                      ) : null}
+                      {editorTableRows.length ? (
+                        <div className="editor-table-preview-grid">
+                          <table>
+                            <tbody>
+                              {editorTableRows.map((row, rowIndex) => {
+                                // Spanned cells shift the grid column the next
+                                // cell lands in, so track it as we go.
+                                let gridColumn = 0;
+                                return (
+                                  <tr key={rowIndex}>
+                                    {row.cells.map((cell, cellIndex) => {
+                                      const alignment =
+                                        cell.alignment ??
+                                        editorTablePreview.columns[gridColumn] ??
+                                        "left";
+                                      gridColumn += cell.span;
+                                      const Cell = row.header ? "th" : "td";
+                                      return (
+                                        <Cell
+                                          key={cellIndex}
+                                          colSpan={
+                                            cell.span > 1 ? cell.span : undefined
+                                          }
+                                          style={{ textAlign: alignment }}
+                                        >
+                                          {cell.text}
+                                        </Cell>
+                                      );
+                                    })}
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="editor-equation-preview-fallback">
+                          No table rows to preview
+                        </div>
+                      )}
+                      <small>
+                        <code>
+                          {editorTablePreview.gridEnvironment ??
+                            editorTablePreview.environment}
+                        </code>
+                        {editorTablePreview.label ? (
+                          <>
+                            {" "}
+                            · <code>{editorTablePreview.label}</code>
+                          </>
+                        ) : null}
+                      </small>
+                      <div className="editor-equation-preview-code">
+                        <span>LaTeX source</span>
+                        <pre>
+                          <code>{editorTablePreview.sourceTex}</code>
                         </pre>
                       </div>
                     </div>

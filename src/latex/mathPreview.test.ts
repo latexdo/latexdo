@@ -88,6 +88,13 @@ describe("mathPreviewDataUri", () => {
     ).toMatch(/^data:image\/svg\+xml/);
   });
 
+  it("renders labelled equations repeatedly", () => {
+    const source = "\\begin{equation}\\label{eq:main}\nE = mc^2\n\\end{equation}";
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      expect(mathPreviewDataUri(source, true, "#000")).toMatch(/^data:image\/svg\+xml/);
+    }
+  });
+
   it("returns null for invalid TeX", () => {
     expect(mathPreviewDataUri("\\notarealmacro{", false, "#000")).toBeNull();
   });

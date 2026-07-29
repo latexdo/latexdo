@@ -3410,6 +3410,48 @@ button {
   line-height: inherit;
 }
 
+.editor-table-preview small {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.editor-table-preview-grid {
+  max-height: 200px;
+  overflow: auto;
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-panel) 78%, transparent);
+}
+
+.editor-table-preview-grid table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.editor-table-preview-grid th,
+.editor-table-preview-grid td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border-card);
+  color: var(--text-secondary);
+  line-height: 1.35;
+  vertical-align: top;
+  white-space: pre-wrap;
+}
+
+.editor-table-preview-grid th {
+  position: sticky;
+  top: 0;
+  background: color-mix(in srgb, var(--bg-panel) 92%, black);
+  color: var(--text-heading);
+  font-weight: 700;
+}
+
+.editor-table-preview-grid tr:last-child th,
+.editor-table-preview-grid tr:last-child td {
+  border-bottom: 0;
+}
+
 .editor-drop-zone > * {
   min-width: 0;
   min-height: 0;
@@ -4057,6 +4099,27 @@ button {
   border-radius: 5px;
   background: #fff;
   object-fit: contain;
+}
+
+/* Monaco renders hover markdown unstyled, so table previews need borders. */
+.monaco-hover table {
+  margin: 4px 0;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.monaco-hover th,
+.monaco-hover td {
+  padding: 3px 8px;
+  border: 1px solid var(--border-card);
+  text-align: left;
+  vertical-align: top;
+}
+
+.monaco-hover th {
+  background: color-mix(in srgb, var(--bg-panel) 88%, black);
+  color: var(--text-heading);
+  font-weight: 700;
 }
 
 @keyframes source-sync-flash {
