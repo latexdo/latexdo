@@ -1,5 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Quote, Search, SlidersHorizontal, Sparkles, X } from "lucide-react";
+import {
+  ExternalLink,
+  FilePlus2,
+  Globe2,
+  LoaderCircle,
+  Quote,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Sparkles,
+  X,
+} from "lucide-react";
 import type { CitationEntry } from "../latex/latexIndex";
 import {
   edgeRelationLabels,
@@ -8,6 +19,13 @@ import {
   type KnowledgeGraph,
   type KnowledgeGraphParams,
 } from "../features/graph/knowledgeGraph";
+import {
+  discoverRelatedPapers,
+  formatDiscoveredPaperAuthors,
+  type DiscoveredPaper,
+  type ScholarlyDiscoveryResult,
+} from "../features/graph/scholarlyDiscovery";
+import type { AiDiscoveryPlan } from "../features/graph/aiDiscoveryPlanner";
 
 interface KnowledgeGraphViewProps {
   graph: KnowledgeGraph;
@@ -18,6 +36,18 @@ interface KnowledgeGraphViewProps {
   onInsertCitation: (key: string) => void;
   /** Ask the AI to recommend citations for the current selection/paragraph. */
   onRecommendForSelection?: () => void;
+  /** Project BibTeX files that can receive discovered online papers. */
+  bibFiles?: string[];
+  /** Append a fully materialized BibTeX entry to the selected project file. */
+  onAppendBibEntry?: (targetFile: string, bibtex: string) => void | Promise<void>;
+  /** Open DOI / publisher / PDF URLs with the app's external-link handling. */
+  onOpenExternal?: (url: string) => void;
+  /** Ask the configured AI to plan better scholarly search queries from the graph. */
+  onPlanDiscoveryWithAi?: (
+    graph: KnowledgeGraph,
+    entries: CitationEntry[],
+    signal: AbortSignal,
+  ) => Promise<AiDiscoveryPlan | null>;
 }
 
 interface NodePosition {
@@ -55,11 +85,32 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
   entriesByKey,
   onInsertCitation,
   onRecommendForSelection,
+  bibFiles = [],
+  onAppendBibEntry,
+  onOpenExternal,
+  onPlanDiscoveryWithAi,
 }) => {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [citedOnly, setCitedOnly] = useState(false);
   const [showControls, setShowControls] = useState(false);
+  const [onlineDiscovery, setOnlineDiscovery] = useState(false);
+  const [onlineResult, setOnlineResult] = useState<ScholarlyDiscoveryResult>({
+    papers: [],
+    queries: [],
+    providerErrors: [],
+    aiQueriesUsed: [],
+  });
+  const [onlineState, setOnlineState] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [onlineError, setOnlineError] = useState("");
+  const [targetBibFile, setTargetBibFile] = useState(bibFiles[0] ?? "");
+  const [addedOnlineIds, setAddedOnlineIds] = useState<Set<string>>(() => new Set());
+  const [aiPlan, setAiPlan] = useState<AiDiscoveryPlan | null>(null);
+  const [aiPlanState, setAiPlanState] = useState<
+    "idle" | "planning" | "used" | "unavailable"
+  >("idle");
   const [, forceTick] = useState(0);
 
   // Only the strongest-connected nodes are drawn when a library is huge.
@@ -83,6 +134,18 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
   const panning = useRef<{ x: number; y: number } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const frame = useRef<number | null>(null);
+  const discoveryAbort = useRef<AbortController | null>(null);
+  const discoveryRunId = useRef(0);
+
+  useEffect(() => {
+    if (!bibFiles.length) {
+      setTargetBibFile("");
+      return;
+    }
+    if (!targetBibFile || !bibFiles.includes(targetBibFile)) {
+      setTargetBibFile(bibFiles[0]);
+    }
+  }, [bibFiles, targetBibFile]);
 
   // (Re)seed positions whenever the rendered node set changes.
   useEffect(() => {
@@ -179,6 +242,73 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
     alpha.current = Math.max(alpha.current, 0.6);
   }, []);
 
+  const refreshOnlineDiscovery = useCallback(async () => {
+    discoveryAbort.current?.abort();
+    const controller = new AbortController();
+    discoveryAbort.current = controller;
+    const runId = discoveryRunId.current + 1;
+    discoveryRunId.current = runId;
+    setOnlineState("loading");
+    setOnlineError("");
+
+    try {
+      const entries = [...entriesByKey.values()];
+      setAiPlanState(onPlanDiscoveryWithAi ? "planning" : "unavailable");
+      const planned = onPlanDiscoveryWithAi
+        ? await onPlanDiscoveryWithAi(graph, entries, controller.signal)
+        : null;
+      if (discoveryRunId.current !== runId || controller.signal.aborted) return;
+      setAiPlan(planned);
+      setAiPlanState(planned ? "used" : "unavailable");
+
+      const result = await discoverRelatedPapers(graph, entries, {
+        signal: controller.signal,
+        aiQueries: planned?.queries,
+      });
+      if (discoveryRunId.current !== runId || controller.signal.aborted) return;
+      setOnlineResult(result);
+      setOnlineState(
+        result.providerErrors.length && !result.papers.length ? "error" : "ready",
+      );
+      setOnlineError(
+        result.providerErrors.length && !result.papers.length
+          ? result.providerErrors.join("; ")
+          : "",
+      );
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      if (discoveryRunId.current !== runId) return;
+      setOnlineState("error");
+      setOnlineError(
+        error instanceof Error ? error.message : "Could not search scholarly sources.",
+      );
+      setOnlineResult({
+        papers: [],
+        queries: [],
+        providerErrors: [],
+        aiQueriesUsed: [],
+      });
+      setAiPlan(null);
+      setAiPlanState(onPlanDiscoveryWithAi ? "unavailable" : "idle");
+    }
+  }, [entriesByKey, graph, onPlanDiscoveryWithAi]);
+
+  useEffect(() => {
+    if (!onlineDiscovery) {
+      discoveryAbort.current?.abort();
+      discoveryAbort.current = null;
+      setOnlineState("idle");
+      setOnlineError("");
+      setAiPlan(null);
+      setAiPlanState("idle");
+      return;
+    }
+    void refreshOnlineDiscovery();
+    return () => {
+      discoveryAbort.current?.abort();
+    };
+  }, [onlineDiscovery, refreshOnlineDiscovery]);
+
   const toScene = useCallback((clientX: number, clientY: number) => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
@@ -271,6 +401,32 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
     });
   };
 
+  const openPaper = (paper: DiscoveredPaper) => {
+    const url = paper.url ?? paper.pdfUrl;
+    if (!url) return;
+    if (onOpenExternal) onOpenExternal(url);
+    else window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const addOnlineBibEntry = async (paper: DiscoveredPaper) => {
+    if (!onAppendBibEntry || !targetBibFile) return;
+    await onAppendBibEntry(targetBibFile, paper.bibtex);
+    setAddedOnlineIds((current) => new Set(current).add(paper.id));
+  };
+
+  const onlineSummary =
+    aiPlanState === "planning"
+      ? "AI is planning scholarly search queries..."
+      : onlineState === "loading"
+        ? "Searching scholarly sources..."
+        : onlineState === "error"
+          ? onlineError || "Scholarly search failed."
+          : onlineResult.papers.length
+            ? `${onlineResult.papers.length} related papers found`
+            : onlineDiscovery
+              ? "No new related papers found"
+              : "Online discovery off";
+
   return (
     <div className="kg-view">
       <div className="kg-toolbar">
@@ -290,6 +446,14 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
             onChange={(event) => setCitedOnly(event.target.checked)}
           />
           Cited only
+        </label>
+        <label className="kg-toggle kg-online-toggle">
+          <input
+            type="checkbox"
+            checked={onlineDiscovery}
+            onChange={(event) => setOnlineDiscovery(event.target.checked)}
+          />
+          Search online
         </label>
         <button
           type="button"
@@ -314,6 +478,120 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
           {graph.stats.citedCount} cited · {graph.stats.componentCount} clusters
         </span>
       </div>
+
+      {onlineDiscovery ? (
+        <div className="kg-online-panel">
+          <div className="kg-online-head">
+            <div>
+              <strong>
+                <Globe2 size={14} /> Online paper discovery
+              </strong>
+              <span>{onlineSummary}</span>
+              {aiPlanState === "used" && aiPlan ? (
+                <span className="kg-online-ai">
+                  AI-assisted: {aiPlan.queries.slice(0, 2).join(" · ")}
+                </span>
+              ) : aiPlanState === "unavailable" ? (
+                <span className="kg-online-ai">
+                  AI planning unavailable; using graph fingerprint.
+                </span>
+              ) : null}
+            </div>
+            <div className="kg-online-actions">
+              {bibFiles.length ? (
+                <select
+                  value={targetBibFile}
+                  onChange={(event) => setTargetBibFile(event.target.value)}
+                  aria-label="Target BibTeX file"
+                >
+                  {bibFiles.map((file) => (
+                    <option key={file} value={file}>
+                      {file}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+              <button
+                type="button"
+                className="kg-btn"
+                onClick={() => void refreshOnlineDiscovery()}
+                disabled={onlineState === "loading"}
+              >
+                {onlineState === "loading" ? (
+                  <LoaderCircle size={13} className="spin" />
+                ) : (
+                  <RefreshCw size={13} />
+                )}
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          {onlineResult.queries.length ? (
+            <div className="kg-online-query">
+              Search fingerprint: {onlineResult.queries.slice(0, 2).join(" · ")}
+            </div>
+          ) : null}
+
+          <div className="kg-online-results">
+            {onlineState === "loading" && onlineResult.papers.length === 0 ? (
+              <div className="kg-online-empty">Searching OpenAlex and Crossref...</div>
+            ) : onlineResult.papers.length ? (
+              onlineResult.papers.slice(0, 10).map((paper) => {
+                const added = addedOnlineIds.has(paper.id);
+                return (
+                  <article key={paper.id} className="kg-online-card">
+                    <div className="kg-online-card-main">
+                      <div className="kg-online-card-meta">
+                        <span>{paper.source}</span>
+                        <span>{Math.round(paper.score * 100)}% match</span>
+                        {paper.year ? <span>{paper.year}</span> : null}
+                      </div>
+                      <h3>{paper.title}</h3>
+                      <p>
+                        {formatDiscoveredPaperAuthors(paper)}
+                        {paper.venue ? ` · ${paper.venue}` : ""}
+                      </p>
+                      {paper.reasons.length ? (
+                        <small>{paper.reasons.slice(0, 3).join(" · ")}</small>
+                      ) : null}
+                    </div>
+                    <div className="kg-online-card-actions">
+                      <button
+                        type="button"
+                        onClick={() => openPaper(paper)}
+                        disabled={!paper.url && !paper.pdfUrl}
+                        aria-label={`Open ${paper.title}`}
+                      >
+                        <ExternalLink size={12} /> Open
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void addOnlineBibEntry(paper)}
+                        disabled={
+                          added ||
+                          !onAppendBibEntry ||
+                          !targetBibFile ||
+                          !bibFiles.length
+                        }
+                        aria-label={`Add BibTeX for ${paper.title}`}
+                      >
+                        <FilePlus2 size={12} /> {added ? "Added" : "Add BibTeX"}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })
+            ) : (
+              <div className="kg-online-empty">
+                {onlineState === "error"
+                  ? onlineSummary
+                  : "Enable discovery or refresh after adding bibliography entries."}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {showControls ? (
         <div className="kg-controls">
