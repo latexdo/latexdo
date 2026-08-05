@@ -722,6 +722,17 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       window.open(url, "_blank", "noopener,noreferrer");
     },
 
+    async fetchScholarlyJson(url) {
+      const response = await fetch(url, {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`Scholarly source returned HTTP ${response.status}`);
+      }
+      return (await response.json()) as unknown;
+    },
+
     fetchOrcidProfile: fetchOrcidProfileDirect,
 
     async fetchExtensionCatalog() {
