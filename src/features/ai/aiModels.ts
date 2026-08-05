@@ -1,5 +1,5 @@
-// AI model catalog facade. The data is generated from the public ai.latexdo.org
-// catalog during the build and baked into normal desktop releases.
+// AI model catalog facade. The data is generated from the in-repo catalog during
+// the build and baked into normal desktop releases.
 
 import { aiCatalog } from "./aiCatalog.generated";
 import type { LocalModelInfo, ModelTier } from "./aiCatalog";

@@ -39,6 +39,9 @@ jobs:
       - name: Run lint
         run: npm run lint
 
+      - name: Validate AI source
+        run: npm run ai:check
+
       - name: Run type checks
         run: npm run typecheck
 

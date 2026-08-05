@@ -42,7 +42,8 @@ The browser editor defaults to `http://127.0.0.1:5173`. Use `Cmd/Ctrl + Enter` t
 ```sh
 npm run dev              # Start Vite and Electron together.
 npm run web              # Start the browser-only editor.
-npm run ai:sync          # Refresh AI source and catalog from ../ai.latexdo.org.
+npm run ai:sync          # Regenerate the baked AI catalog from catalog/.
+npm run ai:check         # Validate the AI catalog and integrated source manifest.
 npm run build            # Build web and Electron output.
 npm run typecheck        # Run TypeScript checks.
 npm run lint             # Run ESLint.
@@ -54,11 +55,15 @@ npm run sync:downstream  # Refresh CLI, website, and hosted editor repos.
 
 ## AI Source
 
-The public AI source lives in `../ai.latexdo.org`. Build and typecheck run
-`npm run ai:sync` first, which copies the manifest-listed agent loop, prompts,
-tools, AI config, renderer UI, Electron local/Ollama bridge, and AI styles into
-this repo, then validates `../ai.latexdo.org/catalog/latexdo-ai-catalog.v1.json`
-and regenerates `src/features/ai/aiCatalog.generated.ts`.
+The AI source lives in this repository. The agent loop, prompts, tools, AI
+config, renderer UI, Electron local/Ollama bridge, and AI styles are integrated
+under `src/`, `electron/`, and `src/styles.css`. The public model/provider
+catalog lives at `catalog/latexdo-ai-catalog.v1.json`.
+
+Build and typecheck run `npm run ai:sync` first, which validates the local
+catalog and regenerates `src/features/ai/aiCatalog.generated.ts`. Run
+`npm run ai:check` to validate both the catalog and the integrated AI source
+manifest in `latexdo-sync.json`.
 
 Normal desktop releases bake in that public AI source and catalog, so users can
 install LatexDo, choose a local model in setup, download it, and use AI normally
@@ -66,11 +71,11 @@ on a regular laptop. The host app wiring in `App.tsx`, `electron/main.ts`, and
 `electron/preload.cts` stays in this repository because it connects the synced AI
 modules to the editor shell and IPC.
 
-Advanced distribution builds can supply another AI source checkout with
-`LATEXDO_AI_SOURCE_PATH`, another catalog with `LATEXDO_AI_CATALOG_PATH`, or a
-hosted catalog with `LATEXDO_AI_CATALOG_URL`. Set
-`LATEXDO_AI_SOURCE_REQUIRED=1` and `LATEXDO_AI_CATALOG_REQUIRED=1` in release CI
-to fail when the external AI source or catalog cannot be loaded.
+Advanced distribution builds can explicitly overlay another AI source checkout
+with `LATEXDO_AI_SOURCE_PATH`, another catalog with `LATEXDO_AI_CATALOG_PATH`, or
+a hosted catalog with `LATEXDO_AI_CATALOG_URL`. Set
+`LATEXDO_AI_CATALOG_REQUIRED=1` in release CI to fail when a configured external
+catalog cannot be loaded.
 
 ## Downstream Sync
 
