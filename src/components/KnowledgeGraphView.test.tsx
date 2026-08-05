@@ -106,6 +106,20 @@ function stubSvgBounds(svg: SVGSVGElement) {
   });
 }
 
+function requestHostname(input: RequestInfo | URL): string {
+  try {
+    const url =
+      input instanceof URL
+        ? input
+        : typeof Request !== "undefined" && input instanceof Request
+          ? new URL(input.url)
+          : new URL(String(input));
+    return url.hostname;
+  } catch {
+    return "";
+  }
+}
+
 describe("KnowledgeGraphView", () => {
   beforeEach(() => {
     frameQueue = [];
@@ -261,8 +275,7 @@ describe("KnowledgeGraphView", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.includes("api.openalex.org")) {
+        if (requestHostname(input) === "api.openalex.org") {
           return new Response(
             JSON.stringify({
               results: [

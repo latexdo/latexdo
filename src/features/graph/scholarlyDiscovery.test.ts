@@ -40,6 +40,22 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function requestUrl(input: RequestInfo | URL | string): string {
+  return input instanceof URL
+    ? input.toString()
+    : typeof Request !== "undefined" && input instanceof Request
+      ? input.url
+      : String(input);
+}
+
+function requestHostname(input: RequestInfo | URL | string): string {
+  try {
+    return new URL(requestUrl(input)).hostname;
+  } catch {
+    return "";
+  }
+}
+
 describe("scholarly discovery", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -53,8 +69,7 @@ describe("scholarly discovery", () => {
 
   it("discovers, ranks, deduplicates, and materializes BibTeX", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes("api.openalex.org")) {
+      if (requestHostname(input) === "api.openalex.org") {
         return jsonResponse({
           results: [
             {
@@ -154,8 +169,7 @@ describe("scholarly discovery", () => {
 
   it("keeps fallback provider results when one source fails", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes("api.openalex.org")) {
+      if (requestHostname(input) === "api.openalex.org") {
         return jsonResponse({ error: "temporary" }, 500);
       }
 
@@ -194,8 +208,8 @@ describe("scholarly discovery", () => {
   it("does not fan out Crossref fallback requests when Crossref throttles", async () => {
     const crossrefCalls: string[] = [];
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes("api.openalex.org")) {
+      const url = requestUrl(input);
+      if (requestHostname(input) === "api.openalex.org") {
         return jsonResponse({ results: [] });
       }
       crossrefCalls.push(url);
@@ -225,7 +239,7 @@ describe("scholarly discovery", () => {
       throw new Error("renderer fetch should not run");
     }) as unknown as typeof fetch;
     const desktopFetch = vi.fn(async (url: string) => {
-      if (url.includes("api.openalex.org")) {
+      if (requestHostname(url) === "api.openalex.org") {
         return {
           results: [
             {
