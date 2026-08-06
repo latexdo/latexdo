@@ -116,12 +116,12 @@ const startupSmokeTest = process.argv.includes("--smoke-test");
 const startupSmokeTimeoutMs = 20_000;
 const extensionCatalogFetchTimeoutMs = 4_500;
 const downloadsPageUrl =
-  envString("LATEXDO_DOWNLOADS_URL") ?? "https://latexdo.org/downloads/";
+  envString("LATEXDO_DOWNLOADS_URL") ?? "https://app.latexdo.org/downloads/";
 const downloadsManifestUrl =
   envString("LATEXDO_DOWNLOADS_MANIFEST_URL") ??
-  "https://latexdo.org/downloads/manifest.json";
+  "https://app.latexdo.org/downloads/manifest.json";
 const updatesFeedUrl =
-  envString("LATEXDO_UPDATES_FEED_URL") ?? "https://latexdo.org/updates/latest.json";
+  envString("LATEXDO_UPDATES_FEED_URL") ?? "https://app.latexdo.org/updates/latest.json";
 const extensionStoreUrl =
   envString("LATEXDO_EXTENSION_STORE_URL") ?? "https://store.latexdo.org/";
 const extensionStoreCatalogUrl =
@@ -144,6 +144,7 @@ const externalUrlHosts = new Set([
   "platform.deepseek.com",
   "platform.openai.com",
   "github.com",
+  "app.latexdo.org",
   "latexdo.org",
   "openalex.org",
   "store.latexdo.org",
@@ -2297,9 +2298,13 @@ function safeDownloadsUrl(value: unknown): string {
 
   try {
     const url = new URL(value.trim());
+    const isDownloadsHost =
+      url.hostname === "app.latexdo.org" ||
+      url.hostname === "latexdo.org" ||
+      url.hostname === "www.latexdo.org";
     if (
       url.protocol === "https:" &&
-      url.hostname === "latexdo.org" &&
+      isDownloadsHost &&
       url.pathname.startsWith("/downloads/")
     ) {
       return url.href;
@@ -2431,8 +2436,9 @@ function safeUpdateDownloadUrl(value: unknown): string | null {
       url.hostname === "github.com" &&
       url.pathname.startsWith("/latexdo/latexdo/releases/download/");
     const isWebsiteAsset =
-      (url.hostname === "latexdo.org" || url.hostname === "www.latexdo.org") &&
-      url.pathname.startsWith("/downloads/");
+      ["app.latexdo.org", "latexdo.org", "www.latexdo.org"].includes(
+        url.hostname,
+      ) && url.pathname.startsWith("/downloads/");
     if (url.protocol === "https:" && (isReleaseAsset || isWebsiteAsset)) {
       return url.href;
     }
@@ -2946,7 +2952,7 @@ async function fetchDownloadsManifestUpdatePayload(
   );
   const files = updateFilesFromPayload(payload.files);
   const result = updateResultFromDownloadsManifestPayload(payload, currentVersion);
-  // The downloads manifest is served over HTTPS from latexdo.org and every
+  // The downloads manifest is served over HTTPS from app.latexdo.org and every
   // installer it lists is restricted to a trusted host (safeUpdateDownloadUrl)
   // and verified against its published sha256 after download. That is enough to
   // download, verify, and hand off to the platform installer/replacement helper

@@ -157,14 +157,14 @@ CI also builds non-release smoke-test installers. When `latexdo-ci` passes on
 supported: an immutable `v<package version>` tag whose version exactly matches
 `package.json` publishes the same release assets under that stable tag. The
 release workflow publishes macOS, Windows, and Linux assets plus the website
-release index at `https://latexdo.org/downloads/<release tag>/`.
-`https://latexdo.org/updates/latest.json` points the desktop app at that
+release index at `https://app.latexdo.org/downloads/<release tag>/`.
+`https://app.latexdo.org/updates/latest.json` points the desktop app at that
 versioned release. The feed is signed with the Ed25519 key pinned into every
 desktop package; the app rejects unsigned, modified, or unknown-key feeds before
 downloading an installer. Signed feeds also expire, and both the desktop app and
 CLI persist the highest trusted version and publication date to reject rollbacks.
 The downloads page also publishes an all-release tag index at
-`https://latexdo.org/downloads/` and `https://latexdo.org/downloads/releases.json`.
+`https://app.latexdo.org/downloads/` and `https://app.latexdo.org/downloads/releases.json`.
 
 Production publication requires `LATEXDO_WEBSITE_TOKEN`. macOS release
 publication uses Apple signing and notarization when these secrets are

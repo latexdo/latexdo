@@ -7,6 +7,7 @@ PARENT_DIR="$(dirname "$SOURCE_DIR")"
 EDITOR_REPO="${LATEXDO_EDITOR_REPO:-$PARENT_DIR/editor.latexdo.org}"
 WEBSITE_REPO="${LATEXDO_WEBSITE_REPO:-$PARENT_DIR/latexdo.org}"
 CLI_REPO="${LATEXDO_CLI_REPO:-$PARENT_DIR/cli.latexdo.org}"
+APP_REPO="${LATEXDO_APP_REPO:-$PARENT_DIR/app.latexdo.org}"
 
 log() {
   printf '%s\n' "$*"
@@ -67,6 +68,18 @@ sync_website_repo() {
     "$WEBSITE_REPO/"
 }
 
+sync_app_repo() {
+  require_dir "$APP_REPO" "app repo"
+
+  log "Syncing app static shell: $APP_REPO"
+  cp "$SOURCE_DIR/website/style.css" "$APP_REPO/style.css"
+  cp "$SOURCE_DIR/website/site.webmanifest" "$APP_REPO/site.webmanifest"
+  rsync -a --delete \
+    --exclude "site.js" \
+    "$SOURCE_DIR/website/assets/" \
+    "$APP_REPO/assets/"
+}
+
 sync_editor_repo() {
   require_dir "$EDITOR_REPO" "editor repo"
 
@@ -79,6 +92,7 @@ require_cmd npm
 
 sync_cli_repo
 sync_website_repo
+sync_app_repo
 sync_editor_repo
 
 log "Downstream repos are synced."

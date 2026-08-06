@@ -8,7 +8,7 @@ const downloadsDir = path.resolve(
   root,
   positionalArgs[0] ?? "public-downloads/downloads",
 );
-const baseUrl = process.env.LATEXDO_DOWNLOAD_BASE_URL ?? "https://latexdo.org";
+const baseUrl = process.env.LATEXDO_DOWNLOAD_BASE_URL ?? "https://app.latexdo.org";
 const baseUrlRoot = baseUrl.replace(/\/$/, "");
 const downloadsPageUrl = `${baseUrlRoot}/downloads/`;
 const githubRepository = process.env.GITHUB_REPOSITORY ?? "latexdo/latexdo";

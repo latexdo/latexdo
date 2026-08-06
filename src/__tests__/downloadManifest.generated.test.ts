@@ -6,7 +6,7 @@ import {
   type DownloadManifest,
 } from "../downloadManifest";
 
-const fallbackUrl = "https://latexdo.org/downloads/";
+const fallbackUrl = "https://app.latexdo.org/downloads/";
 const sha256 = "a".repeat(64);
 
 function manifest(version: string | null): DownloadManifest {

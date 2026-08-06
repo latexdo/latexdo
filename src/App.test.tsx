@@ -1054,7 +1054,7 @@ describe("App critical UI controls", () => {
     const updateResult: UpdateCheckResult = {
       currentVersion: "0.1.0",
       latestVersion: "0.2.0",
-      releaseUrl: "https://latexdo.org/downloads/v0.2.0/",
+      releaseUrl: "https://app.latexdo.org/downloads/v0.2.0/",
       updateAvailable: true,
     };
     const api = installLatexDoMock({
@@ -1082,7 +1082,7 @@ describe("App critical UI controls", () => {
     const updateResult: UpdateCheckResult = {
       currentVersion: "0.1.0",
       latestVersion: "0.2.0",
-      releaseUrl: "https://latexdo.org/downloads/v0.2.0/",
+      releaseUrl: "https://app.latexdo.org/downloads/v0.2.0/",
       updateAvailable: true,
       automaticInstallAvailable: true,
     };
@@ -1115,7 +1115,7 @@ describe("App critical UI controls", () => {
     const updateResult: UpdateCheckResult = {
       currentVersion: "0.1.0",
       latestVersion: "0.2.0",
-      releaseUrl: "https://latexdo.org/downloads/v0.2.0/",
+      releaseUrl: "https://app.latexdo.org/downloads/v0.2.0/",
       updateAvailable: true,
     };
     const api = installLatexDoMock({ updateResult });
@@ -1162,7 +1162,7 @@ describe("App critical UI controls", () => {
       updateResult: {
         currentVersion: "0.1.0",
         latestVersion: "0.1.0",
-        releaseUrl: "https://latexdo.org/downloads/",
+        releaseUrl: "https://app.latexdo.org/downloads/",
         updateAvailable: false,
       },
     });
@@ -1187,7 +1187,7 @@ describe("App critical UI controls", () => {
       updateResult: {
         currentVersion: "0.2.0",
         latestVersion: "0.2.0",
-        releaseUrl: "https://latexdo.org/downloads/",
+        releaseUrl: "https://app.latexdo.org/downloads/",
         updateAvailable: false,
       },
     });
@@ -1200,14 +1200,14 @@ describe("App critical UI controls", () => {
       await screen.findByText("You are up to date. Current build 0.2.0."),
     ).toBeVisible();
     expect(screen.getByText("Current build 0.2.0. You are up to date.")).toBeVisible();
-    expect(screen.getByText("Updates at latexdo.org/downloads/.")).toBeVisible();
+    expect(screen.getByText("Updates at app.latexdo.org/downloads/.")).toBeVisible();
   });
 
   it("opens the downloads page for manual update fallback results", async () => {
     const updateResult: UpdateCheckResult = {
       currentVersion: "0.2.0",
       latestVersion: "0.3.0",
-      releaseUrl: "https://latexdo.org/downloads/v0.3.0/",
+      releaseUrl: "https://app.latexdo.org/downloads/v0.3.0/",
       updateAvailable: true,
       automaticInstallAvailable: false,
     };
@@ -1234,7 +1234,7 @@ describe("App critical UI controls", () => {
     });
     expect(await screen.findByText("Opened LatexDo 0.3.0 downloads.")).toBeVisible();
     expect(
-      screen.getByText("Available at latexdo.org/downloads/v0.3.0/."),
+      screen.getByText("Available at app.latexdo.org/downloads/v0.3.0/."),
     ).toBeVisible();
   });
 
