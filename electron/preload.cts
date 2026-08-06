@@ -1004,6 +1004,8 @@ const api = {
     ipcRenderer.invoke("app:open-releases", releaseUrl),
   openExternalUrl: (url: string): Promise<void> =>
     ipcRenderer.invoke("app:open-external", url),
+  fetchScholarlyJson: (url: string): Promise<unknown> =>
+    ipcRenderer.invoke("scholarly:fetch-json", url),
   fetchOrcidProfile: (orcidInput: string): Promise<OrcidProfileResult> =>
     ipcRenderer.invoke("orcid:fetch-profile", orcidInput),
   fetchExtensionCatalog: (): Promise<unknown> =>

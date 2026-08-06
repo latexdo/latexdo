@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CitationEntry } from "../latex/latexIndex";
 import {
@@ -106,6 +106,20 @@ function stubSvgBounds(svg: SVGSVGElement) {
   });
 }
 
+function requestHostname(input: RequestInfo | URL): string {
+  try {
+    const url =
+      input instanceof URL
+        ? input
+        : typeof Request !== "undefined" && input instanceof Request
+          ? new URL(input.url)
+          : new URL(String(input));
+    return url.hostname;
+  } catch {
+    return "";
+  }
+}
+
 describe("KnowledgeGraphView", () => {
   beforeEach(() => {
     frameQueue = [];
@@ -128,6 +142,7 @@ describe("KnowledgeGraphView", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("shows graph stats, search highlighting, cited filtering, and AI recommendations", () => {
@@ -247,6 +262,84 @@ describe("KnowledgeGraphView", () => {
 
     const viewport = container.querySelector("svg g");
     expect(viewport?.getAttribute("transform")).toContain("scale(");
+  });
+
+  it("searches online from the graph checkbox and can add discovered BibTeX", async () => {
+    const onAppendBibEntry = vi.fn();
+    const onOpenExternal = vi.fn();
+    const onPlanDiscoveryWithAi = vi.fn().mockResolvedValue({
+      queries: ["graph transformers citation discovery"],
+      focusTerms: ["citation", "graph"],
+      rationale: "Use AI query expansion.",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (requestHostname(input) === "api.openalex.org") {
+          return new Response(
+            JSON.stringify({
+              results: [
+                {
+                  id: "https://openalex.org/WNEW",
+                  doi: "https://doi.org/10.5555/new",
+                  display_name: "Graph transformers for citation discovery",
+                  publication_year: 2025,
+                  cited_by_count: 120,
+                  authorships: [{ author: { display_name: "Jane Smith" } }],
+                  primary_location: {
+                    landing_page_url: "https://doi.org/10.5555/new",
+                    source: { display_name: "ACM Computing Surveys" },
+                  },
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify({ message: { items: [] } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    renderGraph({
+      bibFiles: ["references.bib"],
+      onAppendBibEntry,
+      onOpenExternal,
+      onPlanDiscoveryWithAi,
+    });
+
+    fireEvent.click(screen.getByLabelText(/search online/i));
+
+    expect(
+      await screen.findByText("Graph transformers for citation discovery"),
+    ).toBeVisible();
+    expect(onPlanDiscoveryWithAi).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/ai-assisted/i)).toBeVisible();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /open graph transformers for citation discovery/i,
+      }),
+    );
+    expect(onOpenExternal).toHaveBeenCalledWith("https://doi.org/10.5555/new");
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /add bibtex for graph transformers for citation discovery/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(onAppendBibEntry).toHaveBeenCalledWith(
+        "references.bib",
+        expect.stringContaining("@article{smith2025graph"),
+      );
+    });
+    expect(screen.getByRole("button", { name: /add bibtex/i })).toHaveTextContent(
+      "Added",
+    );
   });
 
   it("shows the empty state when no bibliography entries are available", () => {
