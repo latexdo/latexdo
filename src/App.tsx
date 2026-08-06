@@ -7392,12 +7392,15 @@ ${macroEnd}
 
       if (result.opened && result.latestVersion) {
         const manualDownload = result.manualDownload === true;
+        const quitScheduled = result.quitScheduled === true;
         setUpdateProgress((current) => ({
           status: result.restartScheduled
             ? "restarting"
-            : manualDownload
-              ? "done"
-              : "opening",
+            : quitScheduled
+              ? "installing"
+              : manualDownload
+                ? "done"
+                : "opening",
           currentVersion: result.currentVersion,
           latestVersion: result.latestVersion,
           fileName: current?.fileName ?? null,
@@ -7407,16 +7410,20 @@ ${macroEnd}
           percent: current?.percent ?? 100,
           message: result.restartScheduled
             ? "Restarting LatexDo"
-            : manualDownload
-              ? "Opened downloads page"
-              : "Opened installer",
+            : quitScheduled
+              ? "Installing update"
+              : manualDownload
+                ? "Opened downloads page"
+                : "Opened installer",
         }));
         setStatusMessage(
           result.restartScheduled
             ? `Restarting LatexDo to finish ${result.latestVersion}.`
-            : manualDownload
-              ? `Opened LatexDo ${result.latestVersion} downloads.`
-              : `Opened LatexDo ${result.latestVersion} installer.`,
+            : quitScheduled
+              ? `Installing LatexDo ${result.latestVersion}. LatexDo will quit while the updater finishes.`
+              : manualDownload
+                ? `Opened LatexDo ${result.latestVersion} downloads.`
+                : `Opened LatexDo ${result.latestVersion} installer.`,
         );
       } else if (result.latestVersion) {
         setUpdateProgress((current) => ({
@@ -7723,6 +7730,8 @@ ${macroEnd}
       }));
       if (progress.status === "restarting") {
         setStatusMessage("Restarting LatexDo to finish the update.");
+      } else if (progress.status === "installing") {
+        setStatusMessage("Installing LatexDo update.");
       } else if (progress.status === "error" && progress.message) {
         setStatusMessage(progress.message);
       }

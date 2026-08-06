@@ -1078,6 +1078,39 @@ describe("App critical UI controls", () => {
     });
   });
 
+  it("shows the automatic installer handoff when the updater quits the old app", async () => {
+    const updateResult: UpdateCheckResult = {
+      currentVersion: "0.1.0",
+      latestVersion: "0.2.0",
+      releaseUrl: "https://latexdo.org/downloads/v0.2.0/",
+      updateAvailable: true,
+      automaticInstallAvailable: true,
+    };
+    const api = installLatexDoMock({
+      updateResult,
+      updateNowResult: {
+        ...updateResult,
+        installerPath: "/Users/omar/Downloads/LatexDo-macos-arm64.dmg",
+        opened: true,
+        quitScheduled: true,
+        manualDownload: false,
+      },
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /update now/i }));
+
+    await waitFor(() => {
+      expect(api.updateNow).toHaveBeenCalledTimes(1);
+    });
+    expect(
+      await screen.findByText(
+        "Installing LatexDo 0.2.0. LatexDo will quit while the updater finishes.",
+      ),
+    ).toBeVisible();
+  });
+
   it("shows update download progress and current build details", async () => {
     const updateResult: UpdateCheckResult = {
       currentVersion: "0.1.0",

@@ -9,19 +9,28 @@ import {
   shell,
   type MenuItemConstructorOptions,
 } from "electron";
+import { spawn, type SpawnOptions } from "node:child_process";
 import {
   createHash,
   createPublicKey,
   randomUUID,
   verify as verifySignature,
 } from "node:crypto";
-import { createReadStream, createWriteStream, watch, type FSWatcher } from "node:fs";
+import {
+  constants as fsConstants,
+  createReadStream,
+  createWriteStream,
+  watch,
+  type FSWatcher,
+} from "node:fs";
 import {
   access,
+  chmod,
   copyFile,
   cp,
   link,
   mkdir,
+  mkdtemp,
   open,
   readFile,
   readdir,
@@ -29,6 +38,7 @@ import {
   rename,
   stat,
   unlink,
+  writeFile,
 } from "node:fs/promises";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -2913,11 +2923,13 @@ async function fetchWebsiteUpdatePayload(
   const payload = await fetchWebsiteUpdateJson(url, headers);
   const files = updateFilesFromPayload(payload.files);
   const result = updateResultFromWebsitePayload(payload, currentVersion);
+  const updateFile = result.updateAvailable ? selectUpdateFile(files) : null;
   return {
     result: {
       ...result,
-      automaticInstallAvailable:
-        result.updateAvailable && selectUpdateFile(files) !== null,
+      automaticInstallAvailable: updateFile
+        ? await canInstallUpdateFileAutomatically(updateFile)
+        : false,
     },
     files,
     automaticInstallTrusted: true,
@@ -2937,10 +2949,12 @@ async function fetchDownloadsManifestUpdatePayload(
   // The downloads manifest is served over HTTPS from latexdo.org and every
   // installer it lists is restricted to a trusted host (safeUpdateDownloadUrl)
   // and verified against its published sha256 after download. That is enough to
-  // download, verify, and launch the installer in place, so the user gets a
-  // progress bar and an automatic relaunch instead of a manual reinstall.
-  const automaticInstallAvailable =
-    result.updateAvailable && selectUpdateFile(files) !== null;
+  // download, verify, and hand off to the platform installer/replacement helper
+  // when the current app layout supports it.
+  const updateFile = result.updateAvailable ? selectUpdateFile(files) : null;
+  const automaticInstallAvailable = updateFile
+    ? await canInstallUpdateFileAutomatically(updateFile)
+    : false;
   return {
     result: { ...result, automaticInstallAvailable },
     files,
@@ -3146,11 +3160,374 @@ async function downloadUpdateInstaller(
   }
 }
 
-function scheduleApplicationRestart(): void {
+function scheduleApplicationQuit(): void {
   setTimeout(() => {
-    app.relaunch();
-    app.exit(0);
-  }, 1200).unref();
+    app.quit();
+  }, 800).unref();
+}
+
+function downloadedUpdateExtension(file: WebsiteUpdateFile): string {
+  return path.extname(file.filename).toLowerCase();
+}
+
+function currentMacAppBundlePath(): string | null {
+  if (process.platform !== "darwin" || !app.isPackaged) {
+    return null;
+  }
+
+  const bundlePath = path.resolve(path.dirname(app.getPath("exe")), "../..");
+  return path.basename(bundlePath).endsWith(".app") ? bundlePath : null;
+}
+
+async function canInstallUpdateFileAutomatically(
+  file: WebsiteUpdateFile,
+): Promise<boolean> {
+  if (!app.isPackaged) {
+    return false;
+  }
+
+  const extension = downloadedUpdateExtension(file);
+  if (process.platform === "darwin") {
+    const bundlePath = currentMacAppBundlePath();
+    if (!bundlePath || extension !== ".dmg") {
+      return false;
+    }
+    try {
+      await access(path.dirname(bundlePath), fsConstants.W_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  if (process.platform === "win32") {
+    if (extension !== ".exe") {
+      return false;
+    }
+    try {
+      await access(app.getPath("exe"), fsConstants.R_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  if (process.platform === "linux") {
+    const currentAppImage = process.env.APPIMAGE;
+    if (!currentAppImage || extension !== ".appimage") {
+      return false;
+    }
+    try {
+      await access(currentAppImage, fsConstants.R_OK);
+      await access(path.dirname(currentAppImage), fsConstants.W_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+async function writeUpdaterHelperFile(
+  prefix: string,
+  filename: string,
+  script: string,
+): Promise<string> {
+  const helperDirectory = await mkdtemp(path.join(app.getPath("temp"), prefix));
+  const helperPath = path.join(helperDirectory, filename);
+  await writeFile(helperPath, script, { encoding: "utf8", mode: 0o700, flag: "wx" });
+  await chmod(helperPath, 0o700);
+  return helperPath;
+}
+
+async function writeUpdaterHelperScript(
+  prefix: string,
+  script: string,
+): Promise<string> {
+  return writeUpdaterHelperFile(prefix, "run.sh", script);
+}
+
+async function spawnDetachedUpdater(
+  command: string,
+  args: string[],
+  options: SpawnOptions,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, {
+      ...options,
+      detached: true,
+      stdio: "ignore",
+    });
+    child.once("error", reject);
+    child.once("spawn", () => {
+      child.unref();
+      resolve();
+    });
+  });
+}
+
+async function launchMacDmgUpdater(installerPath: string): Promise<void> {
+  const appBundlePath = currentMacAppBundlePath();
+  if (!appBundlePath) {
+    throw new Error("Automatic macOS updates require a packaged app bundle.");
+  }
+
+  await access(path.dirname(appBundlePath), fsConstants.W_OK);
+  const logsDirectory = app.getPath("logs");
+  await mkdir(logsDirectory, { recursive: true });
+  const helperPath = await writeUpdaterHelperScript(
+    "latexdo-mac-updater-",
+    [
+      "#!/bin/sh",
+      "set -eu",
+      "",
+      'log_file="${LATEXDO_UPDATE_LOG:?}"',
+      'mkdir -p "$(dirname "$log_file")"',
+      'exec >>"$log_file" 2>&1',
+      "",
+      "echo \"[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Starting macOS update helper\"",
+      "",
+      'while kill -0 "${LATEXDO_UPDATE_APP_PID:?}" 2>/dev/null; do',
+      "  sleep 0.2",
+      "done",
+      "",
+      'mount_dir="$(mktemp -d "${TMPDIR:-/tmp}/latexdo-update-mount.XXXXXX")"',
+      'target_app="${LATEXDO_UPDATE_TARGET_APP:?}"',
+      'target_name="$(basename "$target_app")"',
+      'target_dir="$(dirname "$target_app")"',
+      'staged_app="$target_dir/.$target_name.update.$$"',
+      'backup_app="$target_dir/.$target_name.previous.$$"',
+      "",
+      "finish() {",
+      "  status=$?",
+      '  hdiutil detach "$mount_dir" -quiet >/dev/null 2>&1 || true',
+      '  rm -rf "$mount_dir" "$staged_app" "$(dirname "$0")"',
+      '  if [ "$status" -ne 0 ]; then',
+      '    open "${LATEXDO_UPDATE_DMG:?}" >/dev/null 2>&1 || true',
+      "  fi",
+      '  exit "$status"',
+      "}",
+      "trap finish EXIT",
+      "",
+      'hdiutil attach "${LATEXDO_UPDATE_DMG:?}" -nobrowse -readonly -mountpoint "$mount_dir"',
+      'source_app="$(find "$mount_dir" -maxdepth 1 -type d -name \'*.app\' -print -quit)"',
+      'if [ -z "$source_app" ]; then',
+      '  echo "The mounted update image does not contain an app bundle."',
+      "  exit 1",
+      "fi",
+      "",
+      'rm -rf "$staged_app" "$backup_app"',
+      'ditto "$source_app" "$staged_app"',
+      'if [ ! -x "$staged_app/Contents/MacOS/${LATEXDO_UPDATE_EXECUTABLE_NAME:?}" ]; then',
+      '  echo "The staged update does not contain the expected executable."',
+      "  exit 1",
+      "fi",
+      "",
+      'mv "$target_app" "$backup_app"',
+      'if mv "$staged_app" "$target_app"; then',
+      '  rm -rf "$backup_app"',
+      "else",
+      '  mv "$backup_app" "$target_app" >/dev/null 2>&1 || true',
+      "  exit 1",
+      "fi",
+      "",
+      'hdiutil detach "$mount_dir" -quiet >/dev/null 2>&1 || true',
+      'open "$target_app"',
+      "echo \"[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] macOS update helper finished\"",
+      "",
+    ].join("\n"),
+  );
+
+  await spawnDetachedUpdater("/bin/sh", [helperPath], {
+    env: {
+      ...process.env,
+      LATEXDO_UPDATE_APP_PID: String(process.pid),
+      LATEXDO_UPDATE_DMG: installerPath,
+      LATEXDO_UPDATE_EXECUTABLE_NAME: path.basename(app.getPath("exe")),
+      LATEXDO_UPDATE_LOG: path.join(logsDirectory, "updater.log"),
+      LATEXDO_UPDATE_TARGET_APP: appBundlePath,
+    },
+  });
+}
+
+async function launchLinuxAppImageUpdater(installerPath: string): Promise<void> {
+  const currentAppImage = process.env.APPIMAGE;
+  if (!currentAppImage) {
+    throw new Error("Automatic Linux updates require running from an AppImage.");
+  }
+
+  const logsDirectory = app.getPath("logs");
+  await mkdir(logsDirectory, { recursive: true });
+  await access(currentAppImage, fsConstants.R_OK);
+  await access(path.dirname(currentAppImage), fsConstants.W_OK);
+  await chmod(installerPath, 0o755);
+  const helperPath = await writeUpdaterHelperScript(
+    "latexdo-linux-updater-",
+    [
+      "#!/bin/sh",
+      "set -eu",
+      "",
+      'log_file="${LATEXDO_UPDATE_LOG:?}"',
+      'mkdir -p "$(dirname "$log_file")"',
+      'exec >>"$log_file" 2>&1',
+      "",
+      "echo \"[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Starting Linux update helper\"",
+      "",
+      'while kill -0 "${LATEXDO_UPDATE_APP_PID:?}" 2>/dev/null; do',
+      "  sleep 0.2",
+      "done",
+      "",
+      'target="${LATEXDO_UPDATE_TARGET_APPIMAGE:?}"',
+      'replacement="${LATEXDO_UPDATE_APPIMAGE:?}"',
+      'target_name="$(basename "$target")"',
+      'target_dir="$(dirname "$target")"',
+      'staged="$target_dir/.$target_name.update.$$"',
+      'backup="$target_dir/.$target_name.previous.$$"',
+      "",
+      "finish() {",
+      "  status=$?",
+      '  rm -f "$staged"',
+      '  rm -rf "$(dirname "$0")"',
+      '  if [ "$status" -ne 0 ]; then',
+      '    if [ -x "$backup" ] && [ ! -e "$target" ]; then',
+      '      mv "$backup" "$target" >/dev/null 2>&1 || true',
+      "    fi",
+      '    if [ -x "$target" ]; then',
+      '      "$target" >/dev/null 2>&1 &',
+      "    fi",
+      "  fi",
+      '  exit "$status"',
+      "}",
+      "trap finish EXIT",
+      "",
+      'rm -f "$staged" "$backup"',
+      'cp "$replacement" "$staged"',
+      'chmod +x "$staged"',
+      'mv "$target" "$backup"',
+      'if mv "$staged" "$target"; then',
+      '  rm -f "$backup"',
+      '  rm -f "$replacement"',
+      '  "$target" >/dev/null 2>&1 &',
+      "  echo \"[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Linux update helper finished\"",
+      "else",
+      '  mv "$backup" "$target" >/dev/null 2>&1 || true',
+      "  exit 1",
+      "fi",
+      "",
+    ].join("\n"),
+  );
+
+  await spawnDetachedUpdater("/bin/sh", [helperPath], {
+    env: {
+      ...process.env,
+      LATEXDO_UPDATE_APP_PID: String(process.pid),
+      LATEXDO_UPDATE_APPIMAGE: installerPath,
+      LATEXDO_UPDATE_LOG: path.join(logsDirectory, "updater.log"),
+      LATEXDO_UPDATE_TARGET_APPIMAGE: currentAppImage,
+    },
+  });
+}
+
+async function launchWindowsNsisUpdater(installerPath: string): Promise<void> {
+  if (process.platform !== "win32" || !app.isPackaged) {
+    throw new Error("Automatic Windows updates require a packaged app.");
+  }
+
+  const targetExePath = app.getPath("exe");
+  await access(targetExePath, fsConstants.R_OK);
+  const logsDirectory = app.getPath("logs");
+  await mkdir(logsDirectory, { recursive: true });
+  const helperPath = await writeUpdaterHelperFile(
+    "latexdo-windows-updater-",
+    "run.ps1",
+    [
+      "$ErrorActionPreference = 'Stop'",
+      "$logFile = $env:LATEXDO_UPDATE_LOG",
+      "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $logFile) | Out-Null",
+      "function Write-Log {",
+      "  param([string]$Message)",
+      '  Add-Content -LiteralPath $logFile -Value ("[{0:u}] {1}" -f (Get-Date), $Message)',
+      "}",
+      "$helperRoot = $PSScriptRoot",
+      "try {",
+      "  Write-Log 'Starting Windows update helper'",
+      "  $appPid = [int]$env:LATEXDO_UPDATE_APP_PID",
+      "  Wait-Process -Id $appPid -ErrorAction SilentlyContinue",
+      "  $installer = $env:LATEXDO_UPDATE_INSTALLER",
+      "  $targetExe = $env:LATEXDO_UPDATE_TARGET_EXE",
+      "  if (-not (Test-Path -LiteralPath $installer)) {",
+      '    throw "Installer is missing: $installer"',
+      "  }",
+      "  $process = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru",
+      '  Write-Log ("Installer exited with code {0}" -f $process.ExitCode)',
+      "  if ($process.ExitCode -ne 0) {",
+      '    throw "Installer exited with code $($process.ExitCode)"',
+      "  }",
+      "  if (-not (Test-Path -LiteralPath $targetExe)) {",
+      '    throw "Installed executable was not found: $targetExe"',
+      "  }",
+      "  Start-Process -FilePath $targetExe",
+      "  Write-Log 'Windows update helper finished'",
+      "} catch {",
+      '  Write-Log ("Windows update helper failed: {0}" -f $_.Exception.Message)',
+      "  try {",
+      "    Start-Process -FilePath $env:LATEXDO_UPDATE_INSTALLER",
+      "  } catch {",
+      '    Write-Log ("Could not open interactive installer: {0}" -f $_.Exception.Message)',
+      "  }",
+      "  exit 1",
+      "} finally {",
+      "  Start-Sleep -Seconds 2",
+      "  Remove-Item -LiteralPath $helperRoot -Recurse -Force -ErrorAction SilentlyContinue",
+      "}",
+      "",
+    ].join("\r\n"),
+  );
+
+  await spawnDetachedUpdater(
+    "powershell.exe",
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", helperPath],
+    {
+      windowsHide: true,
+      env: {
+        ...process.env,
+        LATEXDO_UPDATE_APP_PID: String(process.pid),
+        LATEXDO_UPDATE_INSTALLER: installerPath,
+        LATEXDO_UPDATE_LOG: path.join(logsDirectory, "updater.log"),
+        LATEXDO_UPDATE_TARGET_EXE: targetExePath,
+      },
+    },
+  );
+}
+
+async function launchDownloadedUpdateInstaller(
+  file: WebsiteUpdateFile,
+  installerPath: string,
+): Promise<void> {
+  if (!(await canInstallUpdateFileAutomatically(file))) {
+    throw new Error("This update package cannot be installed automatically.");
+  }
+
+  if (process.platform === "darwin") {
+    await launchMacDmgUpdater(installerPath);
+    scheduleApplicationQuit();
+    return;
+  }
+
+  if (process.platform === "linux") {
+    await launchLinuxAppImageUpdater(installerPath);
+    scheduleApplicationQuit();
+    return;
+  }
+
+  if (process.platform === "win32") {
+    await launchWindowsNsisUpdater(installerPath);
+    scheduleApplicationQuit();
+    return;
+  }
+
+  throw new Error("Automatic updates are not supported on this platform.");
 }
 
 async function updateNow(
@@ -3286,6 +3663,32 @@ async function updateNow(
       };
     }
 
+    if (!(await canInstallUpdateFileAutomatically(updateFile))) {
+      const releaseUrl = safeDownloadsUrl(result.releaseUrl);
+      onProgress?.(
+        updateProgressPayload({
+          status: "opening",
+          currentVersion,
+          latestVersion: result.latestVersion,
+          fileName: null,
+          fileLabel: null,
+          transferredBytes: 1,
+          totalBytes: 1,
+          message: "Opening downloads page",
+        }),
+      );
+      await shell.openExternal(releaseUrl);
+      return {
+        ...result,
+        automaticInstallAvailable: false,
+        releaseUrl,
+        installerPath: null,
+        opened: true,
+        restartScheduled: false,
+        manualDownload: true,
+      };
+    }
+
     const installerPath = await downloadUpdateInstaller(
       updateFile,
       currentVersion,
@@ -3294,42 +3697,25 @@ async function updateNow(
     );
     onProgress?.(
       updateProgressPayload({
-        status: "opening",
+        status: "installing",
         currentVersion,
         latestVersion: result.latestVersion,
         fileName: updateFile.filename,
         fileLabel: updateFile.label,
         transferredBytes: 1,
         totalBytes: 1,
-        message: "Opening installer",
+        message: "Installing update",
       }),
     );
-    const openError = await shell.openPath(installerPath);
-    if (openError) {
-      throw new Error(
-        `Downloaded update installer but could not open it: ${openError}`,
-      );
-    }
-    onProgress?.(
-      updateProgressPayload({
-        status: "restarting",
-        currentVersion,
-        latestVersion: result.latestVersion,
-        fileName: updateFile.filename,
-        fileLabel: updateFile.label,
-        transferredBytes: 1,
-        totalBytes: 1,
-        message: `Restarting ${productName}`,
-      }),
-    );
-    scheduleApplicationRestart();
+    await launchDownloadedUpdateInstaller(updateFile, installerPath);
 
     return {
       ...result,
       automaticInstallAvailable: true,
       installerPath,
       opened: true,
-      restartScheduled: true,
+      restartScheduled: false,
+      quitScheduled: true,
       manualDownload: false,
     };
   } catch (error) {
