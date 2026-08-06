@@ -456,7 +456,7 @@ function renderDownloadFallback(container: HTMLElement): void {
           <p>Apple Silicon and Intel DMG builds appear on the downloads page.</p>
         </div>
       </div>
-      <a class="button primary" href="downloads/">View downloads</a>
+      <a class="button primary" href="https://app.latexdo.org/downloads/">View downloads</a>
     </article>
     <article class="download-card">
       <div class="download-card-header">
@@ -466,7 +466,7 @@ function renderDownloadFallback(container: HTMLElement): void {
           <p>The 64-bit Windows installer is published with each desktop release.</p>
         </div>
       </div>
-      <a class="button secondary" href="downloads/">View downloads</a>
+      <a class="button secondary" href="https://app.latexdo.org/downloads/">View downloads</a>
     </article>
     <article class="download-card">
       <div class="download-card-header">
@@ -476,7 +476,7 @@ function renderDownloadFallback(container: HTMLElement): void {
           <p>The Linux x64 AppImage is published with desktop releases that include Linux packaging.</p>
         </div>
       </div>
-      <a class="button secondary" href="downloads/">View downloads</a>
+      <a class="button secondary" href="https://app.latexdo.org/downloads/">View downloads</a>
     </article>`;
 }
 
@@ -485,7 +485,9 @@ async function initDownloads(): Promise<void> {
   if (!container) return;
 
   try {
-    const response = await fetch("downloads/manifest.json", { cache: "no-store" });
+    const response = await fetch("https://app.latexdo.org/downloads/manifest.json", {
+      cache: "no-store",
+    });
     if (!response.ok) throw new Error(`Manifest returned ${response.status}`);
     const manifest = (await response.json()) as DownloadManifest;
     const files = Array.isArray(manifest.files) ? manifest.files : [];
@@ -502,7 +504,9 @@ async function initDownloads(): Promise<void> {
         const meta = escapeHtml(
           `${file.sizeLabel ?? formatBytes(file.size)} · ${formatDate(manifest.publishedAt)}`,
         );
-        const url = escapeHtml(file.url || `downloads/files/${file.filename}`);
+        const url = escapeHtml(
+          file.url || `https://app.latexdo.org/downloads/files/${file.filename}`,
+        );
         return `<article class="download-card">
           <div class="download-card-header">
             <span class="platform-logo-shell">${platformIcon(platform)}</span>

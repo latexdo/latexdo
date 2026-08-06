@@ -65,7 +65,7 @@ async function testFeedRenewal(temporaryRoot) {
   const commit = "a".repeat(40);
   const sha256 = "b".repeat(64);
   const filename = "LatexDo-linux-x64.AppImage";
-  const downloadsPage = `https://latexdo.org/downloads/${release}/`;
+  const downloadsPage = `https://app.latexdo.org/downloads/${release}/`;
   const files = [
     {
       id: "linux-x64",

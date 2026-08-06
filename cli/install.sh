@@ -2,7 +2,7 @@
 set -eu
 
 CLI_URL="${LATEXDO_CLI_URL:-https://latexdo.org/bin/latexdo}"
-CLI_SHA256="${LATEXDO_CLI_SHA256:-a43b2817ff9b46d10ef6df967c9fcfe0c0a5fd8ecae61b27eb84daacdd0c3462}"
+CLI_SHA256="${LATEXDO_CLI_SHA256:-f58bf2beeebd0edecea2dc549aef7b440d1249b4b39dd31d5d5b463139c323b2}"
 INSTALL_DIR="${LATEXDO_BIN_DIR:-$HOME/.local/bin}"
 TARGET="$INSTALL_DIR/latexdo"
 

@@ -1,4 +1,4 @@
-name: deploy-website
+name: deploy-app-downloads-index
 
 on:
   workflow_run:
@@ -11,19 +11,19 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-website-downloads
+  group: deploy-app-downloads-index
   cancel-in-progress: true
 
 jobs:
   deploy:
-    name: deploy / latexdo.org downloads index
+    name: deploy / app.latexdo.org downloads index
     if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       LATEXDO_SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     concurrency:
-      group: latexdo-org-deploy
+      group: app-latexdo-org-deploy
       cancel-in-progress: false
 
     steps:
@@ -41,42 +41,42 @@ jobs:
         shell: bash
         run: |
           if [ -z "$LATEXDO_WEBSITE_TOKEN" ]; then
-            echo "::error::Missing LATEXDO_WEBSITE_TOKEN; cannot update latexdo.org downloads."
+            echo "::error::Missing LATEXDO_WEBSITE_TOKEN; cannot update app.latexdo.org downloads."
             exit 1
           fi
 
           {
             echo "### Downloads publication"
             echo
-            echo "- latexdo.org downloads index update enabled."
+            echo "- app.latexdo.org downloads index update enabled."
             echo "- This workflow stages only downloads/releases.json."
             echo "- Release/update artifacts are published by latexdo-release."
-            echo "- Cloudflare deployment is handled by the latexdo.org Git integration."
+            echo "- Cloudflare deployment is handled by the app.latexdo.org Git integration."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Checkout latexdo.org
+      - name: Checkout app.latexdo.org
         uses: actions/checkout@v6
         with:
-          repository: latexdo/latexdo.org
+          repository: latexdo/app.latexdo.org
           ref: main
-          path: latexdo-org-site
+          path: app-site
           token: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
 
-      - name: Refresh latexdo.org downloads index
-        id: update_latexdo_org_downloads_index
+      - name: Refresh app.latexdo.org downloads index
+        id: update_app_latexdo_org_downloads_index
         shell: bash
         run: |
           echo "updated=false" >> "$GITHUB_OUTPUT"
           echo "commit_sha=" >> "$GITHUB_OUTPUT"
 
-          LATEXDO_DOWNLOAD_BASE_URL=https://latexdo.org \
-            node scripts/build-downloads-release-index.mjs latexdo-org-site/downloads --json-only
+          LATEXDO_DOWNLOAD_BASE_URL=https://app.latexdo.org \
+            node scripts/build-downloads-release-index.mjs app-site/downloads --json-only
 
-          git -C latexdo-org-site config user.name "github-actions[bot]"
-          git -C latexdo-org-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C latexdo-org-site add -- downloads/releases.json
+          git -C app-site config user.name "github-actions[bot]"
+          git -C app-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C app-site add -- downloads/releases.json
 
-          staged_paths="$(git -C latexdo-org-site diff --cached --name-only)"
+          staged_paths="$(git -C app-site diff --cached --name-only)"
           invalid_paths="$(printf '%s\n' "$staged_paths" | grep -Ev '^downloads/releases\.json$' || true)"
           if [ -n "$invalid_paths" ]; then
             echo "::error::Downloads index refresh must stage only downloads/releases.json."
@@ -84,28 +84,28 @@ jobs:
             exit 1
           fi
 
-          if git -C latexdo-org-site diff --cached --quiet; then
-            echo "No latexdo.org downloads index changes to commit."
+          if git -C app-site diff --cached --quiet; then
+            echo "No app.latexdo.org downloads index changes to commit."
           else
-            git -C latexdo-org-site commit \
+            git -C app-site commit \
               -m "Refresh downloads index from latexdo@${LATEXDO_SOURCE_SHA}"
-            git -C latexdo-org-site push origin HEAD:main
-            commit_sha="$(git -C latexdo-org-site rev-parse HEAD)"
+            git -C app-site push origin HEAD:main
+            commit_sha="$(git -C app-site rev-parse HEAD)"
             echo "updated=true" >> "$GITHUB_OUTPUT"
             echo "commit_sha=${commit_sha}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Verify latexdo.org update
-        if: ${{ steps.update_latexdo_org_downloads_index.outputs.updated == 'true' }}
+      - name: Verify app.latexdo.org update
+        if: ${{ steps.update_app_latexdo_org_downloads_index.outputs.updated == 'true' }}
         shell: bash
         env:
-          LATEXDO_ORG_COMMIT: ${{ steps.update_latexdo_org_downloads_index.outputs.commit_sha }}
+          APP_ORG_COMMIT: ${{ steps.update_app_latexdo_org_downloads_index.outputs.commit_sha }}
         run: |
-          remote_sha="$(git -C latexdo-org-site ls-remote origin refs/heads/main | awk '{print $1}')"
-          if [ "$remote_sha" != "$LATEXDO_ORG_COMMIT" ]; then
-            echo "::error::latexdo.org main is ${remote_sha}, expected ${LATEXDO_ORG_COMMIT}."
+          remote_sha="$(git -C app-site ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [ "$remote_sha" != "$APP_ORG_COMMIT" ]; then
+            echo "::error::app.latexdo.org main is ${remote_sha}, expected ${APP_ORG_COMMIT}."
             exit 1
           fi
 
-          echo "latexdo.org downloads index updated at ${LATEXDO_ORG_COMMIT}."
+          echo "app.latexdo.org downloads index updated at ${APP_ORG_COMMIT}."
           echo "Cloudflare Workers Builds can deploy the pushed downloads index commit."

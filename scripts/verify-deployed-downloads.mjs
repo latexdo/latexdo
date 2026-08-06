@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 const deployedDownloadsUrl = new URL(
-  process.argv[2] ?? "https://latexdo.org/downloads/",
+  process.argv[2] ?? "https://app.latexdo.org/downloads/",
 );
 const publicDownloadsUrl = new URL(
   process.env.LATEXDO_PUBLIC_DOWNLOADS_URL ?? deployedDownloadsUrl.href,

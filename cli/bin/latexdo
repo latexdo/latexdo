@@ -2,7 +2,7 @@
 set -eu
 
 APP_REPO_DEFAULT="https://github.com/latexdo/latexdo.git"
-UPDATE_FEED_DEFAULT="https://latexdo.org/updates/latest.json"
+UPDATE_FEED_DEFAULT="https://app.latexdo.org/updates/latest.json"
 HOST_DEFAULT="127.0.0.1"
 PORT_DEFAULT="5173"
 
@@ -50,7 +50,7 @@ Environment:
   LATEXDO_HOME       Cache directory. Default: ~/.latexdo
   LATEXDO_APP_REPO   Source repository. Default: https://github.com/latexdo/latexdo.git
   LATEXDO_APP_REF    Explicit source ref override (development only)
-  LATEXDO_UPDATE_FEED Signed release feed. Default: https://latexdo.org/updates/latest.json
+  LATEXDO_UPDATE_FEED Signed release feed. Default: https://app.latexdo.org/updates/latest.json
   LATEXDO_HOST       Local bind host. Default: 127.0.0.1
   LATEXDO_PORT       Preferred local port. Default: 5173
   LATEXDO_NO_OPEN    Set to 1 to print the localhost URL without opening a browser
@@ -113,7 +113,7 @@ async function readFeed() {
     });
     if (!response.ok) throw new Error(`feed returned HTTP ${response.status}`);
     const responseUrl = new URL(response.url);
-    if (responseUrl.protocol !== "https:" || !["latexdo.org", "www.latexdo.org"].includes(responseUrl.hostname)) {
+    if (responseUrl.protocol !== "https:" || !["app.latexdo.org", "latexdo.org", "www.latexdo.org"].includes(responseUrl.hostname)) {
       throw new Error("feed redirected to an untrusted host");
     }
     const body = await response.text();

@@ -7,7 +7,7 @@ const artifactsDir = path.resolve(root, process.argv[2] ?? "artifacts");
 const outputDir = path.resolve(root, process.argv[3] ?? "public-downloads/downloads");
 const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 
-const baseUrl = process.env.LATEXDO_DOWNLOAD_BASE_URL ?? "https://latexdo.org";
+const baseUrl = process.env.LATEXDO_DOWNLOAD_BASE_URL ?? "https://app.latexdo.org";
 const publishedAt = process.env.LATEXDO_RELEASE_DATE ?? new Date().toISOString();
 const publishedAtMs = Date.parse(publishedAt);
 if (!Number.isFinite(publishedAtMs)) {

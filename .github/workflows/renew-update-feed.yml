@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
-      group: latexdo-org-deploy
+      group: app-latexdo-org-deploy
       cancel-in-progress: false
 
     steps:
@@ -42,59 +42,83 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout latexdo.org
+      - name: Checkout app.latexdo.org
         uses: actions/checkout@v6
         with:
-          repository: latexdo/latexdo.org
+          repository: latexdo/app.latexdo.org
           ref: main
-          path: latexdo-org-site
+          path: app-site
           token: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
 
+      - name: Detect signed latest feed
+        id: latest_feed
+        shell: bash
+        run: |
+          signed="$(
+            node --input-type=module -e '
+              import { readFile } from "node:fs/promises";
+              const feed = JSON.parse(await readFile(process.argv[1], "utf8"));
+              process.stdout.write(
+                feed?.schemaVersion === 2 && feed?.signature?.algorithm === "ed25519"
+                  ? "true"
+                  : "false",
+              );
+            ' app-site/updates/latest.json
+          )"
+          echo "signed=${signed}" >> "$GITHUB_OUTPUT"
+          if [ "$signed" != "true" ]; then
+            echo "No signed app.latexdo.org update feed is available yet; skipping renewal." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Renew signed latest feed
+        if: ${{ steps.latest_feed.outputs.signed == 'true' }}
         env:
           LATEXDO_UPDATE_SIGNING_KEY: ${{ secrets.LATEXDO_UPDATE_SIGNING_KEY }}
         run: >
           node scripts/renew-update-feed.mjs
-          latexdo-org-site/updates/latest.json
-          latexdo-org-site/downloads
+          app-site/updates/latest.json
+          app-site/downloads
           build/update-public-key.pem
 
       - name: Verify renewed validity window
+        if: ${{ steps.latest_feed.outputs.signed == 'true' }}
         env:
           LATEXDO_UPDATE_MIN_VALIDITY_DAYS: 14
         run: >
           node scripts/verify-update-feed.mjs
-          latexdo-org-site/updates/latest.json
+          app-site/updates/latest.json
           build/update-public-key.pem
 
       - name: Commit only the renewed latest feed
+        if: ${{ steps.latest_feed.outputs.signed == 'true' }}
         id: publish_feed
         shell: bash
         run: |
-          git -C latexdo-org-site config user.name "github-actions[bot]"
-          git -C latexdo-org-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C latexdo-org-site add -- updates/latest.json
+          git -C app-site config user.name "github-actions[bot]"
+          git -C app-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C app-site add -- updates/latest.json
 
-          staged_paths="$(git -C latexdo-org-site diff --cached --name-only)"
+          staged_paths="$(git -C app-site diff --cached --name-only)"
           if [ "$staged_paths" != "updates/latest.json" ]; then
             echo "::error::Renewal must stage only updates/latest.json; found: ${staged_paths:-<none>}"
             exit 1
           fi
 
-          git -C latexdo-org-site commit \
+          git -C app-site commit \
             -m "Renew signed LatexDo update feed from latexdo@${GITHUB_SHA}"
-          git -C latexdo-org-site push origin HEAD:main
-          commit_sha="$(git -C latexdo-org-site rev-parse HEAD)"
+          git -C app-site push origin HEAD:main
+          commit_sha="$(git -C app-site rev-parse HEAD)"
           echo "commit_sha=${commit_sha}" >> "$GITHUB_OUTPUT"
 
-      - name: Verify latexdo.org commit
+      - name: Verify app.latexdo.org commit
+        if: ${{ steps.latest_feed.outputs.signed == 'true' }}
         shell: bash
         env:
-          LATEXDO_ORG_COMMIT: ${{ steps.publish_feed.outputs.commit_sha }}
+          APP_ORG_COMMIT: ${{ steps.publish_feed.outputs.commit_sha }}
         run: |
-          remote_sha="$(git -C latexdo-org-site ls-remote origin refs/heads/main | awk '{print $1}')"
-          if [ "$remote_sha" != "$LATEXDO_ORG_COMMIT" ]; then
-            echo "::error::latexdo.org main is ${remote_sha}, expected ${LATEXDO_ORG_COMMIT}."
+          remote_sha="$(git -C app-site ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [ "$remote_sha" != "$APP_ORG_COMMIT" ]; then
+            echo "::error::app.latexdo.org main is ${remote_sha}, expected ${APP_ORG_COMMIT}."
             exit 1
           fi
 

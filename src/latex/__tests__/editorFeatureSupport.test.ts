@@ -11,20 +11,20 @@ import {
 describe("editor feature support", () => {
   it("detects LaTeX href/url commands and literal web links", () => {
     const source = [
-      "\\href{https://latexdo.org/downloads/}{downloads}",
+      "\\href{https://app.latexdo.org/downloads/}{downloads}",
       "See \\url{www.example.com} and https://example.org/docs.",
     ].join("\n");
 
     const links = findLatexDocumentLinks(source);
 
     expect(links.map((link) => link.url)).toEqual([
-      "https://latexdo.org/downloads/",
+      "https://app.latexdo.org/downloads/",
       "https://www.example.com",
       "https://example.org/docs",
     ]);
     expect(
       findLatexDocumentLinkAtOffset(source, source.indexOf("downloads")),
-    ).toMatchObject({ url: "https://latexdo.org/downloads/" });
+    ).toMatchObject({ url: "https://app.latexdo.org/downloads/" });
   });
 
   it("builds folding ranges for sections, environments, and comment blocks", () => {

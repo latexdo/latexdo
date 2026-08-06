@@ -124,6 +124,8 @@ for (const requiredReleaseControl of [
   'workflows: ["latexdo-ci"]',
   "github.event.workflow_run.conclusion == 'success'",
   "github.event.workflow_run.head_branch == 'main'",
+  "repository: latexdo/app.latexdo.org",
+  "group: app-latexdo-org-deploy",
   "LATEXDO_RELEASE_TARGET_SHA",
   "LATEXDO_RELEASE_COMMIT: ${{ needs.release_gate.outputs.target_sha }}",
   "Apple signing is disabled because these secrets are missing:",
@@ -139,11 +141,15 @@ for (const requiredReleaseControl of [
   'xvfb-run -a "$pkg" --smoke-test',
   "Signed update feed disabled; LATEXDO_UPDATE_SIGNING_KEY is not configured.",
   "LATEXDO_UPDATE_FEED_ENABLED: ${{ steps.publication_credentials.outputs.update_feed_enabled }}",
+  "LATEXDO_DOWNLOAD_BASE_URL: https://app.latexdo.org",
   "rm -f public-downloads/downloads/index.html",
   "if [ -d public-downloads/updates ]; then",
-  "No signed update feed generated; leaving latexdo.org updates/ unchanged.",
-  "node scripts/build-downloads-release-index.mjs latexdo-org-site/downloads --json-only",
-  "git -C latexdo-org-site add -- downloads",
+  "No signed update feed generated; leaving app.latexdo.org updates/ unchanged.",
+  "node scripts/build-downloads-release-index.mjs app-site/downloads --json-only",
+  "git -C app-site add -- downloads",
+  "Dispatch app.latexdo.org CI after publication",
+  "TARGET_WORKFLOW: ci.yml",
+  "Triggered ${TARGET_REPOSITORY}/${TARGET_WORKFLOW} after publication.",
   "Release publication must stage only downloads/ and updates/",
 ]) {
   if (!releaseWorkflow.includes(requiredReleaseControl)) {
@@ -158,6 +164,7 @@ for (const forbiddenReleaseControl of [
   "cp cli/install.sh latexdo-org-site/install.sh",
   "git -C latexdo-org-site add downloads updates bin/latexdo install.sh",
   "git -C latexdo-org-site add -A",
+  "git -C app-site add -A",
   "Publishing an unsigned macOS build",
   "Refusing to publish an unsigned Windows build",
   "Refusing a partial release. Missing",
@@ -166,7 +173,7 @@ for (const forbiddenReleaseControl of [
 ]) {
   if (releaseWorkflow.includes(forbiddenReleaseControl)) {
     throw new Error(
-      `Release publication must update only latexdo.org downloads: ${forbiddenReleaseControl}`,
+      `Release publication must update only app.latexdo.org downloads: ${forbiddenReleaseControl}`,
     );
   }
 }
@@ -175,12 +182,13 @@ for (const requiredWebsiteControl of [
   'workflows: ["latexdo-release"]',
   "github.event.workflow_run.conclusion == 'success'",
   "github.event.workflow_run.head_branch == 'main'",
-  "Missing LATEXDO_WEBSITE_TOKEN; cannot update latexdo.org downloads.",
+  "repository: latexdo/app.latexdo.org",
+  "Missing LATEXDO_WEBSITE_TOKEN; cannot update app.latexdo.org downloads.",
   "This workflow stages only downloads/releases.json.",
-  "node scripts/build-downloads-release-index.mjs latexdo-org-site/downloads --json-only",
-  "git -C latexdo-org-site add -- downloads/releases.json",
+  "node scripts/build-downloads-release-index.mjs app-site/downloads --json-only",
+  "git -C app-site add -- downloads/releases.json",
   "Downloads index refresh must stage only downloads/releases.json.",
-  "Cloudflare deployment is handled by the latexdo.org Git integration.",
+  "Cloudflare deployment is handled by the app.latexdo.org Git integration.",
   "Cloudflare Workers Builds can deploy the pushed downloads index commit.",
 ]) {
   if (!websiteWorkflow.includes(requiredWebsiteControl)) {
@@ -190,6 +198,7 @@ for (const requiredWebsiteControl of [
 for (const forbiddenWebsiteControl of [
   "rsync -a website/",
   "git -C latexdo-org-site add -A",
+  "git -C app-site add -A",
   "npm ci --prefix website",
   "npm run build --prefix website",
   "CLOUDFLARE_API_TOKEN",
@@ -295,8 +304,11 @@ if (cliWorkflow.includes("rsync -a --delete")) {
 for (const requiredRenewalControl of [
   "schedule:",
   "workflow_dispatch:",
-  "group: latexdo-org-deploy",
-  "git -C latexdo-org-site add -- updates/latest.json",
+  "group: app-latexdo-org-deploy",
+  "repository: latexdo/app.latexdo.org",
+  "Detect signed latest feed",
+  "No signed app.latexdo.org update feed is available yet; skipping renewal.",
+  "git -C app-site add -- updates/latest.json",
   "LATEXDO_UPDATE_MIN_VALIDITY_DAYS: 14",
   "Cloudflare Workers Builds can deploy the pushed feed commit.",
 ]) {
