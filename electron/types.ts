@@ -369,6 +369,7 @@ export interface UpdateInstallResult extends UpdateCheckResult {
   installerPath: string | null;
   opened: boolean;
   restartScheduled?: boolean;
+  quitScheduled?: boolean;
   manualDownload?: boolean;
 }
 
@@ -378,6 +379,7 @@ export interface UpdateDownloadProgress {
     | "downloading"
     | "verifying"
     | "opening"
+    | "installing"
     | "restarting"
     | "done"
     | "error";
