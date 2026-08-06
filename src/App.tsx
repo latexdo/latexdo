@@ -197,6 +197,7 @@ import {
   recommendCitations,
   formatRecommendations,
 } from "./features/graph/citationRecommender";
+import { planScholarlyDiscoveryWithAi } from "./features/graph/aiDiscoveryPlanner";
 import {
   buildKnowledgeGraph,
   type KnowledgeGraphParams,
@@ -6839,6 +6840,22 @@ ${macroEnd}
     );
   }, [citationAnalysis, setStatusMessage]);
 
+  const planKnowledgeGraphDiscoveryWithAi = useCallback(
+    (
+      graph: typeof knowledgeGraph,
+      entries: typeof citationAnalysis.entries,
+      signal: AbortSignal,
+    ) =>
+      planScholarlyDiscoveryWithAi({
+        graph,
+        entries,
+        config: aiConfig,
+        isDesktop: aiIsDesktop,
+        signal,
+      }),
+    [aiConfig, aiIsDesktop],
+  );
+
   const flattenProjectFiles = useCallback((entries: ProjectEntry[]): string[] => {
     const out: string[] = [];
     const walk = (list: ProjectEntry[]) => {
@@ -10776,6 +10793,10 @@ ${macroEnd}
                     setKnowledgeGraphOpen(false);
                   }}
                   onRecommendForSelection={recommendCitationsForSelection}
+                  bibFiles={citationAnalysis.bibFiles}
+                  onAppendBibEntry={handleAppendBibEntry}
+                  onOpenExternal={openExternalLink}
+                  onPlanDiscoveryWithAi={planKnowledgeGraphDiscoveryWithAi}
                 />
               </div>
             </div>

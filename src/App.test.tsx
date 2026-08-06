@@ -335,6 +335,7 @@ function installLatexDoMock(options?: {
     ),
     openReleasesPage: vi.fn().mockResolvedValue(undefined),
     openExternalUrl: vi.fn().mockResolvedValue(undefined),
+    fetchScholarlyJson: vi.fn().mockResolvedValue({}),
     getSpellCheckerSettings: vi.fn().mockResolvedValue(defaultSpellCheckerSettings),
     fetchExtensionCatalog: vi
       .fn()

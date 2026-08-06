@@ -11666,10 +11666,163 @@ button {
   border-color: var(--accent);
   color: var(--accent);
 }
+.kg-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .kg-stats {
   font-size: 11px;
   color: var(--text-muted);
   flex-basis: 100%;
+}
+.kg-online-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow: hidden;
+  padding: 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+.kg-online-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.kg-online-head > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.kg-online-head strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-heading);
+  font-size: 12px;
+}
+.kg-online-head span,
+.kg-online-query,
+.kg-online-warning {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.kg-online-ai {
+  display: block;
+  max-width: min(720px, 80vw);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.kg-online-warning {
+  color: var(--warning-text, #d08b00);
+}
+.kg-online-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.kg-online-actions select {
+  max-width: 190px;
+  border: 1px solid var(--border-input);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 7px;
+}
+.kg-online-query {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.kg-online-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.kg-online-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+.kg-online-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.kg-online-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.kg-online-card-meta span {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.kg-online-card h3 {
+  margin: 0;
+  color: var(--text-heading);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.kg-online-card p,
+.kg-online-card small {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.kg-online-card small {
+  color: var(--text-muted);
+}
+.kg-online-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+.kg-online-card-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 82px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--bg-button-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+}
+.kg-online-card-actions button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.kg-online-card-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.kg-online-empty {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 8px 0;
 }
 .kg-controls {
   display: flex;

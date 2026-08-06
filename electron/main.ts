@@ -124,14 +124,22 @@ const externalUrlHosts = new Set([
   "console.anthropic.com",
   "console.groq.com",
   "console.mistral.ai",
+  "api.crossref.org",
+  "api.openalex.org",
+  "arxiv.org",
+  "crossref.org",
+  "doi.org",
   "openrouter.ai",
   "orcid.org",
   "platform.deepseek.com",
   "platform.openai.com",
   "github.com",
   "latexdo.org",
+  "openalex.org",
   "store.latexdo.org",
   "www.latexdo.org",
+  "www.crossref.org",
+  "www.doi.org",
   "www.orcid.org",
 ]);
 for (const configuredExternalUrl of [
@@ -2314,6 +2322,90 @@ function safeExternalUrl(value: unknown): string | null {
   return null;
 }
 
+function safeScholarlyMetadataUrl(value: unknown): string | null {
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    value.length > maxSettingsStringLength
+  ) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value.trim());
+    const allowedHost =
+      url.hostname === "api.openalex.org" || url.hostname === "api.crossref.org";
+    if (
+      url.protocol === "https:" &&
+      allowedHost &&
+      url.pathname === "/works" &&
+      url.search.length <= 2048
+    ) {
+      return url.href;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+async function fetchScholarlyMetadataJson(
+  rawUrl: unknown,
+): Promise<
+  | { ok: true; json: unknown }
+  | { ok: false; status?: number; retryAfterMs?: number; error: string }
+> {
+  const url = safeScholarlyMetadataUrl(rawUrl);
+  if (!url) {
+    return { ok: false, error: "Unsupported scholarly metadata URL." };
+  }
+
+  const maxResponseBytes = 2 * 1024 * 1024;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 9000);
+  try {
+    const response = await fetch(url, {
+      redirect: "error",
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+        "User-Agent": `${productName}/${app.getVersion()} (https://latexdo.org)`,
+      },
+    });
+    if (!response.ok) {
+      const retryAfter = Number(response.headers.get("retry-after") ?? 0);
+      return {
+        ok: false,
+        status: response.status,
+        retryAfterMs:
+          Number.isFinite(retryAfter) && retryAfter > 0
+            ? Math.min(retryAfter * 1000, 15 * 60 * 1000)
+            : undefined,
+        error: `HTTP ${response.status} from ${new URL(url).hostname}`,
+      };
+    }
+
+    const contentLength = Number(response.headers.get("content-length") ?? 0);
+    if (contentLength > maxResponseBytes) {
+      return { ok: false, error: "Scholarly metadata response is too large." };
+    }
+
+    const text = await response.text();
+    if (text.length > maxResponseBytes) {
+      return { ok: false, error: "Scholarly metadata response is too large." };
+    }
+    return { ok: true, json: JSON.parse(text) as unknown };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Scholarly metadata failed.",
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function safeUpdateDownloadUrl(value: unknown): string | null {
   if (
     typeof value !== "string" ||
@@ -4440,6 +4532,11 @@ app.whenReady().then(async () => {
       throw new Error("Unsupported external URL.");
     }
     await shell.openExternal(url);
+  });
+  ipcMain.handle("scholarly:fetch-json", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "scholarly:fetch-json";
+    const [rawUrl] = expectIpcArgs(channel, rawArgs, 1);
+    return fetchScholarlyMetadataJson(rawUrl);
   });
   ipcMain.handle("orcid:fetch-profile", async (_event, ...rawArgs: unknown[]) => {
     const channel = "orcid:fetch-profile";
