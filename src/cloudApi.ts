@@ -932,7 +932,11 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
     }),
 
     updateNow: async () => {
-      window.open("https://app.latexdo.org/downloads/", "_blank", "noopener,noreferrer");
+      window.open(
+        "https://app.latexdo.org/downloads/",
+        "_blank",
+        "noopener,noreferrer",
+      );
       return {
         currentVersion: appVersion,
         latestVersion: null,

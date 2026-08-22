@@ -121,7 +121,8 @@ const downloadsManifestUrl =
   envString("LATEXDO_DOWNLOADS_MANIFEST_URL") ??
   "https://app.latexdo.org/downloads/manifest.json";
 const updatesFeedUrl =
-  envString("LATEXDO_UPDATES_FEED_URL") ?? "https://app.latexdo.org/updates/latest.json";
+  envString("LATEXDO_UPDATES_FEED_URL") ??
+  "https://app.latexdo.org/updates/latest.json";
 const extensionStoreUrl =
   envString("LATEXDO_EXTENSION_STORE_URL") ?? "https://store.latexdo.org/";
 const extensionStoreCatalogUrl =
@@ -2436,9 +2437,8 @@ function safeUpdateDownloadUrl(value: unknown): string | null {
       url.hostname === "github.com" &&
       url.pathname.startsWith("/latexdo/latexdo/releases/download/");
     const isWebsiteAsset =
-      ["app.latexdo.org", "latexdo.org", "www.latexdo.org"].includes(
-        url.hostname,
-      ) && url.pathname.startsWith("/downloads/");
+      ["app.latexdo.org", "latexdo.org", "www.latexdo.org"].includes(url.hostname) &&
+      url.pathname.startsWith("/downloads/");
     if (url.protocol === "https:" && (isReleaseAsset || isWebsiteAsset)) {
       return url.href;
     }
