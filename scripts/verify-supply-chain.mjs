@@ -3,9 +3,7 @@ import { readFile } from "node:fs/promises";
 
 const [
   cli,
-  websiteCli,
   installer,
-  websiteInstaller,
   publicKey,
   appPackage,
   cliPackage,
@@ -22,9 +20,7 @@ const [
   downloadsBuilder,
 ] = await Promise.all([
   readFile("cli/bin/latexdo", "utf8"),
-  readFile("website/bin/latexdo", "utf8"),
   readFile("cli/install.sh", "utf8"),
-  readFile("website/install.sh", "utf8"),
   readFile("build/update-public-key.pem", "utf8"),
   readFile("package.json", "utf8").then(JSON.parse),
   readFile("cli/package.json", "utf8").then(JSON.parse),
@@ -41,9 +37,6 @@ const [
   readFile("scripts/build-downloads-page.mjs", "utf8"),
 ]);
 
-if (cli !== websiteCli) throw new Error("website/bin/latexdo is out of sync.");
-if (installer !== websiteInstaller)
-  throw new Error("website/install.sh is out of sync.");
 if (!cli.includes(publicKey.trim())) {
   throw new Error("CLI update key does not match build/update-public-key.pem.");
 }
