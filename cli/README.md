@@ -11,7 +11,7 @@ paired with its expected `LATEXDO_CLI_SHA256`.
 - Publishes the `latexdo` command package.
 - Provides the shell installer used by `https://latexdo.org/install.sh`.
 - Launches the local browser editor from `github.com/latexdo/latexdo`.
-- Mirrors source files from `/Users/omar/Desktop/Github/latexdo/cli`.
+- Mirrors source files from `/Users/omar/Desktop/Personal/latexdo/cli`.
 
 ## Requirements
 
@@ -44,13 +44,13 @@ LATEXDO_SKIP_BOOTSTRAP=1 curl -fsSL https://latexdo.org/install.sh | bash
 Run the CLI from this checkout against the local main app repo:
 
 ```sh
-LATEXDO_APP_DIR=/Users/omar/Desktop/Github/latexdo LATEXDO_SKIP_UPDATE=1 ./bin/latexdo
+LATEXDO_APP_DIR=/Users/omar/Desktop/Personal/latexdo LATEXDO_SKIP_UPDATE=1 ./bin/latexdo
 ```
 
 Print the URL instead of opening a browser:
 
 ```sh
-LATEXDO_APP_DIR=/Users/omar/Desktop/Github/latexdo LATEXDO_SKIP_UPDATE=1 LATEXDO_NO_OPEN=1 ./bin/latexdo
+LATEXDO_APP_DIR=/Users/omar/Desktop/Personal/latexdo LATEXDO_SKIP_UPDATE=1 LATEXDO_NO_OPEN=1 ./bin/latexdo
 ```
 
 Use a custom host or port:
@@ -73,19 +73,20 @@ latexdo reset        # Remove the cached app checkout.
 
 ## Development
 
-Edit CLI source in `/Users/omar/Desktop/Github/latexdo/cli`, then refresh downstream repos from the main app repo:
+Edit CLI source in `/Users/omar/Desktop/Personal/latexdo/cli`, then refresh downstream repos from the main app repo:
 
 ```sh
 npm run sync:downstream
 ```
 
-The sync copies `cli/` into `latexdo-cli` and updates the installer files used by `latexdo.org`.
+The sync copies `cli/` into `cli.latexdo.org`.
 
 ## Related Repos
 
-- `/Users/omar/Desktop/Github/latexdo` - desktop app, shared editor UI, and downstream source.
-- `/Users/omar/Desktop/Github/latexdo.org` - public website, downloads, and installer endpoint.
-- `/Users/omar/Desktop/Github/editor.latexdo.org` - hosted Cloudflare editor and backend.
-- `/Users/omar/Desktop/Github/latexdo-cli` - published `latexdo` launcher package.
-- `/Users/omar/Desktop/Github/docs.latexdo.org` - public documentation site.
-- `/Users/omar/Desktop/Github/store.latexdo.org` - future store site.
+- `/Users/omar/Desktop/Personal/latexdo` - desktop app, shared editor UI, and downstream source.
+- `/Users/omar/Desktop/Personal/latexdo.org` - public website and installer endpoint.
+- `/Users/omar/Desktop/Personal/app.latexdo.org` - desktop downloads and update metadata.
+- `/Users/omar/Desktop/Personal/editor.latexdo.org` - hosted Cloudflare editor and backend.
+- `/Users/omar/Desktop/Personal/cli.latexdo.org` - published `latexdo` launcher package.
+- `/Users/omar/Desktop/Personal/docs.latexdo.org` - public documentation site.
+- `/Users/omar/Desktop/Personal/store.latexdo.org` - future store site.

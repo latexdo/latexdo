@@ -6,7 +6,7 @@ LatexDo is the main desktop LaTeX editor and the source of truth for the shared 
 
 - Runs the desktop app for local LaTeX projects.
 - Provides the browser editor used by the CLI and hosted editor builds.
-- Contains source copies for the CLI in `cli/` and public website in `website/`.
+- Contains the source copy for the CLI in `cli/`.
 - Syncs downstream repositories locally with `npm run sync:downstream` and in
   GitHub Actions after `latexdo-ci` passes on `main`.
 
@@ -50,7 +50,7 @@ npm run lint             # Run ESLint.
 npm run test             # Run Vitest.
 npm run package          # Build unpacked desktop app.
 npm run dist             # Build distributable installers.
-npm run sync:downstream  # Refresh CLI, website, and hosted editor repos.
+npm run sync:downstream  # Refresh CLI and hosted editor repos.
 ```
 
 ## AI Source
@@ -79,7 +79,7 @@ catalog cannot be loaded.
 
 ## Downstream Sync
 
-This repo owns the source for pieces published elsewhere. After changing shared editor behavior, CLI files, website files, or hosted frontend expectations, run:
+This repo owns the source for pieces published elsewhere. After changing shared editor behavior, CLI files, or hosted frontend expectations, run:
 
 ```sh
 npm run sync:downstream
@@ -88,14 +88,11 @@ npm run sync:downstream
 That refreshes:
 
 - `../cli.latexdo.org` from `cli/`.
-- `../latexdo.org` from `website/`.
 - `../editor.latexdo.org/dist` from the built editor frontend.
 
 In GitHub Actions, the matching downstream deploy workflows run after
 `latexdo-ci` succeeds on `main` and push commits to:
 
-- `latexdo/latexdo.org`: static website files, excluding release-owned downloads,
-  updates, CLI files, and installer scripts.
 - `latexdo/cli.latexdo.org`: the standalone CLI package from `cli/`.
 - `latexdo/editor.latexdo.org`: the hosted editor frontend in `dist/`.
 - `latexdo/docs.latexdo.org`: shared icon and generated docs `site.js`.
@@ -103,7 +100,9 @@ In GitHub Actions, the matching downstream deploy workflows run after
   extension catalog.
 
 They only update GitHub repositories; Cloudflare deployment is handled by each
-connected GitHub repository, not by this repo's workflows.
+connected GitHub repository, not by this repo's workflows. The public website
+lives in `latexdo/latexdo.org`, and downloads and update metadata live in
+`latexdo/app.latexdo.org`; neither receives website files from this repo.
 
 ## Hosted Production
 
@@ -180,19 +179,19 @@ downloads publication: when it is missing, the workflow updates `downloads/` and
 leaves `updates/` unchanged. When present, the secret must be the base64-encoded
 PEM private key matching `build/update-public-key.pem`, and the workflow
 publishes the signed app update feed. The release workflow commits only
-`downloads/` and optionally `updates/` to `latexdo/latexdo.org`; normal website
-pages, CLI scripts, and direct site deployment stay out of that path.
+`downloads/` and optionally `updates/` to `latexdo/app.latexdo.org`; site pages,
+CLI scripts, and direct deployment stay out of that path.
 
-The standalone website and downstream publication workflows require
-`LATEXDO_WEBSITE_TOKEN`. The token pushes the generated static site to
-`latexdo/latexdo.org`, publishes generated downstream content to
-`latexdo/cli.latexdo.org`, `latexdo/editor.latexdo.org`,
+The downstream publication workflows require `LATEXDO_WEBSITE_TOKEN`. That token
+refreshes the `app.latexdo.org` downloads index and publishes generated
+downstream content to `latexdo/cli.latexdo.org`, `latexdo/editor.latexdo.org`,
 `latexdo/docs.latexdo.org`, and `latexdo/store.latexdo.org`. After CLI, editor,
 and store publication finishes, the same token dispatches downstream validation
 in `latexdo/cli.latexdo.org`, `latexdo/editor.latexdo.org`, and
 `latexdo/store.latexdo.org`. Cloudflare deploys from the pushed GitHub commits.
 
-Automatic CI publication to `latexdo.org` is scoped to downloads/update data in
+Automatic publication to `app.latexdo.org` is scoped to download/update data in
 `downloads/` and `updates/`. The design-owned `downloads/index.html`, site
-pages, CSS, and JavaScript stay in the website repository; the downloads page
-hydrates from `downloads/releases.json` and the latest manifests.
+pages, CSS, and JavaScript live in the `latexdo/app.latexdo.org` repository;
+the downloads page hydrates from `downloads/releases.json` and the latest
+manifests.
