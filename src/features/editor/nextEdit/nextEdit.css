@@ -1,0 +1,17 @@
+.latexdo-next-edit-target {
+  background: color-mix(in srgb, #2f6fdb 14%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, #2f6fdb 45%, transparent);
+}
+
+.latexdo-next-edit-delete {
+  color: color-mix(in srgb, currentColor 48%, transparent);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, #b42318 65%, transparent);
+}
+
+.latexdo-next-edit-ghost {
+  color: color-mix(in srgb, currentColor 45%, transparent);
+  font-style: italic;
+  opacity: 0.78;
+  pointer-events: none;
+}

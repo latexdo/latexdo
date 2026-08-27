@@ -189,6 +189,7 @@ import { runPdfComplianceChecks } from "./checks/pdfCompliance";
 import { NotationManager } from "./components/NotationManager";
 import { useCollaborationContext } from "./collaboration/CollaborationContext";
 import type { MonacoCollaborationBinding } from "./collaboration/MonacoCollaborationBinding";
+import { EditorMutationOrigin } from "./collaboration/editProvenance";
 import {
   analyzeCitationLibrary,
   type CitationProjectFile,
@@ -251,6 +252,14 @@ import {
 } from "./features/editor/diagnostics";
 import { escapeHtml } from "./features/editor/html";
 import { useDocuments } from "./features/editor/useDocuments";
+import { GenerateStepNextEditModelClient } from "./features/editor/nextEdit/nextEditModelClient";
+import { AiSemanticNextEditPredictor } from "./features/editor/nextEdit/semanticPredictor";
+import { loadNextEditConfig } from "./features/editor/nextEdit/nextEditConfig";
+import {
+  installMonacoNextEdit,
+  type MonacoNextEditAdapter,
+} from "./features/editor/nextEdit/monacoNextEditAdapter";
+import "./features/editor/nextEdit/nextEdit.css";
 import {
   bookmarkKey,
   bookmarksStorageKey,
@@ -1020,6 +1029,7 @@ export default function App() {
   const [activeSidebar, setActiveSidebar] = useState<SidebarView>("explorer");
   const initialAiConfig = useMemo(() => loadAiConfigForApp(), []);
   const [aiConfig, setAiConfig] = useState<AiConfig>(initialAiConfig);
+  const nextEditConfig = useMemo(() => loadNextEditConfig(), []);
   const [localAiProviderMode, setLocalAiProviderMode] = useState<LocalAiProviderMode>(
     () => loadLocalAiProviderMode(initialAiConfig),
   );
@@ -1627,6 +1637,8 @@ export default function App() {
   const blameHoverDisposablesRef = useRef<Monaco.IDisposable[]>([]);
   const collaborationBindingRef = useRef<MonacoCollaborationBinding | null>(null);
   const collaborationBindingRequestIdRef = useRef(0);
+  const nextEditAdapterRef = useRef<MonacoNextEditAdapter | null>(null);
+  const editorMutationOriginRef = useRef(new EditorMutationOrigin());
   const realtimeBlockedDocumentsRef = useRef<Record<string, string>>({});
   const realtimeReadyDocumentsRef = useRef<Set<string>>(new Set());
   const scheduleGitRefreshRef = useRef<() => void>(() => {});
@@ -5251,6 +5263,7 @@ ${macroEnd}
 
           collaborationBindingRef.current = new MonacoCollaborationBinding({
             editor,
+            mutationOrigin: editorMutationOriginRef.current,
             projectId: bindingProjectId,
             relativePath: document.relativePath,
             shareToken: token,
@@ -5493,6 +5506,8 @@ ${macroEnd}
 
   const handleEditorMount: OnMount = (editor) => {
     editorRef.current = editor;
+    nextEditAdapterRef.current?.dispose();
+    nextEditAdapterRef.current = null;
     editorMouseDisposableRef.current?.dispose();
     for (const disposable of editorActionDisposablesRef.current) {
       disposable.dispose();
@@ -5647,9 +5662,45 @@ ${macroEnd}
     requestAnimationFrame(() => {
       revealPendingSource();
     });
+    const mountedDocument = documentsRef.current.find(
+      (item) => item.path === activePathRef.current,
+    );
+    if (
+      mountedDocument &&
+      isTextDocument(mountedDocument) &&
+      editorModelMatchesPath(editor, mountedDocument.path)
+    ) {
+      const semanticPredictor =
+        nextEditConfig.semanticEnabled && aiConfig.provider !== "off"
+          ? new AiSemanticNextEditPredictor(
+              new GenerateStepNextEditModelClient(
+                aiConfig,
+                nextEditConfig,
+                aiIsDesktop,
+              ),
+            )
+          : undefined;
+      nextEditAdapterRef.current = installMonacoNextEdit({
+        editor,
+        monaco,
+        documentKey: `${projectIdRef.current || projectPathRef.current || "project"}:${mountedDocument.relativePath}`,
+        language: languageFor(mountedDocument.name),
+        config: nextEditConfig,
+        semanticPredictor,
+        mutationOrigin: editorMutationOriginRef.current,
+      });
+    }
     connectCollaborationBinding(editor);
     editor.focus();
   };
+
+  useEffect(
+    () => () => {
+      nextEditAdapterRef.current?.dispose();
+      nextEditAdapterRef.current = null;
+    },
+    [],
+  );
 
   const handleEditorChange = useCallback((documentPath: string, value?: string) => {
     const nextContent = value ?? "";
@@ -5691,13 +5742,15 @@ ${macroEnd}
     const scrollTop = editor.getScrollTop();
     const scrollLeft = editor.getScrollLeft();
 
-    editor.executeEdits("latexdo-sync-document", [
-      {
-        range: model.getFullModelRange(),
-        text: activeDocument.content,
-        forceMoveMarkers: true,
-      },
-    ]);
+    editorMutationOriginRef.current.run("programmatic", () => {
+      editor.executeEdits("latexdo-sync-document", [
+        {
+          range: model.getFullModelRange(),
+          text: activeDocument.content,
+          forceMoveMarkers: true,
+        },
+      ]);
+    });
 
     const updatedModel = editor.getModel();
     if (updatedModel && selections.length) {
