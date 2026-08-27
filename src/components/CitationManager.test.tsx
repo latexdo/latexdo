@@ -91,7 +91,7 @@ describe("CitationManager", () => {
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith("\\cite{knuth84}");
     });
-    expect(screen.getByText("Copied knuth84")).toBeVisible();
+    expect(await screen.findByText("Copied knuth84")).toBeVisible();
   });
 
   it("adds a BibTeX stub for a missing cited key", () => {
