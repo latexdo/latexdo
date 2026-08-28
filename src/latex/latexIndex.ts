@@ -15,6 +15,8 @@ export type CitationEntry = {
   eprint?: string;
   archivePrefix?: string;
   howpublished?: string;
+  abstract?: string;
+  keywords?: string;
   note?: string;
   raw?: string;
   sourceFile: string;

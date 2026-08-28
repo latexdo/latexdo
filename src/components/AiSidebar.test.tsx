@@ -34,8 +34,16 @@ const ctx: AgentContext = {
   applyEdit: vi.fn().mockResolvedValue(undefined),
   compile: vi.fn().mockResolvedValue({ ok: true, log: "", diagnostics: [] }),
   runChecks: vi.fn().mockResolvedValue("ok"),
-  insertCitation: vi.fn().mockResolvedValue("\\cite{smith2026}"),
-  recommendCitations: vi.fn().mockResolvedValue("1. \\cite{smith2026} (score 0.5)"),
+  insertCitation: vi.fn().mockResolvedValue(
+    JSON.stringify({
+      recommendation: { key: "smith2026", citation: "\\citep{smith2026}" },
+    }),
+  ),
+  recommendCitations: vi
+    .fn()
+    .mockResolvedValue(
+      JSON.stringify({ recommendations: [{ key: "smith2026", score: 0.5 }] }),
+    ),
   requestApproval: vi.fn().mockResolvedValue(true),
 };
 

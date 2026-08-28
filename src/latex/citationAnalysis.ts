@@ -110,6 +110,12 @@ export function extractCitationUsages(
   return usages;
 }
 
+export function citationKeysInText(content: string): string[] {
+  return [
+    ...new Set(extractCitationUsages(content, "__inline__").map((usage) => usage.key)),
+  ];
+}
+
 function findDuplicateGroups(entries: CitationEntry[]): CitationDuplicateGroup[] {
   const groups: CitationDuplicateGroup[] = [];
 

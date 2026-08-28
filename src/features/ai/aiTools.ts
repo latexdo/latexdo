@@ -34,8 +34,8 @@ export interface AgentContext {
   runChecks: (kind: string) => Promise<string>;
   insertCitation: (query: string) => Promise<string>;
   /**
-   * Rank the project bibliography against a passage of prose and return
-   * \cite-ready suggestions (used by the knowledge-graph citation recommender).
+   * Rank the project bibliography against a passage of prose and return source
+   * keys and evidence. The editor layer chooses the LaTeX citation command.
    */
   recommendCitations: (passage: string) => Promise<string>;
   /** Returns true if the user approved the edit (bypassed when auto-approve). */
@@ -146,7 +146,7 @@ export const agentToolSchemas: ToolSchema[] = [
   {
     name: "insert_citation",
     description:
-      "Search the project bibliography for a reference matching a query and return a \\cite-ready key.",
+      "Search the project bibliography for a real reference matching a query. Returns bibliography keys and metadata; citation LaTeX syntax is chosen separately from the user's document style.",
     params: {
       query: {
         type: "string",
@@ -158,12 +158,12 @@ export const agentToolSchemas: ToolSchema[] = [
   {
     name: "recommend_citations",
     description:
-      "Given a passage of the paper's prose, rank the project bibliography and return the most relevant references (with \\cite keys and reasons). Use this to suggest which papers to cite in a paragraph, then insert the best ones with edit_selection or insert_at_cursor.",
+      "Given paper prose, rank real references from the project's bibliography. Returns bibliography keys and relevance evidence only. Citation LaTeX syntax is chosen separately from the user's document style.",
     params: {
       passage: {
         type: "string",
         description:
-          "The sentence or paragraph to find supporting citations for. Pass the actual prose, not a topic keyword.",
+          "The exact sentence or paragraph needing support. Pass actual prose.",
       },
     },
     required: ["passage"],

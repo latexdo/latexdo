@@ -1,7 +1,6 @@
-// Ranks bibliography entries against a passage of the user's prose so the AI —
-// or the graph UI — can suggest which papers to \cite where. Deterministic and
-// dependency-free: it scores token overlap between the passage and each entry's
-// title / authors / venue, then boosts on-topic papers that are not cited yet.
+// Ranks bibliography entries against a passage of the user's prose so the AI or
+// graph UI can choose sources. Formatting the actual LaTeX citation command is
+// handled by the editor layer, because it depends on local document style.
 
 import type { CitationEntry } from "../../latex/latexIndex";
 import { titleTokens } from "./knowledgeGraph";
@@ -101,6 +100,37 @@ function passageTokens(passage: string): Map<string, number> {
   return counts;
 }
 
+function textTokens(value: string | undefined): Set<string> {
+  return new Set(
+    (value ?? "")
+      .toLowerCase()
+      .replace(/\\[a-z]+\s*(\[[^\]]*\])?(\{[^}]*\})?/gi, " ")
+      .replace(/[^a-z0-9]+/g, " ")
+      .split(" ")
+      .filter((token) => token.length >= 3 && !passageStopWords.has(token)),
+  );
+}
+
+function entryQualityWeight(entry: CitationEntry): number {
+  let quality = 0;
+  if (entry.title) quality += 0.22;
+  if (entry.author || entry.editor) quality += 0.22;
+  if (entry.year) quality += 0.18;
+  if (
+    entry.journal ||
+    entry.booktitle ||
+    entry.publisher ||
+    entry.school ||
+    entry.institution ||
+    entry.howpublished
+  ) {
+    quality += 0.16;
+  }
+  if (entry.doi || entry.url || entry.eprint) quality += 0.16;
+  if (entry.abstract || entry.keywords) quality += 0.06;
+  return 0.85 + 0.15 * Math.min(1, quality);
+}
+
 /**
  * Recommend citations for a passage. Higher score = stronger topical match with
  * the passage's vocabulary. Authors mentioned by surname in the passage are a
@@ -129,16 +159,46 @@ export function recommendCitations(
     const reasons: string[] = [];
     let score = 0;
 
-    // Title term overlap — the primary signal.
-    const entryTitleTokens = titleTokens(entry.title);
-    const matchedTitleTerms: string[] = [];
-    for (const token of entryTitleTokens) {
-      if (passageTokenSet.has(token)) matchedTitleTerms.push(token);
-    }
-    if (matchedTitleTerms.length > 0 && entryTitleTokens.size > 0) {
-      const coverage = matchedTitleTerms.length / entryTitleTokens.size;
-      score += 0.7 * coverage + 0.15 * Math.min(matchedTitleTerms.length, 4);
-      reasons.push(`Title terms: ${matchedTitleTerms.slice(0, 4).join(", ")}`);
+    const scoreField = (
+      label: string,
+      value: string | undefined,
+      weight: number,
+      maxShown = 4,
+    ) => {
+      const fieldTokens = label === "Title" ? titleTokens(value) : textTokens(value);
+      const matchedTerms: string[] = [];
+      for (const token of fieldTokens) {
+        if (passageTokenSet.has(token)) matchedTerms.push(token);
+      }
+      if (matchedTerms.length === 0 || fieldTokens.size === 0) return;
+
+      const coverage = matchedTerms.length / fieldTokens.size;
+      score += weight * (0.55 * coverage + 0.12 * Math.min(matchedTerms.length, 4));
+      reasons.push(`${label} terms: ${matchedTerms.slice(0, maxShown).join(", ")}`);
+    };
+
+    scoreField("Title", entry.title, 1);
+    scoreField("Abstract", entry.abstract, 0.45);
+    scoreField("Keywords", entry.keywords, 0.7);
+    scoreField("Note", entry.note, 0.2, 3);
+
+    const venue =
+      entry.journal ??
+      entry.booktitle ??
+      entry.publisher ??
+      entry.school ??
+      entry.institution ??
+      entry.howpublished;
+    if (venue) {
+      const venueTokens = textTokens(venue);
+      let venueHits = 0;
+      for (const token of venueTokens) {
+        if (passageTokenSet.has(token)) venueHits += 1;
+      }
+      if (venueHits > 0) {
+        score += 0.15 * Math.min(venueHits, 2);
+        reasons.push("Venue matches passage");
+      }
     }
 
     // Author surname mentioned in the passage — a strong, precise signal.
@@ -153,32 +213,13 @@ export function recommendCitations(
       reasons.push(`Author mentioned: ${matchedAuthors.slice(0, 2).join(", ")}`);
     }
 
-    // Venue term overlap — a weak supporting signal.
-    const venue = entry.journal ?? entry.booktitle ?? entry.publisher;
-    if (venue) {
-      const venueTokens = new Set(
-        venue
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, " ")
-          .split(" ")
-          .filter((token) => token.length >= 4),
-      );
-      let venueHits = 0;
-      for (const token of venueTokens) {
-        if (passageTokenSet.has(token)) venueHits += 1;
-      }
-      if (venueHits > 0) {
-        score += 0.1 * Math.min(venueHits, 2);
-        reasons.push("Venue matches passage");
-      }
-    }
-
     if (score < minScore) continue;
 
     const alreadyCited = citedSet.has(entry.key);
     // Nudge uncited-but-relevant papers up: the point is to surface citations
     // the author hasn't added yet, without hiding ones they already used.
-    const adjustedScore = alreadyCited ? score * 0.85 : score;
+    const adjustedScore =
+      (alreadyCited ? score * 0.85 : score) * entryQualityWeight(entry);
 
     recommendations.push({
       key: entry.key,
@@ -204,7 +245,7 @@ export function formatRecommendations(
       const title = rec.entry.title ?? "(untitled)";
       const cited = rec.alreadyCited ? " [already cited]" : "";
       const reasons = rec.reasons.length ? ` — ${rec.reasons.join("; ")}` : "";
-      return `${index + 1}. \\cite{${rec.key}} (score ${rec.score})${cited}\n   ${title}${reasons}`;
+      return `${index + 1}. key=${rec.key} (score ${rec.score})${cited}\n   ${title}${reasons}`;
     })
     .join("\n");
 }

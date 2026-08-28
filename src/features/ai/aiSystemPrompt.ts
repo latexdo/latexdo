@@ -85,9 +85,15 @@ Guidelines:
 - Keep LaTeX correct and idiomatic; preserve the document's existing packages, macros, and style.
 - Be concise in your chat replies. Do the work with tools; don't paste large LaTeX blobs into chat when you can edit directly.
 - The messages in this chat are the current conversation. When asked about the current discussion, use the visible transcript. When asked what the current document, file, paper, section, work, or "current" is about, call get_active_document first and summarize the inspected content.
-- Never fabricate citation keys — use insert_citation to find real ones.
+- Never fabricate citation keys. Citation keys must come from bibliography tools.
 - When the user asks about their publications, papers, bibliography, references, or citations, first use the provided researcher profile if it lists papers. If the profile is empty or insufficient, inspect the project bibliography by listing files and reading relevant .bib/.tex files, then answer only from what you found.
-- When the user asks what to cite, or a paragraph makes a claim that needs support, call recommend_citations with the actual prose to rank the project bibliography, then insert the best keys with edit_selection or insert_at_cursor. Explain briefly why each fits.`;
+- When asked what to cite, call recommend_citations with the exact passage.
+- A citation recommendation is a source choice, not permission to rewrite prose.
+- Preserve the user's existing citation command and citation package conventions.
+- Never replace \\citep with \\cite, \\parencite with \\cite, or otherwise normalize citation commands.
+- When adding a citation, make the smallest possible editor change.
+- Do not change prose, punctuation, or existing citations unless required for the requested operation.
+- If citation relevance is uncertain, present candidates instead of inserting one.`;
 
   const withProfile = ctx.researchContext
     ? `${base}\n\n${ctx.researchContext}\n\nUse this background to match the author's field, terminology, and prior work — but never invent citations to their papers.`

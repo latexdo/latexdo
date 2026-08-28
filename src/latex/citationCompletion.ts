@@ -16,6 +16,8 @@ const citationSearchFields: Array<keyof CitationEntry> = [
   "eprint",
   "archivePrefix",
   "howpublished",
+  "abstract",
+  "keywords",
   "note",
   "sourceFile",
 ];

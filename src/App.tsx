@@ -206,12 +206,12 @@ import type { MonacoCollaborationBinding } from "./collaboration/MonacoCollabora
 import { EditorMutationOrigin } from "./collaboration/editProvenance";
 import {
   analyzeCitationLibrary,
+  citationKeysInText,
   type CitationProjectFile,
 } from "./latex/citationAnalysis";
-import {
-  recommendCitations,
-  formatRecommendations,
-} from "./features/graph/citationRecommender";
+import { recommendCitations } from "./features/graph/citationRecommender";
+import { planCitationInsertion } from "./latex/citationInsertion";
+import { formatCitation, resolveCitationStyle } from "./latex/citationStyle";
 import { planScholarlyDiscoveryWithAi } from "./features/graph/aiDiscoveryPlanner";
 import {
   buildKnowledgeGraph,
@@ -963,6 +963,29 @@ function editorModelMatchesPath(
   return Boolean(
     modelPath && normalizeRelativePath(modelPath) === normalizeRelativePath(filePath),
   );
+}
+
+function getNearbyCitationContext(
+  editor: Monaco.editor.IStandaloneCodeEditor | null,
+  radius = 1200,
+): string {
+  if (!editor) return "";
+
+  const model = editor.getModel();
+  const selection = editor.getSelection();
+  if (!model || !selection) return "";
+
+  const start = model.getOffsetAt({
+    lineNumber: selection.startLineNumber,
+    column: selection.startColumn,
+  });
+  const end = model.getOffsetAt({
+    lineNumber: selection.endLineNumber,
+    column: selection.endColumn,
+  });
+  const text = model.getValue();
+
+  return text.slice(Math.max(0, start - radius), Math.min(text.length, end + radius));
 }
 
 function AppIcon({ className }: { className?: string }) {
@@ -7011,42 +7034,79 @@ ${macroEnd}
   const insertCitationKey = useCallback(
     (key: string) => {
       const editor = editorRef.current;
+      const model = editor?.getModel();
       const position = editor?.getPosition();
-      if (!editor || !position) {
-        setStatusMessage(
-          `Open a .tex file and place the cursor where you want \\cite{${key}}.`,
-        );
+      if (
+        !editor ||
+        !model ||
+        !position ||
+        !activeTextDocument?.name.endsWith(".tex")
+      ) {
+        setStatusMessage("Open a .tex file and place the cursor for the citation.");
         return;
       }
+      const selection = editor.getSelection();
+      const selectedText =
+        selection && !selection.isEmpty() ? model.getValueInRange(selection) : "";
+      const documentText = model.getValue();
+      const style = resolveCitationStyle({
+        selectedText,
+        nearbyText: getNearbyCitationContext(editor),
+        activeFilePath: activeTextDocument.relativePath,
+        activeDocumentText: documentText,
+        usages: citationAnalysis.usages,
+      });
+      const plan = planCitationInsertion(
+        documentText,
+        model.getOffsetAt(position),
+        style.command,
+        [key],
+      );
+      const citationText = formatCitation(style.command, [key]);
+      if (!plan) {
+        setStatusMessage(`Already cited near the cursor: ${citationText}.`);
+        return;
+      }
+      const start = model.getPositionAt(plan.rangeStartOffset);
+      const end = model.getPositionAt(plan.rangeEndOffset);
       editor.executeEdits("knowledge-graph", [
         {
-          range: {
-            startLineNumber: position.lineNumber,
-            startColumn: position.column,
-            endLineNumber: position.lineNumber,
-            endColumn: position.column,
-          },
-          text: `\\cite{${key}}`,
+          range: new monaco.Range(
+            start.lineNumber,
+            start.column,
+            end.lineNumber,
+            end.column,
+          ),
+          text: plan.text,
+          forceMoveMarkers: true,
         },
       ]);
       editor.focus();
-      setStatusMessage(`Inserted \\cite{${key}}.`);
+      setStatusMessage(`Inserted ${formatCitation(plan.command, plan.keys)}.`);
     },
-    [setStatusMessage],
+    [activeTextDocument, citationAnalysis.usages, setStatusMessage],
   );
 
   const recommendCitationsForSelection = useCallback(() => {
     const editor = editorRef.current;
+    const model = editor?.getModel();
     const selection = editor?.getSelection();
     const passage =
-      selection && editor ? (editor.getModel()?.getValueInRange(selection) ?? "") : "";
+      selection && editor && model ? (model.getValueInRange(selection) ?? "") : "";
     const text = passage.trim();
     if (!text) {
       setStatusMessage("Select a sentence or paragraph first to recommend citations.");
       return;
     }
+    const style = resolveCitationStyle({
+      selectedText: text,
+      nearbyText: getNearbyCitationContext(editor),
+      activeFilePath: activeTextDocument?.relativePath ?? null,
+      activeDocumentText: model?.getValue() ?? activeTextDocument?.content ?? "",
+      usages: citationAnalysis.usages,
+    });
     const recommendations = recommendCitations(text, citationAnalysis.entries, {
-      citedKeys: citationAnalysis.citedKeys,
+      citedKeys: citationKeysInText(text),
       limit: 6,
     });
     if (recommendations.length === 0) {
@@ -7055,10 +7115,10 @@ ${macroEnd}
     }
     setStatusMessage(
       `Suggested citations: ${recommendations
-        .map((rec) => `\\cite{${rec.key}}`)
+        .map((rec) => formatCitation(style.command, [rec.key]))
         .join(", ")}`,
     );
-  }, [citationAnalysis, setStatusMessage]);
+  }, [activeTextDocument, citationAnalysis, setStatusMessage]);
 
   const planKnowledgeGraphDiscoveryWithAi = useCallback(
     (
@@ -7144,25 +7204,76 @@ ${macroEnd}
         );
       },
       insertCitation: async (query) => {
-        const needle = query.toLowerCase();
-        for (const doc of documents) {
-          if (!doc.relativePath.endsWith(".bib")) continue;
-          const entries = doc.content.matchAll(/@\w+\s*\{\s*([^,\s]+)\s*,([^@]*)/g);
-          for (const match of entries) {
-            const key = match[1];
-            const body = (match[2] ?? "").toLowerCase();
-            if (key.toLowerCase().includes(needle) || body.includes(needle)) {
-              return `Use \\cite{${key}} — matched in ${doc.relativePath}.`;
-            }
-          }
+        const editor = editorRef.current;
+        const model = editor?.getModel();
+        const documentText = model?.getValue() ?? activeTextDocument?.content ?? "";
+        const style = resolveCitationStyle({
+          selectedText: query,
+          nearbyText: getNearbyCitationContext(editor),
+          activeFilePath: activeTextDocument?.relativePath ?? null,
+          activeDocumentText: documentText,
+          usages: citationAnalysis.usages,
+        });
+        const entry = rankedCitationCompletions(citationAnalysis.entries, query)[0];
+        if (!entry) {
+          return JSON.stringify({
+            citationStyle: style,
+            recommendation: null,
+            message: `No bibliography entry matched "${query}". Add it to a .bib file first.`,
+          });
         }
-        return `No bibliography entry matched "${query}". Add it to a .bib file first.`;
+        return JSON.stringify({
+          citationStyle: style,
+          recommendation: {
+            key: entry.key,
+            citation: formatCitation(style.command, [entry.key]),
+            title: entry.title,
+            author: entry.author ?? entry.editor,
+            year: entry.year,
+            venue:
+              entry.journal ??
+              entry.booktitle ??
+              entry.publisher ??
+              entry.school ??
+              entry.institution,
+            sourceFile: entry.sourceFile,
+          },
+        });
       },
       recommendCitations: async (passage) => {
-        const recommendations = recommendCitations(passage, citationAnalysis.entries, {
-          citedKeys: citationAnalysis.citedKeys,
+        const editor = editorRef.current;
+        const model = editor?.getModel();
+        const documentText = model?.getValue() ?? activeTextDocument?.content ?? "";
+        const style = resolveCitationStyle({
+          selectedText: passage,
+          nearbyText: getNearbyCitationContext(editor),
+          activeFilePath: activeTextDocument?.relativePath ?? null,
+          activeDocumentText: documentText,
+          usages: citationAnalysis.usages,
         });
-        return formatRecommendations(recommendations);
+        const recommendations = recommendCitations(passage, citationAnalysis.entries, {
+          citedKeys: citationKeysInText(passage),
+          limit: 12,
+        });
+        return JSON.stringify({
+          citationStyle: style,
+          recommendations: recommendations.map((rec) => ({
+            key: rec.key,
+            citation: formatCitation(style.command, [rec.key]),
+            score: rec.score,
+            alreadyCited: rec.alreadyCited,
+            title: rec.entry.title,
+            author: rec.entry.author ?? rec.entry.editor,
+            year: rec.entry.year,
+            venue:
+              rec.entry.journal ??
+              rec.entry.booktitle ??
+              rec.entry.publisher ??
+              rec.entry.school ??
+              rec.entry.institution,
+            reasons: rec.reasons,
+          })),
+        });
       },
       // Edits flow through Monaco (visible + undoable); a diff-approval UI is a
       // planned follow-up, so for now we apply and rely on undo.
@@ -7172,7 +7283,6 @@ ${macroEnd}
       projectName,
       activeTextDocument,
       projectId,
-      documents,
       compileResult,
       compile,
       applyAgentEdit,
@@ -8825,25 +8935,72 @@ ${macroEnd}
         return;
       }
 
-      const citation = `\\${command}{${key}}`;
+      const citation = formatCitation(command, [key]);
       const selection = editor.getSelection();
       const selectedText =
         selection && !selection.isEmpty() ? model.getValueInRange(selection) : "";
       const position = editor.getPosition();
       const lineNumber = position?.lineNumber ?? model.getLineCount();
       const column = position?.column ?? model.getLineLength(lineNumber) + 1;
+      const range =
+        selection && !selection.isEmpty()
+          ? selection
+          : new monaco.Range(lineNumber, column, lineNumber, column);
+      const selectedPlan = selectedText
+        ? planCitationInsertion(selectedText, selectedText.length, command, [key])
+        : null;
+      const cursorPlan =
+        !selectedText && position
+          ? planCitationInsertion(
+              model.getValue(),
+              model.getOffsetAt(position),
+              command,
+              [key],
+            )
+          : null;
+      if (selectedText && !selectedPlan) {
+        setStatusMessage(`Already cited in the selection: ${citation}`);
+        return;
+      }
+      if (!selectedText && !cursorPlan) {
+        setStatusMessage(`Already cited near the cursor: ${citation}`);
+        return;
+      }
+      const cursorStart = cursorPlan
+        ? model.getPositionAt(cursorPlan.rangeStartOffset)
+        : null;
+      const cursorEnd = cursorPlan
+        ? model.getPositionAt(cursorPlan.rangeEndOffset)
+        : null;
+      const cursorRange =
+        cursorStart && cursorEnd && !selectedText
+          ? new monaco.Range(
+              cursorStart.lineNumber,
+              cursorStart.column,
+              cursorEnd.lineNumber,
+              cursorEnd.column,
+            )
+          : range;
+      const text =
+        selectedText && selectedPlan
+          ? selectedText.slice(0, selectedPlan.rangeStartOffset) +
+            selectedPlan.text +
+            selectedText.slice(selectedPlan.rangeEndOffset)
+          : (cursorPlan?.text ?? citation);
       editor.executeEdits("citation-manager", [
         {
-          range:
-            selection && !selection.isEmpty()
-              ? selection
-              : new monaco.Range(lineNumber, column, lineNumber, column),
-          text: selectedText ? `${selectedText} ${citation}` : citation,
+          range: cursorRange,
+          text,
           forceMoveMarkers: true,
         },
       ]);
       editor.focus();
-      setStatusMessage(`Inserted ${citation}`);
+      setStatusMessage(
+        `Inserted ${formatCitation(
+          (selectedPlan ?? cursorPlan)?.command ?? command,
+          (selectedPlan ?? cursorPlan)?.keys ?? [key],
+        )}`,
+      );
     },
     [],
   );

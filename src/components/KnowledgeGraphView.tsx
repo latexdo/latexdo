@@ -32,7 +32,7 @@ interface KnowledgeGraphViewProps {
   params: KnowledgeGraphParams;
   onParamsChange: (params: KnowledgeGraphParams) => void;
   entriesByKey: Map<string, CitationEntry>;
-  /** Insert \cite{key} at the cursor in the active document. */
+  /** Insert the key at the cursor using the active document's citation style. */
   onInsertCitation: (key: string) => void;
   /** Ask the AI to recommend citations for the current selection/paragraph. */
   onRecommendForSelection?: () => void;
@@ -757,7 +757,7 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
                 className="kg-cite-btn"
                 onClick={() => onInsertCitation(selectedNode.key)}
               >
-                <Quote size={13} /> Insert \cite
+                <Quote size={13} /> Insert citation
               </button>
 
               <div className="kg-neighbors">

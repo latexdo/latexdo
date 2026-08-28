@@ -60,6 +60,8 @@ function entrySearchText(entry: CitationEntry): string {
     entry.doi,
     entry.url,
     entry.eprint,
+    entry.abstract,
+    entry.keywords,
     entry.sourceFile,
   ]
     .filter(Boolean)
@@ -85,6 +87,8 @@ function entryBibtexPreview(entry: CitationEntry): string {
     ["doi", entry.doi],
     ["url", entry.url],
     ["eprint", entry.eprint],
+    ["abstract", entry.abstract],
+    ["keywords", entry.keywords],
   ].filter((field): field is [string, string] => Boolean(field[1]));
 
   return [

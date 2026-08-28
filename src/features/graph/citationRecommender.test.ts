@@ -27,6 +27,15 @@ const library: CitationEntry[] = [
     title: "A history of sourdough bread",
     year: "1990",
   }),
+  entry({
+    key: "lazyCompletion2026",
+    author: "Researcher, Riley",
+    title: "Editor Assistance",
+    abstract:
+      "A lazy and heuristic driven architecture for code completion in live programming environments.",
+    keywords: "code completion, heuristics, live programming",
+    year: "2026",
+  }),
 ];
 
 describe("recommendCitations", () => {
@@ -71,13 +80,23 @@ describe("recommendCitations", () => {
     );
     expect(recs).toHaveLength(1);
   });
+
+  it("matches abstract and keyword metadata for broader candidate recall", () => {
+    const recs = recommendCitations(
+      "The completion architecture uses lazy heuristics for live code suggestions.",
+      library,
+    );
+    expect(recs[0]?.key).toBe("lazyCompletion2026");
+    expect(recs[0]?.reasons.join(" ")).toContain("Abstract terms");
+  });
 });
 
 describe("formatRecommendations", () => {
-  it("renders cite-ready lines", () => {
+  it("renders source keys without choosing citation syntax", () => {
     const recs = recommendCitations("attention transformer translation", library);
     const text = formatRecommendations(recs);
-    expect(text).toContain("\\cite{vaswani2017}");
+    expect(text).toContain("key=vaswani2017");
+    expect(text).not.toContain("\\cite{");
   });
 
   it("handles the empty case", () => {

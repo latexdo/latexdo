@@ -47,6 +47,8 @@ export function parseBibFile(content: string, sourceFile: string): CitationEntry
         eprint: cleanBibValue(tags.EPRINT),
         archivePrefix: cleanBibValue(tags.ARCHIVEPREFIX),
         howpublished: cleanBibValue(tags.HOWPUBLISHED),
+        abstract: cleanBibValue(tags.ABSTRACT),
+        keywords: cleanBibValue(tags.KEYWORDS),
         note: cleanBibValue(tags.NOTE),
         raw: JSON.stringify(tags, null, 2),
         sourceFile,

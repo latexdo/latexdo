@@ -20,8 +20,10 @@ function stubContext(overrides: Partial<AgentContext> = {}): AgentContext {
     applyEdit: async () => {},
     compile: async () => ({ ok: true, log: "", diagnostics: [] }),
     runChecks: async () => "ok",
-    insertCitation: async () => "\\cite{x}",
-    recommendCitations: async () => "1. \\cite{x} (score 0.5)",
+    insertCitation: async () =>
+      JSON.stringify({ recommendation: { key: "x", citation: "\\citep{x}" } }),
+    recommendCitations: async () =>
+      JSON.stringify({ recommendations: [{ key: "x", score: 0.5 }] }),
     requestApproval: async () => true,
     ...overrides,
   };

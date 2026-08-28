@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   analyzeCitationLibrary,
+  citationKeysInText,
   createBibtexStub,
   extractCitationUsages,
 } from "../citationAnalysis";
@@ -16,6 +17,14 @@ describe("citation analysis", () => {
       { key: "knuth84", command: "cite", sourceFile: "main.tex", line: 2 },
       { key: "smith20", command: "cite", sourceFile: "main.tex", line: 2 },
     ]);
+  });
+
+  it("extracts cited keys from inline passage text", () => {
+    expect(
+      citationKeysInText(
+        "Local claim \\citep{smith20, knuth84}. Later \\cite{smith20}.",
+      ),
+    ).toEqual(["smith20", "knuth84"]);
   });
 
   it("builds project-level citation health from tex and bib files", () => {
@@ -55,7 +64,9 @@ describe("citation analysis", () => {
   title = {Old Unused Work},
   author = {A. Author},
   year = {2010},
-  journal = {Archive}
+  journal = {Archive},
+  abstract = {Historical background for typesetting systems},
+  keywords = {typesetting, history}
 }
 @misc{metadataDebt,
   year = {2024}
@@ -67,6 +78,10 @@ describe("citation analysis", () => {
     );
 
     expect(analysis.entries).toHaveLength(5);
+    expect(analysis.entries.find((entry) => entry.key === "unusedOld")).toMatchObject({
+      abstract: "Historical background for typesetting systems",
+      keywords: "typesetting, history",
+    });
     expect(analysis.citedKeys).toEqual(["knuth84", "missingKey", "smith20"]);
     expect(analysis.usedKeys).toEqual(["knuth84", "smith20"]);
     expect(analysis.missingKeys).toEqual(["missingKey"]);
