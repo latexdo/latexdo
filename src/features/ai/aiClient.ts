@@ -6,11 +6,15 @@
 // Also exposes model management (list/download) which is desktop-only.
 
 import type {
+  AiSystemCapabilities,
   DownloadProgress,
   GenerateRequest,
   GenerationStep,
+  ImportedModelManifest,
   ModelStatus,
+  TierAvailability,
 } from "./aiTypes";
+import type { LatexDoAiTier } from "./product/latexDoAiTiers";
 import { generateStepCloud } from "./aiCloud";
 
 /** Shape of the `ai` object exposed by preload on window.electronApi. */
@@ -28,7 +32,11 @@ export interface AiBridge {
   ): Promise<{ ok: boolean; error?: string }>;
   subscribeDownload(cb: (p: DownloadProgress) => void): () => void;
   deleteModel(fileName: string): Promise<void>;
+  importModel?(): Promise<ImportedModelManifest | null>;
+  inspectLocalModel?(fileName: string): Promise<ImportedModelManifest>;
   detectOllama(baseUrl: string): Promise<{ available: boolean; models: string[] }>;
+  getSystemCapabilities?(): Promise<AiSystemCapabilities>;
+  getTierAvailability?(tierId: LatexDoAiTier): Promise<TierAvailability>;
 }
 
 function bridge(): AiBridge | null {
@@ -91,4 +99,29 @@ export async function detectOllama(
   baseUrl: string,
 ): Promise<{ available: boolean; models: string[] }> {
   return (await bridge()?.detectOllama(baseUrl)) ?? { available: false, models: [] };
+}
+
+export async function getSystemCapabilities(): Promise<AiSystemCapabilities | null> {
+  return (await bridge()?.getSystemCapabilities?.()) ?? null;
+}
+
+export async function getTierAvailability(
+  tierId: LatexDoAiTier,
+): Promise<TierAvailability> {
+  return (
+    (await bridge()?.getTierAvailability?.(tierId)) ?? {
+      state: "unsupported",
+      reason: "Local AI requires the LatexDo desktop app.",
+    }
+  );
+}
+
+export async function importModel(): Promise<ImportedModelManifest | null> {
+  return (await bridge()?.importModel?.()) ?? null;
+}
+
+export async function inspectLocalModel(
+  fileName: string,
+): Promise<ImportedModelManifest | null> {
+  return (await bridge()?.inspectLocalModel?.(fileName)) ?? null;
 }

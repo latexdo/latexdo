@@ -1277,8 +1277,17 @@ const aiApi = {
 
   importModel: (): Promise<unknown | null> => ipcRenderer.invoke("ai:import-model"),
 
+  inspectLocalModel: (fileName: string): Promise<unknown> =>
+    ipcRenderer.invoke("ai:inspect-local-model", fileName),
+
   detectOllama: (baseUrl: string): Promise<{ available: boolean; models: string[] }> =>
     ipcRenderer.invoke("ai:detect-ollama", baseUrl),
+
+  getSystemCapabilities: (): Promise<unknown> =>
+    ipcRenderer.invoke("ai:system-capabilities"),
+
+  getTierAvailability: (tierId: string): Promise<unknown> =>
+    ipcRenderer.invoke("ai:tier-availability", tierId),
 };
 
 contextBridge.exposeInMainWorld("aiApi", aiApi);

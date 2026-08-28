@@ -81,6 +81,9 @@ function validateLocalModel(errors, model, index) {
   if (typeof model.minSystemRamGb !== "number" || model.minSystemRamGb < 0) {
     errors.push(`${owner}.minSystemRamGb must be a non-negative number`);
   }
+  if (typeof model.minAvailableRamGb !== "number" || model.minAvailableRamGb < 0) {
+    errors.push(`${owner}.minAvailableRamGb must be a non-negative number`);
+  }
   if (typeof model.supportsTools !== "boolean") {
     errors.push(`${owner}.supportsTools must be a boolean`);
   }
@@ -302,7 +305,8 @@ export const aiCatalog = ${JSON.stringify(catalog, null, 2)} as const satisfies 
 `;
   try {
     const prettier = await import("prettier");
-    return prettier.format(code, { parser: "typescript" });
+    const config = (await prettier.resolveConfig(catalogOutputPath)) ?? {};
+    return prettier.format(code, { ...config, parser: "typescript" });
   } catch {
     return code;
   }

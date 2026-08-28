@@ -128,7 +128,7 @@ describe("AiSidebar", () => {
   it("explains desktop-only local setup in the browser", () => {
     renderSidebar(makeConfig({ provider: "local", modelDownloaded: true }), false);
 
-    expect(screen.getByText("Qwen2.5 Coder 3B")).toBeVisible();
+    expect(screen.getByText("LatexDo AI Plus")).toBeVisible();
     expect(
       screen.getByText(
         "Local models need the desktop app. Switch to a cloud provider for the browser.",

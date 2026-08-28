@@ -19,6 +19,7 @@ import type { AiConfig } from "../features/ai/aiConfig";
 import type { AgentContext } from "../features/ai/aiTools";
 import { findLocalModel } from "../features/ai/aiModels";
 import { findCloudProvider } from "../features/ai/cloudProviders";
+import { findLatexDoAiTier } from "../features/ai/product/latexDoAiTiers";
 import { useAiAgent } from "../features/ai/useAiAgent";
 import {
   detectTrigger,
@@ -58,6 +59,9 @@ const editKindLabel: Record<string, string> = {
 };
 
 function providerLabel(config: AiConfig): string {
+  if (config.provider === "local" && config.selection.mode === "latexdo") {
+    return findLatexDoAiTier(config.selection.tier)?.name ?? "LatexDo AI";
+  }
   switch (config.provider) {
     case "local":
       return findLocalModel(config.modelId)?.name ?? "Local model";

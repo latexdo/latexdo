@@ -91,6 +91,7 @@ export interface ModelStatus {
   downloaded: boolean;
   path: string | null;
   sizeBytes: number | null;
+  manifest?: ImportedModelManifest;
 }
 
 export interface DownloadProgress {
@@ -99,4 +100,54 @@ export interface DownloadProgress {
   totalBytes: number | null;
   done: boolean;
   error?: string;
+}
+
+export interface AiSystemCapabilities {
+  totalRamBytes: number;
+  freeRamBytes: number;
+  platform: string;
+  arch: string;
+  cpuCount: number;
+  localAiAvailable: boolean;
+}
+
+export type TierAvailability =
+  | { state: "available" }
+  | {
+      state: "memory-pressure";
+      requiredAvailableBytes: number;
+      availableBytes: number;
+    }
+  | {
+      state: "unsupported";
+      reason: string;
+      requiredSystemRamBytes?: number;
+      detectedSystemRamBytes?: number;
+    };
+
+export type ToolSupport = "native" | "prompt-fallback" | "unknown" | "unsupported";
+
+export interface ImportedModelManifest {
+  id: string;
+  fileName: string;
+  fileSizeBytes: number;
+  path: string | null;
+  downloaded: boolean;
+  sizeBytes: number;
+  modelName?: string;
+  architecture?: string;
+  parameterCount?: number;
+  contextLength?: number;
+  quantization?: string;
+  compatibility: {
+    state: "compatible" | "memory-pressure" | "unsupported" | "unknown";
+    estimatedRamBytes?: number;
+    estimatedVramBytes?: number;
+    availableRamBytes?: number;
+    reason?: string;
+    checkedAt: string;
+  };
+  capabilities: {
+    toolUse: ToolSupport;
+  };
 }

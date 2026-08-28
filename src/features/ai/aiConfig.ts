@@ -8,6 +8,12 @@ import type { ColorTheme } from "../settings/settings";
 import { defaultLocalModelId, defaultInlineModelId, findLocalModel } from "./aiModels";
 import { defaultCloudProviderId, findCloudProvider } from "./cloudProviders";
 import {
+  defaultLatexDoAiTier,
+  findLatexDoAiTier,
+  findLatexDoAiTierByModelId,
+  type LatexDoAiTier,
+} from "./product/latexDoAiTiers";
+import {
   defaultResearcherProfile,
   normalizeResearcherProfile,
   type ResearcherProfile,
@@ -17,6 +23,35 @@ export type AiProvider = "local" | "ollama" | "cloud" | "off";
 /** API wire format aiCloud speaks; OpenAI-compatible vendors use "openai". */
 export type CloudVendor = "anthropic" | "openai";
 export type LayoutPreset = "focus" | "balanced" | "power";
+
+export type AiSelection =
+  | {
+      mode: "latexdo";
+      tier: LatexDoAiTier;
+    }
+  | {
+      mode: "custom";
+      custom:
+        | {
+            kind: "gguf";
+            modelId: string;
+          }
+        | {
+            kind: "ollama";
+            baseUrl: string;
+            model: string;
+          }
+        | {
+            kind: "cloud";
+            providerId: string;
+            model: string;
+            baseUrl?: string;
+            credentialId: string;
+          };
+    }
+  | {
+      mode: "off";
+    };
 
 export interface CloudConfig {
   /** Provider preset id (see cloudProviders.ts): anthropic, openai, gemini, … */
@@ -49,6 +84,8 @@ export interface AiConfig {
   layoutPreset: LayoutPreset;
 
   provider: AiProvider;
+  /** High-level user choice. Runtime fields below are resolved from this. */
+  selection: AiSelection;
   /** Local GGUF model id (see aiModels catalog). */
   modelId: string;
   /** Whether the local model file has finished downloading. */
@@ -91,6 +128,7 @@ export const defaultAiConfig: AiConfig = {
   layoutPreset: "balanced",
 
   provider: "local",
+  selection: { mode: "latexdo", tier: defaultLatexDoAiTier },
   modelId: defaultLocalModelId,
   modelDownloaded: false,
 
@@ -137,6 +175,9 @@ function isVendor(value: unknown): value is CloudVendor {
 function isLayout(value: unknown): value is LayoutPreset {
   return value === "focus" || value === "balanced" || value === "power";
 }
+function isLatexDoAiTier(value: unknown): value is LatexDoAiTier {
+  return typeof value === "string" && Boolean(findLatexDoAiTier(value));
+}
 
 function normalizeCloud(value: unknown): CloudConfig {
   const raw = (value ?? {}) as Partial<CloudConfig>;
@@ -166,6 +207,99 @@ function normalizeAccess(value: unknown): AiAccessConfig {
   };
 }
 
+function cloudCredentialId(providerId: string): string {
+  return `credential-${providerId || "custom"}-primary`;
+}
+
+function normalizeAiSelection(
+  value: unknown,
+  runtime: {
+    provider: AiProvider;
+    modelId: string;
+    ollamaBaseUrl: string;
+    ollamaModel: string;
+    cloud: CloudConfig;
+  },
+): AiSelection {
+  const raw = (value ?? {}) as Partial<AiSelection>;
+  if (
+    runtime.provider === "local" &&
+    raw.mode === "latexdo" &&
+    isLatexDoAiTier(raw.tier)
+  ) {
+    return { mode: "latexdo", tier: raw.tier };
+  }
+  if (raw.mode === "custom") {
+    const custom = (raw.custom ?? {}) as Partial<
+      Extract<AiSelection, { mode: "custom" }>["custom"]
+    >;
+    if (runtime.provider === "local" && custom.kind === "gguf") {
+      return {
+        mode: "custom",
+        custom: {
+          kind: "gguf",
+          modelId: str(custom.modelId, runtime.modelId),
+        },
+      };
+    }
+    if (runtime.provider === "ollama" && custom.kind === "ollama") {
+      return {
+        mode: "custom",
+        custom: {
+          kind: "ollama",
+          baseUrl: str(custom.baseUrl, runtime.ollamaBaseUrl),
+          model: str(custom.model, runtime.ollamaModel),
+        },
+      };
+    }
+    if (runtime.provider === "cloud" && custom.kind === "cloud") {
+      const providerId = str(custom.providerId, runtime.cloud.providerId);
+      return {
+        mode: "custom",
+        custom: {
+          kind: "cloud",
+          providerId,
+          model: str(custom.model, runtime.cloud.model),
+          baseUrl: str(custom.baseUrl, runtime.cloud.baseUrl),
+          credentialId: str(custom.credentialId, cloudCredentialId(providerId)),
+        },
+      };
+    }
+  }
+  if (runtime.provider === "off") {
+    return { mode: "off" };
+  }
+
+  if (runtime.provider === "local") {
+    const tier = findLatexDoAiTierByModelId(runtime.modelId);
+    if (tier) return { mode: "latexdo", tier: tier.id };
+    return {
+      mode: "custom",
+      custom: { kind: "gguf", modelId: runtime.modelId },
+    };
+  }
+  if (runtime.provider === "ollama") {
+    return {
+      mode: "custom",
+      custom: {
+        kind: "ollama",
+        baseUrl: runtime.ollamaBaseUrl,
+        model: runtime.ollamaModel,
+      },
+    };
+  }
+  return {
+    mode: "custom",
+    custom: {
+      kind: "cloud",
+      providerId: runtime.cloud.providerId,
+      model: runtime.cloud.model,
+      baseUrl: runtime.cloud.baseUrl,
+      credentialId: cloudCredentialId(runtime.cloud.providerId),
+    },
+  };
+}
+
 export function normalizeAiConfig(raw: unknown): AiConfig {
   const saved = (raw ?? {}) as Partial<AiConfig>;
   const modelId = findLocalModel(str(saved.modelId, defaultAiConfig.modelId))
@@ -177,6 +311,20 @@ export function normalizeAiConfig(raw: unknown): AiConfig {
     ? str(saved.inlineModelId, defaultAiConfig.inlineModelId)
     : defaultAiConfig.inlineModelId;
 
+  const provider = isProvider(saved.provider)
+    ? saved.provider
+    : defaultAiConfig.provider;
+  const ollamaBaseUrl = str(saved.ollamaBaseUrl, defaultAiConfig.ollamaBaseUrl);
+  const ollamaModel = str(saved.ollamaModel, defaultAiConfig.ollamaModel);
+  const cloud = normalizeCloud(saved.cloud);
+  const selection = normalizeAiSelection(saved.selection, {
+    provider,
+    modelId,
+    ollamaBaseUrl,
+    ollamaModel,
+    cloud,
+  });
+
   return {
     version: 1,
     setupComplete: bool(saved.setupComplete, defaultAiConfig.setupComplete),
@@ -184,7 +332,8 @@ export function normalizeAiConfig(raw: unknown): AiConfig {
     layoutPreset: isLayout(saved.layoutPreset)
       ? saved.layoutPreset
       : defaultAiConfig.layoutPreset,
-    provider: isProvider(saved.provider) ? saved.provider : defaultAiConfig.provider,
+    provider,
+    selection,
     modelId,
     modelDownloaded: bool(saved.modelDownloaded, defaultAiConfig.modelDownloaded),
     inlineCompletionEnabled: bool(
@@ -192,9 +341,9 @@ export function normalizeAiConfig(raw: unknown): AiConfig {
       defaultAiConfig.inlineCompletionEnabled,
     ),
     inlineModelId,
-    ollamaBaseUrl: str(saved.ollamaBaseUrl, defaultAiConfig.ollamaBaseUrl),
-    ollamaModel: str(saved.ollamaModel, defaultAiConfig.ollamaModel),
-    cloud: normalizeCloud(saved.cloud),
+    ollamaBaseUrl,
+    ollamaModel,
+    cloud,
     profile: normalizeResearcherProfile(saved.profile),
     access: normalizeAccess(saved.access),
     autoApproveEdits: bool(saved.autoApproveEdits, defaultAiConfig.autoApproveEdits),

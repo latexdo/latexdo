@@ -13,8 +13,12 @@ import { aiConfigStorageKey, defaultAiConfig } from "./features/ai/aiConfig";
 import {
   defaultSettings,
   installedExtensionsStorageKey,
+  legalPolicyVersion,
+  legalPrivacyUrl,
+  legalTermsUrl,
   settingsStorageKey,
 } from "./features/settings/settings";
+import type { AiSystemCapabilities } from "./features/ai/aiTypes";
 import type {
   GitDiffSession,
   GitGraphCommit,
@@ -220,6 +224,16 @@ const defaultUpdateResult: UpdateCheckResult = {
   updateAvailable: false,
 };
 
+const GB = 1024 ** 3;
+const highRamCapabilities: AiSystemCapabilities = {
+  totalRamBytes: 32 * GB,
+  freeRamBytes: 16 * GB,
+  platform: "darwin",
+  arch: "arm64",
+  cpuCount: 10,
+  localAiAvailable: true,
+};
+
 const workingTreeDiffSession: GitDiffSession = {
   id: "main.tex:index:working-tree",
   relativePath: "main.tex",
@@ -409,11 +423,29 @@ async function closeSettingsDialog() {
   });
 }
 
+function acceptedSettings(overrides: Partial<typeof defaultSettings> = {}) {
+  return {
+    ...defaultSettings,
+    legalAccepted: true,
+    legalAcceptedAt: "2026-08-28T00:00:00.000Z",
+    legalPolicyVersion,
+    ...overrides,
+  };
+}
+
+function storeAcceptedSettings(overrides: Partial<typeof defaultSettings> = {}) {
+  window.localStorage.setItem(
+    settingsStorageKey,
+    JSON.stringify(acceptedSettings(overrides)),
+  );
+}
+
 describe("App critical UI controls", () => {
   beforeEach(() => {
     editorChangeHandlers.clear();
     editorOptionsByPath.clear();
     window.localStorage.clear();
+    storeAcceptedSettings();
     Object.defineProperty(window, "aiApi", {
       configurable: true,
       value: undefined,
@@ -429,6 +461,71 @@ describe("App critical UI controls", () => {
       configurable: true,
       value: vi.fn(() => true),
     });
+  });
+
+  it("requires Terms and Privacy acceptance before starting", async () => {
+    const api = installLatexDoMock();
+    window.localStorage.setItem(settingsStorageKey, JSON.stringify(defaultSettings));
+    window.localStorage.setItem(
+      aiConfigStorageKey,
+      JSON.stringify({ ...defaultAiConfig, setupComplete: true }),
+    );
+
+    render(<App />);
+
+    const dialog = screen.getByRole("dialog", { name: /terms and privacy/i });
+    expect(dialog).toBeVisible();
+    expect(within(dialog).getByRole("button", { name: /continue/i })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: /open folder/i }));
+    expect(api.openProject).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("link", { name: /terms of use/i }));
+    expect(api.openExternalUrl).toHaveBeenCalledWith(legalTermsUrl);
+    fireEvent.click(within(dialog).getByRole("link", { name: /privacy policy/i }));
+    expect(api.openExternalUrl).toHaveBeenCalledWith(legalPrivacyUrl);
+
+    fireEvent.click(within(dialog).getByLabelText("Accept Terms of Use"));
+    expect(within(dialog).getByRole("button", { name: /continue/i })).toBeDisabled();
+    fireEvent.click(within(dialog).getByLabelText("Accept Privacy Policy"));
+    fireEvent.click(within(dialog).getByRole("button", { name: /continue/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: /terms and privacy/i }),
+      ).not.toBeInTheDocument();
+    });
+    const saved = JSON.parse(
+      window.localStorage.getItem(settingsStorageKey) ?? "{}",
+    ) as Record<string, unknown>;
+    expect(saved.legalAccepted).toBe(true);
+    expect(saved.legalAcceptedAt).toEqual(expect.any(String));
+    expect(saved.legalPolicyVersion).toBe(legalPolicyVersion);
+
+    fireEvent.click(screen.getByRole("button", { name: /open folder/i }));
+    await waitFor(() => {
+      expect(api.openProject).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("requires re-acceptance when the stored legal policy version is old", () => {
+    installLatexDoMock();
+    window.localStorage.setItem(
+      settingsStorageKey,
+      JSON.stringify(
+        acceptedSettings({
+          legalPolicyVersion: "old-policy-version",
+        }),
+      ),
+    );
+    window.localStorage.setItem(
+      aiConfigStorageKey,
+      JSON.stringify({ ...defaultAiConfig, setupComplete: true }),
+    );
+
+    render(<App />);
+
+    expect(screen.getByRole("dialog", { name: /terms and privacy/i })).toBeVisible();
   });
 
   it("shows disabled proofreading state and persists the proofreading toggle", async () => {
@@ -650,6 +747,47 @@ describe("App critical UI controls", () => {
         multiCursorModifier: "alt",
       }),
     );
+  });
+
+  it("does not compile while typing by default", async () => {
+    const api = installLatexDoMock();
+
+    render(<App />);
+    await openProjectFromWelcome();
+    api.compile.mockClear();
+
+    fireEvent.change(await screen.findByLabelText("mock editor"), {
+      target: {
+        value:
+          "\\documentclass{article}\n\\begin{document}\nTyping should not compile\n\\end{document}\n",
+      },
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+    });
+
+    expect(api.compile).not.toHaveBeenCalled();
+  });
+
+  it("compiles after typing only when live preview is enabled", async () => {
+    const api = installLatexDoMock();
+    storeAcceptedSettings({ livePreview: true });
+
+    render(<App />);
+    await openProjectFromWelcome();
+    api.compile.mockClear();
+
+    fireEvent.change(await screen.findByLabelText("mock editor"), {
+      target: {
+        value:
+          "\\documentclass{article}\n\\begin{document}\nLive preview compiles\n\\end{document}\n",
+      },
+    });
+
+    await waitFor(() => {
+      expect(api.compile).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("opens project images as preview tabs from the file tree", async () => {
@@ -1327,11 +1465,12 @@ describe("App critical UI controls", () => {
     );
     window.localStorage.setItem(
       settingsStorageKey,
-      JSON.stringify({
-        ...defaultSettings,
-        citationAssistantEnabled: false,
-        projectBibliographyEnabled: false,
-      }),
+      JSON.stringify(
+        acceptedSettings({
+          citationAssistantEnabled: false,
+          projectBibliographyEnabled: false,
+        }),
+      ),
     );
 
     render(<App />);
@@ -1398,7 +1537,8 @@ describe("App critical UI controls", () => {
     fireEvent.click(await screen.findByTitle("AI settings"));
 
     const dialog = await screen.findByRole("dialog", { name: /settings/i });
-    expect(within(dialog).getByLabelText("Provider")).toHaveValue(
+    expect(within(dialog).getByLabelText("AI selection")).toHaveValue("customize");
+    expect(within(dialog).getByLabelText("Custom provider")).toHaveValue(
       `cloud:${defaultAiConfig.cloud.providerId}`,
     );
     expect(
@@ -1425,7 +1565,7 @@ describe("App critical UI controls", () => {
       within(settingsDialog).getByRole("button", { name: "AI Assistant" }),
     );
     const providerSelect = within(settingsDialog).getByLabelText(
-      "Provider",
+      "Custom provider",
     ) as HTMLSelectElement;
     const providerKeyUrls = [
       ["cloud:anthropic", "https://console.anthropic.com/settings/keys"],
@@ -1569,6 +1709,7 @@ describe("App critical UI controls", () => {
         downloadModel,
         subscribeDownload: vi.fn(() => vi.fn()),
         importModel,
+        getSystemCapabilities: vi.fn().mockResolvedValue(highRamCapabilities),
       },
     });
     window.localStorage.setItem(
@@ -1587,17 +1728,22 @@ describe("App critical UI controls", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "AI Assistant" }));
 
     const providerSelect = within(dialog).getByLabelText(
-      "Provider",
+      "AI selection",
     ) as HTMLSelectElement;
-    expect(providerSelect).toHaveValue("latexdo-ai");
-    expect(within(dialog).getByRole("option", { name: "LatexDo AI" })).toBeVisible();
-    expect(within(dialog).getByRole("option", { name: "Local Model" })).toBeVisible();
-    expect(await within(dialog).findByLabelText("Model")).toBeVisible();
+    expect(providerSelect).toHaveValue("latexdo-tier:latexdo-ai-plus");
+    expect(
+      await within(dialog).findByRole("option", { name: "LatexDo AI" }),
+    ).toBeVisible();
+    expect(
+      await within(dialog).findByRole("option", { name: "LatexDo AI Plus" }),
+    ).toBeVisible();
+    expect(within(dialog).getByRole("option", { name: "Customize" })).toBeVisible();
+    expect(within(dialog).queryByLabelText("Model")).not.toBeInTheDocument();
     expect(
       within(dialog).queryByRole("button", { name: /Import/i }),
     ).not.toBeInTheDocument();
 
-    fireEvent.click(within(dialog).getByRole("button", { name: /Download/i }));
+    fireEvent.click(await within(dialog).findByRole("button", { name: /Download/i }));
     await waitFor(() => {
       expect(downloadModel).toHaveBeenCalledWith(
         "qwen2.5-coder-3b",
@@ -1606,14 +1752,19 @@ describe("App critical UI controls", () => {
       );
     });
 
-    fireEvent.change(providerSelect, { target: { value: "local-model" } });
-    expect(providerSelect).toHaveValue("local-model");
+    fireEvent.change(providerSelect, { target: { value: "customize" } });
+    expect(providerSelect).toHaveValue("customize");
+    const customProviderSelect = within(dialog).getByLabelText(
+      "Custom provider",
+    ) as HTMLSelectElement;
+    fireEvent.change(customProviderSelect, { target: { value: "local-model" } });
+    expect(customProviderSelect).toHaveValue("local-model");
     expect(await within(dialog).findByLabelText("Model")).toBeVisible();
 
     fireEvent.click(within(dialog).getByRole("button", { name: /Import/i }));
     await waitFor(() => expect(importModel).toHaveBeenCalledTimes(1));
     await within(dialog).findByRole("option", {
-      name: /custom\s+·\s+GGUF/i,
+      name: /custom\s+·\s+1\.0 KB/i,
     });
 
     await waitFor(() => {

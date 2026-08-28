@@ -621,8 +621,12 @@ export function monacoThemeFor(theme: ColorTheme): string {
 }
 
 export interface AppSettings {
+  legalAccepted: boolean;
+  legalAcceptedAt: string;
+  legalPolicyVersion: string;
   colorTheme: ColorTheme;
   defaultEngine: Engine;
+  livePreview: boolean;
   editorFontSize: number;
   wordWrap: boolean;
   minimap: boolean;
@@ -733,7 +737,19 @@ export interface AppSettings {
 
 export const settingsStorageKey = "latexdo.settings";
 export const installedExtensionsStorageKey = "latexdo.extensions.installed.v1";
+export const legalPolicyVersion = "2026-08-26-google-tag-manager";
+export const legalTermsUrl = `https://latexdo.org/terms?__latexdo_asset_version=${legalPolicyVersion}`;
+export const legalPrivacyUrl = `https://latexdo.org/privacy?__latexdo_asset_version=${legalPolicyVersion}`;
 const cloudClientNameKey = "latexdo.cloud.clientName";
+
+export function hasAcceptedLegalPolicies(
+  settings: Pick<AppSettings, "legalAccepted" | "legalPolicyVersion">,
+): boolean {
+  return (
+    settings.legalAccepted === true &&
+    settings.legalPolicyVersion === legalPolicyVersion
+  );
+}
 const defaultProjectTreeIgnoredNames = [
   ".git",
   ".latexdo",
@@ -750,8 +766,12 @@ export const maxProjectTreeDepth = 50;
 export const minProjectTreeEntries = 100;
 export const maxProjectTreeEntries = 100_000;
 export const defaultSettings: AppSettings = {
+  legalAccepted: false,
+  legalAcceptedAt: "",
+  legalPolicyVersion,
   colorTheme: "graphite",
   defaultEngine: "pdflatex",
+  livePreview: false,
   editorFontSize: 13.5,
   wordWrap: true,
   minimap: true,
@@ -1052,10 +1072,26 @@ export function loadSettings(): AppSettings {
         : "pdflatex";
 
     return {
+      legalAccepted:
+        typeof saved.legalAccepted === "boolean"
+          ? saved.legalAccepted
+          : defaultSettings.legalAccepted,
+      legalAcceptedAt:
+        typeof saved.legalAcceptedAt === "string"
+          ? saved.legalAcceptedAt
+          : defaultSettings.legalAcceptedAt,
+      legalPolicyVersion:
+        typeof saved.legalPolicyVersion === "string"
+          ? saved.legalPolicyVersion
+          : defaultSettings.legalPolicyVersion,
       colorTheme: isColorTheme(saved.colorTheme)
         ? saved.colorTheme
         : defaultSettings.colorTheme,
       defaultEngine,
+      livePreview:
+        typeof saved.livePreview === "boolean"
+          ? saved.livePreview
+          : defaultSettings.livePreview,
       editorFontSize:
         typeof saved.editorFontSize === "number" &&
         saved.editorFontSize >= 11 &&

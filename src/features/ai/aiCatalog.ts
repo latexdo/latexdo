@@ -14,6 +14,8 @@ export interface LocalModelInfo {
   ramEstimate: string;
   /** Minimum system RAM we recommend before offering this model. */
   minSystemRamGb: number;
+  /** Minimum currently available RAM before offering this model. */
+  minAvailableRamGb: number;
   tier: ModelTier;
   quant: string;
   /** Direct GGUF download URL. */

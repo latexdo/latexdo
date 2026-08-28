@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultAiConfig, type AiConfig } from "../features/ai/aiConfig";
-import type { DownloadProgress } from "../features/ai/aiTypes";
+import type { AiSystemCapabilities, DownloadProgress } from "../features/ai/aiTypes";
 import { SetupWizard } from "./SetupWizard";
 
 const aiClientMock = vi.hoisted(() => ({
@@ -17,6 +17,16 @@ vi.mock("../features/ai/aiClient", () => ({
 type AiConfigOverrides = Omit<Partial<AiConfig>, "cloud" | "profile"> & {
   cloud?: Partial<AiConfig["cloud"]>;
   profile?: Partial<AiConfig["profile"]>;
+};
+
+const GB = 1024 ** 3;
+const highRamCapabilities: AiSystemCapabilities = {
+  totalRamBytes: 32 * GB,
+  freeRamBytes: 16 * GB,
+  platform: "darwin",
+  arch: "arm64",
+  cpuCount: 10,
+  localAiAvailable: true,
 };
 
 function makeConfig(overrides: AiConfigOverrides = {}): AiConfig {
@@ -83,7 +93,9 @@ describe("SetupWizard", () => {
     expect(onApplyTheme).toHaveBeenCalledWith("studio");
     continueSetup();
 
-    expect(screen.getByText(/The browser build can't run local models/i)).toBeVisible();
+    expect(
+      screen.getByText(/The browser build can't run local AI tiers/i),
+    ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /Finish/i }));
 
     expect(onComplete).toHaveBeenCalledWith(
@@ -127,18 +139,18 @@ describe("SetupWizard", () => {
           modelDownloaded: false,
         })}
         isDesktop
+        systemCapabilities={highRamCapabilities}
+        systemCapabilitiesState="ready"
         onApplyTheme={vi.fn()}
         onComplete={onComplete}
       />,
     );
     advanceToModelStep();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /Download Qwen2\.5 Coder 3B/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /Download LatexDo AI Plus/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("Qwen2.5 Coder 3B is ready.")).toBeVisible();
+      expect(screen.getByText("LatexDo AI Plus is ready.")).toBeVisible();
     });
     expect(aiClientMock.downloadModel).toHaveBeenCalledWith(
       "qwen2.5-coder-3b",
@@ -169,17 +181,54 @@ describe("SetupWizard", () => {
           modelDownloaded: false,
         })}
         isDesktop
+        systemCapabilities={highRamCapabilities}
+        systemCapabilitiesState="ready"
         onApplyTheme={vi.fn()}
         onComplete={vi.fn()}
       />,
     );
     advanceToModelStep();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /Download Qwen2\.5 Coder 3B/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /Download LatexDo AI Plus/i }));
 
     expect(await screen.findByText("Download failed")).toBeVisible();
+  });
+
+  it("disables local AI tiers that do not fit the current machine", () => {
+    render(
+      <SetupWizard
+        initialConfig={makeConfig({
+          provider: "local",
+          modelDownloaded: false,
+        })}
+        isDesktop
+        systemCapabilities={{
+          ...highRamCapabilities,
+          totalRamBytes: 8 * GB,
+          freeRamBytes: 3.5 * GB,
+        }}
+        systemCapabilitiesState="ready"
+        onApplyTheme={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    );
+    advanceToModelStep();
+
+    expect(
+      screen
+        .getByText("LatexDo AI", { selector: ".ai-wizard-model-name" })
+        .closest("button"),
+    ).not.toBeDisabled();
+    expect(
+      screen
+        .getByText("LatexDo AI Plus", { selector: ".ai-wizard-model-name" })
+        .closest("button"),
+    ).toBeDisabled();
+    expect(
+      screen
+        .getByText("LatexDo Pro Max", { selector: ".ai-wizard-model-name" })
+        .closest("button"),
+    ).toBeDisabled();
   });
 
   it("can skip setup before choosing a model", () => {

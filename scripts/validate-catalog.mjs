@@ -69,6 +69,9 @@ function validateLocalModel(errors, model, index) {
   if (typeof model.minSystemRamGb !== "number" || model.minSystemRamGb < 0) {
     errors.push(`${owner}.minSystemRamGb must be a non-negative number`);
   }
+  if (typeof model.minAvailableRamGb !== "number" || model.minAvailableRamGb < 0) {
+    errors.push(`${owner}.minAvailableRamGb must be a non-negative number`);
+  }
   if (typeof model.supportsTools !== "boolean") {
     errors.push(`${owner}.supportsTools must be a boolean`);
   }

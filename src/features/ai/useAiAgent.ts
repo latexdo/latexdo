@@ -10,8 +10,8 @@ import type {
 import { buildSystemPrompt } from "./aiSystemPrompt";
 import { buildResearchContext } from "./researcherProfile";
 import { generateStep, abortGeneration } from "./aiClient";
-import { findLocalModel } from "./aiModels";
 import { runAgent, type AgentEvent } from "./aiAgent";
+import { resolveAiRuntime } from "./product/aiRuntimeResolver";
 import {
   attachMentionedFiles,
   expandSlashCommand,
@@ -43,15 +43,6 @@ const accessDenied = (setting: string) =>
 
 function newId(): string {
   return `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
-}
-
-function providerFor(config: AiConfig): "local" | "ollama" | "cloud" {
-  if (config.provider === "off") return "cloud";
-  return config.provider === "local" ||
-    config.provider === "ollama" ||
-    config.provider === "cloud"
-    ? config.provider
-    : "cloud";
 }
 
 function trimText(value: string): string {
@@ -182,8 +173,9 @@ function clearPersistedState(storageKey?: string): void {
 }
 
 export function supportsNativeTools(config: AiConfig): boolean {
-  if (config.provider === "cloud") return true;
-  if (config.provider === "ollama") return true;
+  const runtime = resolveAiRuntime(config);
+  if (runtime.provider === "cloud") return true;
+  if (runtime.provider === "ollama") return true;
   // The Electron local-model adapter currently exposes only plain chat text.
   // Even tool-capable GGUF models need the JSON fallback protocol here.
   return false;
@@ -195,23 +187,25 @@ function buildRequest(
   messages: ChatMessage[],
   tools: ToolSchema[],
 ): GenerateRequest {
-  const model = findLocalModel(config.modelId);
+  const runtime = resolveAiRuntime(config);
   return {
     requestId,
-    provider: providerFor(config),
+    provider: runtime.provider,
     messages,
     tools,
     options: {
-      modelId: config.modelId,
-      fileName: model?.fileName,
+      modelId: runtime.provider === "local" ? runtime.modelId : config.modelId,
+      fileName: runtime.provider === "local" ? runtime.fileName : undefined,
       temperature: 0.3,
       maxTokens: 2048,
-      ollamaBaseUrl: config.ollamaBaseUrl,
-      ollamaModel: config.ollamaModel,
+      ollamaBaseUrl:
+        runtime.provider === "ollama" ? runtime.baseUrl : config.ollamaBaseUrl,
+      ollamaModel: runtime.provider === "ollama" ? runtime.model : config.ollamaModel,
       cloudVendor: config.cloud.vendor,
-      cloudBaseUrl: config.cloud.baseUrl,
-      cloudModel: config.cloud.model,
-      cloudApiKey: config.cloud.apiKey,
+      cloudBaseUrl:
+        runtime.provider === "cloud" ? runtime.baseUrl : config.cloud.baseUrl,
+      cloudModel: runtime.provider === "cloud" ? runtime.model : config.cloud.model,
+      cloudApiKey: runtime.provider === "cloud" ? runtime.apiKey : config.cloud.apiKey,
     },
   };
 }
