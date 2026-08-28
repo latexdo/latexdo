@@ -1,6 +1,11 @@
 import type { CompletionContext } from "@codemirror/autocomplete";
 import type { LatexIndex } from "./latexIndex";
 import { getLatexCompletionContext } from "./completionContext";
+import {
+  citationCompletionDetail,
+  citationCompletionInfo,
+  rankedCitationCompletions,
+} from "./citationCompletion";
 
 export function latexCompletionSource(getIndex: () => LatexIndex) {
   return (context: CompletionContext) => {
@@ -12,14 +17,17 @@ export function latexCompletionSource(getIndex: () => LatexIndex) {
     if (latexContext.type === "citation") {
       return {
         from: line.from + latexContext.rangeStartColumn - 1,
-        options: index.citations.map((entry) => ({
+        options: rankedCitationCompletions(
+          index.citations,
+          latexContext.currentText,
+        ).map((entry) => ({
           label: entry.key,
+          apply: entry.key,
           type: "reference",
-          detail: [entry.type, entry.author, entry.year].filter(Boolean).join(" · "),
-          info: [entry.title, entry.journal, entry.publisher, entry.sourceFile]
-            .filter(Boolean)
-            .join("\n"),
+          detail: citationCompletionDetail(entry),
+          info: citationCompletionInfo(entry),
         })),
+        filter: false,
       };
     }
     return {

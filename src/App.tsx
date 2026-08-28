@@ -244,6 +244,15 @@ import {
   getLatexCommandCompletionRange,
   getLatexCompletionContext,
 } from "./latex/completionContext";
+import {
+  citationCompletionDetail,
+  citationCompletionFilterText,
+  citationCompletionMarkdown,
+  citationCompletionSortText,
+  citationCompletionTriggerCharacters,
+  rankedCitationCompletions,
+} from "./latex/citationCompletion";
+import { parseBibFile } from "./latex/parseBib";
 import { getLatexListEnterEdit } from "./latex/listContinuation";
 import { SYMBOL_PALETTE } from "./components/mathSymbolPalette";
 import {
@@ -4851,7 +4860,7 @@ ${macroEnd}
       );
       providerDisposables.push(
         instance.languages.registerCompletionItemProvider("latex", {
-          triggerCharacters: ["\\", "{", ","],
+          triggerCharacters: ["\\", ...citationCompletionTriggerCharacters],
           provideCompletionItems: async (model, position, _context, token) => {
             const requestVersion = model.getVersionId();
             const requestOffset = model.getOffsetAt(position);
@@ -4908,33 +4917,24 @@ ${macroEnd}
                 }
                 try {
                   const content = await readCompletionFile(bib.relativePath);
-                  const regex = /@\w+\s*{\s*([^,]+),/g;
-                  let match;
-                  while ((match = regex.exec(content)) !== null) {
-                    const key = match[1].trim();
-                    const start = match.index;
-                    const end = content.indexOf("@", start + 1);
-                    const block =
-                      end === -1 ? content.slice(start) : content.slice(start, end);
-
-                    const titleMatch = block.match(/title\s*=\s*[{"]([^}"]+)[}"]/i);
-                    const authorMatch = block.match(/author\s*=\s*[{"]([^}"]+)[}"]/i);
-                    const yearMatch = block.match(/year\s*=\s*[{"]([^}"]+)[}"]/i);
-
-                    const detail = titleMatch
-                      ? titleMatch[1].replace(/\s+/g, " ").trim()
-                      : "BibTeX Entry";
-                    let doc = "";
-                    if (authorMatch)
-                      doc += `Author: ${authorMatch[1].replace(/\s+/g, " ").trim()}\n`;
-                    if (yearMatch) doc += `Year: ${yearMatch[1].trim()}`;
-
+                  const entries = rankedCitationCompletions(
+                    parseBibFile(content, bib.relativePath),
+                    argumentCompletion.currentText,
+                  );
+                  for (const entry of entries) {
                     suggestions.push({
-                      label: key,
+                      label: entry.key,
                       kind: instance.languages.CompletionItemKind.Reference,
-                      insertText: key,
-                      detail,
-                      documentation: doc,
+                      insertText: entry.key,
+                      detail: citationCompletionDetail(entry),
+                      documentation: {
+                        value: citationCompletionMarkdown(entry),
+                      },
+                      filterText: citationCompletionFilterText(entry),
+                      sortText: citationCompletionSortText(
+                        entry,
+                        argumentCompletion.currentText,
+                      ),
                       range,
                     });
                   }
@@ -4945,7 +4945,7 @@ ${macroEnd}
               if (!requestIsCurrent()) {
                 return { suggestions: [] };
               }
-              return { suggestions };
+              return { suggestions, incomplete: true };
             }
 
             // Check if we are inside \ref{...}

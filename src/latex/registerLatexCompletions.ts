@@ -1,10 +1,18 @@
 import * as monaco from "monaco-editor";
 import type { LatexIndex } from "./latexIndex";
 import { getLatexCompletionContext } from "./completionContext";
+import {
+  citationCompletionDetail,
+  citationCompletionFilterText,
+  citationCompletionMarkdown,
+  citationCompletionSortText,
+  citationCompletionTriggerCharacters,
+  rankedCitationCompletions,
+} from "./citationCompletion";
 
 export function registerLatexCompletions(getIndex: () => LatexIndex) {
   return monaco.languages.registerCompletionItemProvider("latex", {
-    triggerCharacters: ["{", ",", ":"],
+    triggerCharacters: citationCompletionTriggerCharacters,
     provideCompletionItems(model, position) {
       const lineText = model.getLineContent(position.lineNumber);
       const context = getLatexCompletionContext(lineText, position.column);
@@ -20,32 +28,22 @@ export function registerLatexCompletions(getIndex: () => LatexIndex) {
       );
       if (context.type === "citation") {
         return {
-          suggestions: index.citations.map((entry) => ({
+          suggestions: rankedCitationCompletions(
+            index.citations,
+            context.currentText,
+          ).map((entry) => ({
             label: entry.key,
             kind: monaco.languages.CompletionItemKind.Reference,
             insertText: entry.key,
             range,
-            detail: [
-              entry.type ? entry.type.toUpperCase() : "Citation",
-              entry.author,
-              entry.year,
-            ]
-              .filter(Boolean)
-              .join(" · "),
+            detail: citationCompletionDetail(entry),
+            filterText: citationCompletionFilterText(entry),
+            sortText: citationCompletionSortText(entry, context.currentText),
             documentation: {
-              value: [
-                entry.title ? `**${entry.title}**` : undefined,
-                entry.journal ? `Journal: ${entry.journal}` : undefined,
-                entry.booktitle ? `Booktitle: ${entry.booktitle}` : undefined,
-                entry.publisher ? `Publisher: ${entry.publisher}` : undefined,
-                entry.url ? `URL: ${entry.url}` : undefined,
-                "",
-                `Source: \`${entry.sourceFile}\``,
-              ]
-                .filter(Boolean)
-                .join("\n\n"),
+              value: citationCompletionMarkdown(entry),
             },
           })),
+          incomplete: true,
         };
       }
       return {
