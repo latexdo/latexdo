@@ -156,7 +156,9 @@ export class PatternPredictor {
     while (out.length < this.maxRawCandidatesPerPattern) {
       const index = snapshot.text.indexOf(pattern.oldText, from);
       if (index < 0) break;
-      out.push(rawCandidateForPattern(pattern, snapshot, index, pattern.oldText.length));
+      out.push(
+        rawCandidateForPattern(pattern, snapshot, index, pattern.oldText.length),
+      );
       from = index + Math.max(1, pattern.oldText.length);
     }
     return out;
@@ -230,10 +232,7 @@ export function patternSignature(
   return [kind, edit.oldText, edit.newText].join("\0");
 }
 
-export function extractLatexContext(
-  text: string,
-  offset: number,
-): LatexContextSignals {
+export function extractLatexContext(text: string, offset: number): LatexContextSignals {
   const safeOffset = Math.min(text.length, Math.max(0, offset));
   const lineStart = text.lastIndexOf("\n", Math.max(0, safeOffset - 1)) + 1;
   const lineEndIndex = text.indexOf("\n", safeOffset);
@@ -324,8 +323,7 @@ function mergeInsertionAnchors(
     rightAnchor: commonPrefix(current.rightAnchor, next.rightAnchor),
     leftToken: current.leftToken === next.leftToken ? current.leftToken : "",
     rightToken: current.rightToken === next.rightToken ? current.rightToken : "",
-    leftClass:
-      current.leftClass === next.leftClass ? current.leftClass : "boundary",
+    leftClass: current.leftClass === next.leftClass ? current.leftClass : "boundary",
     rightClass:
       current.rightClass === next.rightClass ? current.rightClass : "boundary",
   };
@@ -360,7 +358,11 @@ function collectTokenBoundaryOffsets(
   offsets: Set<number>,
 ): void {
   if (anchor.rightClass === "newline") {
-    for (let index = text.indexOf("\n"); index >= 0; index = text.indexOf("\n", index + 1)) {
+    for (
+      let index = text.indexOf("\n");
+      index >= 0;
+      index = text.indexOf("\n", index + 1)
+    ) {
       if (leftBoundaryMatches(text, index, anchor)) offsets.add(index);
       if (offsets.size >= MAX_RAW_CANDIDATES_PER_PATTERN) return;
     }
@@ -413,7 +415,11 @@ function rightBoundaryMatches(
   return token.kind === anchor.rightClass;
 }
 
-function alreadyHasInsertion(text: string, offset: number, insertedText: string): boolean {
+function alreadyHasInsertion(
+  text: string,
+  offset: number,
+  insertedText: string,
+): boolean {
   return (
     text.slice(offset, offset + insertedText.length) === insertedText ||
     text.slice(Math.max(0, offset - insertedText.length), offset) === insertedText
@@ -423,10 +429,7 @@ function alreadyHasInsertion(text: string, offset: number, insertedText: string)
 function tokensAround(
   beforeContext: string,
   afterContext: string,
-): Pick<
-  InsertionAnchor,
-  "leftToken" | "rightToken" | "leftClass" | "rightClass"
-> {
+): Pick<InsertionAnchor, "leftToken" | "rightToken" | "leftClass" | "rightClass"> {
   const left = tokenBefore(beforeContext);
   const right = tokenAfter(afterContext);
   return {
@@ -462,7 +465,11 @@ function tokenAfter(text: string): { value: string; kind: AnchorTokenClass } {
 }
 
 function nearestSection(prefix: string): string {
-  const matches = [...prefix.matchAll(/\\(?:part|chapter|section|subsection|subsubsection)\*?\{([^}\n]{0,120})\}/g)];
+  const matches = [
+    ...prefix.matchAll(
+      /\\(?:part|chapter|section|subsection|subsubsection)\*?\{([^}\n]{0,120})\}/g,
+    ),
+  ];
   return matches[matches.length - 1]?.[0] ?? "";
 }
 

@@ -39,7 +39,9 @@ export class NextEditController {
     this.history = new EditHistoryStore(this.now);
     this.patternPredictor = new PatternPredictor({ now: this.now });
     this.semanticPredictor = options.semanticPredictor ?? null;
-    this.semanticEnabled = Boolean(options.semanticEnabled && options.semanticPredictor);
+    this.semanticEnabled = Boolean(
+      options.semanticEnabled && options.semanticPredictor,
+    );
     this.semanticDebounceMs = options.semanticDebounceMs ?? 220;
     this.onSuggestionChanged = options.onSuggestionChanged;
   }
@@ -85,7 +87,10 @@ export class NextEditController {
     if (this.disposed || !this.suggestion) return;
     const start = Math.min(startOffset, endOffset);
     const end = Math.max(startOffset, endOffset);
-    if (start !== end && rangesOverlap(start, end, this.suggestion.startOffset, this.suggestion.endOffset)) {
+    if (
+      start !== end &&
+      rangesOverlap(start, end, this.suggestion.startOffset, this.suggestion.endOffset)
+    ) {
       this.dismissSuggestion("selection-overlap");
     }
   }
@@ -143,7 +148,10 @@ export class NextEditController {
     if (!this.suggestion) return;
     const candidate = this.suggestion;
     if (reason === "explicit") {
-      this.history.recordDismissed(candidate.documentKey, candidate.patternId ?? candidate.id);
+      this.history.recordDismissed(
+        candidate.documentKey,
+        candidate.patternId ?? candidate.id,
+      );
       this.patternPredictor.recordDismissed(candidate);
     }
     this.clearSuggestion();
@@ -173,7 +181,11 @@ export class NextEditController {
     const patternCandidates = this.patternPredictor
       .predictRawCandidates(snapshot, session)
       .filter((candidate) =>
-        this.textMatches(candidate.startOffset, candidate.endOffset, candidate.expectedText),
+        this.textMatches(
+          candidate.startOffset,
+          candidate.endOffset,
+          candidate.expectedText,
+        ),
       );
     const candidate = pickBestCandidate({
       patternCandidates,
@@ -212,7 +224,10 @@ export class NextEditController {
     this.activeSemanticRequestId = requestId;
 
     const session = this.history.get(snapshot.documentKey);
-    const patternCandidates = this.patternPredictor.predictRawCandidates(snapshot, session);
+    const patternCandidates = this.patternPredictor.predictRawCandidates(
+      snapshot,
+      session,
+    );
     const deterministicCandidates = rankCandidates({
       patternCandidates,
       semanticCandidates: [],
@@ -291,7 +306,11 @@ export class NextEditController {
     );
   }
 
-  private textMatches(startOffset: number, endOffset: number, expectedText: string): boolean {
+  private textMatches(
+    startOffset: number,
+    endOffset: number,
+    expectedText: string,
+  ): boolean {
     if (!this.snapshot) return false;
     if (startOffset < 0 || endOffset < startOffset) return false;
     if (endOffset > this.snapshot.text.length) return false;

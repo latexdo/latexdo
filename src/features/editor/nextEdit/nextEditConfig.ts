@@ -12,10 +12,7 @@ export function normalizeNextEditConfig(raw: unknown): NextEditConfig {
   const saved = (raw ?? {}) as Partial<NextEditConfig>;
   return {
     enabled: bool(saved.enabled, defaultNextEditConfig.enabled),
-    semanticEnabled: bool(
-      saved.semanticEnabled,
-      defaultNextEditConfig.semanticEnabled,
-    ),
+    semanticEnabled: bool(saved.semanticEnabled, defaultNextEditConfig.semanticEnabled),
     useInlineModel: bool(saved.useInlineModel, defaultNextEditConfig.useInlineModel),
   };
 }

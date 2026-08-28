@@ -34,12 +34,18 @@ export function buildNextEditModelContext(
   ];
   const minAnchor = Math.max(0, Math.min(...anchorOffsets));
   const maxAnchor = Math.min(input.snapshot.text.length, Math.max(...anchorOffsets));
-  const padding = Math.max(400, Math.floor((maxWindowChars - (maxAnchor - minAnchor)) / 2));
+  const padding = Math.max(
+    400,
+    Math.floor((maxWindowChars - (maxAnchor - minAnchor)) / 2),
+  );
   let start = Math.max(0, minAnchor - padding);
   let end = Math.min(input.snapshot.text.length, maxAnchor + padding);
 
   if (end - start > maxWindowChars) {
-    const cursor = Math.min(input.snapshot.text.length, Math.max(0, input.cursorOffset));
+    const cursor = Math.min(
+      input.snapshot.text.length,
+      Math.max(0, input.cursorOffset),
+    );
     start = Math.max(0, cursor - Math.floor(maxWindowChars / 2));
     end = Math.min(input.snapshot.text.length, start + maxWindowChars);
     start = Math.max(0, end - maxWindowChars);
@@ -49,7 +55,10 @@ export function buildNextEditModelContext(
     language: input.snapshot.language,
     documentWindow: input.snapshot.text.slice(start, end),
     windowStartOffset: start,
-    cursorOffsetInWindow: Math.min(end - start, Math.max(0, input.cursorOffset - start)),
+    cursorOffsetInWindow: Math.min(
+      end - start,
+      Math.max(0, input.cursorOffset - start),
+    ),
     recentEdits: input.recentEdits.slice(-8).map((edit) => ({
       oldText: edit.oldText.slice(0, 160),
       newText: edit.newText.slice(0, 160),
@@ -74,9 +83,7 @@ export function buildNextEditModelContext(
   };
 }
 
-export function buildNextEditMessages(
-  context: NextEditModelContext,
-): ChatMessage[] {
+export function buildNextEditMessages(context: NextEditModelContext): ChatMessage[] {
   return [
     {
       role: "system",

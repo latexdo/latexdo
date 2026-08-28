@@ -8,7 +8,11 @@ import type {
   NormalizedEdit,
 } from "./nextEditTypes";
 
-function snapshot(text: string, revision = 1, documentKey = "project:main.tex"): DocumentSnapshot {
+function snapshot(
+  text: string,
+  revision = 1,
+  documentKey = "project:main.tex",
+): DocumentSnapshot {
   return {
     documentKey,
     revision,
@@ -52,7 +56,10 @@ function manualEdit(args: {
     oldText: args.oldText,
     newText: args.newText,
     beforeContext: args.before.slice(Math.max(0, args.start - 160), args.start),
-    afterContext: args.before.slice(args.start + args.oldText.length, args.start + args.oldText.length + 160),
+    afterContext: args.before.slice(
+      args.start + args.oldText.length,
+      args.start + args.oldText.length + 160,
+    ),
     cursorOffsetAfter: args.start + args.newText.length,
     timestamp: args.timestamp ?? 100,
   };

@@ -49,7 +49,11 @@ export class EditHistoryStore {
     this.get(documentKey).acceptedPredictionIds.add(candidateId);
   }
 
-  recordDismissed(documentKey: string, patternId: string, timestamp = this.now()): void {
+  recordDismissed(
+    documentKey: string,
+    patternId: string,
+    timestamp = this.now(),
+  ): void {
     this.get(documentKey).dismissedPatternIds.set(patternId, timestamp);
   }
 

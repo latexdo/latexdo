@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { AiSemanticNextEditPredictor, parseNextEditModelResponse } from "./semanticPredictor";
+import {
+  AiSemanticNextEditPredictor,
+  parseNextEditModelResponse,
+} from "./semanticPredictor";
 import type { NextEditModelClient } from "./nextEditModelClient";
-import type {
-  DocumentSnapshot,
-  SemanticNextEditInput,
-} from "./nextEditTypes";
+import type { DocumentSnapshot, SemanticNextEditInput } from "./nextEditTypes";
 import type { NextEditModelContext } from "./nextEditPrompt";
 
 const snapshot: DocumentSnapshot = {
@@ -81,9 +81,7 @@ describe("semanticPredictor", () => {
 
   it("returns null for malformed JSON and none actions", () => {
     expect(parseNextEditModelResponse("try beta", context, input)).toBeNull();
-    expect(
-      parseNextEditModelResponse('{"action":"none"}', context, input),
-    ).toBeNull();
+    expect(parseNextEditModelResponse('{"action":"none"}', context, input)).toBeNull();
   });
 
   it("rejects out-of-range offsets", () => {

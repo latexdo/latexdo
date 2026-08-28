@@ -8,7 +8,11 @@ import type {
   SemanticNextEditPredictor,
 } from "./nextEditTypes";
 
-function snapshot(text: string, revision: number, documentKey = "project:main.tex"): DocumentSnapshot {
+function snapshot(
+  text: string,
+  revision: number,
+  documentKey = "project:main.tex",
+): DocumentSnapshot {
   return {
     documentKey,
     revision,
@@ -39,7 +43,10 @@ function edit(args: {
     oldText: args.oldText,
     newText: args.newText,
     beforeContext: args.before.slice(Math.max(0, args.start - 160), args.start),
-    afterContext: args.before.slice(args.start + args.oldText.length, args.start + args.oldText.length + 160),
+    afterContext: args.before.slice(
+      args.start + args.oldText.length,
+      args.start + args.oldText.length + 160,
+    ),
     cursorOffsetAfter: args.start + args.newText.length,
     timestamp: args.timestamp ?? args.revisionAfter * 100,
   };
@@ -59,7 +66,10 @@ class DeferredSemanticPredictor implements SemanticNextEditPredictor {
   }
 }
 
-function semanticCandidate(input: SemanticNextEditInput, expected: string): NextEditCandidate {
+function semanticCandidate(
+  input: SemanticNextEditInput,
+  expected: string,
+): NextEditCandidate {
   const start = input.snapshot.text.indexOf(expected);
   return {
     id: `semantic-${input.basedOnRevision}`,
@@ -202,7 +212,9 @@ describe("NextEditController", () => {
     controller.observeEdit(second);
     expect(controller.getSuggestion()).not.toBeNull();
 
-    controller.onDocumentChanged(snapshot(afterSecond.replace("foo three", "baz three"), 4));
+    controller.onDocumentChanged(
+      snapshot(afterSecond.replace("foo three", "baz three"), 4),
+    );
 
     expect(controller.getSuggestion()).toBeNull();
     expect(controller.acceptSuggestion()).toBeNull();

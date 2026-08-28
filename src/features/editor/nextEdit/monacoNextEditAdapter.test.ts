@@ -51,7 +51,10 @@ class FakeModel {
   }
 
   getValueInRange(range: FakeRange) {
-    return this.text.slice(this.getOffsetAt(rangeStart(range)), this.getOffsetAt(rangeEnd(range)));
+    return this.text.slice(
+      this.getOffsetAt(rangeStart(range)),
+      this.getOffsetAt(rangeEnd(range)),
+    );
   }
 }
 
@@ -64,7 +67,8 @@ interface FakeAction {
 }
 
 class FakeEditor {
-  contentListeners: Array<(event: Monaco.editor.IModelContentChangedEvent) => void> = [];
+  contentListeners: Array<(event: Monaco.editor.IModelContentChangedEvent) => void> =
+    [];
   cursorListeners: Array<(event: { position: Monaco.IPosition }) => void> = [];
   selectionListeners: Array<(event: { selection: FakeSelection }) => void> = [];
   modelListeners: Array<() => void> = [];
@@ -136,7 +140,9 @@ class FakeEditor {
   onDidChangeCursorSelection(listener: (event: { selection: FakeSelection }) => void) {
     this.selectionListeners.push(listener);
     return disposable(() => {
-      this.selectionListeners = this.selectionListeners.filter((item) => item !== listener);
+      this.selectionListeners = this.selectionListeners.filter(
+        (item) => item !== listener,
+      );
     });
   }
 
@@ -269,8 +275,12 @@ describe("monacoNextEditAdapter", () => {
 
   it("registers Tab and Escape actions with Monaco preconditions", () => {
     const { editor } = setup();
-    const tab = editor.actions.find((action) => action.id === "latexdo.nextEdit.accept");
-    const escape = editor.actions.find((action) => action.id === "latexdo.nextEdit.dismiss");
+    const tab = editor.actions.find(
+      (action) => action.id === "latexdo.nextEdit.accept",
+    );
+    const escape = editor.actions.find(
+      (action) => action.id === "latexdo.nextEdit.dismiss",
+    );
 
     expect(tab?.precondition).toContain("latexdoNextEditVisible");
     expect(tab?.precondition).toContain("!suggestWidgetVisible");
@@ -282,7 +292,9 @@ describe("monacoNextEditAdapter", () => {
   it("accepts the visible suggestion as one undoable Monaco edit", () => {
     const { editor } = setup();
     makeSuggestionVisible(editor);
-    const tab = editor.actions.find((action) => action.id === "latexdo.nextEdit.accept");
+    const tab = editor.actions.find(
+      (action) => action.id === "latexdo.nextEdit.accept",
+    );
 
     tab?.run();
 
@@ -295,7 +307,9 @@ describe("monacoNextEditAdapter", () => {
   it("dismisses the visible suggestion with Escape", () => {
     const { editor } = setup();
     makeSuggestionVisible(editor);
-    const escape = editor.actions.find((action) => action.id === "latexdo.nextEdit.dismiss");
+    const escape = editor.actions.find(
+      (action) => action.id === "latexdo.nextEdit.dismiss",
+    );
 
     escape?.run();
 

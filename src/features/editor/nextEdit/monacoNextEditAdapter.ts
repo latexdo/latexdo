@@ -1,9 +1,6 @@
 import type * as Monaco from "monaco-editor";
 import { EditorMutationOrigin } from "../../../collaboration/editProvenance";
-import {
-  originForContentChange,
-  normalizeContentChangeEvent,
-} from "./editNormalizer";
+import { originForContentChange, normalizeContentChangeEvent } from "./editNormalizer";
 import { NextEditController } from "./nextEditController";
 import type {
   DocumentSnapshot,
@@ -58,14 +55,15 @@ export function installMonacoNextEdit({
   let currentText = model?.getValue() ?? "";
   let currentRevision = model?.getVersionId() ?? 0;
   let disposed = false;
-  let decorations: Monaco.editor.IEditorDecorationsCollection | null = editor.createDecorationsCollection();
-  const visibleKey = editor.createContextKey<boolean>(
-    nextEditVisibleContextKey,
-    false,
-  );
+  let decorations: Monaco.editor.IEditorDecorationsCollection | null =
+    editor.createDecorationsCollection();
+  const visibleKey = editor.createContextKey<boolean>(nextEditVisibleContextKey, false);
   const disposables: Monaco.IDisposable[] = [];
 
-  function snapshotFor(text = currentText, revision = currentRevision): DocumentSnapshot {
+  function snapshotFor(
+    text = currentText,
+    revision = currentRevision,
+  ): DocumentSnapshot {
     return {
       documentKey,
       revision,
@@ -113,7 +111,12 @@ export function installMonacoNextEdit({
 
     const targetModel = editor.getModel();
     if (!targetModel) return false;
-    const range = rangeForOffsets(monaco, targetModel, accepted.startOffset, accepted.endOffset);
+    const range = rangeForOffsets(
+      monaco,
+      targetModel,
+      accepted.startOffset,
+      accepted.endOffset,
+    );
     mutationOrigin.run("next-edit", () => {
       editor.pushUndoStop();
       editor.executeEdits("latexdo.nextEdit.accept", [

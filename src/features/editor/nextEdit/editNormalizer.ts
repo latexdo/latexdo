@@ -95,8 +95,7 @@ export function normalizeContentChangeEvent({
         newText: change.text,
         beforeContext: boundedBeforeContext(beforeText, startOffsetBefore),
         afterContext: boundedAfterContext(beforeText, endOffsetBefore),
-        cursorOffsetAfter:
-          cursorOffsetAfter ?? startOffsetBefore + change.text.length,
+        cursorOffsetAfter: cursorOffsetAfter ?? startOffsetBefore + change.text.length,
         timestamp,
       };
     })
@@ -120,10 +119,7 @@ export function isLearnableEdit(
   return true;
 }
 
-function isUsableChange(
-  change: ModelContentChangeLike,
-  beforeText: string,
-): boolean {
+function isUsableChange(change: ModelContentChangeLike, beforeText: string): boolean {
   if (!Number.isInteger(change.rangeOffset) || !Number.isInteger(change.rangeLength)) {
     return false;
   }

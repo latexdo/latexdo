@@ -61,10 +61,7 @@ export class GenerateStepNextEditModelClient implements NextEditModelClient {
   }
 }
 
-export function nextEditModelAvailable(
-  config: AiConfig,
-  isDesktop: boolean,
-): boolean {
+export function nextEditModelAvailable(config: AiConfig, isDesktop: boolean): boolean {
   if (config.provider === "off") return false;
   if (!config.access.currentEditor) return false;
   if (config.provider === "cloud") return config.cloud.apiKey.trim().length > 0;

@@ -113,7 +113,7 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
 
 function stripSingleCodeFence(text: string): string {
   const match = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return match ? match[1]?.trim() ?? "" : text;
+  return match ? (match[1]?.trim() ?? "") : text;
 }
 
 function firstCompleteJsonObject(text: string): string | null {

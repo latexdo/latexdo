@@ -150,12 +150,8 @@ describe("editNormalizer", () => {
   });
 
   it("classifies undo and redo before learning", () => {
-    expect(originForContentChange({ changes: [], isUndoing: true }, null)).toBe(
-      "undo",
-    );
-    expect(originForContentChange({ changes: [], isRedoing: true }, null)).toBe(
-      "redo",
-    );
+    expect(originForContentChange({ changes: [], isUndoing: true }, null)).toBe("undo");
+    expect(originForContentChange({ changes: [], isRedoing: true }, null)).toBe("redo");
     expect(originForContentChange({ changes: [] }, "programmatic")).toBe(
       "programmatic",
     );

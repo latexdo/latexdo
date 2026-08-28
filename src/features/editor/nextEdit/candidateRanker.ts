@@ -90,11 +90,14 @@ export function rankCandidates({
   });
 }
 
-export function pickBestCandidate(input: RankCandidatesInput): NextEditCandidate | null {
+export function pickBestCandidate(
+  input: RankCandidatesInput,
+): NextEditCandidate | null {
   const ranked = rankCandidates(input);
   return (
     ranked.find(
-      (candidate) => candidate.confidence >= (input.config ?? defaultRankingConfig).thresholds.show,
+      (candidate) =>
+        candidate.confidence >= (input.config ?? defaultRankingConfig).thresholds.show,
     ) ?? null
   );
 }
@@ -242,8 +245,7 @@ function mergeCandidate(
   }
 
   const confidence = clamp01(
-    Math.max(existing.confidence, candidate.confidence) +
-      config.weights.modelAgreement,
+    Math.max(existing.confidence, candidate.confidence) + config.weights.modelAgreement,
   );
   byEdit.set(key, {
     ...existing,
@@ -266,9 +268,7 @@ function mergeCandidate(
   });
 }
 
-function normalizeSemanticCandidate(
-  candidate: NextEditCandidate,
-): NextEditCandidate {
+function normalizeSemanticCandidate(candidate: NextEditCandidate): NextEditCandidate {
   return {
     ...candidate,
     source: "semantic",
