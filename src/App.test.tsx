@@ -749,6 +749,22 @@ describe("App critical UI controls", () => {
     );
   });
 
+  it("accepts visible Monaco completions with Enter and Tab", async () => {
+    installLatexDoMock();
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    await screen.findByLabelText("mock editor");
+
+    expect(editorOptionsByPath.get(entries[0].path)).toEqual(
+      expect.objectContaining({
+        acceptSuggestionOnEnter: "on",
+        tabCompletion: "on",
+      }),
+    );
+  });
+
   it("does not compile while typing by default", async () => {
     const api = installLatexDoMock();
 

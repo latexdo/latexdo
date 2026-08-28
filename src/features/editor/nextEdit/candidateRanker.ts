@@ -35,6 +35,7 @@ export function rankPatternCandidate(
       weights.structuralSimilarity * features.structure +
       weights.direction * features.direction +
       weights.proximity * features.proximity +
+      weights.specificity * features.specificity +
       weights.acceptancePrior * features.acceptance +
       weights.dismissalPrior * -features.dismissal,
   );
@@ -146,6 +147,7 @@ function patternFeatureValues(
       cursorOffset,
       examples[examples.length - 1]?.startOffsetBefore,
     ),
+    specificity: specificityScore(candidate.pattern),
     acceptance: acceptancePrior(candidate.pattern),
     dismissal: dismissalPrior(candidate.pattern, session, now, config),
   };
@@ -207,6 +209,17 @@ function proximityScore(
     lastEditOffset === undefined ? cursorDistance : Math.abs(offset - lastEditOffset);
   const nearest = Math.min(cursorDistance, editDistance);
   return 1 - Math.min(nearest, 2_000) / 2_000;
+}
+
+function specificityScore(pattern: EditPattern): number {
+  const oldText = pattern.oldText.trim();
+  if (!oldText) return 0;
+  if (isLatexCommandToken(oldText)) return 1;
+  if (pattern.oldText.includes("\n")) return 1;
+  if (oldText.length >= 32) return 1;
+  if (oldText.length >= 8) return 0.85;
+  if (isWordToken(oldText) && oldText.length >= 4) return 0.75;
+  return 0;
 }
 
 function acceptancePrior(pattern: EditPattern): number {
@@ -288,4 +301,12 @@ function candidateKey(candidate: NextEditCandidate): string {
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.min(1, Math.max(0, value));
+}
+
+function isLatexCommandToken(text: string): boolean {
+  return /^\\[A-Za-z]{2,}\*?$/.test(text);
+}
+
+function isWordToken(text: string): boolean {
+  return /^[A-Za-z0-9_-]+$/.test(text);
 }

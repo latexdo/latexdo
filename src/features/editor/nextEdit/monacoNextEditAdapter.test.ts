@@ -304,6 +304,33 @@ describe("monacoNextEditAdapter", () => {
     expect(editor.contextValue).toBe(false);
   });
 
+  it("expands a typed LaTeX command suffix into a whole-command replacement", () => {
+    const { editor } = setup(
+      [
+        "\\section{\\comp: A Lazy Completion Architecture}",
+        "",
+        "This section presents \\comp as an architecture.",
+      ].join("\n"),
+    );
+    const firstCommandEnd = editor.model.text.indexOf("\\comp") + "\\comp".length;
+
+    editor.replaceRange(firstCommandEnd, firstCommandEnd, "l");
+
+    expect(editor.contextValue).toBe(true);
+    expect(editor.decorations[0]?.options.after?.content).toContain("-> \\compl");
+    expect(
+      editor.model.getValueInRange(editor.decorations[0]?.range as FakeRange),
+    ).toBe("\\comp");
+
+    const tab = editor.actions.find(
+      (action) => action.id === "latexdo.nextEdit.accept",
+    );
+    tab?.run();
+
+    expect(editor.model.text).toContain("This section presents \\compl as");
+    expect(editor.model.text).not.toContain("\\compll");
+  });
+
   it("dismisses the visible suggestion with Escape", () => {
     const { editor } = setup();
     makeSuggestionVisible(editor);

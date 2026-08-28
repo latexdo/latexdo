@@ -83,7 +83,7 @@ function best(
 }
 
 describe("PatternPredictor", () => {
-  it("requires two manual examples before suggesting", () => {
+  it("requires two manual examples before suggesting short replacements", () => {
     const predictor = new PatternPredictor({ now: () => 300 });
     const before = "foo one\nfoo two\nfoo three";
     const first = manualEdit({
@@ -101,6 +101,57 @@ describe("PatternPredictor", () => {
         sessionFor(first.documentKey, 2, [first]),
       ),
     ).toEqual([]);
+  });
+
+  it("suggests a command replacement after one typed suffix insertion", () => {
+    const predictor = new PatternPredictor({ now: () => 300 });
+    const before = [
+      "\\section{\\comp: A Lazy Completion Architecture}",
+      "",
+      "This section presents \\comp as an architecture.",
+    ].join("\n");
+    const firstCommandEnd = before.indexOf("\\comp") + "\\comp".length;
+    const after = `${before.slice(0, firstCommandEnd)}l${before.slice(firstCommandEnd)}`;
+    const first = manualEdit({
+      before,
+      start: firstCommandEnd,
+      oldText: "",
+      newText: "l",
+      timestamp: 100,
+    });
+
+    predictor.observeEdit(first);
+    const candidate = best(predictor, snapshot(after, 2), [first]);
+
+    expect(candidate).toMatchObject({
+      expectedText: "\\comp",
+      replacementText: "\\compl",
+      source: "pattern",
+    });
+    expect(candidate?.startOffset).toBe(after.lastIndexOf("\\comp"));
+  });
+
+  it("suggests a specific whole-token replacement after one manual edit", () => {
+    const predictor = new PatternPredictor({ now: () => 300 });
+    const before = "old_name one\nold_name two";
+    const after = before.replace("old_name one", "new_name one");
+    const first = manualEdit({
+      before,
+      start: 0,
+      oldText: "old_name",
+      newText: "new_name",
+      timestamp: 100,
+    });
+
+    predictor.observeEdit(first);
+    const candidate = best(predictor, snapshot(after, 2), [first]);
+
+    expect(candidate).toMatchObject({
+      expectedText: "old_name",
+      replacementText: "new_name",
+      source: "pattern",
+    });
+    expect(candidate?.startOffset).toBe("new_name one\n".length);
   });
 
   it("suggests a third identical replacement after two manual replacements", () => {

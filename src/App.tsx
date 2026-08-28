@@ -10930,7 +10930,8 @@ ${macroEnd}
                         automaticLayout: true,
                         fixedOverflowWidgets: false,
                         acceptSuggestionOnCommitCharacter: false,
-                        acceptSuggestionOnEnter: "off",
+                        acceptSuggestionOnEnter: "on",
+                        tabCompletion: "on",
                         quickSuggestions: {
                           other: true,
                           comments: false,

@@ -51,6 +51,15 @@ export class PatternPredictor {
   ): EditPattern | null {
     if (!isLearnableEdit(edit, { language })) return null;
 
+    const primary = this.learnPattern(edit);
+    const expanded = expandedReplacementForInsertion(edit);
+    if (expanded && isLearnableEdit(expanded, { language })) {
+      this.learnPattern(expanded);
+    }
+    return primary;
+  }
+
+  private learnPattern(edit: NormalizedEdit): EditPattern {
     const kind = editKind(edit);
     const insertionAnchor = kind === "insert" ? insertionAnchorFor(edit) : undefined;
     const signature = patternSignature(edit, kind, insertionAnchor);
@@ -101,7 +110,11 @@ export class PatternPredictor {
     const out: PatternRawCandidate[] = [];
     for (const pattern of patterns.values()) {
       if (now - pattern.lastSeenAt > this.editTtlMs) continue;
-      if (manualEvidence(pattern) < this.minManualExamples) continue;
+      if (
+        manualEvidence(pattern) < minimumManualEvidence(pattern, this.minManualExamples)
+      ) {
+        continue;
+      }
       if (session?.dismissedPatternIds.has(pattern.id)) {
         const dismissedAt = session.dismissedPatternIds.get(pattern.id) ?? 0;
         if (now - dismissedAt < 300) continue;
@@ -156,9 +169,11 @@ export class PatternPredictor {
     while (out.length < this.maxRawCandidatesPerPattern) {
       const index = snapshot.text.indexOf(pattern.oldText, from);
       if (index < 0) break;
-      out.push(
-        rawCandidateForPattern(pattern, snapshot, index, pattern.oldText.length),
-      );
+      if (textOccurrenceMatchesPattern(pattern, snapshot.text, index)) {
+        out.push(
+          rawCandidateForPattern(pattern, snapshot, index, pattern.oldText.length),
+        );
+      }
       from = index + Math.max(1, pattern.oldText.length);
     }
     return out;
@@ -232,6 +247,22 @@ export function patternSignature(
   return [kind, edit.oldText, edit.newText].join("\0");
 }
 
+function minimumManualEvidence(pattern: EditPattern, defaultMinimum: number): number {
+  return canSuggestFromSingleExample(pattern) ? 1 : defaultMinimum;
+}
+
+function canSuggestFromSingleExample(pattern: EditPattern): boolean {
+  if (pattern.kind !== "replace") return false;
+  const oldText = pattern.oldText.trim();
+  if (!oldText || oldText === pattern.newText.trim()) return false;
+  if (isLatexCommandToken(oldText) && isLatexCommandToken(pattern.newText.trim())) {
+    return true;
+  }
+  if (pattern.oldText.includes("\n")) return true;
+  if (oldText.length >= 8) return true;
+  return isWordToken(oldText) && oldText.length >= 4;
+}
+
 export function extractLatexContext(text: string, offset: number): LatexContextSignals {
   const safeOffset = Math.min(text.length, Math.max(0, offset));
   const lineStart = text.lastIndexOf("\n", Math.max(0, safeOffset - 1)) + 1;
@@ -251,6 +282,36 @@ export function extractLatexContext(text: string, offset: number): LatexContextS
   };
 }
 
+function expandedReplacementForInsertion(edit: NormalizedEdit): NormalizedEdit | null {
+  if (edit.oldText.length > 0 || edit.newText.length === 0) return null;
+  if (!isWordText(edit.newText)) return null;
+
+  const left = tokenBefore(edit.beforeContext);
+  const nextChar = edit.afterContext[0] ?? "";
+  const expandsCommand =
+    left.kind === "command" &&
+    isLatexCommandToken(left.value) &&
+    /^[A-Za-z]+$/.test(edit.newText) &&
+    !isLatexCommandContinuation(nextChar);
+  const expandsWord =
+    left.kind === "word" && left.value.length >= 4 && !isWordChar(nextChar);
+
+  if (!expandsCommand && !expandsWord) return null;
+  if (edit.startOffsetBefore < left.value.length) return null;
+
+  const start = edit.startOffsetBefore - left.value.length;
+  return {
+    ...edit,
+    id: `${edit.id}:expanded-token-replace`,
+    startOffsetBefore: start,
+    endOffsetBefore: edit.startOffsetBefore,
+    oldText: left.value,
+    newText: `${left.value}${edit.newText}`,
+    beforeContext: edit.beforeContext.slice(0, -left.value.length),
+    afterContext: edit.afterContext,
+  };
+}
+
 function exampleFor(edit: NormalizedEdit): PatternExample {
   const localText = `${edit.beforeContext}${edit.oldText}${edit.afterContext}`;
   const offset = edit.beforeContext.length;
@@ -266,6 +327,21 @@ function exampleFor(edit: NormalizedEdit): PatternExample {
     timestamp: edit.timestamp,
     latexContext: extractLatexContext(localText, offset),
   };
+}
+
+function textOccurrenceMatchesPattern(
+  pattern: EditPattern,
+  text: string,
+  index: number,
+): boolean {
+  const end = index + pattern.oldText.length;
+  if (isLatexCommandToken(pattern.oldText)) {
+    return !isLatexCommandContinuation(text[end] ?? "");
+  }
+  if (isWordToken(pattern.oldText)) {
+    return !isWordChar(text[index - 1] ?? "") && !isWordChar(text[end] ?? "");
+  }
+  return true;
 }
 
 function rawCandidateForPattern(
@@ -462,6 +538,26 @@ function tokenAfter(text: string): { value: string; kind: AnchorTokenClass } {
   const word = text.match(/^[A-Za-z0-9_-]+/)?.[0];
   if (word) return { value: word, kind: "word" };
   return { value: first, kind: "punctuation" };
+}
+
+function isLatexCommandToken(text: string): boolean {
+  return /^\\[A-Za-z]{2,}\*?$/.test(text);
+}
+
+function isLatexCommandContinuation(char: string): boolean {
+  return /^[A-Za-z*]$/.test(char);
+}
+
+function isWordToken(text: string): boolean {
+  return /^[A-Za-z0-9_-]+$/.test(text);
+}
+
+function isWordText(text: string): boolean {
+  return /^[A-Za-z0-9_-]+$/.test(text);
+}
+
+function isWordChar(char: string): boolean {
+  return /^[A-Za-z0-9_-]$/.test(char);
 }
 
 function nearestSection(prefix: string): string {

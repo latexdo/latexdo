@@ -151,6 +151,40 @@ describe("NextEditController", () => {
     expect(shown.some((candidate) => candidate?.source === "pattern")).toBe(true);
   });
 
+  it("recomputes pattern suggestions when the cursor moves near a candidate", () => {
+    const controller = new NextEditController({ now: () => 300 });
+    const filler = "filler ".repeat(360);
+    const initial = [
+      "\\section{\\comp: title}",
+      filler,
+      "This section presents \\comp as an architecture.",
+    ].join("\n");
+    const firstCommandEnd = initial.indexOf("\\comp") + "\\comp".length;
+    const afterFirst = `${initial.slice(0, firstCommandEnd)}l${initial.slice(firstCommandEnd)}`;
+    const first = edit({
+      before: initial,
+      start: firstCommandEnd,
+      oldText: "",
+      newText: "l",
+      revisionBefore: 1,
+      revisionAfter: 2,
+      timestamp: 100,
+    });
+
+    controller.onDocumentChanged(snapshot(afterFirst, 2));
+    controller.observeEdit(first);
+    expect(controller.getSuggestion()).toBeNull();
+
+    const target = afterFirst.lastIndexOf("\\comp");
+    controller.onCursorMoved(target);
+
+    expect(controller.getSuggestion()).toMatchObject({
+      startOffset: target,
+      expectedText: "\\comp",
+      replacementText: "\\compl",
+    });
+  });
+
   it("dismisses an active suggestion explicitly", () => {
     const controller = new NextEditController({ now: () => 300 });
     const initial = "foo one\nfoo two\nfoo three";
@@ -269,6 +303,46 @@ describe("NextEditController", () => {
 
     expect(requestA?.signal.aborted).toBe(true);
     expect(controller.getSuggestion()?.basedOnRevision).toBe(3);
+  });
+
+  it("preserves a valid semantic suggestion when cursor movement recomputes patterns", async () => {
+    vi.useFakeTimers();
+    const semantic = new DeferredSemanticPredictor();
+    const controller = new NextEditController({
+      now: () => 100,
+      semanticPredictor: semantic,
+      semanticEnabled: true,
+      semanticDebounceMs: 1,
+    });
+    const afterFirst = "y only";
+
+    controller.onDocumentChanged(snapshot(afterFirst, 2));
+    controller.observeEdit(
+      edit({
+        before: "x only",
+        start: 0,
+        oldText: "x",
+        newText: "y",
+        revisionBefore: 1,
+        revisionAfter: 2,
+      }),
+    );
+    vi.advanceTimersByTime(2);
+    const request = semantic.calls[0];
+    request?.resolve(semanticCandidate(request.input, "only"));
+    await Promise.resolve();
+
+    expect(controller.getSuggestion()).toMatchObject({
+      source: "semantic",
+      expectedText: "only",
+    });
+
+    controller.onCursorMoved(0);
+
+    expect(controller.getSuggestion()).toMatchObject({
+      source: "semantic",
+      expectedText: "only",
+    });
   });
 
   it("ignores semantic responses after a file switch", async () => {

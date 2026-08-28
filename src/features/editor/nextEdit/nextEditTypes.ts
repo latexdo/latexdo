@@ -137,6 +137,7 @@ export interface RankingWeights {
   structuralSimilarity: number;
   direction: number;
   proximity: number;
+  specificity: number;
   acceptancePrior: number;
   dismissalPrior: number;
   modelAgreement: number;
@@ -231,6 +232,7 @@ export const defaultRankingConfig: RankingConfig = {
     structuralSimilarity: 0.1,
     direction: 0.1,
     proximity: 0.1,
+    specificity: 0.12,
     acceptancePrior: 0.1,
     dismissalPrior: 0.2,
     modelAgreement: 0.08,

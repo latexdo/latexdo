@@ -81,6 +81,7 @@ export class NextEditController {
     if (this.suggestion && !this.validateCandidate(this.suggestion)) {
       this.dismissSuggestion("stale");
     }
+    this.publishBestPatternSuggestion({ preserveSemanticSuggestion: true });
   }
 
   onSelectionChanged(startOffset: number, endOffset: number): void {
@@ -171,12 +172,20 @@ export class NextEditController {
     return this.state;
   }
 
-  private publishBestPatternSuggestion(): void {
+  private publishBestPatternSuggestion(
+    options: { preserveSemanticSuggestion?: boolean } = {},
+  ): void {
     const snapshot = this.snapshot;
     if (!snapshot) {
       this.clearSuggestion();
       return;
     }
+    const semanticCandidates =
+      options.preserveSemanticSuggestion &&
+      this.suggestion?.source === "semantic" &&
+      this.validateCandidate(this.suggestion)
+        ? [this.suggestion]
+        : [];
     const session = this.history.get(snapshot.documentKey);
     const patternCandidates = this.patternPredictor
       .predictRawCandidates(snapshot, session)
@@ -189,7 +198,7 @@ export class NextEditController {
       );
     const candidate = pickBestCandidate({
       patternCandidates,
-      semanticCandidates: [],
+      semanticCandidates,
       session,
       cursorOffset: this.cursorOffset,
       revision: snapshot.revision,
