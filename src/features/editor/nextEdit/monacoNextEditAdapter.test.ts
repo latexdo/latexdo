@@ -317,7 +317,11 @@ describe("monacoNextEditAdapter", () => {
     editor.replaceRange(firstCommandEnd, firstCommandEnd, "l");
 
     expect(editor.contextValue).toBe(true);
-    expect(editor.decorations[0]?.options.after?.content).toContain("-> \\compl");
+    expect(editor.decorations[0]?.options.className).toBe("latexdo-next-edit-remove");
+    expect(editor.decorations[0]?.options.after?.content).toBe("\\compl");
+    expect(editor.decorations[0]?.options.after?.inlineClassName).toBe(
+      "latexdo-next-edit-add",
+    );
     expect(
       editor.model.getValueInRange(editor.decorations[0]?.range as FakeRange),
     ).toBe("\\comp");

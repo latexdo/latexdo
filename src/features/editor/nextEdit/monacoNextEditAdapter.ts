@@ -272,35 +272,37 @@ function decorationForCandidate(
     candidate.startOffset === candidate.endOffset
       ? {}
       : {
-          className:
-            candidate.replacementText.length === 0
-              ? "latexdo-next-edit-delete"
-              : "latexdo-next-edit-target",
+          className: "latexdo-next-edit-remove",
+        };
+  const preview = injectedPreview(candidate);
+  const previewOptions =
+    preview.length === 0
+      ? {}
+      : {
+          after: {
+            content: preview,
+            inlineClassName: "latexdo-next-edit-add",
+            cursorStops: monaco.editor.InjectedTextCursorStops.None,
+          },
         };
 
   return {
     range,
     options: {
       ...targetOptions,
+      ...previewOptions,
       stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
       zIndex: 20,
       showIfCollapsed: true,
-      after: {
-        content: injectedPreview(candidate),
-        inlineClassName: "latexdo-next-edit-ghost",
-        cursorStops: monaco.editor.InjectedTextCursorStops.None,
-      },
     },
   };
 }
 
 function injectedPreview(candidate: NextEditCandidate): string {
-  if (candidate.replacementText.length === 0) return "  remove";
-  const preview = candidate.replacementText
+  return candidate.replacementText
     .replace(/\r/g, "\\r")
     .replace(/\n/g, "\\n")
     .replace(/\t/g, "\\t");
-  return candidate.expectedText.length === 0 ? preview : `  -> ${preview}`;
 }
 
 function rangeForOffsets(

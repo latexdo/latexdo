@@ -1,17 +1,18 @@
-.latexdo-next-edit-target {
-  background: color-mix(in srgb, #2f6fdb 14%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, #2f6fdb 45%, transparent);
-}
-
-.latexdo-next-edit-delete {
+.latexdo-next-edit-remove {
+  background: color-mix(in srgb, #b42318 20%, transparent);
+  border-radius: 3px;
   color: color-mix(in srgb, currentColor 48%, transparent);
   text-decoration: line-through;
   text-decoration-color: color-mix(in srgb, #b42318 65%, transparent);
 }
 
-.latexdo-next-edit-ghost {
-  color: color-mix(in srgb, currentColor 45%, transparent);
-  font-style: italic;
-  opacity: 0.78;
+.latexdo-next-edit-add {
+  background: color-mix(in srgb, #16834a 22%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, #16834a 72%, transparent);
+  border-radius: 3px;
+  color: color-mix(in srgb, currentColor 92%, #2fbf71);
+  font-style: normal;
+  margin-left: 1px;
+  padding: 0 1px;
   pointer-events: none;
 }
