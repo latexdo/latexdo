@@ -70,10 +70,12 @@ describe("TerminalPanel", () => {
   let terminalExitCallback:
     | ((payload: { id: number; exitCode: number }) => void)
     | null;
+  let nextTerminalId: number;
 
   beforeEach(() => {
     terminalDataCallback = null;
     terminalExitCallback = null;
+    nextTerminalId = 7;
     xtermMocks.terminalInstances.length = 0;
     xtermMocks.fitAddonInstances.length = 0;
 
@@ -100,7 +102,10 @@ describe("TerminalPanel", () => {
     });
 
     window.terminalApi = {
-      create: vi.fn().mockResolvedValue({ id: 7, mode: "pty" }),
+      create: vi.fn().mockImplementation(async () => ({
+        id: nextTerminalId++,
+        mode: "pty",
+      })),
       write: vi.fn(),
       resize: vi.fn(),
       dispose: vi.fn(),
@@ -118,7 +123,7 @@ describe("TerminalPanel", () => {
   it("does not create a shell without an open project", async () => {
     render(<TerminalPanel active />);
 
-    expect(await screen.findByText("Open a project first")).toBeVisible();
+    expect(await screen.findByTitle(/Open a project first/)).toBeVisible();
     expect(window.terminalApi.create).not.toHaveBeenCalled();
     expect(xtermMocks.terminalInstances[0].writeln).toHaveBeenCalledWith(
       "[open a project to start a terminal]",
@@ -135,8 +140,8 @@ describe("TerminalPanel", () => {
         projectId: "project-1",
       });
     });
-    expect(screen.getByText("PTY shell ready")).toBeVisible();
-    expect(screen.getByText("paper")).toBeVisible();
+    expect(screen.getByRole("tab", { name: /zsh/i })).toBeVisible();
+    expect(screen.getByTitle(/\/Users\/omar\/paper · PTY shell ready/)).toBeVisible();
 
     const terminal = xtermMocks.terminalInstances[0];
     act(() => {
@@ -152,15 +157,33 @@ describe("TerminalPanel", () => {
     act(() => {
       terminal.emitSelection("selected output");
     });
-    fireEvent.click(screen.getByRole("button", { name: /copy/i }));
+    fireEvent.click(screen.getByRole("button", { name: /copy selection/i }));
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("selected output");
 
     act(() => {
       terminalExitCallback?.({ id: 7, exitCode: 0 });
     });
-    expect(screen.getByText("Exited with code 0")).toBeVisible();
+    expect(screen.getByTitle(/Exited with code 0/)).toBeVisible();
 
     unmount();
     expect(window.terminalApi.dispose).toHaveBeenCalledWith(7);
+  });
+
+  it("creates additional terminal tabs and restarts the active session", async () => {
+    render(
+      <TerminalPanel projectId="project-1" workspacePath="/Users/omar/paper" active />,
+    );
+
+    await waitFor(() => expect(window.terminalApi.create).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /new terminal/i }));
+    await waitFor(() => expect(window.terminalApi.create).toHaveBeenCalledTimes(2));
+
+    expect(screen.getByRole("tab", { name: /zsh 2/i })).toBeVisible();
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: /restart shell/i }));
+    await waitFor(() => expect(window.terminalApi.create).toHaveBeenCalledTimes(3));
+    expect(window.terminalApi.dispose).toHaveBeenCalledWith(8);
   });
 });
