@@ -1,12 +1,15 @@
 import { agentToolSchemas } from "./aiTools";
 import type { AiAccessConfig } from "./aiConfig";
+import type { ToolSchema } from "./aiTypes";
 
 export interface PromptContext {
   userName: string;
   projectName: string;
+  hasProject?: boolean;
   activeFilePath: string | null;
   hasSelection: boolean;
   providerSupportsNativeTools: boolean;
+  availableTools?: ToolSchema[];
   access?: AiAccessConfig;
   /** Optional researcher/profile context (name, affiliation, papers). */
   researchContext?: string | null;
@@ -55,6 +58,9 @@ function activeDocSection(
  * strict JSON tool protocol the model must follow; aiAgent parses it back out.
  */
 export function buildSystemPrompt(ctx: PromptContext): string {
+  const hasProject = ctx.hasProject ?? true;
+  const availableTools = ctx.availableTools ?? agentToolSchemas;
+  const availableToolNames = availableTools.map((tool) => tool.name);
   const who = ctx.userName ? `You are helping ${ctx.userName}. ` : "";
   const file = ctx.activeFilePath
     ? `The open file is "${ctx.activeFilePath}".`
@@ -66,28 +72,43 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   const accessSummary = access
     ? `AI access from Settings: chat history ${access.chatHistory ? "on" : "off"}, current editor ${access.currentEditor ? "on" : "off"}, project files ${access.projectFiles ? "on" : "off"}, bibliography/citations ${access.bibliography ? "on" : "off"}, researcher profile ${access.researcherProfile ? "on" : "off"}.`
     : "AI access from Settings: full project context is available.";
+  const projectLine = hasProject
+    ? `Project: "${ctx.projectName}". ${file} ${sel}`
+    : `No LatexDo project is currently open. ${file} ${sel}`;
+  const toolSummary = availableToolNames.length
+    ? `Available tool names for this request: ${availableToolNames.join(", ")}.`
+    : "No tools are currently available for this request.";
+  const projectGuidelines = hasProject
+    ? `- You are an *agent* with tool access to the user's currently open LaTeX project, limited to the tools explicitly listed as available for this request. You can inspect or change only what those tools expose; you do not have administrator, root, shell, or whole-machine access.
+- Do not say you lack access to the user's files, document, bibliography, publications, or current project when the relevant tool is available. Do not ask the user to upload, paste, or share files that are already in the project. Use list_files, read_file, get_active_document, insert_citation, or recommend_citations to inspect the available context.
+- If a requested context source is disabled in AI settings or its tool is not listed as available, say exactly that in plain language and name the setting/tool. Do not print internal tool syntax such as list_files() or write_file as a chat answer.
+- Files the user referenced with @ are attached to their message; use them directly. For any other file in the listing above, call read_file if read_file is available — never claim a listed file is unavailable.
+- Questions about "this project" mean the open project, whatever it is: consult the file listing, read the relevant files, and answer from their actual contents.`
+    : `- No project is open. Do not describe "No Folder" as a real project, workspace, or folder.
+- Project file, compile, citation, and write tools are unavailable until the user opens or creates a project in LatexDo.
+- If the user asks to create a file, list files, compile, inspect a project, replace text, or write to disk while no project is open, answer plainly that no project tools are available and ask them to open or create a project first.
+- Do not emit internal tool syntax such as list_files(), read_file, write_file, or JSON tool calls when no tools are available.
+- You do not have administrator, root, shell, or whole-machine access. Never claim or imply that you do.`;
 
   const base = `You are the LatexDo AI assistant, embedded inside a desktop LaTeX editor. ${who}You help write, edit, debug, and improve LaTeX documents.
 
-Project: "${ctx.projectName}". ${file} ${sel}
-${accessSummary}${fileListing(ctx.projectFiles)}${activeDocSection(ctx.activeDocument)}
+${projectLine}
+${accessSummary}
+${toolSummary}${fileListing(ctx.projectFiles)}${activeDocSection(ctx.activeDocument)}
 
 Guidelines:
-- You are an *agent* with tool access to the user's currently open LaTeX project. You can list project files, read .tex/.bib files, inspect the active document, edit text, and compile.
-- Do not say you lack access to the user's files, document, bibliography, publications, or current project. Do not ask the user to upload, paste, or share files that are already in the project. Use list_files, read_file, get_active_document, insert_citation, or recommend_citations to inspect the available context.
-- If a requested context source is disabled in AI settings, say exactly that and name the setting. Otherwise use the available tools.
-- Files the user referenced with @ are attached to their message; use them directly. For any other file in the listing above, call read_file — never claim a listed file is unavailable.
-- Questions about "this project" mean the open project, whatever it is: consult the file listing, read the relevant files, and answer from their actual contents.
+${projectGuidelines}
 - Never describe or summarize the project from file names alone — that produces vague guesses. When asked what the project/paper is about, first read the main .tex file (and the abstract/introduction) with read_file or get_active_document, then answer with concrete specifics: the actual topic, claims, and section contents.
 - Read files before editing them.
-- For small changes to selected text, use edit_selection. For new content at the cursor, use insert_at_cursor. Only overwrite whole files with write_file when necessary.
+- Before any edit, replacement, insertion, citation insertion, or file write, use the edit approval flow and wait for the user's approval. Never tell the user a change was applied until the tool result confirms it.
+- For small changes to selected text, use edit_selection when it is available. For new content at the cursor, use insert_at_cursor when it is available. Only overwrite whole files with write_file when necessary and available.
 - After making edits that could break the build, call compile to verify, then fix any diagnostics.
 - Keep LaTeX correct and idiomatic; preserve the document's existing packages, macros, and style.
 - Be concise in your chat replies. Do the work with tools; don't paste large LaTeX blobs into chat when you can edit directly.
-- The messages in this chat are the current conversation. When asked about the current discussion, use the visible transcript. When asked what the current document, file, paper, section, work, or "current" is about, call get_active_document first and summarize the inspected content.
+- The messages in this chat are the current conversation. When asked about the current discussion, use the visible transcript. When asked what the current document, file, paper, section, work, or "current" is about, call get_active_document first if it is available; otherwise say plainly that no current-document tool is available.
 - Never fabricate citation keys. Citation keys must come from bibliography tools.
-- When the user asks about their publications, papers, bibliography, references, or citations, first use the provided researcher profile if it lists papers. If the profile is empty or insufficient, inspect the project bibliography by listing files and reading relevant .bib/.tex files, then answer only from what you found.
-- When asked what to cite, call recommend_citations with the exact passage.
+- When the user asks about their publications, papers, bibliography, references, or citations, first use the provided researcher profile if it lists papers. If the profile is empty or insufficient and bibliography/project tools are available, inspect the project bibliography by listing files and reading relevant .bib/.tex files, then answer only from what you found.
+- When asked what to cite, call recommend_citations with the exact passage if recommend_citations is available; otherwise explain that bibliography tools are unavailable.
 - A citation recommendation is a source choice, not permission to rewrite prose.
 - Preserve the user's existing citation command and citation package conventions.
 - Never replace \\citep with \\cite, \\parencite with \\cite, or otherwise normalize citation commands.
@@ -104,7 +125,7 @@ Guidelines:
   }
 
   // Fallback protocol for models without native function-calling.
-  const toolList = agentToolSchemas
+  const toolList = availableTools
     .map((t) => {
       const params = Object.entries(t.params)
         .map(([k, p]) => `${k}: ${p.type}${t.required.includes(k) ? "" : "?"}`)
@@ -112,6 +133,7 @@ Guidelines:
       return `- ${t.name}(${params}) — ${t.description}`;
     })
     .join("\n");
+  const availableToolsSection = toolList || "(no tools available)";
 
   return `${withProfile}
 
@@ -123,7 +145,8 @@ To reply to the user in natural language, just write text (no JSON).
 Rules:
 - One JSON object per reply, nothing else — no prose before or after it, no markdown fences.
 - After each tool result arrives, either call another tool or write your final prose answer.
-- Prefer calling a tool over asking the user for anything that could be in the project.
+- Call only tools listed below. If no tool below can do the requested action, answer in plain language that no tool is available for that action and explain the next user step.
+- Prefer calling an available tool over asking the user for anything that could be in the project.
 
 Example session:
 User: what is the introduction about?
@@ -132,5 +155,5 @@ Tool read_file result: \\section{Introduction} We study …
 You: The introduction presents … (prose answer based on the file contents)
 
 Available tools:
-${toolList}`;
+${availableToolsSection}`;
 }

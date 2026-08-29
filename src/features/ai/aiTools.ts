@@ -5,6 +5,7 @@
 // existing rule-based checkers. Tool implementations are injected via
 // AgentContext so this module stays decoupled from App internals and testable.
 
+import type { AiAccessConfig } from "./aiConfig";
 import type { ToolResult, ToolSchema } from "./aiTypes";
 
 export interface EditProposal {
@@ -22,6 +23,8 @@ export interface EditProposal {
  * real implementations; tests can pass fakes.
  */
 export interface AgentContext {
+  /** True only when a real LatexDo project/workspace is open. */
+  hasProject?: () => boolean;
   projectName: () => string;
   activeFilePath: () => string | null;
   listFiles: () => Promise<string[]>;
@@ -38,8 +41,15 @@ export interface AgentContext {
    * keys and evidence. The editor layer chooses the LaTeX citation command.
    */
   recommendCitations: (passage: string) => Promise<string>;
-  /** Returns true if the user approved the edit (bypassed when auto-approve). */
+  /** Returns true if the user approved the proposed edit. */
   requestApproval: (proposal: EditProposal) => Promise<boolean>;
+}
+
+export interface AgentToolCapabilities {
+  hasProject: boolean;
+  hasActiveDocument: boolean;
+  hasSelection: boolean;
+  access: AiAccessConfig;
 }
 
 export const agentToolSchemas: ToolSchema[] = [
@@ -170,6 +180,79 @@ export const agentToolSchemas: ToolSchema[] = [
   },
 ];
 
+const mutatingToolNames = new Set(["edit_selection", "insert_at_cursor", "write_file"]);
+
+export function isMutatingAgentTool(name: string): boolean {
+  return mutatingToolNames.has(name);
+}
+
+export function availableAgentToolSchemas(caps: AgentToolCapabilities): ToolSchema[] {
+  if (!caps.hasProject) return [];
+  return agentToolSchemas.filter((tool) => {
+    switch (tool.name) {
+      case "list_files":
+      case "read_file":
+      case "write_file":
+      case "compile":
+      case "run_checks":
+        return caps.hasProject && caps.access.projectFiles;
+      case "insert_citation":
+      case "recommend_citations":
+        return caps.hasProject && caps.access.bibliography;
+      case "get_selection":
+        return caps.hasActiveDocument && caps.access.currentEditor;
+      case "get_active_document":
+      case "insert_at_cursor":
+        return caps.hasActiveDocument && caps.access.currentEditor;
+      case "edit_selection":
+        return caps.hasActiveDocument && caps.hasSelection && caps.access.currentEditor;
+      default:
+        return false;
+    }
+  });
+}
+
+export function unavailableToolMessage(
+  toolName: string,
+  caps: AgentToolCapabilities,
+): string {
+  if (!caps.hasProject) {
+    return "No LatexDo project is open, so I do not have project tools for that action. Open or create a project first, then I can inspect files or propose edits.";
+  }
+  if (
+    (toolName === "list_files" ||
+      toolName === "read_file" ||
+      toolName === "write_file" ||
+      toolName === "compile" ||
+      toolName === "run_checks") &&
+    !caps.access.projectFiles
+  ) {
+    return "Project file tools are disabled in AI settings. Enable Project files access before asking me to inspect, compile, or write project files.";
+  }
+  if (
+    (toolName === "get_selection" ||
+      toolName === "get_active_document" ||
+      toolName === "edit_selection" ||
+      toolName === "insert_at_cursor") &&
+    !caps.access.currentEditor
+  ) {
+    return "Current editor tools are disabled in AI settings. Enable Current editor access before asking me to inspect or edit the open document.";
+  }
+  if (
+    (toolName === "insert_citation" || toolName === "recommend_citations") &&
+    !caps.access.bibliography
+  ) {
+    return "Bibliography tools are disabled in AI settings. Enable Bibliography and citations access before asking me to inspect references.";
+  }
+  if (!caps.hasActiveDocument) {
+    return "No document is open, so I do not have editor tools for that action. Open a document first, or tell me which project file to inspect.";
+  }
+  if (toolName === "edit_selection" && !caps.hasSelection) {
+    return "No text is selected, so I cannot replace a selection yet. Select the text to change, or tell me the file and exact change you want.";
+  }
+  return `The ${toolName} tool is not available for this request. I can continue in chat, or you can enable the needed project/editor access in AI settings.`;
+}
+
 function ok(content: string, ui?: unknown): ToolResult {
   return { ok: true, content, ui };
 }
@@ -182,12 +265,27 @@ function argStr(args: Record<string, unknown>, key: string): string {
   return typeof v === "string" ? v : "";
 }
 
+function toolFailureMessage(name: string, error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/no (?:latexdo )?project (?:is )?open/i.test(message)) {
+    return "No LatexDo project is open. Ask the user to open or create a project before using project tools.";
+  }
+  if (/access is disabled in AI settings/i.test(message)) {
+    return message;
+  }
+  if (/no document is open/i.test(message)) {
+    return "No document is open. Ask the user to open a document before using editor tools.";
+  }
+  return `The ${name} tool could not complete: ${message}`;
+}
+
 export async function executeTool(
   name: string,
   args: Record<string, unknown>,
   ctx: AgentContext,
   opts: { autoApprove: boolean },
 ): Promise<ToolResult> {
+  void opts;
   try {
     switch (name) {
       case "list_files": {
@@ -206,23 +304,25 @@ export async function executeTool(
       }
       case "get_active_document": {
         const path = ctx.activeFilePath();
-        if (!path) return fail("No document is open.");
+        if (!path)
+          return ok("No document is open. Ask the user to open a document first.");
         return ok(ctx.documentText());
       }
       case "edit_selection": {
         const sel = ctx.selection();
         if (!sel.hasSelection) {
-          return fail("No selection to edit. Ask the user to select text first.");
+          return ok("No selection to edit. Ask the user to select text first.");
         }
         const path = ctx.activeFilePath();
-        if (!path) return fail("No document is open.");
+        if (!path)
+          return ok("No document is open. Ask the user to open a document first.");
         const proposal: EditProposal = {
           path,
           kind: "replace-selection",
           newText: argStr(args, "new_text"),
           oldText: sel.text,
         };
-        if (!opts.autoApprove && !(await ctx.requestApproval(proposal))) {
+        if (!(await ctx.requestApproval(proposal))) {
           return ok("The user declined this edit.");
         }
         await ctx.applyEdit(proposal);
@@ -230,13 +330,14 @@ export async function executeTool(
       }
       case "insert_at_cursor": {
         const path = ctx.activeFilePath();
-        if (!path) return fail("No document is open.");
+        if (!path)
+          return ok("No document is open. Ask the user to open a document first.");
         const proposal: EditProposal = {
           path,
           kind: "insert-at-cursor",
           newText: argStr(args, "text"),
         };
-        if (!opts.autoApprove && !(await ctx.requestApproval(proposal))) {
+        if (!(await ctx.requestApproval(proposal))) {
           return ok("The user declined this insertion.");
         }
         await ctx.applyEdit(proposal);
@@ -258,7 +359,7 @@ export async function executeTool(
           newText: content,
           oldText,
         };
-        if (!opts.autoApprove && !(await ctx.requestApproval(proposal))) {
+        if (!(await ctx.requestApproval(proposal))) {
           return ok("The user declined this write.");
         }
         await ctx.writeFile(path, content);
@@ -294,8 +395,6 @@ export async function executeTool(
         return fail(`Unknown tool: ${name}`);
     }
   } catch (error) {
-    return fail(
-      `Tool '${name}' threw: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    return fail(toolFailureMessage(name, error));
   }
 }

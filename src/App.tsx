@@ -7153,19 +7153,20 @@ ${macroEnd}
 
   const agentContext = useMemo<AgentContext>(
     () => ({
-      projectName: () => projectName || "Untitled project",
+      hasProject: () => hasVisibleProject,
+      projectName: () => (hasVisibleProject ? projectName || "Project" : ""),
       activeFilePath: () => activeTextDocument?.relativePath ?? null,
       listFiles: async () => {
-        if (!projectId) return [];
+        if (!hasVisibleProject || !projectId) return [];
         const entries = await window.latexdo.listProject(projectId);
         return flattenProjectFiles(entries);
       },
       readFile: (path) =>
-        projectId
+        hasVisibleProject && projectId
           ? window.latexdo.readFile(projectId, path)
           : Promise.reject(new Error("No project open")),
       writeFile: async (path, content) => {
-        if (!projectId) throw new Error("No project open");
+        if (!hasVisibleProject || !projectId) throw new Error("No project open");
         await window.latexdo.writeFile(projectId, path, content);
       },
       documentText: () =>
@@ -7281,6 +7282,7 @@ ${macroEnd}
     }),
     [
       projectName,
+      hasVisibleProject,
       activeTextDocument,
       projectId,
       compileResult,
@@ -9870,7 +9872,6 @@ ${macroEnd}
                         }
                         onOpenSettings={openAiSettings}
                         onOpenExternal={openExternalLink}
-                        onUpdateConfig={setAiConfig}
                       />
                     </div>
                   );
@@ -13165,33 +13166,16 @@ ${macroEnd}
                     />
                   </label>
 
-                  <div className="settings-section-heading">Autonomy</div>
-                  <label className="ai-autonomy-option">
-                    <input
-                      type="radio"
-                      name="ai-autonomy"
-                      checked={!aiConfig.autoApproveEdits}
-                      onChange={() =>
-                        setAiConfig((c) => ({ ...c, autoApproveEdits: false }))
-                      }
-                    />
+                  <div className="settings-section-heading">AI edit safety</div>
+                  <div className="ai-autonomy-option ai-autonomy-option-locked">
                     <span>
-                      <strong>Ask me at each step</strong>
+                      <strong>Approval required before edits</strong>
+                      <small>
+                        The assistant can inspect enabled project context, but file
+                        changes are shown for approval before they are applied.
+                      </small>
                     </span>
-                  </label>
-                  <label className="ai-autonomy-option">
-                    <input
-                      type="radio"
-                      name="ai-autonomy"
-                      checked={aiConfig.autoApproveEdits}
-                      onChange={() =>
-                        setAiConfig((c) => ({ ...c, autoApproveEdits: true }))
-                      }
-                    />
-                    <span>
-                      <strong>Fully autonomous</strong>
-                    </span>
-                  </label>
+                  </div>
                 </div>
               ) : null}
               {settingsTab === "editor" ? (

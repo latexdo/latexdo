@@ -28,6 +28,7 @@
     "test:diagnostics": "node --experimental-strip-types scripts/test-latex-diagnostics.ts",
     "test:supply-chain": "node scripts/verify-supply-chain.mjs && node scripts/test-supply-chain-runtime.mjs",
     "test:packaged": "node scripts/run-packaged-app-tests.mjs",
+    "test:packaged:e2e": "node scripts/run-packaged-app-tests.mjs --e2e",
     "release:check": "npm run lint && npm run typecheck && npm test && npm run test:coverage && npm audit --audit-level=high && npm run test:supply-chain && npm run package && npm run test:packaged",
     "package": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder"

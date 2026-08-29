@@ -346,7 +346,10 @@ export function normalizeAiConfig(raw: unknown): AiConfig {
     cloud,
     profile: normalizeResearcherProfile(saved.profile),
     access: normalizeAccess(saved.access),
-    autoApproveEdits: bool(saved.autoApproveEdits, defaultAiConfig.autoApproveEdits),
+    // Mutating AI tools always go through user approval. Keep the persisted
+    // field in the schema for backward compatibility, but do not honor older
+    // saved autonomous-mode configs.
+    autoApproveEdits: false,
     maxAgentSteps: int(saved.maxAgentSteps, defaultAiConfig.maxAgentSteps, 1, 50),
   };
 }

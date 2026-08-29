@@ -41,6 +41,10 @@ describe("normalizeAiConfig", () => {
     });
   });
 
+  it("does not honor saved autonomous edit mode", () => {
+    expect(normalizeAiConfig({ autoApproveEdits: true }).autoApproveEdits).toBe(false);
+  });
+
   it("migrates known local runtime models to LatexDo AI tiers", () => {
     expect(
       normalizeAiConfig({

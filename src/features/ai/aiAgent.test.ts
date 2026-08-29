@@ -45,6 +45,12 @@ describe("parseJsonToolCall", () => {
     expect(call?.name).toBe("compile");
   });
 
+  it("parses simple function-style tool text from local models", () => {
+    const call = parseJsonToolCall("list_files()");
+    expect(call?.name).toBe("list_files");
+    expect(call?.args).toEqual({});
+  });
+
   it("parses the OpenAI-style name/arguments shape", () => {
     const call = parseJsonToolCall(
       '{"name":"read_file","arguments":{"path":"main.tex"}}',
@@ -190,6 +196,64 @@ describe("runAgent", () => {
     expect(compile).toHaveBeenCalledOnce();
   });
 
+  it("answers plainly instead of executing a tool that is unavailable", async () => {
+    const listFiles = vi.fn(async () => ["main.tex"]);
+    const events: AgentEvent[] = [];
+
+    await runAgent({
+      messages: [{ role: "user", content: "which project is open?" }],
+      ctx: stubContext({
+        hasProject: () => false,
+        projectName: () => "",
+        activeFilePath: () => null,
+        listFiles,
+        selection: () => ({ text: "", hasSelection: false }),
+      }),
+      tools: [],
+      toolCapabilities: {
+        hasProject: false,
+        hasActiveDocument: false,
+        hasSelection: false,
+        access: {
+          chatHistory: true,
+          currentEditor: true,
+          projectFiles: true,
+          bibliography: true,
+          researcherProfile: true,
+        },
+      },
+      generate: async () => ({ type: "text", content: "list_files()" }),
+      autoApprove: false,
+      maxSteps: 6,
+      onEvent: (e) => events.push(e),
+    });
+
+    expect(listFiles).not.toHaveBeenCalled();
+    expect(events.find((e) => e.type === "assistant-message")).toMatchObject({
+      text: expect.stringContaining("No LatexDo project is open"),
+    });
+    expect(events.some((e) => e.type === "error")).toBe(false);
+  });
+
+  it("passes only the configured tool list to the provider", async () => {
+    const generate = vi.fn(async () => ({
+      type: "text" as const,
+      content: "No tools for that action.",
+    }));
+
+    await runAgent({
+      messages: [{ role: "user", content: "create a file" }],
+      ctx: stubContext(),
+      tools: [],
+      generate,
+      autoApprove: false,
+      maxSteps: 6,
+      onEvent: () => {},
+    });
+
+    expect(generate).toHaveBeenCalledWith(expect.any(Array), [], expect.any(Function));
+  });
+
   it("retries once when the model wrongly claims it cannot access project files", async () => {
     const steps: GenerationStep[] = [
       {
@@ -287,7 +351,7 @@ describe("step-by-step approval", () => {
     expect(result.content).toMatch(/declined/i);
   });
 
-  it("skips the approval prompt entirely in autonomous mode", async () => {
+  it("still requires approval even if an old config asks for autonomous mode", async () => {
     const requestApproval = vi.fn(async () => true);
     const applyEdit = vi.fn(async () => {});
     await executeTool(
@@ -296,7 +360,7 @@ describe("step-by-step approval", () => {
       { ...proposalCtx(true, applyEdit), requestApproval },
       { autoApprove: true },
     );
-    expect(requestApproval).not.toHaveBeenCalled();
+    expect(requestApproval).toHaveBeenCalledOnce();
     expect(applyEdit).toHaveBeenCalledOnce();
   });
 });

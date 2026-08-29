@@ -51,7 +51,7 @@ describe("buildSystemPrompt", () => {
     const prompt = buildSystemPrompt(baseContext);
 
     expect(prompt).toContain("disabled in AI settings");
-    expect(prompt).toContain("Otherwise use the available tools");
+    expect(prompt).toContain("tool is not listed as available");
   });
 
   it("lists project files so the model knows the layout up front", () => {
@@ -120,5 +120,24 @@ describe("buildSystemPrompt", () => {
 
     expect(prompt).toContain("TOOL PROTOCOL");
     expect(prompt).toContain('{"tool": "<name>", "args": { ... }}');
+  });
+
+  it("treats no-project state as unavailable tools instead of a writable project", () => {
+    const prompt = buildSystemPrompt({
+      ...baseContext,
+      projectName: "No Folder",
+      hasProject: false,
+      activeFilePath: null,
+      availableTools: [],
+      projectFiles: null,
+      providerSupportsNativeTools: false,
+    });
+
+    expect(prompt).toContain("No LatexDo project is currently open");
+    expect(prompt).toContain('No project is open. Do not describe "No Folder"');
+    expect(prompt).toContain("No tools are currently available");
+    expect(prompt).toContain("open or create a project");
+    expect(prompt).toContain("(no tools available)");
+    expect(prompt).not.toContain('Project: "No Folder"');
   });
 });

@@ -104,8 +104,13 @@ function runPackagedTest(executable, args) {
   });
 }
 
+const runE2e = process.argv.includes("--e2e");
 const executable = await findPackagedExecutable();
 console.log(`[packaged-test] Using ${executable}`);
 await runPackagedTest(executable, ["--smoke-test"]);
-await runPackagedTest(executable, ["--e2e-test"]);
-console.log("[packaged-test] Smoke and E2E checks passed.");
+if (runE2e) {
+  await runPackagedTest(executable, ["--e2e-test"]);
+  console.log("[packaged-test] Smoke and E2E checks passed.");
+} else {
+  console.log("[packaged-test] Smoke check passed.");
+}

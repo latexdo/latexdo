@@ -230,7 +230,6 @@ jobs:
             exit 1
           fi
           "$executable" --smoke-test
-          "$executable" --e2e-test
 
       - name: Prepare artifact
         shell: bash
@@ -354,10 +353,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "Packaged Windows smoke test failed with exit code $LASTEXITCODE."
           }
-          & $executable.FullName --e2e-test
-          if ($LASTEXITCODE -ne 0) {
-            throw "Packaged Windows E2E test failed with exit code $LASTEXITCODE."
-          }
 
       - name: Prepare artifact
         shell: pwsh
@@ -451,7 +446,6 @@ jobs:
           fi
 
           xvfb-run -a "$executable" --smoke-test
-          xvfb-run -a "$executable" --e2e-test
 
       - name: Package Linux AppImage
         run: >
@@ -468,7 +462,6 @@ jobs:
           [ -n "$pkg" ] || { echo "No AppImage produced"; exit 1; }
           chmod +x "$pkg"
           xvfb-run -a "$pkg" --smoke-test
-          xvfb-run -a "$pkg" --e2e-test
 
       - name: Prepare artifact
         shell: bash

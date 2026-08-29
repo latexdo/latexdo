@@ -11426,6 +11426,13 @@ button {
 .ai-autonomy-toggle:hover {
   border-color: var(--border-hover);
 }
+.ai-autonomy-toggle:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.ai-autonomy-toggle:disabled:hover {
+  border-color: var(--border-default);
+}
 .ai-autonomy-toggle.auto {
   background: var(--accent-soft);
   color: var(--accent);
@@ -11505,6 +11512,18 @@ button {
 }
 .ai-autonomy-option input {
   margin-top: 3px;
+}
+.ai-autonomy-option-locked {
+  cursor: default;
+}
+.ai-autonomy-option-locked span {
+  display: grid;
+  gap: 3px;
+}
+.ai-autonomy-option-locked small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 @media (max-width: 900px) {

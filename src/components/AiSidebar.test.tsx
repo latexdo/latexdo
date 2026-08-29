@@ -81,7 +81,6 @@ function resetAgent(overrides: Partial<typeof agentMock.state> = {}) {
 
 function renderSidebar(config = makeConfig(), isDesktop = true) {
   const onOpenSettings = vi.fn();
-  const onUpdateConfig = vi.fn();
   const onToggleExpanded = vi.fn();
   render(
     <AiSidebar
@@ -91,10 +90,9 @@ function renderSidebar(config = makeConfig(), isDesktop = true) {
       expanded={false}
       onToggleExpanded={onToggleExpanded}
       onOpenSettings={onOpenSettings}
-      onUpdateConfig={onUpdateConfig}
     />,
   );
-  return { onOpenSettings, onUpdateConfig, onToggleExpanded };
+  return { onOpenSettings, onToggleExpanded };
 }
 
 function typeInAiInput(value: string) {
@@ -144,14 +142,15 @@ describe("AiSidebar", () => {
     ).toBeVisible();
   });
 
-  it("sends trimmed prompts and toggles autonomous edits", () => {
+  it("sends trimmed prompts and shows approval-required edit safety", () => {
     const config = makeConfig({
       provider: "ollama",
       ollamaModel: "qwen2.5-coder:3b",
     });
-    const { onOpenSettings, onUpdateConfig, onToggleExpanded } = renderSidebar(config);
+    const { onOpenSettings, onToggleExpanded } = renderSidebar(config);
 
     expect(screen.getByText("Ollama · qwen2.5-coder:3b")).toBeVisible();
+    expect(screen.getByText("Approval required")).toBeVisible();
     expect(screen.getByText("Ask me to…")).toBeVisible();
 
     fireEvent.click(screen.getByTitle("AI settings"));
@@ -163,11 +162,9 @@ describe("AiSidebar", () => {
     fireEvent.click(screen.getByTitle("New chat"));
     expect(agentMock.state.reset).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: /Ask each step/i }));
-    expect(onUpdateConfig).toHaveBeenCalledWith({
-      ...config,
-      autoApproveEdits: true,
-    });
+    expect(
+      screen.queryByRole("button", { name: /Autonomous/i }),
+    ).not.toBeInTheDocument();
 
     const input = screen.getByPlaceholderText(/Ask the AI/i);
     fireEvent.change(input, {

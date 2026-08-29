@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type SetStateAction } from "react";
 import type { AiConfig } from "./aiConfig";
-import type { AgentContext, EditProposal } from "./aiTools";
+import {
+  availableAgentToolSchemas,
+  type AgentContext,
+  type EditProposal,
+} from "./aiTools";
 import type {
   ChatMessage,
   GenerateRequest,
@@ -40,6 +44,8 @@ const maxPersistedContentLength = 12_000;
 
 const accessDenied = (setting: string) =>
   Promise.reject(new Error(`${setting} access is disabled in AI settings.`));
+const noProjectOpen = <T>() =>
+  Promise.reject<T>(new Error("No LatexDo project is open."));
 
 function newId(): string {
   return `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
@@ -291,10 +297,11 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext, storageKey?: str
       if (!text || isRunning) return;
 
       const access = config.access;
+      const hasProject = ctx.hasProject?.() ?? true;
       // Give the model the project layout up front so it can answer questions
       // about any file in the project without being told which one.
       let projectFiles: string[] = [];
-      if (access.projectFiles) {
+      if (hasProject && access.projectFiles) {
         try {
           projectFiles = await ctx.listFiles();
         } catch {
@@ -313,12 +320,21 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext, storageKey?: str
         !nativeTools && activePath
           ? { path: activePath, text: ctx.documentText() }
           : null;
+      const toolCapabilities = {
+        hasProject,
+        hasActiveDocument: Boolean(activePath),
+        hasSelection: sel.hasSelection,
+        access,
+      };
+      const availableTools = availableAgentToolSchemas(toolCapabilities);
       const system = buildSystemPrompt({
         userName: config.userName || config.profile.displayName,
         projectName: ctx.projectName(),
+        hasProject,
         activeFilePath: activePath,
         hasSelection: sel.hasSelection,
         providerSupportsNativeTools: nativeTools,
+        availableTools,
         access,
         researchContext: access.researcherProfile
           ? buildResearchContext(config.profile)
@@ -425,15 +441,26 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext, storageKey?: str
       // mode, autoApprove short-circuits and requestApproval is never called.
       const effectiveCtx: AgentContext = {
         ...ctx,
+        hasProject: () => hasProject,
         activeFilePath: () => (access.currentEditor ? ctx.activeFilePath() : null),
         listFiles: () =>
-          access.projectFiles ? ctx.listFiles() : accessDenied("Project files"),
+          hasProject && access.projectFiles
+            ? ctx.listFiles()
+            : hasProject
+              ? accessDenied("Project files")
+              : noProjectOpen(),
         readFile: (path) =>
-          access.projectFiles ? ctx.readFile(path) : accessDenied("Project files"),
+          hasProject && access.projectFiles
+            ? ctx.readFile(path)
+            : hasProject
+              ? accessDenied("Project files")
+              : noProjectOpen(),
         writeFile: (path, content) =>
-          access.projectFiles
+          hasProject && access.projectFiles
             ? ctx.writeFile(path, content)
-            : accessDenied("Project files"),
+            : hasProject
+              ? accessDenied("Project files")
+              : noProjectOpen(),
         documentText: () => (access.currentEditor ? ctx.documentText() : ""),
         selection: () =>
           access.currentEditor ? ctx.selection() : { text: "", hasSelection: false },
@@ -456,8 +483,10 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext, storageKey?: str
         const updatedHistory = await runAgent({
           messages: historyRef.current,
           ctx: effectiveCtx,
+          tools: availableTools,
+          toolCapabilities,
           generate,
-          autoApprove: config.autoApproveEdits,
+          autoApprove: false,
           maxSteps: config.maxAgentSteps,
           signal: controller.signal,
           onEvent,

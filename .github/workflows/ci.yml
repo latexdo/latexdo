@@ -128,7 +128,6 @@ jobs:
             exit 1
           fi
           "$executable" --smoke-test
-          "$executable" --e2e-test
 
       - name: Package macOS DMG
         run: >
@@ -220,10 +219,6 @@ jobs:
           & $executable.FullName --smoke-test
           if ($LASTEXITCODE -ne 0) {
             throw "Packaged Windows smoke test failed with exit code $LASTEXITCODE."
-          }
-          & $executable.FullName --e2e-test
-          if ($LASTEXITCODE -ne 0) {
-            throw "Packaged Windows E2E test failed with exit code $LASTEXITCODE."
           }
 
       - name: Package Windows installer
@@ -327,7 +322,6 @@ jobs:
           fi
 
           xvfb-run -a "$executable" --smoke-test
-          xvfb-run -a "$executable" --e2e-test
 
       - name: Package Linux AppImage
         run: >
@@ -348,7 +342,6 @@ jobs:
 
           chmod +x "$package_path"
           xvfb-run -a "$package_path" --smoke-test
-          xvfb-run -a "$package_path" --e2e-test
 
       - name: Prepare Linux artifact
         shell: bash

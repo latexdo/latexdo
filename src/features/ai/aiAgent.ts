@@ -4,7 +4,13 @@
 // the step budget.
 
 import type { ChatMessage, GenerationStep, ToolCall, ToolSchema } from "./aiTypes";
-import { agentToolSchemas, executeTool, type AgentContext } from "./aiTools";
+import {
+  agentToolSchemas,
+  executeTool,
+  unavailableToolMessage,
+  type AgentContext,
+  type AgentToolCapabilities,
+} from "./aiTools";
 
 export type AgentEvent =
   | { type: "assistant-token"; text: string }
@@ -30,6 +36,8 @@ export type GenerateStepFn = (
 export interface RunAgentArgs {
   messages: ChatMessage[];
   ctx: AgentContext;
+  tools?: ToolSchema[];
+  toolCapabilities?: AgentToolCapabilities;
   generate: GenerateStepFn;
   autoApprove: boolean;
   maxSteps: number;
@@ -45,6 +53,14 @@ export interface RunAgentArgs {
 export function parseJsonToolCall(text: string): ToolCall | null {
   // Strip ```json … ``` fences before hunting for the object.
   const unfenced = text.replace(/```(?:json)?\s*([\s\S]*?)```/g, "$1").trim();
+  const simpleCall = unfenced.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(\s*\))?$/);
+  if (simpleCall && agentToolSchemas.some((tool) => tool.name === simpleCall[1])) {
+    return {
+      id: `call_${Math.random().toString(36).slice(2, 10)}`,
+      name: simpleCall[1],
+      args: {},
+    };
+  }
   const start = unfenced.indexOf("{");
   const end = unfenced.lastIndexOf("}");
   if (start === -1 || end <= start) return null;
@@ -110,6 +126,8 @@ export function looksLikeProjectAccessRefusal(text: string): boolean {
 export async function runAgent(args: RunAgentArgs): Promise<ChatMessage[]> {
   const { ctx, generate, autoApprove, maxSteps, signal, onEvent } = args;
   const messages = [...args.messages];
+  const tools = args.tools ?? agentToolSchemas;
+  const availableToolNames = new Set(tools.map((tool) => tool.name));
   let retriedProjectAccessRefusal = false;
 
   for (let step = 0; step < maxSteps; step += 1) {
@@ -121,7 +139,7 @@ export async function runAgent(args: RunAgentArgs): Promise<ChatMessage[]> {
 
     let result: GenerationStep;
     try {
-      result = await generate(messages, agentToolSchemas, (token) =>
+      result = await generate(messages, tools, (token) =>
         onEvent({ type: "assistant-token", text: token }),
       );
     } catch (error) {
@@ -169,6 +187,19 @@ export async function runAgent(args: RunAgentArgs): Promise<ChatMessage[]> {
       }
       onEvent({ type: "assistant-message", text: finalText });
       messages.push({ role: "assistant", content: finalText });
+      onEvent({ type: "done", reason: "completed" });
+      return messages;
+    }
+
+    const unavailableTool = toolCalls.find(
+      (call) => !availableToolNames.has(call.name),
+    );
+    if (unavailableTool) {
+      const message = args.toolCapabilities
+        ? unavailableToolMessage(unavailableTool.name, args.toolCapabilities)
+        : "No tool is available for that action right now. I can continue in chat, or you can enable the needed project/editor access in AI settings.";
+      onEvent({ type: "assistant-message", text: message });
+      messages.push({ role: "assistant", content: message });
       onEvent({ type: "done", reason: "completed" });
       return messages;
     }

@@ -10,7 +10,6 @@ import {
   Wrench,
   Check,
   X,
-  Zap,
   ShieldCheck,
   AlertTriangle,
   CircleSlash,
@@ -47,7 +46,6 @@ interface AiSidebarProps {
   expanded: boolean;
   onToggleExpanded: () => void;
   onOpenSettings: () => void;
-  onUpdateConfig: (config: AiConfig) => void;
   onOpenExternal?: (url: string) => void;
   storageKey?: string;
 }
@@ -89,7 +87,6 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
   expanded,
   onToggleExpanded,
   onOpenSettings,
-  onUpdateConfig,
   onOpenExternal,
   storageKey,
 }) => {
@@ -107,7 +104,6 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
   const configured = isConfigured(config, isDesktop);
-  const autonomous = config.autoApproveEdits;
   const cloudProvider =
     config.provider === "cloud" ? findCloudProvider(config.cloud.providerId) : null;
 
@@ -175,9 +171,6 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
     [input],
   );
 
-  const toggleAutonomy = () =>
-    onUpdateConfig({ ...config, autoApproveEdits: !config.autoApproveEdits });
-
   React.useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
@@ -243,16 +236,13 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
       <div className="ai-sidebar-model">
         <span>{providerLabel(config)}</span>
         <button
-          className={`ai-autonomy-toggle ${autonomous ? "auto" : "ask"}`}
-          onClick={toggleAutonomy}
-          title={
-            autonomous
-              ? "Fully autonomous: the agent applies changes without asking. Click to require step-by-step approval."
-              : "Step-by-step: the agent asks before each change. Click to let it run fully autonomously."
-          }
+          type="button"
+          className="ai-autonomy-toggle ask"
+          disabled
+          title="Approval required: the assistant must ask before applying edits or writing files."
         >
-          {autonomous ? <Zap size={12} /> : <ShieldCheck size={12} />}
-          <span>{autonomous ? "Autonomous" : "Ask each step"}</span>
+          <ShieldCheck size={12} />
+          <span>Approval required</span>
         </button>
       </div>
 
