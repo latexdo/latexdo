@@ -544,6 +544,8 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
   return {
     runtime: "cloud",
 
+    reportRendererIssue: async (_payload) => {},
+
     openProject: async () => {
       const token = initialShareToken();
       if (token) {

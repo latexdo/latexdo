@@ -404,6 +404,8 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
   const api: BrowserLatexDoApi = {
     runtime: "browser",
 
+    async reportRendererIssue(_payload) {},
+
     async openProject() {
       const store = readStore();
       const project = currentOrNewProject(store);

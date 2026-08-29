@@ -230,6 +230,7 @@ jobs:
             exit 1
           fi
           "$executable" --smoke-test
+          "$executable" --e2e-test
 
       - name: Prepare artifact
         shell: bash
@@ -324,6 +325,40 @@ jobs:
 
           npx @builderArgs
 
+      - name: Package Windows unpacked app
+        shell: pwsh
+        run: |
+          $builderArgs = @(
+            "electron-builder",
+            "--win", "dir",
+            "--x64",
+            "--publish", "never",
+            "--config.directories.output=release/windows-dir"
+          )
+
+          if ("${{ steps.windows_signing.outputs.signed }}" -eq "true") {
+            $builderArgs += "--config.forceCodeSigning=true"
+          }
+
+          npx @builderArgs
+
+      - name: Test packaged Windows application
+        shell: pwsh
+        run: |
+          $executable = Get-ChildItem -Path "release/windows-dir" -Recurse -Filter "LatexDo.exe" -File |
+            Select-Object -First 1
+          if (-not $executable) {
+            throw "The packaged Windows executable was not found."
+          }
+          & $executable.FullName --smoke-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "Packaged Windows smoke test failed with exit code $LASTEXITCODE."
+          }
+          & $executable.FullName --e2e-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "Packaged Windows E2E test failed with exit code $LASTEXITCODE."
+          }
+
       - name: Prepare artifact
         shell: pwsh
         run: |
@@ -416,6 +451,7 @@ jobs:
           fi
 
           xvfb-run -a "$executable" --smoke-test
+          xvfb-run -a "$executable" --e2e-test
 
       - name: Package Linux AppImage
         run: >
@@ -432,6 +468,7 @@ jobs:
           [ -n "$pkg" ] || { echo "No AppImage produced"; exit 1; }
           chmod +x "$pkg"
           xvfb-run -a "$pkg" --smoke-test
+          xvfb-run -a "$pkg" --e2e-test
 
       - name: Prepare artifact
         shell: bash

@@ -4,6 +4,8 @@ import appIconUrl from "../build/icon.svg";
 import App from "./App";
 import { installBrowserApis } from "./browserApi";
 import { CollaborationProvider } from "./collaboration/CollaborationProvider";
+import { RendererErrorBoundary } from "./RendererErrorBoundary";
+import { installRendererDiagnostics } from "./rendererDiagnostics";
 import "./styles.css";
 
 const favicon =
@@ -18,11 +20,14 @@ if (!favicon.parentElement) {
 }
 
 installBrowserApis();
+installRendererDiagnostics();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <CollaborationProvider>
-      <App />
-    </CollaborationProvider>
+    <RendererErrorBoundary>
+      <CollaborationProvider>
+        <App />
+      </CollaborationProvider>
+    </RendererErrorBoundary>
   </StrictMode>,
 );

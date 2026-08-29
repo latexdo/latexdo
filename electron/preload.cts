@@ -28,6 +28,7 @@ import type {
   ProofreadingSettings,
   ProjectEntry,
   ProjectListOptions,
+  RendererDiagnosticPayload,
   SpellCheckerSettings,
   SyncTexPdfLocation,
   SyncTexSourceLocation,
@@ -587,6 +588,8 @@ function emptyCloudGitStatus(): GitStatusSummary {
 
 const api = {
   runtime: "desktop",
+  reportRendererIssue: (payload: RendererDiagnosticPayload): Promise<void> =>
+    ipcRenderer.invoke("app:renderer-diagnostic", payload),
   openProject: (): Promise<OpenProject | null> => ipcRenderer.invoke("project:open"),
   restoreCloudProject,
   createProject: (options?: CreateProjectOptions): Promise<OpenProject | null> =>

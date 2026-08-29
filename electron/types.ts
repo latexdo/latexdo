@@ -393,6 +393,17 @@ export interface UpdateDownloadProgress {
   message?: string;
 }
 
+export interface RendererDiagnosticPayload {
+  kind: "renderer-error" | "renderer-unhandled-rejection" | "renderer-react-error";
+  error: {
+    name?: string;
+    message: string;
+    stack?: string;
+    code?: string;
+  };
+  context?: Record<string, unknown>;
+}
+
 export interface SpellCheckerSettings {
   enabled: boolean;
   languages: string[];

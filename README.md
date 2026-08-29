@@ -49,6 +49,8 @@ npm run typecheck        # Run TypeScript checks.
 npm run lint             # Run ESLint.
 npm run test             # Run Vitest.
 npm run package          # Build unpacked desktop app.
+npm run test:packaged    # Run packaged startup smoke and E2E checks.
+npm run release:check    # Run the local release-readiness gate.
 npm run dist             # Build distributable installers.
 npm run sync:downstream  # Refresh CLI and hosted editor repos.
 ```
@@ -149,6 +151,17 @@ Build local installers with:
 ```sh
 npm run dist
 ```
+
+Before tagging or publishing, run the local gate:
+
+```sh
+npm run release:check
+```
+
+That gate runs lint, type checks, unit tests, coverage, audit, supply-chain
+checks, an unpacked package build, and packaged startup/E2E checks. CI and the
+release workflow also run packaged `--e2e-test` checks on macOS, Windows, and
+Linux; Linux AppImage is tested as the final executable release artifact.
 
 CI also builds non-release smoke-test installers. When `latexdo-ci` passes on
 `main`, the release workflow publishes a build release named

@@ -128,6 +128,7 @@ jobs:
             exit 1
           fi
           "$executable" --smoke-test
+          "$executable" --e2e-test
 
       - name: Package macOS DMG
         run: >
@@ -198,6 +199,32 @@ jobs:
 
       - name: Build application
         run: npm run build
+
+      - name: Package Windows unpacked app
+        shell: pwsh
+        run: >
+          npx electron-builder
+          --win dir
+          --x64
+          --publish never
+          --config.directories.output=release/windows-dir
+
+      - name: Test packaged Windows application
+        shell: pwsh
+        run: |
+          $executable = Get-ChildItem -Path "release/windows-dir" -Recurse -Filter "LatexDo.exe" -File |
+            Select-Object -First 1
+          if (-not $executable) {
+            throw "The packaged Windows executable was not found."
+          }
+          & $executable.FullName --smoke-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "Packaged Windows smoke test failed with exit code $LASTEXITCODE."
+          }
+          & $executable.FullName --e2e-test
+          if ($LASTEXITCODE -ne 0) {
+            throw "Packaged Windows E2E test failed with exit code $LASTEXITCODE."
+          }
 
       - name: Package Windows installer
         run: >
@@ -300,6 +327,7 @@ jobs:
           fi
 
           xvfb-run -a "$executable" --smoke-test
+          xvfb-run -a "$executable" --e2e-test
 
       - name: Package Linux AppImage
         run: >
@@ -320,6 +348,7 @@ jobs:
 
           chmod +x "$package_path"
           xvfb-run -a "$package_path" --smoke-test
+          xvfb-run -a "$package_path" --e2e-test
 
       - name: Prepare Linux artifact
         shell: bash

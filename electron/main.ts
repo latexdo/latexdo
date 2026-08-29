@@ -8,6 +8,7 @@ import {
   protocol,
   shell,
   type MenuItemConstructorOptions,
+  type RenderProcessGoneDetails,
 } from "electron";
 import { spawn, type SpawnOptions } from "node:child_process";
 import {
@@ -36,6 +37,7 @@ import {
   readdir,
   realpath,
   rename,
+  rm,
   stat,
   unlink,
   writeFile,
@@ -70,6 +72,7 @@ import type {
   ProofreadingRequestOptions,
   ProofreadingSettings,
   ProjectListOptions,
+  RendererDiagnosticPayload,
   SpellCheckerSettings,
   UpdateCheckResult,
   UpdateDownloadProgress,
@@ -92,6 +95,13 @@ import { registerTerminalIpc } from "./terminal.js";
 import { registerAiIpc } from "./ai/aiIpc.js";
 import { fetchOrcidProfile } from "./orcid.js";
 import { listProject } from "./projectTree.js";
+import {
+  createDiagnosticReporter,
+  rendererFailureDataUrl,
+  rendererGoneMessage,
+  serializeError,
+  type DiagnosticKind,
+} from "./diagnostics.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -112,16 +122,20 @@ const expectedUpdateProduct = envString("LATEXDO_UPDATE_PRODUCT") ?? productName
 const packagedRendererOrigin = "latexdo://app";
 const packagedRendererRoot = path.resolve(currentDirectory, "..", "dist");
 const startupSmokeTest = process.argv.includes("--smoke-test");
+const startupE2eTest = process.argv.includes("--e2e-test");
+const startupAutomationTest = startupSmokeTest || startupE2eTest;
 const startupSmokeTimeoutMs = 20_000;
 const extensionCatalogFetchTimeoutMs = 4_500;
 const downloadsPageUrl =
   envString("LATEXDO_DOWNLOADS_URL") ?? "https://app.latexdo.org/downloads/";
-const downloadsManifestUrl =
-  envString("LATEXDO_DOWNLOADS_MANIFEST_URL") ??
-  "https://app.latexdo.org/downloads/manifest.json";
-const updatesFeedUrl =
-  envString("LATEXDO_UPDATES_FEED_URL") ??
-  "https://app.latexdo.org/updates/latest.json";
+const downloadsManifestUrl = startupE2eTest
+  ? "http://127.0.0.1:9/downloads/manifest.json"
+  : (envString("LATEXDO_DOWNLOADS_MANIFEST_URL") ??
+    "https://app.latexdo.org/downloads/manifest.json");
+const updatesFeedUrl = startupE2eTest
+  ? "http://127.0.0.1:9/updates/latest.json"
+  : (envString("LATEXDO_UPDATES_FEED_URL") ??
+    "https://app.latexdo.org/updates/latest.json");
 const extensionStoreUrl =
   envString("LATEXDO_EXTENSION_STORE_URL") ?? "https://store.latexdo.org/";
 const extensionStoreCatalogUrl =
@@ -253,6 +267,13 @@ function installSafeConsole(): void {
 }
 
 installSafeConsole();
+
+const mainDiagnostics = createDiagnosticReporter({
+  getUserDataPath: () => app.getPath("userData"),
+  getAppVersion: () => app.getVersion(),
+  processType: "main",
+});
+let appIsQuitting = false;
 
 const openProjects = new Map<string, OpenProject>();
 const cloudCompileProjectIdPattern = /^(?:project|session)_[a-z0-9]{6,64}$/i;
@@ -1187,6 +1208,98 @@ function parseStringArray(
       pattern: options.pattern,
     }),
   );
+}
+
+const rendererDiagnosticKinds = new Set<RendererDiagnosticPayload["kind"]>([
+  "renderer-error",
+  "renderer-unhandled-rejection",
+  "renderer-react-error",
+]);
+
+function parseOptionalDiagnosticString(
+  channel: string,
+  value: unknown,
+  maxLength: number,
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  return parseString(channel, value, {
+    allowEmpty: true,
+    maxLength,
+    trim: false,
+    rejectNullByte: true,
+  });
+}
+
+function parseRendererDiagnosticContext(
+  channel: string,
+  value: unknown,
+): Record<string, unknown> | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    invalidIpcInput(channel);
+  }
+
+  const context: Record<string, unknown> = {};
+  for (const [rawKey, rawValue] of Object.entries(value).slice(0, 50)) {
+    const key = parseString(channel, rawKey, {
+      maxLength: 120,
+      rejectControlChars: true,
+    });
+    if (typeof rawValue === "string") {
+      context[key] = parseString(channel, rawValue, {
+        allowEmpty: true,
+        maxLength: 2_000,
+        trim: false,
+        rejectNullByte: true,
+      });
+      continue;
+    }
+    if (
+      rawValue === null ||
+      typeof rawValue === "boolean" ||
+      (typeof rawValue === "number" && Number.isFinite(rawValue))
+    ) {
+      context[key] = rawValue;
+    }
+  }
+  return context;
+}
+
+function parseRendererDiagnosticPayload(
+  channel: string,
+  value: unknown,
+): RendererDiagnosticPayload {
+  if (!isRecord(value) || !isRecord(value.error)) {
+    invalidIpcInput(channel);
+  }
+
+  const kind = parseString(channel, value.kind, {
+    rejectControlChars: true,
+    pattern: /^(?:renderer-error|renderer-unhandled-rejection|renderer-react-error)$/,
+  }) as RendererDiagnosticPayload["kind"];
+  if (!rendererDiagnosticKinds.has(kind)) {
+    invalidIpcInput(channel);
+  }
+
+  return {
+    kind,
+    error: {
+      name: parseOptionalDiagnosticString(channel, value.error.name, 200),
+      message: parseString(channel, value.error.message, {
+        allowEmpty: true,
+        maxLength: 2_000,
+        trim: false,
+        rejectNullByte: true,
+      }),
+      stack: parseOptionalDiagnosticString(channel, value.error.stack, 12_000),
+      code: parseOptionalDiagnosticString(channel, value.error.code, 120),
+    },
+    context: parseRendererDiagnosticContext(channel, value.context),
+  };
 }
 
 function normalizeHttpUrl(value: string): string | null {
@@ -4065,6 +4178,269 @@ async function packagedRendererResponse(request: Request): Promise<Response> {
   });
 }
 
+function recordMainDiagnosticSync(
+  kind: DiagnosticKind,
+  severity: "info" | "warning" | "error" | "fatal",
+  error: unknown,
+  context?: Record<string, unknown>,
+): void {
+  try {
+    mainDiagnostics.recordSync(kind, severity, error, context);
+  } catch (diagnosticError) {
+    console.error("[latexdo] failed to write diagnostic", diagnosticError);
+  }
+}
+
+async function recordMainDiagnostic(
+  kind: DiagnosticKind,
+  severity: "info" | "warning" | "error" | "fatal",
+  error: unknown,
+  context?: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await mainDiagnostics.record(kind, severity, error, context);
+  } catch (diagnosticError) {
+    console.error("[latexdo] failed to write diagnostic", diagnosticError);
+  }
+}
+
+function diagnosticLogHint(): string {
+  try {
+    return `\n\nDiagnostic log:\n${mainDiagnostics.logPath()}`;
+  } catch {
+    return "";
+  }
+}
+
+function rendererEntryUrl(): string {
+  return isDevelopment
+    ? process.env.VITE_DEV_SERVER_URL!
+    : `${packagedRendererOrigin}/index.html`;
+}
+
+async function showRendererFailurePage(
+  window: BrowserWindow,
+  title: string,
+  message: string,
+  detail?: string,
+): Promise<void> {
+  if (window.isDestroyed()) {
+    return;
+  }
+
+  try {
+    await window.loadURL(
+      rendererFailureDataUrl({
+        productName,
+        title,
+        message,
+        detail,
+      }),
+    );
+  } catch (error) {
+    recordMainDiagnosticSync("renderer-load-failure", "error", error, {
+      stage: "fallback-renderer-page",
+    });
+  }
+}
+
+const rendererLoadRecoveryWindows = new WeakSet<BrowserWindow>();
+let e2eAllowRendererCrashRecovery = false;
+let e2eRendererCrashRecovery: Promise<void> | null = null;
+
+async function handleRendererLoadFailure(
+  window: BrowserWindow,
+  error: unknown,
+  context: Record<string, unknown>,
+): Promise<void> {
+  if (window.isDestroyed() || rendererLoadRecoveryWindows.has(window)) {
+    return;
+  }
+
+  rendererLoadRecoveryWindows.add(window);
+  await recordMainDiagnostic("renderer-load-failure", "fatal", error, context);
+  console.error("[latexdo] renderer failed to load", serializeError(error));
+
+  await showRendererFailurePage(
+    window,
+    "LatexDo could not load the editor",
+    "The application files may be missing, damaged, or blocked by the operating system. Try reloading the editor, or reinstall LatexDo if this repeats.",
+    serializeError(error).message,
+  );
+
+  if (startupAutomationTest) {
+    app.exit(1);
+    return;
+  }
+
+  const result = await dialog.showMessageBox(window, {
+    type: "error",
+    buttons: ["Retry", "Quit"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+    title: `${productName} Startup Error`,
+    message: "The editor could not be loaded.",
+    detail:
+      "LatexDo recorded a diagnostic entry for this failure." + diagnosticLogHint(),
+  });
+
+  rendererLoadRecoveryWindows.delete(window);
+  if (result.response === 0) {
+    await loadRendererWindow(window);
+  } else {
+    app.quit();
+  }
+}
+
+async function loadRendererWindow(window: BrowserWindow): Promise<void> {
+  const targetUrl = rendererEntryUrl();
+  try {
+    await window.loadURL(targetUrl);
+  } catch (error) {
+    await handleRendererLoadFailure(window, error, {
+      stage: "loadURL",
+      targetUrl,
+    });
+  }
+}
+
+async function recoverRendererProcess(
+  window: BrowserWindow,
+  details: RenderProcessGoneDetails,
+): Promise<void> {
+  if (window.isDestroyed()) {
+    return;
+  }
+
+  if (startupE2eTest && e2eAllowRendererCrashRecovery) {
+    e2eRendererCrashRecovery = loadRendererWindow(window);
+    await e2eRendererCrashRecovery;
+    return;
+  }
+
+  const message = rendererGoneMessage(details);
+  await showRendererFailurePage(
+    window,
+    "LatexDo needs to recover the editor",
+    message,
+    `Reason: ${details.reason}; exit code: ${details.exitCode}`,
+  );
+
+  if (startupAutomationTest) {
+    app.exit(1);
+    return;
+  }
+
+  const result = await dialog.showMessageBox(window, {
+    type: details.reason === "oom" ? "warning" : "error",
+    buttons: ["Reload Editor", "Quit"],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+    title: `${productName} Renderer Recovery`,
+    message,
+    detail:
+      `Reason: ${details.reason}; exit code: ${details.exitCode}.` +
+      "\n\nLatexDo recorded a diagnostic entry for this failure." +
+      diagnosticLogHint(),
+  });
+
+  if (result.response === 0) {
+    await loadRendererWindow(window);
+  } else {
+    app.quit();
+  }
+}
+
+function showFatalMainProcessDialog(title: string, error: unknown): void {
+  if (startupAutomationTest) {
+    return;
+  }
+
+  try {
+    dialog.showErrorBox(
+      title,
+      `${serializeError(error).message}\n\nLatexDo recorded a diagnostic entry and will close.` +
+        diagnosticLogHint(),
+    );
+  } catch {
+    // The process may be too compromised to show UI. The diagnostic was already
+    // written synchronously before this point.
+  }
+}
+
+function installMainProcessFailureHandlers(): void {
+  let handlingFatalException = false;
+
+  process.on("uncaughtException", (error) => {
+    recordMainDiagnosticSync("uncaught-exception", "fatal", error);
+    console.error("[latexdo] uncaught main-process exception", error);
+
+    if (handlingFatalException) {
+      app.exit(1);
+      return;
+    }
+    handlingFatalException = true;
+    showFatalMainProcessDialog(`${productName} hit a fatal error`, error);
+    app.exit(1);
+  });
+
+  process.on("unhandledRejection", (reason) => {
+    recordMainDiagnosticSync("unhandled-rejection", "error", reason);
+    console.error("[latexdo] unhandled main-process rejection", reason);
+  });
+
+  app.on("render-process-gone", (_event, webContents, details) => {
+    if (appIsQuitting && details.reason === "clean-exit") {
+      return;
+    }
+
+    const expectedE2eRecovery =
+      startupE2eTest && e2eAllowRendererCrashRecovery && details.reason === "killed";
+    recordMainDiagnosticSync(
+      "renderer-process-gone",
+      expectedE2eRecovery ? "info" : "fatal",
+      details.reason,
+      {
+        expectedE2eRecovery,
+        reason: details.reason,
+        exitCode: details.exitCode,
+        url: webContents.getURL(),
+      },
+    );
+    if (expectedE2eRecovery) {
+      console.log("[latexdo] renderer process gone during E2E recovery", details);
+    } else {
+      console.error("[latexdo] renderer process gone", details);
+    }
+
+    const window = BrowserWindow.fromWebContents(webContents);
+    if (!window || window.isDestroyed()) {
+      if (startupAutomationTest) {
+        app.exit(1);
+      }
+      return;
+    }
+
+    void recoverRendererProcess(window, details);
+  });
+
+  app.on("child-process-gone", (_event, details) => {
+    if (details.reason === "clean-exit") {
+      return;
+    }
+    recordMainDiagnosticSync("child-process-gone", "warning", details.reason, {
+      type: details.type,
+      reason: details.reason,
+      exitCode: details.exitCode,
+      serviceName: details.serviceName,
+      name: details.name,
+    });
+    console.warn("[latexdo] Electron child process gone", details);
+  });
+}
+
 function createWindow(): BrowserWindow {
   console.log("[latexdo] createWindow:start");
   nativeTheme.themeSource = "dark";
@@ -4094,6 +4470,37 @@ function createWindow(): BrowserWindow {
   window.webContents.on("will-attach-webview", (event) => {
     event.preventDefault();
   });
+  window.webContents.on(
+    "did-fail-load",
+    (
+      _event,
+      errorCode,
+      errorDescription,
+      validatedURL,
+      isMainFrame,
+      frameProcessId,
+      frameRoutingId,
+    ) => {
+      if (!isMainFrame || errorCode === -3) {
+        return;
+      }
+
+      void handleRendererLoadFailure(
+        window,
+        new Error(
+          `Renderer failed to load ${validatedURL}: ${errorCode} ${errorDescription}`,
+        ),
+        {
+          stage: "did-fail-load",
+          errorCode,
+          errorDescription,
+          validatedURL,
+          frameProcessId,
+          frameRoutingId,
+        },
+      );
+    },
+  );
 
   window.webContents.once("did-finish-load", () => {
     console.log("[latexdo] createWindow:did-finish-load");
@@ -4103,11 +4510,7 @@ function createWindow(): BrowserWindow {
     });
   });
 
-  if (isDevelopment) {
-    void window.loadURL(process.env.VITE_DEV_SERVER_URL!);
-  } else {
-    void window.loadURL(`${packagedRendererOrigin}/index.html`);
-  }
+  void loadRendererWindow(window);
 
   return window;
 }
@@ -4186,18 +4589,418 @@ async function runStartupSmokeTest(window: BrowserWindow): Promise<void> {
   console.log("[latexdo] packaged startup smoke test passed", result);
 }
 
-// Smoke tests use an isolated profile and must not be mistaken for a request to
-// focus an already-running desktop instance.
-if (startupSmokeTest) {
+interface PackagedE2eStep {
+  name: string;
+  status: "passed" | "skipped";
+  detail?: string;
+}
+
+interface PackagedE2eFixtures {
+  root: string;
+  project: OpenProject;
+  gitProject: OpenProject | null;
+  largeProject: OpenProject;
+}
+
+const e2eValidDocument = String.raw`\documentclass{article}
+\begin{document}
+Hello from packaged E2E.
+\end{document}
+`;
+
+const e2eBrokenDocument = String.raw`\documentclass{article}
+\begin{document}
+\section{Broken
+\end{document}
+`;
+
+const e2eSlowDocument = String.raw`\documentclass{article}
+\begin{document}
+\newcount\n
+\n=0
+\loop
+\advance\n by 1
+\ifnum\n<100000000
+\repeat
+Done
+\end{document}
+`;
+
+function runE2eProcess(
+  command: string,
+  args: string[],
+  options: SpawnOptions = {},
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      ...options,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    const timeout = setTimeout(() => {
+      child.kill();
+      reject(new Error(`${command} timed out.`));
+    }, 8_000);
+    timeout.unref?.();
+
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.on("exit", (code, signal) => {
+      clearTimeout(timeout);
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(
+          new Error(
+            `${command} exited with ${code ?? `signal ${signal ?? "unknown"}`}.`,
+          ),
+        );
+      }
+    });
+  });
+}
+
+async function createPackagedE2eProject(
+  basePath: string,
+  folderName: string,
+): Promise<OpenProject> {
+  const projectPath = path.join(basePath, folderName);
+  await mkdir(projectPath, { recursive: true });
+  await atomicWriteUtf8(path.join(projectPath, "main.tex"), e2eValidDocument);
+  await trustWorkspace(projectPath);
+  return registerProject(projectPath);
+}
+
+async function preparePackagedE2eGitProject(projectPath: string): Promise<boolean> {
+  try {
+    await runE2eProcess("git", ["--version"]);
+    await runE2eProcess("git", ["init", "-q"], { cwd: projectPath });
+    await runE2eProcess("git", ["config", "user.name", "LatexDo E2E"], {
+      cwd: projectPath,
+    });
+    await runE2eProcess("git", ["config", "user.email", "e2e@latexdo.local"], {
+      cwd: projectPath,
+    });
+    await runE2eProcess("git", ["add", "main.tex"], { cwd: projectPath });
+    await runE2eProcess("git", ["commit", "-q", "-m", "Initial document"], {
+      cwd: projectPath,
+    });
+    return true;
+  } catch (error) {
+    console.warn("[latexdo] packaged E2E git project skipped", error);
+    return false;
+  }
+}
+
+async function createPackagedE2eFixtures(): Promise<PackagedE2eFixtures> {
+  const root = await mkdtemp(path.join(app.getPath("temp"), "latexdo-e2e-"));
+  await mkdir(app.getPath("userData"), { recursive: true });
+  await writeFile(userDataFilePath(spellCheckerSettingsFile), "{invalid json", "utf8");
+  await writeFile(userDataFilePath(proofreadingSettingsFile), "{invalid json", "utf8");
+
+  const project = await createPackagedE2eProject(root, "Project With Spaces");
+  const gitProject = await createPackagedE2eProject(root, "Git Project");
+  const gitReady = await preparePackagedE2eGitProject(gitProject.rootPath);
+  const largeProject = await createPackagedE2eProject(root, "Large Project");
+
+  for (let index = 0; index < 320; index += 1) {
+    const group = `group-${Math.floor(index / 40)
+      .toString()
+      .padStart(2, "0")}`;
+    const directory = path.join(largeProject.rootPath, group);
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      path.join(directory, `file-${index.toString().padStart(3, "0")}.tex`),
+      `% fixture ${index}\n`,
+      "utf8",
+    );
+  }
+
+  return {
+    root,
+    project,
+    gitProject: gitReady ? gitProject : null,
+    largeProject,
+  };
+}
+
+async function runRendererPackagedE2eWorkflows(
+  window: BrowserWindow,
+  fixtures: PackagedE2eFixtures,
+): Promise<PackagedE2eStep[]> {
+  await waitForRendererLoad(window);
+
+  return (await window.webContents.executeJavaScript(`
+    (async () => {
+      const params = ${JSON.stringify({
+        projectId: fixtures.project.id,
+        gitProjectId: fixtures.gitProject?.id ?? null,
+        largeProjectId: fixtures.largeProject.id,
+        productName,
+        validDocument: e2eValidDocument,
+        brokenDocument: e2eBrokenDocument,
+        slowDocument: e2eSlowDocument,
+      })};
+      const steps = [];
+      let latexmkMissing = false;
+      const delay = (milliseconds) =>
+        new Promise((resolve) => setTimeout(resolve, milliseconds));
+      const assert = (condition, message) => {
+        if (!condition) throw new Error(message);
+      };
+      const byteLength = (value) => Number(value?.byteLength ?? value?.length ?? 0);
+      const flatten = (entries) =>
+        entries.flatMap((entry) => [entry, ...flatten(entry.children ?? [])]);
+      const step = async (name, fn) => {
+        const detail = await fn();
+        steps.push({
+          name,
+          status: "passed",
+          detail: detail === undefined ? undefined : String(detail),
+        });
+      };
+      const skip = (name, detail) => {
+        steps.push({ name, status: "skipped", detail: String(detail) });
+      };
+
+      await step("renderer-root-rendered", async () => {
+        const root = document.getElementById("root");
+        assert(document.title === params.productName, "unexpected document title");
+        assert((root?.childElementCount ?? 0) > 0, "React root is empty");
+        assert(window.location.origin === "latexdo://app", "unexpected origin");
+        return window.location.origin;
+      });
+
+      await step("renderer-diagnostic-report", async () => {
+        await window.latexdo.reportRendererIssue({
+          kind: "renderer-error",
+          error: { message: "packaged e2e diagnostic probe" },
+          context: { source: "packaged-e2e" },
+        });
+        return "reported";
+      });
+
+      await step("list-project", async () => {
+        const entries = await window.latexdo.listProject(params.projectId);
+        assert(
+          entries.some((entry) => entry.relativePath === "main.tex"),
+          "main.tex missing from project tree",
+        );
+        return String(entries.length);
+      });
+
+      await step("edit-save-reopen-file", async () => {
+        await window.latexdo.createFolder(params.projectId, "sections");
+        const relativePath = await window.latexdo.createFile(
+          params.projectId,
+          "sections/intro.tex",
+        );
+        await window.latexdo.writeFile(
+          params.projectId,
+          relativePath,
+          "\\\\section{Intro}\\nSaved from packaged E2E.\\n",
+        );
+        const saved = await window.latexdo.readFile(params.projectId, relativePath);
+        assert(saved.includes("Saved from packaged E2E"), "saved file did not reopen");
+        return relativePath;
+      });
+
+      await step("spaces-unicode-long-path", async () => {
+        const relativePath =
+          "sections/path with spaces and unicode \\u03c0 and long " +
+          "x".repeat(72) +
+          ".tex";
+        await window.latexdo.createFile(params.projectId, relativePath);
+        await window.latexdo.writeFile(params.projectId, relativePath, "ok\\n");
+        const saved = await window.latexdo.readFile(params.projectId, relativePath);
+        assert(saved === "ok\\n", "path stress file did not round-trip");
+        return relativePath.length.toString();
+      });
+
+      await step("corrupt-settings-recovery", async () => {
+        const spell = await window.latexdo.getSpellCheckerSettings();
+        const proof = await window.latexdo.getProofreadingSettings();
+        assert(Array.isArray(spell.languages), "spell settings did not recover");
+        assert(typeof proof.enabled === "boolean", "proofreading settings did not recover");
+        return "defaults loaded";
+      });
+
+      await step("git-non-repository", async () => {
+        const status = await window.latexdo.getGitStatus(params.projectId);
+        assert(status.isRepo === false, "non-git project reported as git repo");
+        return status.error ?? "not a repository";
+      });
+
+      if (params.gitProjectId) {
+        await step("git-repository", async () => {
+          const status = await window.latexdo.getGitStatus(params.gitProjectId);
+          assert(status.isRepo === true, "git project was not recognized");
+          assert(typeof status.branch === "string", "git branch missing");
+          return status.branch;
+        });
+      } else {
+        skip("git-repository", "git executable unavailable");
+      }
+
+      await step("large-project-scan", async () => {
+        const entries = await window.latexdo.listProject(params.largeProjectId, {
+          maxDepth: 50,
+          maxEntries: 5000,
+        });
+        const count = flatten(entries).length;
+        assert(count >= 320, "large project scan missed fixture files");
+        return String(count);
+      });
+
+      await step("compile-valid-or-no-tex", async () => {
+        await window.latexdo.writeFile(params.projectId, "main.tex", params.validDocument);
+        const result = await window.latexdo.compile({
+          projectId: params.projectId,
+          rootFile: "main.tex",
+          engine: "pdflatex",
+        });
+        if (result.ok) {
+          assert(result.pdfPath, "compile succeeded without a pdf path");
+          const bytes = await window.latexdo.readPdf(params.projectId, result.pdfPath);
+          assert(byteLength(bytes) > 100, "compiled PDF was empty");
+          return "compiled";
+        }
+        if (/latexmk was not found/i.test(result.error ?? "")) {
+          latexmkMissing = true;
+          return "latexmk missing covered";
+        }
+        throw new Error(result.error ?? "valid compile failed");
+      });
+
+      await step("compile-broken-or-no-tex", async () => {
+        if (latexmkMissing) return "latexmk missing covered";
+        await window.latexdo.writeFile(params.projectId, "main.tex", params.brokenDocument);
+        const result = await window.latexdo.compile({
+          projectId: params.projectId,
+          rootFile: "main.tex",
+          engine: "pdflatex",
+        });
+        assert(result.ok === false, "broken LaTeX unexpectedly compiled");
+        assert(
+          Boolean(result.error) || (result.diagnostics?.length ?? 0) > 0,
+          "broken compile returned no recoverable error",
+        );
+        await window.latexdo.writeFile(params.projectId, "main.tex", params.validDocument);
+        return result.error ?? "diagnostic reported";
+      });
+
+      await step("compile-cancel-or-no-tex", async () => {
+        if (latexmkMissing) return "latexmk missing covered";
+        await window.latexdo.writeFile(params.projectId, "main.tex", params.slowDocument);
+        const compile = window.latexdo.compile({
+          projectId: params.projectId,
+          rootFile: "main.tex",
+          engine: "pdflatex",
+        });
+        await delay(100);
+        const canceled = await window.latexdo.cancelCompile(params.projectId);
+        const result = await compile;
+        await window.latexdo.writeFile(params.projectId, "main.tex", params.validDocument);
+        assert(
+          canceled || result.ok || Boolean(result.error),
+          "compile cancel returned no terminal result",
+        );
+        return canceled ? "cancelled" : "finished before cancel";
+      });
+
+      await step("offline-update-check-failure", async () => {
+        const result = await window.latexdo.checkForUpdates();
+        assert(result.updateAvailable === false, "offline update check found an update");
+        assert(Boolean(result.error), "offline update check returned no error detail");
+        return result.error;
+      });
+
+      return steps;
+    })()
+  `)) as PackagedE2eStep[];
+}
+
+function e2eDelay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function waitForE2eRendererCrashRecovery(): Promise<void> {
+  const startedAt = Date.now();
+  while (!e2eRendererCrashRecovery) {
+    if (Date.now() - startedAt > startupSmokeTimeoutMs) {
+      throw new Error("Renderer recovery did not start before the timeout.");
+    }
+    await e2eDelay(25);
+  }
+  await e2eRendererCrashRecovery;
+}
+
+async function runRendererCrashRecoveryE2e(
+  window: BrowserWindow,
+): Promise<PackagedE2eStep> {
+  e2eAllowRendererCrashRecovery = true;
+  e2eRendererCrashRecovery = null;
+  try {
+    window.webContents.forcefullyCrashRenderer();
+    await waitForE2eRendererCrashRecovery();
+    const result = (await window.webContents.executeJavaScript(`
+      (() => ({
+        title: document.title,
+        rootChildCount: document.getElementById("root")?.childElementCount ?? 0,
+        origin: window.location.origin,
+      }))()
+    `)) as { title?: string; rootChildCount?: number; origin?: string };
+
+    if (
+      result.title !== productName ||
+      !result.rootChildCount ||
+      result.origin !== packagedRendererOrigin
+    ) {
+      throw new Error(`Renderer did not recover cleanly: ${JSON.stringify(result)}`);
+    }
+
+    return {
+      name: "renderer-crash-recovery",
+      status: "passed",
+      detail: "renderer reloaded after forced crash",
+    };
+  } finally {
+    e2eAllowRendererCrashRecovery = false;
+    e2eRendererCrashRecovery = null;
+  }
+}
+
+async function runPackagedE2eTest(window: BrowserWindow): Promise<void> {
+  const fixtures = await createPackagedE2eFixtures();
+  try {
+    const steps = await runRendererPackagedE2eWorkflows(window, fixtures);
+    steps.push(await runRendererCrashRecoveryE2e(window));
+    console.log("[latexdo] packaged E2E test passed", JSON.stringify(steps, null, 2));
+  } finally {
+    for (const projectId of openProjects.keys()) {
+      closeGitWatchers(projectId);
+    }
+    await rm(fixtures.root, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+// Automated release tests use isolated profiles and must not be mistaken for a
+// request to focus an already-running desktop instance.
+if (startupAutomationTest) {
+  const profileName = startupSmokeTest ? "latexdo-smoke" : "latexdo-e2e";
   app.setPath(
     "userData",
-    path.join(app.getPath("temp"), `latexdo-smoke-${process.pid}`),
+    path.join(app.getPath("temp"), `${profileName}-${process.pid}`),
   );
 }
 
+installMainProcessFailureHandlers();
+
 // Concurrent interactive instances race on the settings store, trusted-workspace
 // registry, and history snapshots, so a second launch focuses the existing window.
-if (!startupSmokeTest && !app.requestSingleInstanceLock()) {
+if (!startupAutomationTest && !app.requestSingleInstanceLock()) {
   app.exit(0);
 }
 
@@ -4212,7 +5015,7 @@ app.on("second-instance", () => {
   window.focus();
 });
 
-app.whenReady().then(async () => {
+async function startApp(): Promise<void> {
   console.log("[latexdo] app:ready");
   if (!isDevelopment) {
     protocol.handle("latexdo", packagedRendererResponse);
@@ -4883,6 +5686,12 @@ app.whenReady().then(async () => {
     }
     await shell.openExternal(url);
   });
+  ipcMain.handle("app:renderer-diagnostic", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "app:renderer-diagnostic";
+    const [rawPayload] = expectIpcArgs(channel, rawArgs, 1);
+    const payload = parseRendererDiagnosticPayload(channel, rawPayload);
+    await recordMainDiagnostic(payload.kind, "error", payload.error, payload.context);
+  });
   ipcMain.handle("scholarly:fetch-json", async (_event, ...rawArgs: unknown[]) => {
     const channel = "scholarly:fetch-json";
     const [rawUrl] = expectIpcArgs(channel, rawArgs, 1);
@@ -5111,10 +5920,6 @@ app.whenReady().then(async () => {
 
   const window = createWindow();
   console.log("[latexdo] app:window-opened");
-  if (!startupSmokeTest && !(await ensurePrivacyConsent(window))) {
-    app.quit();
-    return;
-  }
   if (startupSmokeTest) {
     void runStartupSmokeTest(window)
       .then(() => app.exit(0))
@@ -5124,13 +5929,37 @@ app.whenReady().then(async () => {
       });
     return;
   }
+  if (startupE2eTest) {
+    void runPackagedE2eTest(window)
+      .then(() => app.exit(0))
+      .catch((error) => {
+        console.error("[latexdo] packaged E2E test failed", error);
+        app.exit(1);
+      });
+    return;
+  }
+  if (!(await ensurePrivacyConsent(window))) {
+    app.quit();
+    return;
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
-});
+}
+
+function handleFatalStartupError(error: unknown): void {
+  recordMainDiagnosticSync("fatal-startup", "fatal", error, {
+    stage: "app.whenReady",
+  });
+  console.error("[latexdo] fatal startup failure", error);
+  showFatalMainProcessDialog(`${productName} could not start`, error);
+  app.exit(1);
+}
+
+void app.whenReady().then(startApp).catch(handleFatalStartupError);
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
@@ -5139,5 +5968,6 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  appIsQuitting = true;
   for (const projectId of gitWatchStates.keys()) closeGitWatchers(projectId);
 });

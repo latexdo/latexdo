@@ -7,14 +7,17 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     setupFiles: ["./src/test-setup.ts"],
-    include: ["src/**/*.test.{ts,tsx}"],
+    include: ["src/**/*.test.{ts,tsx}", "electron/**/*.test.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
       include: [
+        "electron/diagnostics.ts",
+        "src/RendererErrorBoundary.tsx",
         "src/checks/*.ts",
         "src/components/*.tsx",
         "src/latex/*.ts",
+        "src/rendererDiagnostics.ts",
         "src/utils/*.ts",
       ],
       exclude: [

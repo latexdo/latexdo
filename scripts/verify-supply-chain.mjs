@@ -104,9 +104,13 @@ for (const forbiddenCiDispatchControl of [
   }
 }
 for (const requiredCiPackageControl of [
+  "Test packaged Windows application",
+  "& $executable.FullName --e2e-test",
+  '"$executable" --e2e-test',
   "Test Linux AppImage",
   'chmod +x "$package_path"',
   'xvfb-run -a "$package_path" --smoke-test',
+  'xvfb-run -a "$package_path" --e2e-test',
 ]) {
   if (!ciWorkflow.includes(requiredCiPackageControl)) {
     throw new Error(`CI package control is missing: ${requiredCiPackageControl}`);
@@ -130,8 +134,12 @@ for (const requiredReleaseControl of [
   "bash scripts/verify-macos-release.sh",
   "bash scripts/verify-macos-adhoc-release.sh",
   "Test Linux AppImage",
+  "Test packaged Windows application",
+  "& $executable.FullName --e2e-test",
+  '"$executable" --e2e-test',
   'chmod +x "$pkg"',
   'xvfb-run -a "$pkg" --smoke-test',
+  'xvfb-run -a "$pkg" --e2e-test',
   "Signed update feed disabled; LATEXDO_UPDATE_SIGNING_KEY is not configured.",
   "LATEXDO_UPDATE_FEED_ENABLED: ${{ steps.publication_credentials.outputs.update_feed_enabled }}",
   "LATEXDO_DOWNLOAD_BASE_URL: https://app.latexdo.org",
