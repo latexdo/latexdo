@@ -349,9 +349,17 @@ jobs:
           if (-not $executable) {
             throw "The packaged Windows executable was not found."
           }
-          & $executable.FullName --smoke-test
-          if ($LASTEXITCODE -ne 0) {
-            throw "Packaged Windows smoke test failed with exit code $LASTEXITCODE."
+          $smokeStdout = Join-Path $env:RUNNER_TEMP "latexdo-windows-smoke.stdout.log"
+          $smokeStderr = Join-Path $env:RUNNER_TEMP "latexdo-windows-smoke.stderr.log"
+          $process = Start-Process -FilePath $executable.FullName -ArgumentList "--smoke-test" -Wait -PassThru -RedirectStandardOutput $smokeStdout -RedirectStandardError $smokeStderr
+          if (Test-Path $smokeStdout) {
+            Get-Content $smokeStdout
+          }
+          if (Test-Path $smokeStderr) {
+            Get-Content $smokeStderr
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "Packaged Windows smoke test failed with exit code $($process.ExitCode)."
           }
 
       - name: Prepare artifact
