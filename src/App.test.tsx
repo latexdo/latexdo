@@ -408,7 +408,7 @@ async function openProjectFromWelcome() {
 }
 
 async function installExtensionByName(name: string) {
-  fireEvent.click(screen.getByTitle("Extension Store"));
+  fireEvent.click(screen.getByTitle("Extensions"));
   const card = (await screen.findByText(name)).closest("article");
   expect(card).not.toBeNull();
   fireEvent.click(
@@ -506,6 +506,42 @@ describe("App critical UI controls", () => {
     await waitFor(() => {
       expect(api.openProject).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("shows LatexDo setup before the standalone legal gate on first launch", async () => {
+    const api = installLatexDoMock();
+    window.localStorage.setItem(settingsStorageKey, JSON.stringify(defaultSettings));
+    window.localStorage.setItem(
+      aiConfigStorageKey,
+      JSON.stringify({ ...defaultAiConfig, setupComplete: false }),
+    );
+
+    render(<App />);
+
+    expect(screen.getByRole("dialog", { name: /set up latexdo/i })).toBeVisible();
+    expect(screen.queryByRole("dialog", { name: /terms and privacy/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: /open folder/i }));
+    expect(api.openProject).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("link", { name: /terms of use/i }));
+    expect(api.openExternalUrl).toHaveBeenCalledWith(legalTermsUrl);
+    fireEvent.click(screen.getByRole("link", { name: /privacy policy/i }));
+    expect(api.openExternalUrl).toHaveBeenCalledWith(legalPrivacyUrl);
+
+    fireEvent.click(screen.getByLabelText("Accept Terms of Use and Privacy Policy"));
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("What should LatexDo call you?")).toBeVisible();
+    });
+    const saved = JSON.parse(
+      window.localStorage.getItem(settingsStorageKey) ?? "{}",
+    ) as Record<string, unknown>;
+    expect(saved.legalAccepted).toBe(true);
+    expect(saved.legalAcceptedAt).toEqual(expect.any(String));
+    expect(saved.legalPolicyVersion).toBe(legalPolicyVersion);
   });
 
   it("requires re-acceptance when the stored legal policy version is old", () => {
@@ -1402,7 +1438,17 @@ describe("App critical UI controls", () => {
     expect(screen.queryByTitle("Figure → TikZ Converter")).not.toBeInTheDocument();
     expect(screen.queryByTitle("Notation Manager")).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByLabelText(/open settings/i));
+    expect(
+      within(screen.getByRole("dialog", { name: /settings/i })).queryByRole("button", {
+        name: "Extensions",
+      }),
+    ).not.toBeInTheDocument();
+    await closeSettingsDialog();
+
     await installExtensionByName("Citation Workbench");
+    expect(screen.getByText("EXTENSIONS")).toBeVisible();
+    expect(screen.getByRole("searchbox", { name: /search extensions/i })).toBeVisible();
     expect(screen.getByTitle("Citation Manager")).toBeVisible();
     expect(
       screen.queryByText("Browse installable LatexDo packs from store.latexdo.org."),
@@ -1458,7 +1504,7 @@ describe("App critical UI controls", () => {
 
     render(<App />);
 
-    fireEvent.click(screen.getByTitle("Extension Store"));
+    fireEvent.click(screen.getByTitle("Extensions"));
     await waitFor(() => {
       expect(api.fetchExtensionCatalog).toHaveBeenCalledTimes(1);
     });
@@ -1541,12 +1587,10 @@ describe("App critical UI controls", () => {
 
     render(<App />);
 
-    expect(screen.getByText("Let's set up your AI assistant")).toBeVisible();
+    expect(screen.getByText("Set up LatexDo")).toBeVisible();
     fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() => {
-      expect(
-        screen.queryByText("Let's set up your AI assistant"),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText("Set up LatexDo")).not.toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByTitle("AI assistant"));
@@ -1557,9 +1601,7 @@ describe("App critical UI controls", () => {
     expect(within(dialog).getByLabelText("Custom provider")).toHaveValue(
       `cloud:${defaultAiConfig.cloud.providerId}`,
     );
-    expect(
-      within(dialog).queryByText("Let's set up your AI assistant"),
-    ).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Set up LatexDo")).not.toBeInTheDocument();
   });
 
   it("opens API key and ORCID links through the app external URL API", async () => {

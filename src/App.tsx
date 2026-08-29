@@ -95,6 +95,7 @@ import {
 import { ProjectSearchPanel } from "./components/ProjectSearchPanel";
 import { AiSidebar } from "./components/AiSidebar";
 import { EnterpriseDashboard } from "./components/EnterpriseDashboard";
+import { ExtensionsSidebar } from "./components/ExtensionsSidebar";
 import { SetupWizard } from "./components/SetupWizard";
 import { LegalAcceptanceGate } from "./components/LegalAcceptanceGate";
 import { ProfileDialog } from "./components/ProfileDialog";
@@ -232,11 +233,7 @@ import {
   parseIncludeGraphicsAtPosition,
 } from "./figurePreview";
 import {
-  categoryLabel,
-  contributionSummary,
-  extensionCategories,
   extensionStoreSiteUrl,
-  type ExtensionCategory,
   type ExtensionFeatureFlag,
   type LatexDoExtensionSnippet,
 } from "./extensions";
@@ -412,6 +409,7 @@ type SidebarView =
   | "sourceControl"
   | "history"
   | "search"
+  | "extensions"
   | "ai"
   | "enterprise";
 interface AiChatTab {
@@ -1639,7 +1637,7 @@ export default function App() {
       (settingsTab === "notation" && !extensionToolInstallation.notationManager);
 
     if (unavailableExtensionSettingsTab) {
-      setSettingsTab("extensions");
+      setSettingsTab("editor");
     }
   }, [
     extensionToolInstallation.notationManager,
@@ -7311,8 +7309,8 @@ ${macroEnd}
       applyLayoutPreset(config);
       setStatusMessage(
         config.userName
-          ? `Welcome, ${config.userName}. AI assistant ready.`
-          : "AI assistant ready.",
+          ? `Welcome, ${config.userName}. LatexDo setup complete.`
+          : "LatexDo setup complete.",
       );
     },
     [applyLayoutPreset],
@@ -9517,10 +9515,11 @@ ${macroEnd}
           : aiConfig.provider === "local"
             ? activeLocalProviderReady
             : false;
+  const showLegalAcceptanceGate = legalAcceptanceRequired && !aiWizardOpen;
 
   return (
     <div className="app-shell" data-theme={settings.colorTheme}>
-      {!legalAcceptanceRequired && aiWizardOpen && (
+      {aiWizardOpen && (
         <SetupWizard
           initialConfig={aiConfig}
           isDesktop={aiIsDesktop}
@@ -9532,8 +9531,11 @@ ${macroEnd}
           systemCapabilitiesState={aiSystemCapabilitiesState}
           onRefreshSystemCapabilities={refreshAiSystemCapabilities}
           onImportedModel={rememberImportedLatexDoAiModel}
+          legalAccepted={!legalAcceptanceRequired}
+          onAcceptLegal={acceptLegalPolicies}
+          onOpenExternal={openExternalLink}
           productName={productConfig.shortName}
-          productAiName={productConfig.aiName}
+          productSetupName={`${productConfig.shortName} Setup`}
         />
       )}
       {!legalAcceptanceRequired && aiWizardOpen && (
@@ -9541,13 +9543,13 @@ ${macroEnd}
           type="button"
           className="settings-close ai-wizard-app-close"
           onClick={closeAiWizard}
-          aria-label="Close AI setup"
-          title="Close AI setup"
+          aria-label="Close setup"
+          title="Close setup"
         >
           <X size={17} />
         </button>
       )}
-      {legalAcceptanceRequired && (
+      {showLegalAcceptanceGate && (
         <LegalAcceptanceGate
           onAccept={acceptLegalPolicies}
           onOpenExternal={openExternalLink}
@@ -9773,13 +9775,10 @@ ${macroEnd}
             ) : null}
             <button
               className={`activity-button ${
-                settingsOpen && settingsTab === "extensions" ? "active" : ""
+                sidebarVisible && activeSidebar === "extensions" ? "active" : ""
               }`}
-              onClick={() => {
-                setSettingsTab("extensions");
-                setSettingsOpen(true);
-              }}
-              title="Extension Store"
+              onClick={() => openSidebar("extensions")}
+              title="Extensions"
             >
               <Puzzle size={21} />
             </button>
@@ -9902,7 +9901,9 @@ ${macroEnd}
                         ? "HISTORY"
                         : activeSidebar === "enterprise"
                           ? "ENTERPRISE"
-                          : "SEARCH"}
+                          : activeSidebar === "extensions"
+                            ? "EXTENSIONS"
+                            : "SEARCH"}
                 </span>
                 <div>
                   {activeSidebar === "enterprise" ? (
@@ -9950,6 +9951,41 @@ ${macroEnd}
                     >
                       <Plus size={14} />
                     </button>
+                  ) : activeSidebar === "extensions" ? (
+                    <>
+                      <button
+                        className="small-icon"
+                        onClick={() => void refreshExtensionCatalog()}
+                        title="Refresh extensions"
+                        aria-label="Refresh extensions"
+                        disabled={extensionCatalogLoading}
+                      >
+                        <RefreshCw
+                          size={14}
+                          className={extensionCatalogLoading ? "spin" : ""}
+                        />
+                      </button>
+                      <button
+                        className="small-icon"
+                        onClick={() => openExternalLink(extensionStoreSiteUrl)}
+                        title="Open extension store"
+                        aria-label="Open extension store"
+                      >
+                        <ExternalLink size={14} />
+                      </button>
+                      <button
+                        className="small-icon"
+                        onClick={() =>
+                          openExternalLink(
+                            new URL("builder/", extensionStoreSiteUrl).toString(),
+                          )
+                        }
+                        title="Build extension"
+                        aria-label="Build extension"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </>
                   ) : null}
                 </div>
               </div>
@@ -10049,6 +10085,23 @@ ${macroEnd}
                     />
                   )}
                 </div>
+              ) : activeSidebar === "extensions" ? (
+                <ExtensionsSidebar
+                  catalog={extensionCatalog}
+                  catalogSource={extensionCatalogSource}
+                  catalogLoading={extensionCatalogLoading}
+                  catalogError={extensionCatalogError}
+                  query={extensionQuery}
+                  onQueryChange={setExtensionQuery}
+                  categoryFilter={extensionCategoryFilter}
+                  onCategoryFilterChange={setExtensionCategoryFilter}
+                  installedExtensionIdSet={installedExtensionIdSet}
+                  installedExtensions={installedExtensions}
+                  filteredExtensions={filteredExtensions}
+                  onInstallExtension={installExtension}
+                  onUninstallExtension={uninstallExtension}
+                  onOpenExternal={openExternalLink}
+                />
               ) : activeSidebar === "sourceControl" ? (
                 <div className="sidebar-panel source-control-panel">
                   <div className="scm-head">
@@ -12508,12 +12561,6 @@ ${macroEnd}
                 AI Assistant
               </button>
               <button
-                className={`settings-tab ${settingsTab === "extensions" ? "active" : ""}`}
-                onClick={() => setSettingsTab("extensions")}
-              >
-                Extensions
-              </button>
-              <button
                 className={`settings-tab ${settingsTab === "language" ? "active" : ""}`}
                 onClick={() => setSettingsTab("language")}
               >
@@ -13442,183 +13489,6 @@ ${macroEnd}
                         />
                       </label>
                     </div>
-                  </div>
-                </>
-              ) : null}
-
-              {settingsTab === "extensions" ? (
-                <>
-                  <div className="settings-section-heading">
-                    <strong>Extension Store</strong>
-                  </div>
-
-                  <div className="extension-store-toolbar">
-                    <label className="extension-store-search">
-                      <Search size={14} />
-                      <input
-                        type="search"
-                        value={extensionQuery}
-                        onChange={(event) => setExtensionQuery(event.target.value)}
-                        placeholder="Search extensions"
-                        spellCheck={false}
-                      />
-                    </label>
-                    <select
-                      value={extensionCategoryFilter}
-                      onChange={(event) =>
-                        setExtensionCategoryFilter(
-                          event.target.value as ExtensionCategory | "all",
-                        )
-                      }
-                      aria-label="Filter extensions by category"
-                    >
-                      <option value="all">All categories</option>
-                      {extensionCategories.map((category) => (
-                        <option key={category} value={category}>
-                          {categoryLabel(category)}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="extension-store-actions">
-                      <button
-                        type="button"
-                        className="dialog-cancel"
-                        onClick={() => void refreshExtensionCatalog()}
-                        disabled={extensionCatalogLoading}
-                      >
-                        <RefreshCw
-                          size={13}
-                          className={extensionCatalogLoading ? "spin" : ""}
-                        />
-                        {extensionCatalogLoading ? "Refreshing" : "Refresh"}
-                      </button>
-                      <button
-                        type="button"
-                        className="dialog-submit"
-                        onClick={() =>
-                          void window.latexdo.openExternalUrl(extensionStoreSiteUrl)
-                        }
-                      >
-                        <ExternalLink size={13} />
-                        Open store
-                      </button>
-                      <button
-                        type="button"
-                        className="dialog-cancel"
-                        onClick={() =>
-                          void window.latexdo.openExternalUrl(
-                            new URL("builder/", extensionStoreSiteUrl).toString(),
-                          )
-                        }
-                      >
-                        <Plus size={13} />
-                        Build extension
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="extension-store-status">
-                    <span>
-                      <strong>{installedExtensions.length}</strong> installed
-                    </span>
-                    <span>
-                      <strong>{extensionCatalog.extensions.length}</strong> available
-                    </span>
-                    <span>
-                      {extensionCatalogSource === "remote"
-                        ? "Live catalog"
-                        : "Bundled catalog"}
-                    </span>
-                    <span>
-                      Updated{" "}
-                      {new Date(extensionCatalog.updatedAt).toLocaleDateString(
-                        undefined,
-                        {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                        },
-                      )}
-                    </span>
-                  </div>
-
-                  {extensionCatalogError ? (
-                    <div className="extension-store-alert">
-                      <AlertCircle size={14} />
-                      <span>{extensionCatalogError}</span>
-                    </div>
-                  ) : null}
-
-                  <div className="extension-store-grid">
-                    {filteredExtensions.length ? (
-                      filteredExtensions.map((extension) => {
-                        const installed = installedExtensionIdSet.has(extension.id);
-                        const summary = contributionSummary(extension);
-                        return (
-                          <article
-                            key={extension.id}
-                            className={`extension-card ${installed ? "installed" : ""}`}
-                          >
-                            <div className="extension-card-top">
-                              <div className="extension-icon">
-                                <Puzzle size={18} />
-                              </div>
-                              <div>
-                                <strong>{extension.name}</strong>
-                                <small>
-                                  {extension.author} · v{extension.version}
-                                </small>
-                              </div>
-                              <span>{categoryLabel(extension.category)}</span>
-                            </div>
-                            <p>{extension.description}</p>
-                            <div className="extension-tags">
-                              {extension.tags.map((tag) => (
-                                <span key={`${extension.id}:${tag}`}>{tag}</span>
-                              ))}
-                            </div>
-                            <div className="extension-summary">
-                              {summary.length ? summary.join(" · ") : "Manifest pack"}
-                            </div>
-                            <div className="extension-card-actions">
-                              {extension.homepage ? (
-                                <button
-                                  type="button"
-                                  className="dialog-cancel"
-                                  onClick={() =>
-                                    void window.latexdo.openExternalUrl(
-                                      extension.homepage!,
-                                    )
-                                  }
-                                >
-                                  <ExternalLink size={13} />
-                                  Details
-                                </button>
-                              ) : null}
-                              <button
-                                type="button"
-                                className={
-                                  installed ? "dialog-cancel" : "dialog-submit"
-                                }
-                                onClick={() =>
-                                  installed
-                                    ? uninstallExtension(extension)
-                                    : installExtension(extension)
-                                }
-                              >
-                                {installed ? <X size={13} /> : <Download size={13} />}
-                                {installed ? "Uninstall" : "Install"}
-                              </button>
-                            </div>
-                          </article>
-                        );
-                      })
-                    ) : (
-                      <div className="extension-store-empty">
-                        <Puzzle size={18} />
-                        <span>No extensions match the current filter.</span>
-                      </div>
-                    )}
                   </div>
                 </>
               ) : null}

@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  Sparkles,
   User,
   LayoutGrid,
   Palette,
@@ -14,8 +13,16 @@ import {
   Loader2,
   RefreshCw,
   AlertCircle,
+  BookOpenCheck,
+  FileText,
+  ShieldCheck,
 } from "lucide-react";
-import { colorThemeOptions, type ColorTheme } from "../features/settings/settings";
+import {
+  colorThemeOptions,
+  legalPrivacyUrl,
+  legalTermsUrl,
+  type ColorTheme,
+} from "../features/settings/settings";
 import {
   layoutPresetInfo,
   type AiConfig,
@@ -80,8 +87,11 @@ interface SetupWizardProps {
   systemCapabilitiesState?: "idle" | "loading" | "ready" | "unavailable";
   onRefreshSystemCapabilities?: () => Promise<AiSystemCapabilities | null>;
   onImportedModel?: (model: ImportedModelManifest) => void;
+  legalAccepted?: boolean;
+  onAcceptLegal?: () => void;
+  onOpenExternal?: (url: string) => void;
   productName?: string;
-  productAiName?: string;
+  productSetupName?: string;
 }
 
 type Step = "welcome" | "name" | "layout" | "theme" | "model";
@@ -144,11 +154,15 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   systemCapabilitiesState = isDesktop ? "loading" : "unavailable",
   onRefreshSystemCapabilities,
   onImportedModel,
+  legalAccepted = true,
+  onAcceptLegal,
+  onOpenExternal = openExternalUrl,
   productName = defaultProductName,
-  productAiName = `${defaultProductName} AI`,
+  productSetupName = `${productName} Setup`,
 }) => {
   const [stepIndex, setStepIndex] = React.useState(0);
   const [config, setConfig] = React.useState<AiConfig>(initialConfig);
+  const [legalConsent, setLegalConsent] = React.useState(legalAccepted);
   const [downloading, setDownloading] = React.useState(false);
   const [progress, setProgress] = React.useState<{
     received: number;
@@ -171,6 +185,26 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
 
   const goNext = () => setStepIndex((i) => Math.min(i + 1, steps.length - 1));
   const goBack = () => setStepIndex((i) => Math.max(i - 1, 0));
+  const legalReady = legalAccepted || legalConsent;
+
+  React.useEffect(() => {
+    if (legalAccepted) {
+      setLegalConsent(true);
+    }
+  }, [legalAccepted]);
+
+  const openPolicy = (event: React.MouseEvent<HTMLAnchorElement>, url: string) => {
+    event.preventDefault();
+    onOpenExternal(url);
+  };
+
+  const continueFromIntro = () => {
+    if (!legalReady) return;
+    if (!legalAccepted) {
+      onAcceptLegal?.();
+    }
+    goNext();
+  };
 
   const chooseTheme = (theme: ColorTheme) => {
     onApplyTheme(theme);
@@ -400,11 +434,16 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
 
   return (
     <div className="ai-wizard-overlay">
-      <div className="ai-wizard">
+      <div
+        className="ai-wizard"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-wizard-title"
+      >
         <div className="ai-wizard-rail">
           <div className="ai-wizard-brand">
-            <Sparkles size={18} />
-            <span>{productAiName}</span>
+            <ShieldCheck size={18} />
+            <span>{productSetupName}</span>
           </div>
           <ul className="ai-wizard-steps">
             {steps.map((s, i) => (
@@ -417,14 +456,14 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                 </span>
                 <span className="ai-wizard-step-label">
                   {s === "welcome"
-                    ? "Welcome"
+                    ? "Intro"
                     : s === "name"
-                      ? "Your name"
+                      ? "Profile"
                       : s === "layout"
-                        ? "Layout"
+                        ? "Workspace"
                         : s === "theme"
                           ? "Theme"
-                          : "AI model"}
+                          : "Assistant"}
                 </span>
               </li>
             ))}
@@ -434,21 +473,77 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
         <div className="ai-wizard-main">
           <div className="ai-wizard-body">
             {step === "welcome" && (
-              <div className="ai-wizard-section">
-                <Sparkles size={40} className="ai-wizard-hero-icon" />
-                <h2>Let's set up your AI assistant</h2>
+              <div className="ai-wizard-section setup-intro-section">
+                <div className="setup-intro-visual" aria-hidden="true">
+                  <div className="setup-intro-window">
+                    <div className="setup-intro-window-head">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                    <div className="setup-intro-document">
+                      <div className="setup-intro-line wide" />
+                      <div className="setup-intro-line medium" />
+                      <div className="setup-intro-line short" />
+                      <div className="setup-intro-cursor" />
+                    </div>
+                  </div>
+                  <div className="setup-intro-compile">
+                    <FileText size={17} />
+                    <div>
+                      <span />
+                      <span />
+                    </div>
+                    <BookOpenCheck size={17} />
+                  </div>
+                </div>
+                <h2 id="ai-wizard-title">Set up {productName}</h2>
                 <p className="ai-wizard-lead">
-                  {productName} can run a local AI agent that reads, edits, compiles,
-                  and debugs your LaTeX right inside the editor, privately on your
-                  machine. This quick setup gets it ready.
+                  {productName} is a local-first LaTeX workspace for writing, compiling,
+                  reviewing, and managing research projects in one place.
                 </p>
+                <div className="setup-intro-points">
+                  <span>Write structured LaTeX</span>
+                  <span>Compile and preview PDFs</span>
+                  <span>Enable project tools when you need them</span>
+                </div>
+                <label className="setup-legal-check">
+                  <input
+                    type="checkbox"
+                    checked={legalReady}
+                    disabled={legalAccepted}
+                    onChange={(event) => setLegalConsent(event.target.checked)}
+                    aria-label="Accept Terms of Use and Privacy Policy"
+                  />
+                  <span>
+                    I accept the{" "}
+                    <a
+                      href={legalTermsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(event) => openPolicy(event, legalTermsUrl)}
+                    >
+                      Terms of Use
+                    </a>{" "}
+                    and{" "}
+                    <a
+                      href={legalPrivacyUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(event) => openPolicy(event, legalPrivacyUrl)}
+                    >
+                      Privacy Policy
+                    </a>
+                    .
+                  </span>
+                </label>
               </div>
             )}
 
             {step === "name" && (
               <div className="ai-wizard-section">
                 <User size={28} className="ai-wizard-hero-icon" />
-                <h2>What should the assistant call you?</h2>
+                <h2 id="ai-wizard-title">What should {productName} call you?</h2>
                 <p className="ai-wizard-lead">
                   Used to personalize responses. Stored locally, never uploaded.
                 </p>
@@ -461,13 +556,23 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                   onChange={(e) => patch({ userName: e.target.value })}
                   onKeyDown={(e) => e.key === "Enter" && goNext()}
                 />
+                <button
+                  type="button"
+                  className="ai-wizard-anonymous"
+                  onClick={() => {
+                    patch({ userName: "" });
+                    goNext();
+                  }}
+                >
+                  Stay anonymous
+                </button>
               </div>
             )}
 
             {step === "layout" && (
               <div className="ai-wizard-section">
                 <LayoutGrid size={28} className="ai-wizard-hero-icon" />
-                <h2>How do you want your workspace?</h2>
+                <h2 id="ai-wizard-title">How do you want your workspace?</h2>
                 <div className="ai-wizard-cards">
                   {layoutPresetInfo.map((preset) => (
                     <button
@@ -488,7 +593,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
             {step === "theme" && (
               <div className="ai-wizard-section">
                 <Palette size={28} className="ai-wizard-hero-icon" />
-                <h2>Pick a theme</h2>
+                <h2 id="ai-wizard-title">Pick a theme</h2>
                 <div className="ai-wizard-theme-grid">
                   {colorThemeOptions.map((theme) => (
                     <button
@@ -512,7 +617,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
             {step === "model" && (
               <div className="ai-wizard-section ai-wizard-model-step">
                 <Cpu size={28} className="ai-wizard-hero-icon" />
-                <h2>Choose your LatexDo AI</h2>
+                <h2 id="ai-wizard-title">Choose your assistant model</h2>
                 <p className="ai-wizard-lead">
                   {isDesktop
                     ? systemCapabilities
@@ -637,7 +742,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                             },
                           })
                         }
-                        onOpenExternal={openExternalUrl}
+                        onOpenExternal={onOpenExternal}
                       />
                     )}
 
@@ -830,7 +935,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
               )}
             </div>
             <div className="ai-wizard-footer-right">
-              {step !== "model" && (
+              {step !== "welcome" && step !== "model" && (
                 <button className="ai-wizard-ghost" onClick={finish}>
                   Skip setup
                 </button>
@@ -849,7 +954,16 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                   Finish <Check size={15} />
                 </button>
               ) : (
-                <button className="ai-wizard-primary" onClick={goNext}>
+                <button
+                  className="ai-wizard-primary"
+                  onClick={step === "welcome" ? continueFromIntro : goNext}
+                  disabled={step === "welcome" && !legalReady}
+                  title={
+                    step === "welcome" && !legalReady
+                      ? "Accept the Terms of Use and Privacy Policy to continue."
+                      : ""
+                  }
+                >
                   Continue <ArrowRight size={15} />
                 </button>
               )}

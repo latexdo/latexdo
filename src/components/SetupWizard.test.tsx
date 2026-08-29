@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultAiConfig, type AiConfig } from "../features/ai/aiConfig";
 import type { AiSystemCapabilities, DownloadProgress } from "../features/ai/aiTypes";
+import { legalPrivacyUrl, legalTermsUrl } from "../features/settings/settings";
 import { SetupWizard } from "./SetupWizard";
 
 const aiClientMock = vi.hoisted(() => ({
@@ -63,6 +64,38 @@ describe("SetupWizard", () => {
     aiClientMock.downloadModel.mockResolvedValue({ ok: true });
   });
 
+  it("starts with a LatexDo intro and accepts legal policies before profile setup", () => {
+    const onAcceptLegal = vi.fn();
+    const onOpenExternal = vi.fn();
+    render(
+      <SetupWizard
+        initialConfig={makeConfig()}
+        isDesktop
+        legalAccepted={false}
+        onAcceptLegal={onAcceptLegal}
+        onOpenExternal={onOpenExternal}
+        onApplyTheme={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("dialog", { name: /set up latexdo/i })).toBeVisible();
+    expect(screen.getByText("LatexDo Setup")).toBeVisible();
+    expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /skip setup/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole("link", { name: /terms of use/i }));
+    expect(onOpenExternal).toHaveBeenCalledWith(legalTermsUrl);
+    fireEvent.click(screen.getByRole("link", { name: /privacy policy/i }));
+    expect(onOpenExternal).toHaveBeenCalledWith(legalPrivacyUrl);
+
+    fireEvent.click(screen.getByLabelText("Accept Terms of Use and Privacy Policy"));
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+
+    expect(onAcceptLegal).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("What should LatexDo call you?")).toBeVisible();
+  });
+
   it("walks through onboarding and completes with a cloud provider", () => {
     const onApplyTheme = vi.fn();
     const onComplete = vi.fn();
@@ -78,7 +111,7 @@ describe("SetupWizard", () => {
       />,
     );
 
-    expect(screen.getByText("Let's set up your AI assistant")).toBeVisible();
+    expect(screen.getByText("Set up LatexDo")).toBeVisible();
     continueSetup();
 
     fireEvent.change(screen.getByPlaceholderText("Your name"), {
@@ -107,6 +140,23 @@ describe("SetupWizard", () => {
         modelDownloaded: false,
       }),
     );
+  });
+
+  it("can continue from profile setup without storing a name", () => {
+    render(
+      <SetupWizard
+        initialConfig={makeConfig({ userName: "Ada" })}
+        isDesktop
+        onApplyTheme={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    );
+
+    continueSetup();
+    fireEvent.click(screen.getByRole("button", { name: /stay anonymous/i }));
+
+    expect(screen.getByText("How do you want your workspace?")).toBeVisible();
+    expect(screen.queryByDisplayValue("Ada")).not.toBeInTheDocument();
   });
 
   it("downloads a local model before completing desktop setup", async () => {
@@ -242,6 +292,7 @@ describe("SetupWizard", () => {
       />,
     );
 
+    continueSetup();
     fireEvent.click(screen.getByRole("button", { name: /Skip setup/i }));
     expect(onComplete).toHaveBeenCalledWith(
       expect.objectContaining({
