@@ -4,6 +4,8 @@ import {
   extractLatexOutline,
   findLatexDocumentLinkAtOffset,
   findLatexDocumentLinks,
+  formatLatexDocumentLayout,
+  formatLatexListIndentation,
   formatLatexTableAtOffset,
   latexCommandSnippets,
 } from "../editorFeatureSupport";
@@ -71,6 +73,100 @@ describe("editor feature support", () => {
 
     expect(result?.text).toContain("Name        & Value & Note \\\\");
     expect(result?.text).toContain("Longer name & 2     & ok \\\\");
+  });
+
+  it("formats LaTeX list item indentation", () => {
+    const source = [
+      "\\subsection{Units}",
+      "\\begin{itemize}",
+      "\\item Use SI units.",
+      "\\item Avoid mixing units.",
+      "\\end{itemize}",
+    ].join("\n");
+
+    expect(formatLatexListIndentation(source)).toBe(
+      [
+        "\\subsection{Units}",
+        "\\begin{itemize}",
+        "    \\item Use SI units.",
+        "    \\item Avoid mixing units.",
+        "\\end{itemize}",
+      ].join("\n"),
+    );
+  });
+
+  it("formats nested LaTeX lists by depth", () => {
+    const source = [
+      "\\begin{enumerate}",
+      "\\item Parent",
+      "\\begin{itemize}",
+      "\\item Child",
+      "\\end{itemize}",
+      "\\end{enumerate}",
+    ].join("\n");
+
+    expect(formatLatexListIndentation(source)).toBe(
+      [
+        "\\begin{enumerate}",
+        "    \\item Parent",
+        "    \\begin{itemize}",
+        "        \\item Child",
+        "    \\end{itemize}",
+        "\\end{enumerate}",
+      ].join("\n"),
+    );
+  });
+
+  it("adds structural spacing after LaTeX headings", () => {
+    const source = [
+      "\\subsection{The Oracle Gap}",
+      "Suppose a repository has buggy revision $B$ and fixed revision $F$.",
+    ].join("\n");
+
+    expect(formatLatexDocumentLayout(source)).toBe(
+      [
+        "\\subsection{The Oracle Gap}",
+        "",
+        "Suppose a repository has buggy revision $B$ and fixed revision $F$.",
+      ].join("\n"),
+    );
+  });
+
+  it("adds structural spacing before headings that follow prose", () => {
+    const source = [
+      "This paragraph closes the previous idea.",
+      "\\section{Next Idea}",
+      "The next idea starts here.",
+    ].join("\n");
+
+    expect(formatLatexDocumentLayout(source)).toBe(
+      [
+        "This paragraph closes the previous idea.",
+        "",
+        "\\section{Next Idea}",
+        "",
+        "The next idea starts here.",
+      ].join("\n"),
+    );
+  });
+
+  it("formats list indentation and heading spacing together", () => {
+    const source = [
+      "\\subsection{Units}",
+      "\\begin{itemize}",
+      "\\item Use SI units.",
+      "\\end{itemize}",
+    ].join("\n");
+
+    expect(formatLatexDocumentLayout(source)).toBe(
+      [
+        "\\subsection{Units}",
+        "",
+        "\\begin{itemize}",
+        "    \\item Use SI units.",
+        "\\end{itemize}",
+      ].join("\n"),
+    );
   });
 
   it("includes production snippets for wizards, tables, formulas, and Asymptote", () => {

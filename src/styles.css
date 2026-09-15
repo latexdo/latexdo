@@ -550,6 +550,11 @@ button {
   color: var(--text-on-accent);
 }
 
+.title-prettier-button {
+  min-width: 86px;
+  max-width: 96px;
+}
+
 .title-history-count {
   flex: 0 0 auto;
   min-width: 16px;

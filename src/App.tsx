@@ -257,6 +257,7 @@ import {
   extractLatexOutline,
   findLatexDocumentLinkAtOffset,
   findLatexDocumentLinks,
+  formatLatexDocumentLayout,
   formatLatexTableAtOffset,
   latexCommandSnippets,
 } from "./latex/editorFeatureSupport";
@@ -5788,6 +5789,13 @@ ${macroEnd}
         run: () => applyLatexToolbarCommand("formatTable"),
       }),
       editor.addAction({
+        id: "latexdo.prettierLists",
+        label: "Prettier: Format LaTeX Lists",
+        contextMenuGroupId: "1_modification",
+        contextMenuOrder: 0,
+        run: () => applyLatexPrettier(),
+      }),
+      editor.addAction({
         id: "latexdo.continueLatexList",
         label: "Continue or Close LaTeX List",
         keybindings: [monaco.KeyCode.Enter],
@@ -8256,6 +8264,62 @@ ${macroEnd}
     setGitFileHistory(history);
   }, []);
 
+  const applyLatexPrettier = useCallback(() => {
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    const document = documentsRef.current.find((d) => d.path === activePathRef.current);
+    if (
+      !document ||
+      !isTextDocument(document) ||
+      languageFor(document.name) !== "latex"
+    ) {
+      setStatusMessage("Open a TeX file to run Prettier.");
+      return;
+    }
+
+    const modelMatchesActiveDocument =
+      Boolean(editor && model) && editorModelMatchesPath(editor, document.path);
+    const sourceText = modelMatchesActiveDocument
+      ? model!.getValue()
+      : document.content;
+    const formatted = formatLatexDocumentLayout(sourceText);
+    if (!formatted) {
+      setStatusMessage("Prettier found no layout changes.");
+      editor?.focus();
+      return;
+    }
+
+    if (modelMatchesActiveDocument && editor && model) {
+      const selections = editor.getSelections() ?? [];
+      editor.executeEdits("latexdo-prettier", [
+        {
+          range: model.getFullModelRange(),
+          text: formatted,
+          forceMoveMarkers: true,
+        },
+      ]);
+
+      const updatedModel = editor.getModel();
+      if (updatedModel && selections.length) {
+        editor.setSelections(
+          selections.map((selection) => clampSelectionToModel(updatedModel, selection)),
+        );
+      }
+      editor.focus();
+    }
+
+    setDocuments((current) => {
+      const nextDocuments = current.map((openDocument) =>
+        openDocument.path === document.path && isTextDocument(openDocument)
+          ? { ...openDocument, content: formatted }
+          : openDocument,
+      );
+      documentsRef.current = nextDocuments;
+      return nextDocuments;
+    });
+    setStatusMessage("Prettier formatted LaTeX document layout.");
+  }, []);
+
   const applyLatexToolbarCommand = useCallback((command: LatexToolbarCommand) => {
     const editor = editorRef.current;
     const model = editor?.getModel();
@@ -9572,6 +9636,21 @@ ${macroEnd}
           <span>{productConfig.shortName}</span>
         </div>
         <div className="title-actions">
+          <button
+            type="button"
+            className="title-history-button title-prettier-button"
+            onClick={applyLatexPrettier}
+            disabled={!activeDocumentIsLatex}
+            title={
+              activeDocumentIsLatex
+                ? "Prettier: format LaTeX layout"
+                : "Open a TeX file to run Prettier"
+            }
+            aria-label="Prettier: format LaTeX layout"
+          >
+            <Wand size={15} />
+            <span>Prettier</span>
+          </button>
           <button
             type="button"
             className={`title-history-button title-share-button ${

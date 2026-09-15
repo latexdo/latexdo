@@ -515,6 +515,50 @@ describe("App critical UI controls", () => {
     });
   });
 
+  it("formats the open TeX document when the Prettier titlebar action is clicked", async () => {
+    const api = installLatexDoMock();
+    api.readFile.mockResolvedValue(
+      [
+        "\\subsection{Units}",
+        "\\begin{itemize}",
+        "\\item Use SI units.",
+        "\\item Avoid mixing units.",
+        "\\end{itemize}",
+      ].join("\n"),
+    );
+
+    render(<App />);
+
+    expect(
+      screen.getByRole("button", { name: /prettier: format latex layout/i }),
+    ).toBeDisabled();
+
+    await openProjectFromWelcome();
+    const editor = await screen.findByLabelText("mock editor");
+
+    const prettierButton = screen.getByRole("button", {
+      name: /prettier: format latex layout/i,
+    });
+    expect(prettierButton).toBeEnabled();
+    fireEvent.click(prettierButton);
+
+    expect(editor).toHaveValue(
+      [
+        "\\subsection{Units}",
+        "",
+        "\\begin{itemize}",
+        "    \\item Use SI units.",
+        "    \\item Avoid mixing units.",
+        "\\end{itemize}",
+      ].join("\n"),
+    );
+    expect(
+      screen.getByText("Prettier formatted LaTeX document layout.", {
+        selector: ".status-message",
+      }),
+    ).toBeVisible();
+  });
+
   it("shows LatexDo setup before the standalone legal gate on first launch", async () => {
     const api = installLatexDoMock();
     window.localStorage.setItem(settingsStorageKey, JSON.stringify(defaultSettings));

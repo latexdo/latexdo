@@ -36,6 +36,10 @@ export interface LatexTableFormatResult {
   text: string;
 }
 
+const latexListEnvironments = new Set(["itemize", "enumerate", "description"]);
+const latexStructuralHeadingPattern =
+  /^\\(?:part|chapter|section|subsection|subsubsection)\*?\s*(?:\[[^\]]*\])?\s*\{/;
+
 export const latexCommandSnippets: LatexCommandSnippet[] = [
   {
     label: "section",
@@ -836,4 +840,94 @@ export function formatLatexTableAtOffset(
   }
 
   return null;
+}
+
+export function formatLatexListIndentation(
+  text: string,
+  indent = "    ",
+): string | null {
+  const newline = text.includes("\r\n") ? "\r\n" : "\n";
+  const lines = text.split(/\r?\n/);
+  const stack: string[] = [];
+  let changed = false;
+
+  const formattedLines = lines.map((line) => {
+    const trimmedStart = line.trimStart();
+    if (trimmedStart.length === 0) return line;
+
+    const environmentMatch = trimmedStart.match(/^\\(begin|end)\s*\{([^}]+)\}/);
+    const kind = environmentMatch?.[1];
+    const environment = environmentMatch?.[2];
+    const isListEnvironment = Boolean(
+      environment && latexListEnvironments.has(environment),
+    );
+
+    if (kind === "end" && isListEnvironment) {
+      const index = stack.lastIndexOf(environment!);
+      if (index >= 0) {
+        stack.splice(index, stack.length - index);
+      }
+    }
+
+    const shouldIndent = stack.length > 0 || isListEnvironment;
+    const nextLine = shouldIndent
+      ? `${indent.repeat(stack.length)}${trimmedStart}`
+      : line;
+
+    if (kind === "begin" && isListEnvironment) {
+      stack.push(environment!);
+    }
+
+    if (nextLine !== line) changed = true;
+    return nextLine;
+  });
+
+  if (!changed) return null;
+  return formattedLines.join(newline);
+}
+
+export function formatLatexDocumentLayout(text: string): string | null {
+  const listFormatted = formatLatexListIndentation(text) ?? text;
+  const headingFormatted = formatLatexStructuralSpacing(listFormatted);
+  return headingFormatted === text ? null : headingFormatted;
+}
+
+function formatLatexStructuralSpacing(text: string): string {
+  const newline = text.includes("\r\n") ? "\r\n" : "\n";
+  const lines = text.split(/\r?\n/);
+  const formattedLines: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmedStart = line.trimStart();
+    const isHeading = latexStructuralHeadingPattern.test(trimmedStart);
+
+    if (!isHeading) {
+      formattedLines.push(line);
+      continue;
+    }
+
+    const previous = formattedLines.at(-1);
+    const previousTrimmed = previous?.trim() ?? "";
+    if (
+      previous !== undefined &&
+      previousTrimmed.length > 0 &&
+      previousTrimmed !== "\\begin{document}"
+    ) {
+      formattedLines.push("");
+    }
+
+    formattedLines.push(trimmedStart.trimEnd());
+
+    while (index + 1 < lines.length && lines[index + 1].trim().length === 0) {
+      index += 1;
+    }
+
+    const next = lines[index + 1];
+    if (next !== undefined && next.trim().length > 0) {
+      formattedLines.push("");
+    }
+  }
+
+  return formattedLines.join(newline);
 }
