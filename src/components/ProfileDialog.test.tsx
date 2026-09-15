@@ -102,6 +102,23 @@ describe("ProfileDialog", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("closes when Escape is pressed from profile fields", () => {
+    const onClose = vi.fn();
+    render(
+      <ProfileDialog
+        profile={profile({ mode: "orcid" })}
+        onChange={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.keyDown(screen.getByPlaceholderText("0000-0002-1825-0097"), {
+      key: "Escape",
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("validates and connects ORCID profiles", async () => {
     orcidMock.fetchOrcidProfile.mockResolvedValue({
       name: "Ada Lovelace",

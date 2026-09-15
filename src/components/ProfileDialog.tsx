@@ -36,6 +36,18 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
 
   const patch = (part: Partial<ResearcherProfile>) => onChange({ ...profile, ...part });
 
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [onClose]);
+
   const regenerate = () => patch({ token: generateScholarToken() });
 
   const copyToken = async () => {
@@ -79,6 +91,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
         className="profile-dialog"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label="Researcher profile"
       >
         <div className="profile-header">

@@ -1646,6 +1646,25 @@ describe("App critical UI controls", () => {
     });
   });
 
+  it("closes the researcher profile with Escape", async () => {
+    installLatexDoMock();
+
+    render(<App />);
+
+    fireEvent.click(screen.getByTitle("Researcher profile"));
+    expect(
+      await screen.findByRole("dialog", { name: /researcher profile/i }),
+    ).toBeVisible();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: /researcher profile/i }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   it("opens real AI settings from the unconfigured AI sidebar", async () => {
     installLatexDoMock();
     window.localStorage.setItem(
