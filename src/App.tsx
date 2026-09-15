@@ -1665,6 +1665,8 @@ export default function App() {
     setCompileResult,
     compileJobCount,
     setCompileJobCount,
+    compileProgress,
+    setCompileProgress,
     compiling,
   } = useCompile();
   const [panelVisible, setPanelVisible] = useState(false);
@@ -3150,6 +3152,7 @@ ${macroEnd}
       engineRef.current,
     );
     setCompileJobCount((count) => count + 1);
+    setCompileProgress(0);
     setStatusMessage(
       asymptoteDocument
         ? `Compiling ${pathForDisplay(asymptoteDocument.relativePath)} with Asymptote...`
@@ -8143,6 +8146,15 @@ ${macroEnd}
   }, []);
 
   useEffect(() => {
+    return window.latexdo.onCompileProgress((payload) => {
+      if (payload.projectId !== projectIdRef.current) {
+        return;
+      }
+      setCompileProgress((current) => Math.max(current, payload.progress));
+    });
+  }, []);
+
+  useEffect(() => {
     const startupTimer = window.setTimeout(() => {
       void checkForUpdates({ silent: true });
     }, startupUpdateCheckDelayMs);
@@ -11016,7 +11028,12 @@ ${macroEnd}
                     }
                   >
                     {compiling ? (
-                      <LoaderCircle size={15} className="spin" />
+                      <>
+                        <LoaderCircle size={15} className="spin" />
+                        <span className="compile-button-progress">
+                          {compileProgress > 0 ? `${compileProgress}%` : "Compiling"}
+                        </span>
+                      </>
                     ) : (
                       <Play size={14} fill="currentColor" />
                     )}
@@ -12460,7 +12477,25 @@ ${macroEnd}
             <>
               <span className="status-compile">
                 <LoaderCircle size={13} className="spin" />
-                {compileJobCount} compile job{compileJobCount === 1 ? "" : "s"}
+                <span>
+                  {compileJobCount} compile job
+                  {compileJobCount === 1 ? "" : "s"}
+                </span>
+                {compileProgress > 0 ? (
+                  <span className="status-compile-meta">
+                    <strong>{compileProgress}%</strong>
+                    <span
+                      className="compile-progress"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={compileProgress}
+                      aria-label={`Compiling ${compileProgress}%`}
+                    >
+                      <span style={{ width: `${compileProgress}%` }} />
+                    </span>
+                  </span>
+                ) : null}
               </span>
               <button
                 type="button"

@@ -6,6 +6,7 @@ import type {
   CollaborationState,
   CollaboratorPermission,
   CollaboratorRole,
+  CompileProgressPayload,
   CreateProjectOptions,
   DocxImportResult,
   MarkdownImportResult,
@@ -1003,6 +1004,14 @@ const api = {
     ipcRenderer.on("app:update-progress", listener);
     return () => {
       ipcRenderer.removeListener("app:update-progress", listener);
+    };
+  },
+  onCompileProgress: (callback: (payload: CompileProgressPayload) => void) => {
+    const listener = (_event: unknown, payload: CompileProgressPayload) =>
+      callback(payload);
+    ipcRenderer.on("compile:progress", listener);
+    return () => {
+      ipcRenderer.removeListener("compile:progress", listener);
     };
   },
   openReleasesPage: (releaseUrl?: string): Promise<void> =>

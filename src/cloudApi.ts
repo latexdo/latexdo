@@ -961,6 +961,8 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
 
     onUpdateProgress: () => () => {},
 
+    onCompileProgress: () => () => {},
+
     async openReleasesPage(releaseUrl) {
       window.open(
         releaseUrl || "https://app.latexdo.org/downloads/",

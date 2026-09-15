@@ -404,6 +404,10 @@ function installLatexDoMock(options?: {
     onUpdateProgress: vi.fn((_callback: (progress: UpdateDownloadProgress) => void) =>
       vi.fn(),
     ),
+    onCompileProgress: vi.fn(
+      (_callback: (payload: { projectId: string; progress: number }) => void) =>
+        vi.fn(),
+    ),
     openReleasesPage: vi.fn().mockResolvedValue(undefined),
     openExternalUrl: vi.fn().mockResolvedValue(undefined),
     fetchScholarlyJson: vi.fn().mockResolvedValue({}),

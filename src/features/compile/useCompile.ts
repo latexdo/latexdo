@@ -7,6 +7,7 @@ export function useCompile() {
   >([]);
   const [compileResult, setCompileResult] = useState<CompileResult | null>(null);
   const [compileJobCount, setCompileJobCount] = useState(0);
+  const [compileProgress, setCompileProgress] = useState(0);
 
   return {
     pdfComplianceDiagnostics,
@@ -15,6 +16,8 @@ export function useCompile() {
     setCompileResult,
     compileJobCount,
     setCompileJobCount,
+    compileProgress,
+    setCompileProgress,
     compiling: compileJobCount > 0,
   };
 }

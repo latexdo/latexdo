@@ -21,6 +21,13 @@ interface CompileRunOptions {
   timeoutMs?: number;
   killGraceMs?: number;
   executable?: string;
+  /**
+   * Optional callback invoked with an integer 0..100 estimate of how far the
+   * active compile has progressed. It is monotonic within a single compile and
+   * always ends at 100 when the toolchain reports that all targets are
+   * up-to-date.
+   */
+  onProgress?: (progress: number) => void;
 }
 
 type CompileStopReason = "canceled" | "timeout";
@@ -612,6 +619,159 @@ export async function materializeCloudCompileFiles(
   }
 }
 
+/**
+ * Progress windows for each pdflatex/lualatex/xelatex pass. latexmk re-runs
+ * the engine until cross-references settle, so we hand each pass a slice of
+ * the overall bar and widen the margin for extra passes instead of assuming a
+ * fixed number of runs up front.
+ */
+const enginePassWindows: ReadonlyArray<readonly [start: number, end: number]> = [
+  [10, 26],
+  [26, 42],
+  [42, 56],
+  [56, 68],
+  [68, 78],
+  [78, 86],
+  [86, 92],
+];
+
+/** Page markers (`[1`, `[2{...}`, ...) only count at the start of a line. */
+const pageMarkerPattern = /(?:^|\n)[ \t]*\[(\d+)/g;
+
+const engineRunPattern =
+  /Latexmk:\s*Run number\s+(\d+)\s+of\s+rule\s+'((?:pdf|xe|lua)latex)'/g;
+
+/** Bibliography / index work (bibtex, biber, makeindex, ...) gets a bump. */
+const auxRulePattern =
+  /Latexmk:\s*Run number\s+\d+\s+of\s+rule\s+'(?:bibtex|biber|makeindex|makeit|mkidx|bib2gls|splitindex|texindy|upmendex)'/;
+
+const engineActivityPattern =
+  /Latexmk:\s*(?:applying rule|Run number)|entering extended mode|This is (?:pdfTeX|LuaHBTeX|XeTeX)/;
+
+/**
+ * Pages inside a single engine pass needed to interpolate across the full
+ * window. More pages keep filling the pass slice; they never overflow it.
+ */
+const pagesToFillPass = 50;
+
+function firstEnginePassMention(output: string): number | null {
+  const applyingMatch = /Latexmk:\s*applying rule\s+'((?:pdf|xe|lua)latex)'/.exec(
+    output,
+  );
+  if (!applyingMatch) {
+    return null;
+  }
+  return 1;
+}
+
+function lastEngineRun(output: string): { pass: number; at: number } | null {
+  const matches = [...output.matchAll(engineRunPattern)];
+  const last = matches[matches.length - 1];
+  if (!last) {
+    return null;
+  }
+  const pushedAt = output.lastIndexOf(last[0]) + last[0].length;
+  return { pass: Number(last[1]), at: pushedAt };
+}
+
+function interpolatePass(output: string, fallbackPass: number): number | null {
+  const run = lastEngineRun(output) ?? null;
+  const pass = run?.pass ?? fallbackPass;
+  if (!pass) {
+    return null;
+  }
+
+  const passSegment = run === null ? output : output.slice(run.at);
+  let maxPage = 0;
+  for (const match of passSegment.matchAll(pageMarkerPattern)) {
+    maxPage = Math.max(maxPage, Number(match[1]));
+  }
+
+  const [windowStart, windowEnd] =
+    enginePassWindows[Math.min(pass, enginePassWindows.length) - 1];
+  if (maxPage <= 0) {
+    return windowStart;
+  }
+  const within = Math.min(1, maxPage / pagesToFillPass);
+  return Math.round(windowStart + within * (windowEnd - windowStart));
+}
+
+/**
+ * Estimates how far a latexmk invocation has progressed as an integer 0..100.
+ *
+ * The estimate is a pure function of the accumulated toolchain output:
+ *   - startup/format milestones walk the bar to ~10%,
+ *   - each numbered engine pass owns a window that fills as pages are set,
+ *   - bibliography/index rules add a mid-bar bump,
+ *   - "All targets are up-to-date" pins the bar at 100%.
+ * Callers that stream output should clamp to the highest value seen so the
+ * reported percentage never goes backwards.
+ */
+export function estimateCompileProgress(output: string): number {
+  if (/All targets are up-to-date/.test(output)) {
+    return 100;
+  }
+  if (
+    /Latexmk:\s*(?:Errors?|Failure)\s*,\s*so I did not complete making targets/.test(
+      output,
+    )
+  ) {
+    return 92;
+  }
+
+  let progress = 0;
+  if (/Latexmk:\s*This is Latexmk/.test(output)) {
+    progress = 4;
+  }
+  if (/Latexmk:\s*(?:applying|Run number)/.test(output)) {
+    progress = 6;
+  }
+  if (/entering extended mode/.test(output)) {
+    progress = 8;
+  }
+  if (/^(?:LaTeX2e\s*<|LuaTeX\s+\d)/m.test(output)) {
+    progress = 10;
+  }
+
+  if (engineActivityPattern.test(output)) {
+    const passProgress = interpolatePass(output, firstEnginePassMention(output) ?? 1);
+    progress = Math.max(progress, passProgress ?? 0);
+  }
+
+  const enginePass = lastEngineRun(output)?.pass ?? 1;
+  if (auxRulePattern.test(output)) {
+    const auxWindow: Record<number, number> = { 1: 46, 2: 60, 3: 70, 4: 74 };
+    progress = Math.max(progress, auxWindow[enginePass] ?? 74);
+  }
+
+  return Math.min(100, Math.max(0, Math.round(progress)));
+}
+
+function createProgressEmitter(
+  onProgress?: (progress: number) => void,
+): (progress: number) => void {
+  if (!onProgress) {
+    return () => {};
+  }
+
+  let lastSent = -1;
+  let lastSentAt = 0;
+  const minimumIntervalMs = 100;
+
+  return (progress: number) => {
+    const now = Date.now();
+    if (progress === lastSent && now - lastSentAt < minimumIntervalMs) {
+      return;
+    }
+    if (now - lastSentAt < minimumIntervalMs && progress !== 100) {
+      return;
+    }
+    lastSent = progress;
+    lastSentAt = now;
+    onProgress(progress);
+  };
+}
+
 export async function compileLatex(
   request: CompileLatexRequest,
   options: CompileRunOptions = {},
@@ -687,6 +847,7 @@ export async function compileLatex(
     });
 
     let output = "";
+    const emitProgress = createProgressEmitter(options.onProgress);
     const timeout = setTimeout(() => {
       stopReason = "timeout";
       killChildProcess(child, "SIGTERM");
@@ -746,9 +907,11 @@ export async function compileLatex(
 
     child.stdout.on("data", (data: Buffer) => {
       output += data.toString();
+      emitProgress(estimateCompileProgress(output));
     });
     child.stderr.on("data", (data: Buffer) => {
       output += data.toString();
+      emitProgress(estimateCompileProgress(output));
     });
     child.on("error", (error) => {
       finish(null, error);
@@ -763,6 +926,7 @@ export async function compileLatex(
       }
       settled = true;
       cleanup();
+      emitProgress(100);
       const pdfName = `${path.basename(request.rootFile, path.extname(request.rootFile))}.pdf`;
       const pdfPath = path.join(buildDirectory, pdfName);
       const cleanedOutput = sanitizeCompileOutput(output);

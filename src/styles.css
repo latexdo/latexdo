@@ -6629,6 +6629,39 @@ button {
   font-weight: 600;
 }
 
+.status-compile-meta {
+  gap: 6px;
+}
+
+.status-compile-meta strong {
+  min-width: 24px;
+  font-size: 10px;
+  text-align: right;
+}
+
+.compile-progress {
+  width: 42px;
+  height: 3px;
+  gap: 0;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgb(0 0 0 / 22%);
+}
+
+.compile-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--text-on-accent);
+  transition: width 0.18s ease-out;
+}
+
+.compile-button-progress {
+  min-width: 34px;
+  font-size: 11px;
+  text-align: left;
+}
+
 .statusbar .status-cancel-compile {
   padding: 0 6px;
   background: rgb(120 32 32 / 28%);

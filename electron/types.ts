@@ -196,6 +196,12 @@ export interface CompileResult {
   error?: string;
 }
 
+export interface CompileProgressPayload {
+  projectId: ProjectId;
+  /** Integer percentage 0..100 reported while a compile is running. */
+  progress: number;
+}
+
 export interface SyncTexSourceLocation {
   file: string;
   line: number;

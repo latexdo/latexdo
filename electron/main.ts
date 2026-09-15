@@ -6428,7 +6428,7 @@ async function startApp(): Promise<void> {
     const options = parseProofreadingRequestOptions(channel, rawOptions);
     return proofreadDocument(relativePath, content, options);
   });
-  ipcMain.handle("latex:compile", async (_event, ...rawArgs: unknown[]) => {
+  ipcMain.handle("latex:compile", async (event, ...rawArgs: unknown[]) => {
     const channel = "latex:compile";
     const [rawRequest] = expectIpcArgs(channel, rawArgs, 1);
     const request = parseCompileRequestInput(channel, rawRequest);
@@ -6442,7 +6442,15 @@ async function startApp(): Promise<void> {
           rootFile: location.relativePath,
           engine: request.engine,
         },
-        { signal: controller.signal },
+        {
+          signal: controller.signal,
+          onProgress: (progress) => {
+            event.sender.send("compile:progress", {
+              projectId: request.projectId,
+              progress,
+            });
+          },
+        },
       );
       const mappedResult = prefixResultDiagnostics(result, location);
       return {
@@ -6455,7 +6463,7 @@ async function startApp(): Promise<void> {
       untrack();
     }
   });
-  ipcMain.handle("latex:compile-cloud", async (_event, ...rawArgs: unknown[]) => {
+  ipcMain.handle("latex:compile-cloud", async (event, ...rawArgs: unknown[]) => {
     const channel = "latex:compile-cloud";
     const [rawRequest] = expectIpcArgs(channel, rawArgs, 1);
     if (!isRecord(rawRequest)) {
@@ -6502,7 +6510,15 @@ async function startApp(): Promise<void> {
           rootFile: request.rootFile,
           engine: request.engine,
         },
-        { signal: controller.signal },
+        {
+          signal: controller.signal,
+          onProgress: (progress) => {
+            event.sender.send("compile:progress", {
+              projectId: request.projectId,
+              progress,
+            });
+          },
+        },
       );
       return {
         ...result,
