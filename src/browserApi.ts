@@ -846,6 +846,10 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       return new Uint8Array();
     },
 
+    async collectGarbage() {
+      throw browserUnavailable("Disk space cleanup");
+    },
+
     async forwardSyncTex() {
       return null;
     },

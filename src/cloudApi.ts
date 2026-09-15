@@ -1156,6 +1156,9 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
 
     forwardSyncTex: async () => null,
     backwardSyncTex: async () => null,
+    collectGarbage: async () => {
+      throw new Error("Disk space cleanup is not available in the hosted editor.");
+    },
     onOpenSpellCheckerSettings: () => () => {},
     onOpenProjectMenu: () => () => {},
     onCreateFileMenu: () => () => {},

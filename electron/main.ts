@@ -52,6 +52,7 @@ import {
   compileLatex,
   materializeCloudCompileFiles,
 } from "./compiler.js";
+import { createGarbageCollector, type CollectNowOptions } from "./garbageCollector.js";
 import { importDocxIntoProject } from "./docxImport.js";
 import { importMarkdown } from "./markdownImport.js";
 import { importPdfIntoProject } from "./pdfImport/index.js";
@@ -824,6 +825,12 @@ function cancelActiveCompiles(projectId: string): boolean {
   }
   return true;
 }
+
+const projectGarbageCollector = createGarbageCollector({
+  getProjectRoot,
+  hasActiveCompiles: (projectId) =>
+    Boolean(activeCompileControllers.get(projectId)?.size),
+});
 
 function isInside(parent: string, child: string): boolean {
   const relative = path.relative(path.resolve(parent), path.resolve(child));
@@ -6461,6 +6468,7 @@ async function startApp(): Promise<void> {
       };
     } finally {
       untrack();
+      projectGarbageCollector.schedule(request.projectId);
     }
   });
   ipcMain.handle("latex:compile-cloud", async (event, ...rawArgs: unknown[]) => {
@@ -6528,6 +6536,7 @@ async function startApp(): Promise<void> {
       };
     } finally {
       untrack();
+      projectGarbageCollector.schedule(request.projectId);
     }
   });
   ipcMain.handle("latex:compile-cancel", async (_event, ...rawArgs: unknown[]) => {
@@ -6561,6 +6570,7 @@ async function startApp(): Promise<void> {
       };
     } finally {
       untrack();
+      projectGarbageCollector.schedule(request.projectId);
     }
   });
   ipcMain.handle("pdf:read", async (_event, ...rawArgs: unknown[]) => {
@@ -6632,6 +6642,31 @@ async function startApp(): Promise<void> {
     };
   });
 
+  ipcMain.handle("workspace:collect-garbage", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "workspace:collect-garbage";
+    const [rawProjectId, rawOptions] = expectIpcArgRange(channel, rawArgs, 1, 2);
+    const projectId = parseProjectId(channel, rawProjectId);
+    let options: CollectNowOptions = {};
+    if (rawOptions !== undefined) {
+      if (!isRecord(rawOptions)) {
+        throw new Error(`${channel}: expected an options object`);
+      }
+      if (rawOptions.maxBuildBytes !== undefined) {
+        options = {
+          buildPolicy: {
+            maxTotalBytes: parseFiniteNumber(
+              channel,
+              rawOptions.maxBuildBytes,
+              16 * 1024 * 1024,
+              4 * 1024 ** 4,
+            ),
+          },
+        };
+      }
+    }
+    return projectGarbageCollector.collectNow(projectId, options);
+  });
+
   const window = createWindow();
   console.log("[latexdo] app:window-opened");
   if (startupSmokeTest) {
@@ -6684,4 +6719,5 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   appIsQuitting = true;
   for (const projectId of gitWatchStates.keys()) closeGitWatchers(projectId);
+  projectGarbageCollector.dispose();
 });

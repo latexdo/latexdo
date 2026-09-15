@@ -37,6 +37,9 @@ import type {
   UpdateDownloadProgress,
   UpdateInstallResult,
 } from "./types.js" with { "resolution-mode": "import" };
+import type { GarbageCollectionStats } from "./garbageCollector.js" with {
+  "resolution-mode": "import",
+};
 
 const requestedEdition =
   process.env.VITE_LATEXDO_EDITION || process.env.LATEXDO_EDITION;
@@ -1093,6 +1096,15 @@ const api = {
       : ipcRenderer.invoke("asymptote:compile", request),
   readPdf: (projectId: string, pdfRelativePath: string): Promise<Uint8Array> =>
     ipcRenderer.invoke("pdf:read", projectId, pdfRelativePath),
+  collectGarbage: (
+    projectId: string,
+    options?: { maxBuildBytes?: number },
+  ): Promise<GarbageCollectionStats | null> =>
+    options === undefined || options.maxBuildBytes === undefined
+      ? ipcRenderer.invoke("workspace:collect-garbage", projectId)
+      : ipcRenderer.invoke("workspace:collect-garbage", projectId, {
+          maxBuildBytes: options.maxBuildBytes,
+        }),
   forwardSyncTex: (
     projectId: string,
     pdfRelativePath: string,
