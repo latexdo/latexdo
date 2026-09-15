@@ -409,11 +409,18 @@ async function openProjectFromWelcome() {
 
 async function installExtensionByName(name: string) {
   fireEvent.click(screen.getByTitle("Extensions"));
-  const card = (await screen.findByText(name)).closest("article");
+  const viewDetailsButton = await screen.findByRole("button", {
+    name: new RegExp(`view ${escapeRegExp(name)} details`, "i"),
+  });
+  const card = viewDetailsButton.closest("article");
   expect(card).not.toBeNull();
   fireEvent.click(
     within(card as HTMLElement).getByRole("button", { name: /install/i }),
   );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function closeSettingsDialog() {
@@ -1474,6 +1481,31 @@ describe("App critical UI controls", () => {
     await waitFor(() => {
       expect(screen.queryByTitle("Table Generator")).not.toBeInTheDocument();
     });
+  });
+
+  it("shows extension manifest details from the sidebar list", async () => {
+    installLatexDoMock();
+
+    render(<App />);
+
+    fireEvent.click(screen.getByTitle("Extensions"));
+    const card = (await screen.findByText("Citation Workbench")).closest("article");
+    expect(card).not.toBeNull();
+
+    fireEvent.click(
+      within(card as HTMLElement).getByRole("button", {
+        name: /view citation workbench details/i,
+      }),
+    );
+
+    const details = screen.getByRole("region", { name: /extension details/i });
+    expect(
+      within(details).getByRole("heading", { name: "Citation Workbench" }),
+    ).toBeVisible();
+    expect(within(details).getByText("Author")).toBeVisible();
+    expect(within(details).getByText("LatexDo")).toBeVisible();
+    expect(within(details).getByText("latexdo.citation-workbench")).toBeVisible();
+    expect(within(details).getByText("Project Bibliography Enabled")).toBeVisible();
   });
 
   it("shows Citation Manager for older Citation Workbench manifests", async () => {

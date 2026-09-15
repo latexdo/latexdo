@@ -870,11 +870,20 @@ button {
   margin: 10px;
 }
 
-.extensions-list {
+.extensions-browser {
+  display: flex;
   min-height: 0;
-  overflow: auto;
   flex: 1;
+  flex-direction: column;
+}
+
+.extensions-list {
+  flex: 0 0 42%;
+  min-height: 0;
+  max-height: 46%;
+  overflow: auto;
   padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-default);
 }
 
 .extensions-section {
@@ -908,7 +917,7 @@ button {
 .extension-sidebar-card {
   gap: 7px;
   margin: 0;
-  padding: 10px 11px;
+  padding: 0;
   border-width: 0 0 1px;
   border-color: var(--border-subtle);
   border-radius: 0;
@@ -922,8 +931,31 @@ button {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
+.extension-sidebar-card.selected {
+  background: var(--bg-row-active);
+}
+
 .extension-sidebar-card:hover {
   background: var(--bg-row-hover);
+}
+
+.extension-list-main {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 7px;
+  padding: 10px 11px 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.extension-list-main:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: -2px;
 }
 
 .extension-sidebar-card .extension-card-top {
@@ -945,6 +977,11 @@ button {
 
 .extension-sidebar-card .extension-card-actions {
   justify-content: flex-start;
+  padding: 0 11px 10px;
+}
+
+.extension-quick-action {
+  max-width: 100%;
 }
 
 .extensions-empty {
@@ -964,6 +1001,202 @@ button {
   border-top: 1px solid var(--border-subtle);
   color: var(--text-muted);
   font-size: 10px;
+}
+
+.extension-detail-panel {
+  display: flex;
+  min-height: 0;
+  overflow: auto;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: var(--bg-sidebar);
+}
+
+.extension-detail-empty {
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.extension-detail-header {
+  display: grid;
+  min-width: 0;
+  align-items: start;
+  gap: 10px;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+}
+
+.extension-detail-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  border-radius: 7px;
+  background: var(--accent-panel);
+  color: var(--accent);
+  place-items: center;
+}
+
+.extension-detail-header h3 {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.22;
+}
+
+.extension-detail-header p,
+.extension-detail-description,
+.extension-detail-section p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.extension-installed-pill {
+  min-height: 22px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-card);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-dim);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.extension-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.extension-detail-actions button {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.extension-detail-meta {
+  display: grid;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-card);
+  border-radius: 7px;
+  background: var(--bg-card);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.extension-detail-meta div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 9px 10px;
+  border-right: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.extension-detail-meta div:nth-child(2n),
+.extension-detail-meta div.wide {
+  border-right: 0;
+}
+
+.extension-detail-meta div:nth-last-child(-n + 1),
+.extension-detail-meta div:nth-last-child(-n + 2):not(.wide) {
+  border-bottom: 0;
+}
+
+.extension-detail-meta div.wide {
+  grid-column: 1 / -1;
+}
+
+.extension-detail-meta dt {
+  color: var(--text-subtle);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.extension-detail-meta dd {
+  overflow: hidden;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+}
+
+.extension-detail-tags {
+  gap: 7px;
+}
+
+.extension-detail-section,
+.extension-detail-subsection {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.extension-detail-section h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.extension-detail-subsection strong {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.extension-detail-contribution-list {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  gap: 6px;
+  list-style: none;
+}
+
+.extension-detail-contribution-list li {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.extension-detail-contribution-list.compact li {
+  display: grid;
+  gap: 2px;
+}
+
+.extension-detail-contribution-list small {
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-size: 9.5px;
 }
 
 .scm-head {
