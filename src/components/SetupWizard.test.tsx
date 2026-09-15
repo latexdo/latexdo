@@ -301,4 +301,64 @@ describe("SetupWizard", () => {
       }),
     );
   });
+
+  it("shows the privacy message and a model capability comparison", () => {
+    render(
+      <SetupWizard
+        initialConfig={makeConfig({
+          provider: "local",
+          modelDownloaded: false,
+        })}
+        isDesktop
+        systemCapabilities={highRamCapabilities}
+        systemCapabilitiesState="ready"
+        onApplyTheme={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    );
+    advanceToModelStep();
+
+    expect(screen.getByText(/Private by design/i)).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: /what can each model do/i }));
+    expect(
+      screen.getByRole("table", {
+        name: /what each latexdo model can do/i,
+      }),
+    ).toBeVisible();
+    expect(screen.getAllByText("Inline completion").length).toBeGreaterThan(0);
+    expect(screen.getByText("Workspace reasoning")).toBeVisible();
+    expect(
+      screen.getAllByLabelText("LatexDo Pro Max: included").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText("LatexDo AI: not included").length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("explains how to unlock tiers that do not fit the machine", () => {
+    render(
+      <SetupWizard
+        initialConfig={makeConfig({
+          provider: "local",
+          modelDownloaded: false,
+        })}
+        isDesktop
+        systemCapabilities={{
+          ...highRamCapabilities,
+          totalRamBytes: 8 * GB,
+          freeRamBytes: 3.5 * GB,
+        }}
+        systemCapabilitiesState="ready"
+        onApplyTheme={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    );
+    advanceToModelStep();
+
+    expect(screen.getAllByText(/memory floor/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/connect your own model via customize/i).length,
+    ).toBeGreaterThan(0);
+  });
 });

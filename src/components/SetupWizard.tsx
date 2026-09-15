@@ -16,6 +16,7 @@ import {
   BookOpenCheck,
   FileText,
   ShieldCheck,
+  GitCompareArrows,
 } from "lucide-react";
 import {
   colorThemeOptions,
@@ -30,8 +31,11 @@ import {
   type AiProvider,
 } from "../features/ai/aiConfig";
 import {
+  capabilityById,
   fastTierAvailability,
   latexDoAiTiers,
+  tierCapabilityCatalog,
+  tierUnlockGuidance,
   type LatexDoAiTierDefinition,
 } from "../features/ai/product/latexDoAiTiers";
 import {
@@ -184,6 +188,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   const [importing, setImporting] = React.useState(false);
   const [importedManifest, setImportedManifest] =
     React.useState<ImportedModelManifest | null>(null);
+  const [showCompare, setShowCompare] = React.useState(false);
 
   const step = steps[stepIndex];
   const patch = (p: Partial<AiConfig>) => setConfig((c) => ({ ...c, ...p }));
@@ -635,6 +640,17 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                     : "The browser build can't run local AI tiers. Use Customize to connect an API provider."}
                 </p>
 
+                <div className="ai-wizard-privacy">
+                  <ShieldCheck size={16} aria-hidden="true" />
+                  <div>
+                    <strong>Private by design.</strong> Local AI runs 100% on your
+                    machine — no account, no uploads, and never trained on your work.
+                    {isDesktop
+                      ? " Nothing leaves your computer unless you choose to connect a provider."
+                      : ""}
+                  </div>
+                </div>
+
                 <div className="ai-wizard-model-list">
                   {latexDoAiTiers.map((tier) => {
                     const availability = tierAvailability(tier);
@@ -662,9 +678,44 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                           </span>
                         </div>
                         <div className="ai-wizard-model-desc">{tier.description}</div>
+                        <div className="ai-wizard-model-capabilities">
+                          {tier.capabilities.slice(0, 3).map((capabilityId) => {
+                            const capability = capabilityById(capabilityId);
+                            if (!capability) return null;
+                            return (
+                              <span key={capabilityId} className="ai-wizard-capability">
+                                {capability.label}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        {tier.capabilities.length > 3 ? (
+                          <div className="ai-wizard-capability-more">
+                            +{tier.capabilities.length - 3} more — see the comparison
+                            below
+                          </div>
+                        ) : null}
                         <div className="ai-wizard-model-meta">
                           <span>{availabilityLabel(availability)}</span>
                         </div>
+                        {(() => {
+                          const guidance = tierUnlockGuidance(availability);
+                          if (!guidance) return null;
+                          return (
+                            <div className="ai-wizard-unlock">
+                              <div className="ai-wizard-unlock-heading">
+                                {guidance.heading}
+                              </div>
+                              <ol className="ai-wizard-unlock-steps">
+                                {guidance.steps.map((stepText, index) => (
+                                  <li key={`${guidance.heading}-${index}`}>
+                                    {stepText}
+                                  </li>
+                                ))}
+                              </ol>
+                            </div>
+                          );
+                        })()}
                       </button>
                     );
                   })}
@@ -685,6 +736,93 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                     </div>
                   </button>
                 </div>
+
+                <button
+                  type="button"
+                  className="ai-wizard-ghost ai-wizard-compare-toggle"
+                  aria-expanded={showCompare}
+                  onClick={() => setShowCompare((value) => !value)}
+                >
+                  <GitCompareArrows size={13} />
+                  {showCompare
+                    ? "Hide the model comparison"
+                    : "What can each model do?"}
+                </button>
+
+                {showCompare && (
+                  <div className="ai-wizard-compare">
+                    <table className="ai-wizard-compare-table">
+                      <caption className="sr-only">
+                        What each LatexDo model can do
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Capability</th>
+                          {latexDoAiTiers.map((tier) => (
+                            <th
+                              key={tier.id}
+                              scope="col"
+                              className={
+                                tier.id === "latexdo-ai-plus"
+                                  ? "ai-wizard-compare-recommended"
+                                  : undefined
+                              }
+                            >
+                              <span className="ai-wizard-compare-tier">
+                                {tier.name}
+                              </span>
+                              <span className="ai-wizard-compare-tagline">
+                                {tier.tagline}
+                              </span>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tierCapabilityCatalog.map((capability) => (
+                          <tr key={capability.id}>
+                            <th scope="row">
+                              <strong>{capability.label}</strong>
+                              <span className="ai-wizard-compare-detail">
+                                {capability.detail}
+                              </span>
+                            </th>
+                            {latexDoAiTiers.map((tier) => {
+                              const included = tier.capabilities.includes(
+                                capability.id,
+                              );
+                              return (
+                                <td
+                                  key={tier.id}
+                                  className={
+                                    tier.id === "latexdo-ai-plus"
+                                      ? "ai-wizard-compare-recommended"
+                                      : undefined
+                                  }
+                                >
+                                  {included ? (
+                                    <Check
+                                      size={14}
+                                      className="ai-wizard-compare-yes"
+                                      aria-label={`${tier.name}: included`}
+                                    />
+                                  ) : (
+                                    <span
+                                      className="ai-wizard-compare-no"
+                                      aria-label={`${tier.name}: not included`}
+                                    >
+                                      —
+                                    </span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
                 {customSelected && (
                   <div className="ai-wizard-custom-form">
