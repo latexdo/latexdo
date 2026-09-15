@@ -566,6 +566,11 @@ function tierAvailabilityLabel(availability: TierAvailability): string {
       availability.requiredAvailableBytes,
     )} available, ${formatRam(availability.availableBytes)} available now`;
   }
+  if (availability.state === "storage-pressure") {
+    return `Not enough storage: needs ${formatRam(
+      availability.requiredAvailableStorageBytes,
+    )} free, ${formatRam(availability.availableStorageBytes)} free now`;
+  }
   if (
     typeof availability.requiredSystemRamBytes === "number" &&
     typeof availability.detectedSystemRamBytes === "number"

@@ -1,6 +1,11 @@
 import type { AiSystemCapabilities } from "./systemCapabilities.js";
 
 export const GB = 1024 ** 3;
+const storageHeadroomBytes = 256 * 1024 ** 2;
+
+function storageRequirementBytes(downloadSizeGb: number): number {
+  return Math.ceil(downloadSizeGb * 1.15 * GB + storageHeadroomBytes);
+}
 
 export type LatexDoAiTier =
   | "latexdo-ai"
@@ -14,6 +19,11 @@ export type TierAvailability =
       state: "memory-pressure";
       requiredAvailableBytes: number;
       availableBytes: number;
+    }
+  | {
+      state: "storage-pressure";
+      requiredAvailableStorageBytes: number;
+      availableStorageBytes: number;
     }
   | {
       state: "unsupported";
@@ -34,6 +44,7 @@ export interface LatexDoAiTierDefinition {
   requirements: {
     minSystemRamBytes: number;
     minAvailableRamBytes: number;
+    minAvailableStorageBytes: number;
   };
 }
 
@@ -51,6 +62,7 @@ export const latexDoAiTiers: readonly LatexDoAiTierDefinition[] = [
     requirements: {
       minSystemRamBytes: 8 * GB,
       minAvailableRamBytes: 3 * GB,
+      minAvailableStorageBytes: storageRequirementBytes(1.12),
     },
   },
   {
@@ -66,6 +78,7 @@ export const latexDoAiTiers: readonly LatexDoAiTierDefinition[] = [
     requirements: {
       minSystemRamBytes: 8 * GB,
       minAvailableRamBytes: 4 * GB,
+      minAvailableStorageBytes: storageRequirementBytes(2.0),
     },
   },
   {
@@ -81,6 +94,7 @@ export const latexDoAiTiers: readonly LatexDoAiTierDefinition[] = [
     requirements: {
       minSystemRamBytes: 12 * GB,
       minAvailableRamBytes: 6 * GB,
+      minAvailableStorageBytes: storageRequirementBytes(2.5),
     },
   },
   {
@@ -96,6 +110,7 @@ export const latexDoAiTiers: readonly LatexDoAiTierDefinition[] = [
     requirements: {
       minSystemRamBytes: 16 * GB,
       minAvailableRamBytes: 8 * GB,
+      minAvailableStorageBytes: storageRequirementBytes(5.03),
     },
   },
 ];
@@ -136,6 +151,19 @@ export function fastTierAvailability(
       state: "memory-pressure",
       requiredAvailableBytes: tier.requirements.minAvailableRamBytes,
       availableBytes: system.freeRamBytes,
+    };
+  }
+  if (system.freeStorageBytes === null) {
+    return {
+      state: "unsupported",
+      reason: "Could not check available storage for local AI models.",
+    };
+  }
+  if (system.freeStorageBytes < tier.requirements.minAvailableStorageBytes) {
+    return {
+      state: "storage-pressure",
+      requiredAvailableStorageBytes: tier.requirements.minAvailableStorageBytes,
+      availableStorageBytes: system.freeStorageBytes,
     };
   }
   return { state: "available" };

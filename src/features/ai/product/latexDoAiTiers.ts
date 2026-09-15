@@ -2,6 +2,7 @@ import type { AiSystemCapabilities, TierAvailability } from "../aiTypes";
 import { findLocalModel } from "../aiModels";
 
 export const GB = 1024 ** 3;
+const storageHeadroomBytes = 256 * 1024 ** 2;
 
 export type LatexDoAiTier =
   | "latexdo-ai"
@@ -21,6 +22,7 @@ export interface LatexDoAiTierDefinition {
   requirements: {
     minSystemRamBytes: number;
     minAvailableRamBytes: number;
+    minAvailableStorageBytes: number;
   };
 }
 
@@ -62,6 +64,23 @@ function gbToBytes(value: number): number {
   return Math.round(value * GB);
 }
 
+function downloadSizeToBytes(value: string): number {
+  const match = /([\d.]+)\s*(GB|MB)\b/i.exec(value);
+  if (!match) {
+    throw new Error(`Invalid local model download size: ${value}`);
+  }
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new Error(`Invalid local model download size: ${value}`);
+  }
+  const unit = match[2].toUpperCase();
+  return Math.round(amount * (unit === "GB" ? GB : 1024 ** 2));
+}
+
+function storageRequirementBytes(downloadSize: string): number {
+  return Math.ceil(downloadSizeToBytes(downloadSize) * 1.15 + storageHeadroomBytes);
+}
+
 function toTierDefinition(product: LatexDoAiTierProduct): LatexDoAiTierDefinition {
   const runtime = findLocalModel(product.runtimeModelId);
   if (!runtime) {
@@ -79,6 +98,7 @@ function toTierDefinition(product: LatexDoAiTierProduct): LatexDoAiTierDefinitio
     requirements: {
       minSystemRamBytes: gbToBytes(runtime.minSystemRamGb),
       minAvailableRamBytes: gbToBytes(runtime.minAvailableRamGb),
+      minAvailableStorageBytes: storageRequirementBytes(runtime.downloadSize),
     },
   };
 }
@@ -129,6 +149,19 @@ export function fastTierAvailability(
       state: "memory-pressure",
       requiredAvailableBytes: tier.requirements.minAvailableRamBytes,
       availableBytes: system.freeRamBytes,
+    };
+  }
+  if (system.freeStorageBytes === null) {
+    return {
+      state: "unsupported",
+      reason: "Could not check available storage for local AI models.",
+    };
+  }
+  if (system.freeStorageBytes < tier.requirements.minAvailableStorageBytes) {
+    return {
+      state: "storage-pressure",
+      requiredAvailableStorageBytes: tier.requirements.minAvailableStorageBytes,
+      availableStorageBytes: system.freeStorageBytes,
     };
   }
   return { state: "available" };

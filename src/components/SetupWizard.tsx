@@ -134,6 +134,11 @@ function availabilityLabel(availability: TierAvailability): string {
       availability.requiredAvailableBytes,
     )} available; ${formatRam(availability.availableBytes)} available now.`;
   }
+  if (availability.state === "storage-pressure") {
+    return `Not enough storage. Needs ${formatRam(
+      availability.requiredAvailableStorageBytes,
+    )} free; ${formatRam(availability.availableStorageBytes)} free now.`;
+  }
   if (
     typeof availability.requiredSystemRamBytes === "number" &&
     typeof availability.detectedSystemRamBytes === "number"
@@ -257,12 +262,12 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
     if (systemCapabilitiesState === "loading") {
       return {
         state: "unsupported",
-        reason: "Checking this machine's memory.",
+        reason: "Checking this machine's memory and storage.",
       };
     }
     return {
       state: "unsupported",
-      reason: "LatexDo could not check this machine's memory.",
+      reason: "LatexDo could not check this machine's memory and storage.",
     };
   };
 
@@ -621,8 +626,12 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                 <p className="ai-wizard-lead">
                   {isDesktop
                     ? systemCapabilities
-                      ? `${formatRam(systemCapabilities.totalRamBytes)} RAM detected, ${formatRam(systemCapabilities.freeRamBytes)} currently available.`
-                      : "LatexDo is checking whether each local AI tier can run on this machine."
+                      ? `${formatRam(systemCapabilities.totalRamBytes)} RAM detected, ${formatRam(systemCapabilities.freeRamBytes)} currently available. ${
+                          systemCapabilities.freeStorageBytes === null
+                            ? "Storage check unavailable."
+                            : `${formatRam(systemCapabilities.freeStorageBytes)} storage available for AI models.`
+                        }`
+                      : "LatexDo is checking whether each local AI tier can run and fit on this machine."
                     : "The browser build can't run local AI tiers. Use Customize to connect an API provider."}
                 </p>
 
@@ -872,7 +881,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
 
                 {config.selection.mode === "latexdo" && selectedTier && (
                   <div className="ai-wizard-download">
-                    {selectedTierAvailability.state === "memory-pressure" ? (
+                    {selectedTierAvailability.state === "memory-pressure" ||
+                    selectedTierAvailability.state === "storage-pressure" ? (
                       <button
                         type="button"
                         className="ai-wizard-ghost"

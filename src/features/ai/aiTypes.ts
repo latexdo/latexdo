@@ -105,6 +105,9 @@ export interface DownloadProgress {
 export interface AiSystemCapabilities {
   totalRamBytes: number;
   freeRamBytes: number;
+  totalStorageBytes: number | null;
+  freeStorageBytes: number | null;
+  modelStoragePath: string | null;
   platform: string;
   arch: string;
   cpuCount: number;
@@ -117,6 +120,11 @@ export type TierAvailability =
       state: "memory-pressure";
       requiredAvailableBytes: number;
       availableBytes: number;
+    }
+  | {
+      state: "storage-pressure";
+      requiredAvailableStorageBytes: number;
+      availableStorageBytes: number;
     }
   | {
       state: "unsupported";

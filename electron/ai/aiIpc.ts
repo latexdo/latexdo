@@ -63,6 +63,13 @@ function tierAvailabilityMessage(
       availability.availableBytes,
     )}. Close some applications and try again.`;
   }
+  if (availability.state === "storage-pressure") {
+    return `${tierName} cannot be downloaded yet. It needs approximately ${formatGb(
+      availability.requiredAvailableStorageBytes,
+    )} of free storage for the model download; currently available: ${formatGb(
+      availability.availableStorageBytes,
+    )}. Free up disk space and try again.`;
+  }
   if (
     typeof availability.requiredSystemRamBytes === "number" &&
     typeof availability.detectedSystemRamBytes === "number"

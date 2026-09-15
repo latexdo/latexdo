@@ -1,10 +1,14 @@
 import os from "node:os";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statfsSync } from "node:fs";
+import { modelsDir } from "./models.js";
 
 export interface AiSystemCapabilities {
   totalRamBytes: number;
   freeRamBytes: number;
+  totalStorageBytes: number | null;
+  freeStorageBytes: number | null;
+  modelStoragePath: string | null;
   platform: NodeJS.Platform;
   arch: string;
   cpuCount: number;
@@ -86,12 +90,37 @@ function availableMemoryBytes(
   );
 }
 
+function modelStorageCapabilities(): Pick<
+  AiSystemCapabilities,
+  "totalStorageBytes" | "freeStorageBytes" | "modelStoragePath"
+> {
+  const directory = modelsDir();
+  try {
+    mkdirSync(directory, { recursive: true });
+    const info = statfsSync(directory);
+    const blockSize = Number(info.bsize);
+    return {
+      totalStorageBytes: Math.max(0, Number(info.blocks) * blockSize),
+      freeStorageBytes: Math.max(0, Number(info.bavail) * blockSize),
+      modelStoragePath: directory,
+    };
+  } catch {
+    return {
+      totalStorageBytes: null,
+      freeStorageBytes: null,
+      modelStoragePath: directory,
+    };
+  }
+}
+
 export function getAiSystemCapabilities(): AiSystemCapabilities {
   const totalRamBytes = os.totalmem();
   const rawFreeBytes = os.freemem();
+  const storage = modelStorageCapabilities();
   return {
     totalRamBytes,
     freeRamBytes: availableMemoryBytes(totalRamBytes, rawFreeBytes),
+    ...storage,
     platform: process.platform,
     arch: process.arch,
     cpuCount: os.cpus().length,
