@@ -426,6 +426,15 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       return projectToOpenProject(project);
     },
 
+    async createResearchSpace() {
+      const store = readStore();
+      const project = createProjectRecord("Research Space");
+      store.projects = [project, ...store.projects];
+      store.currentProjectId = project.id;
+      writeStore(store);
+      return projectToOpenProject(project);
+    },
+
     async listProject(projectId, _options) {
       const store = readStore();
       return listProjectEntries(findProject(store, projectId));

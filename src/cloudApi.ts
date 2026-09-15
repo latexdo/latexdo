@@ -605,6 +605,15 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       return project;
     },
 
+    createResearchSpace: async () => {
+      const project = await requestJson<OpenProject>("/api/projects", {
+        method: "POST",
+        body: JSON.stringify({ folderName: "Research Space" }),
+      });
+      rememberActiveCloudProject(project.id);
+      return project;
+    },
+
     listProject: (projectId, _options) =>
       requestJson(
         `/api/projects/${projectId}/files`,

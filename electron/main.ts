@@ -65,12 +65,17 @@ import type {
   CompileRequest,
   AsymptoteCompileRequest,
   GitDiscardResult,
+  GitStatusSummary,
   GitRevisionRef,
   ImportedProjectEntry,
+  LatexDoResearchSpace,
+  LatexDoResearchSpaceFolder,
+  LatexDoResearchSpaceFolderKind,
   OpenProject,
   ProofreadingResult,
   ProofreadingRequestOptions,
   ProofreadingSettings,
+  ProjectEntry,
   ProjectListOptions,
   RendererDiagnosticPayload,
   SpellCheckerSettings,
@@ -118,6 +123,11 @@ const isProEdition =
   executableProductName.toLowerCase().includes("business");
 const productName =
   envString("LATEXDO_PRODUCT_NAME") ?? (isProEdition ? "LatexDo Pro" : "LatexDo");
+const researchSpacePrimaryExtension = "latexdo-space";
+const researchSpaceExtensions = new Set([
+  `.${researchSpacePrimaryExtension}`,
+  ".latexdo-workspace",
+]);
 const expectedUpdateProduct = envString("LATEXDO_UPDATE_PRODUCT") ?? productName;
 const packagedRendererOrigin = "latexdo://app";
 const packagedRendererRoot = path.resolve(currentDirectory, "..", "dist");
@@ -502,6 +512,258 @@ function registerProject(rootPath: string): OpenProject {
   return project;
 }
 
+function isResearchSpaceFile(filePath: string): boolean {
+  return researchSpaceExtensions.has(path.extname(filePath).toLowerCase());
+}
+
+function withResearchSpaceExtension(filePath: string): string {
+  return isResearchSpaceFile(filePath)
+    ? filePath
+    : `${filePath}.${researchSpacePrimaryExtension}`;
+}
+
+function isResearchSpaceProject(
+  project: OpenProject,
+): project is OpenProject & { researchSpace: LatexDoResearchSpace } {
+  return Boolean(project.researchSpace);
+}
+
+function researchSpaceProjectId(filePath: string): string {
+  return `space:${path.resolve(filePath)}`;
+}
+
+function cleanResearchSpaceLabel(value: string, fallback: string): string {
+  const cleaned = value
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 96);
+  return cleaned || fallback;
+}
+
+function sanitizeResearchSpaceFolderName(value: string, fallback: string): string {
+  const safeFallback =
+    fallback === "." || fallback === ".." || reservedProjectPathSegments.has(fallback)
+      ? "Folder"
+      : fallback;
+  const cleaned = value
+    .split("")
+    .map((character) => {
+      const code = character.charCodeAt(0);
+      return invalidProjectFolderCharacters.has(character) || code < 32
+        ? " "
+        : character;
+    })
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^\.+$/, "");
+  const safeName = cleaned || safeFallback;
+  if (
+    safeName === "." ||
+    safeName === ".." ||
+    reservedProjectPathSegments.has(safeName)
+  ) {
+    return safeFallback;
+  }
+  return safeName.slice(0, 96) || safeFallback;
+}
+
+function uniqueResearchSpaceFolderName(
+  preferredName: string,
+  fallback: string,
+  usedNames: Set<string>,
+): string {
+  const baseName = sanitizeResearchSpaceFolderName(preferredName, fallback);
+  for (let index = 0; index < 100; index += 1) {
+    const candidate = index === 0 ? baseName : `${baseName} ${index + 1}`;
+    const key = candidate.toLowerCase();
+    if (!usedNames.has(key)) {
+      usedNames.add(key);
+      return candidate;
+    }
+  }
+  const generated = `${fallback} ${randomUUID().slice(0, 8)}`;
+  usedNames.add(generated.toLowerCase());
+  return generated;
+}
+
+function researchSpaceDefaultName(filePath: string): string {
+  const parsed = path.parse(filePath);
+  return cleanResearchSpaceLabel(parsed.name, "Research Space");
+}
+
+function normalizeResearchSpaceFolderKind(
+  value: unknown,
+  folderPath: string,
+): LatexDoResearchSpaceFolderKind {
+  if (value === "paper" || value === "bibliography" || value === "shared") {
+    return value;
+  }
+
+  const basename = path.basename(folderPath).toLowerCase();
+  if (/\b(bib|bibliography|reference|references|citation|citations)\b/.test(basename)) {
+    return "bibliography";
+  }
+  if (/\b(shared|common|assets|figures|data|supplement)\b/.test(basename)) {
+    return "shared";
+  }
+  return "paper";
+}
+
+async function normalizeResearchSpaceFolders(
+  rawFolders: unknown,
+  manifestDirectory: string,
+): Promise<LatexDoResearchSpaceFolder[]> {
+  if (!Array.isArray(rawFolders) || rawFolders.length === 0) {
+    throw new Error("A Research Space needs at least one folder.");
+  }
+
+  const usedNames = new Set<string>();
+  const folders: LatexDoResearchSpaceFolder[] = [];
+  for (const rawFolder of rawFolders) {
+    if (!isRecord(rawFolder) || typeof rawFolder.path !== "string") {
+      throw new Error("The Research Space file contains an invalid folder entry.");
+    }
+    const resolvedFolderPath = path.resolve(manifestDirectory, rawFolder.path);
+    const folderStats = await stat(resolvedFolderPath).catch(() => null);
+    if (!folderStats?.isDirectory()) {
+      throw new Error(`Research Space folder is missing: ${resolvedFolderPath}`);
+    }
+
+    const fallback = path.basename(resolvedFolderPath) || "Folder";
+    const folderName = uniqueResearchSpaceFolderName(
+      typeof rawFolder.name === "string" ? rawFolder.name : fallback,
+      fallback,
+      usedNames,
+    );
+    folders.push({
+      name: folderName,
+      path: resolvedFolderPath,
+      kind: normalizeResearchSpaceFolderKind(rawFolder.kind, resolvedFolderPath),
+    });
+  }
+  return folders;
+}
+
+async function readResearchSpaceFile(filePath: string): Promise<LatexDoResearchSpace> {
+  const resolvedFilePath = path.resolve(filePath);
+  if (!isResearchSpaceFile(resolvedFilePath)) {
+    throw new Error(`Choose a .${researchSpacePrimaryExtension} file.`);
+  }
+
+  const rawContent = await readFile(resolvedFilePath, "utf8");
+  let data: unknown;
+  try {
+    data = JSON.parse(rawContent);
+  } catch {
+    throw new Error("The selected Research Space file is not valid JSON.");
+  }
+  if (!isRecord(data)) {
+    throw new Error("The selected Research Space file is invalid.");
+  }
+
+  const manifestDirectory = path.dirname(resolvedFilePath);
+  return {
+    schemaVersion: 1,
+    name: cleanResearchSpaceLabel(
+      typeof data.name === "string"
+        ? data.name
+        : researchSpaceDefaultName(resolvedFilePath),
+      researchSpaceDefaultName(resolvedFilePath),
+    ),
+    filePath: resolvedFilePath,
+    folders: await normalizeResearchSpaceFolders(data.folders, manifestDirectory),
+  };
+}
+
+async function writeResearchSpaceFile(
+  space: LatexDoResearchSpace,
+): Promise<LatexDoResearchSpace> {
+  const manifest = {
+    schemaVersion: 1,
+    name: space.name,
+    folders: space.folders.map((folder) => ({
+      name: folder.name,
+      path: folder.path,
+      kind: folder.kind,
+    })),
+  };
+  await atomicWriteUtf8(space.filePath, `${JSON.stringify(manifest, null, 2)}\n`, {
+    backup: true,
+  });
+  return readResearchSpaceFile(space.filePath);
+}
+
+async function createResearchSpaceFile(
+  filePath: string,
+  folderPaths: string[],
+): Promise<LatexDoResearchSpace> {
+  const resolvedFilePath = path.resolve(filePath);
+  const usedNames = new Set<string>();
+  const folders: LatexDoResearchSpaceFolder[] = [];
+  for (const folderPath of folderPaths) {
+    const resolvedFolderPath = path.resolve(folderPath);
+    const folderStats = await stat(resolvedFolderPath).catch(() => null);
+    if (!folderStats?.isDirectory()) {
+      continue;
+    }
+    const fallback = path.basename(resolvedFolderPath) || "Folder";
+    folders.push({
+      name: uniqueResearchSpaceFolderName(fallback, fallback, usedNames),
+      path: resolvedFolderPath,
+      kind: normalizeResearchSpaceFolderKind(undefined, resolvedFolderPath),
+    });
+  }
+  if (folders.length === 0) {
+    throw new Error("Choose at least one paper or shared folder.");
+  }
+
+  const space: LatexDoResearchSpace = {
+    schemaVersion: 1,
+    name: researchSpaceDefaultName(resolvedFilePath),
+    filePath: resolvedFilePath,
+    folders,
+  };
+  return writeResearchSpaceFile(space);
+}
+
+function registerResearchSpace(space: LatexDoResearchSpace): OpenProject {
+  const existingProject = [...openProjects.values()].find(
+    (project) =>
+      project.researchSpace?.filePath === space.filePath ||
+      project.rootPath === space.filePath,
+  );
+  if (existingProject) {
+    existingProject.name = space.name;
+    existingProject.researchSpace = space;
+    return existingProject;
+  }
+
+  const project: OpenProject = {
+    id: researchSpaceProjectId(space.filePath),
+    rootPath: space.filePath,
+    name: space.name,
+    researchSpace: space,
+  };
+  openProjects.set(project.id, project);
+  return project;
+}
+
+async function registerResearchSpaceFileIfTrusted(
+  targetWindow: BrowserWindow | null,
+  filePath: string,
+): Promise<OpenProject | null> {
+  const space = await readResearchSpaceFile(filePath);
+  for (const folder of space.folders) {
+    if (!(await ensureWorkspaceTrust(targetWindow, folder.path))) {
+      return null;
+    }
+  }
+  await trustWorkspace(path.dirname(space.filePath));
+  return registerResearchSpace(space);
+}
+
 function getProjectRoot(projectId: string): string {
   if (!projectId) {
     throw new Error("Open a project before using this action.");
@@ -511,7 +773,25 @@ function getProjectRoot(projectId: string): string {
   if (!project) {
     throw new Error("The requested project is not open.");
   }
+  if (isResearchSpaceProject(project)) {
+    const folder =
+      project.researchSpace.folders.find((candidate) => candidate.kind === "paper") ??
+      project.researchSpace.folders[0];
+    return folder.path;
+  }
   return project.rootPath;
+}
+
+function getOpenProject(projectId: string): OpenProject {
+  if (!projectId) {
+    throw new Error("Open a project before using this action.");
+  }
+
+  const project = openProjects.get(projectId);
+  if (!project) {
+    throw new Error("The requested project is not open.");
+  }
+  return project;
 }
 
 function trackCompileController(
@@ -571,6 +851,263 @@ function relativeProjectPath(projectPath: string, targetPath: string): string {
   assertInside(projectPath, targetPath);
   const relativePath = path.relative(projectPath, targetPath);
   return relativePath || ".";
+}
+
+function toPortableRelativePath(relativePath: string): string {
+  return relativePath.replace(/\\/g, "/");
+}
+
+interface ResolvedProjectTarget {
+  project: OpenProject;
+  projectPath: string;
+  relativePath: string;
+  requestedRelativePath: string;
+  resolvedPath: string;
+  spaceFolder?: LatexDoResearchSpaceFolder;
+}
+
+function prefixResearchSpaceRelativePath(
+  folder: LatexDoResearchSpaceFolder,
+  relativePath: string,
+): string {
+  const portablePath = toPortableRelativePath(relativePath);
+  return portablePath === "."
+    ? folder.name
+    : path.posix.join(folder.name, portablePath);
+}
+
+function prefixResearchSpaceDiagnosticPath(
+  folder: LatexDoResearchSpaceFolder,
+  filePath: string,
+): string {
+  const portablePath = toPortableRelativePath(filePath);
+  if (
+    !portablePath ||
+    path.isAbsolute(portablePath) ||
+    path.posix.isAbsolute(portablePath) ||
+    portablePath.startsWith("../") ||
+    portablePath.includes("://") ||
+    portablePath === folder.name ||
+    portablePath.startsWith(`${folder.name}/`)
+  ) {
+    return filePath;
+  }
+  return prefixResearchSpaceRelativePath(folder, portablePath);
+}
+
+function prefixResultDiagnostics<T extends { diagnostics: Diagnostic[] }>(
+  result: T,
+  location: Pick<ResolvedProjectTarget, "spaceFolder">,
+): T {
+  if (!location.spaceFolder) {
+    return result;
+  }
+  return {
+    ...result,
+    diagnostics: result.diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      file: prefixResearchSpaceDiagnosticPath(location.spaceFolder!, diagnostic.file),
+    })),
+  };
+}
+
+function resolveOpenProjectPath(
+  projectId: string,
+  relativePath: string,
+): ResolvedProjectTarget {
+  const project = getOpenProject(projectId);
+  if (!isResearchSpaceProject(project)) {
+    const resolvedPath = resolveProjectPath(project.rootPath, relativePath);
+    return {
+      project,
+      projectPath: project.rootPath,
+      relativePath,
+      requestedRelativePath: relativePath,
+      resolvedPath,
+    };
+  }
+
+  const [folderName, ...rest] = relativePath.replace(/\\/g, "/").split("/");
+  const folder = project.researchSpace.folders.find(
+    (candidate) => candidate.name === folderName,
+  );
+  if (!folder) {
+    throw new Error("Choose a folder inside this Research Space.");
+  }
+
+  const folderRelativePath = rest.length ? rest.join("/") : ".";
+  const resolvedPath = resolveProjectPath(folder.path, folderRelativePath);
+  return {
+    project,
+    projectPath: folder.path,
+    relativePath: folderRelativePath,
+    requestedRelativePath: relativePath,
+    resolvedPath,
+    spaceFolder: folder,
+  };
+}
+
+function relativeOpenProjectPath(
+  location: Pick<ResolvedProjectTarget, "projectPath" | "spaceFolder">,
+  targetPath: string,
+): string {
+  const relativePath = toPortableRelativePath(
+    relativeProjectPath(location.projectPath, targetPath),
+  );
+  return location.spaceFolder
+    ? prefixResearchSpaceRelativePath(location.spaceFolder, relativePath)
+    : relativePath;
+}
+
+function resolveImportDestination(
+  projectId: string,
+  destinationDirectory: string,
+): ResolvedProjectTarget {
+  const project = getOpenProject(projectId);
+  if (!isResearchSpaceProject(project)) {
+    const resolvedPath = destinationDirectory
+      ? resolveProjectPath(project.rootPath, destinationDirectory)
+      : project.rootPath;
+    return {
+      project,
+      projectPath: project.rootPath,
+      relativePath: destinationDirectory || ".",
+      requestedRelativePath: destinationDirectory,
+      resolvedPath,
+    };
+  }
+
+  if (destinationDirectory) {
+    return resolveOpenProjectPath(projectId, destinationDirectory);
+  }
+
+  const folder =
+    project.researchSpace.folders.find((candidate) => candidate.kind === "paper") ??
+    project.researchSpace.folders[0];
+  return {
+    project,
+    projectPath: folder.path,
+    relativePath: ".",
+    requestedRelativePath: folder.name,
+    resolvedPath: folder.path,
+    spaceFolder: folder,
+  };
+}
+
+function defaultImportTargetForProject(project: OpenProject): ResolvedProjectTarget {
+  if (!isResearchSpaceProject(project)) {
+    return {
+      project,
+      projectPath: project.rootPath,
+      relativePath: ".",
+      requestedRelativePath: "",
+      resolvedPath: project.rootPath,
+    };
+  }
+
+  const folder =
+    project.researchSpace.folders.find((candidate) => candidate.kind === "paper") ??
+    project.researchSpace.folders[0];
+  return {
+    project,
+    projectPath: folder.path,
+    relativePath: ".",
+    requestedRelativePath: folder.name,
+    resolvedPath: folder.path,
+    spaceFolder: folder,
+  };
+}
+
+function researchSpaceGitStatus(): GitStatusSummary {
+  return {
+    isRepo: false,
+    branch: null,
+    entries: [],
+    error:
+      "Git actions span one folder at a time. Open an individual paper folder to use repository-wide Git tools.",
+  };
+}
+
+function throwResearchSpaceGitUnavailable(): never {
+  throw new Error(
+    "Repository-wide Git actions are not available for a multi-folder Research Space. Open an individual paper folder to use Git for that repository.",
+  );
+}
+
+interface ImportPathPayload {
+  relativePath: string;
+  assetDirectory?: string | null;
+  bibRelativePath?: string | null;
+  mediaFiles?: string[];
+}
+
+function prefixImportPathPayload<T extends ImportPathPayload>(
+  payload: T,
+  location: Pick<ResolvedProjectTarget, "spaceFolder">,
+): T {
+  if (!location.spaceFolder) {
+    return payload;
+  }
+
+  const prefix = (relativePath: string): string =>
+    prefixResearchSpaceRelativePath(location.spaceFolder!, relativePath);
+  const next = {
+    ...payload,
+    relativePath: prefix(payload.relativePath),
+  };
+  if ("assetDirectory" in payload) {
+    next.assetDirectory = payload.assetDirectory
+      ? prefix(payload.assetDirectory)
+      : payload.assetDirectory;
+  }
+  if ("bibRelativePath" in payload) {
+    next.bibRelativePath = payload.bibRelativePath
+      ? prefix(payload.bibRelativePath)
+      : payload.bibRelativePath;
+  }
+  if ("mediaFiles" in payload) {
+    next.mediaFiles = payload.mediaFiles?.map(prefix) ?? payload.mediaFiles;
+  }
+  return next;
+}
+
+function prefixResearchSpaceEntry(
+  folder: LatexDoResearchSpaceFolder,
+  entry: ProjectEntry,
+): ProjectEntry {
+  return {
+    ...entry,
+    relativePath: prefixResearchSpaceRelativePath(
+      folder,
+      toPortableRelativePath(entry.relativePath),
+    ),
+    children: entry.children?.map((child) => prefixResearchSpaceEntry(folder, child)),
+  };
+}
+
+async function listOpenProject(
+  projectId: string,
+  options: ProjectListOptions,
+): Promise<ProjectEntry[]> {
+  const project = getOpenProject(projectId);
+  if (!isResearchSpaceProject(project)) {
+    return listProject(project.rootPath, options);
+  }
+
+  const roots: ProjectEntry[] = [];
+  for (const folder of project.researchSpace.folders) {
+    const children = (await listProject(folder.path, options)).map((entry) =>
+      prefixResearchSpaceEntry(folder, entry),
+    );
+    roots.push({
+      name: folder.name,
+      path: folder.path,
+      relativePath: folder.name,
+      type: "directory",
+      children,
+    });
+  }
+  return roots;
 }
 
 function temporarySiblingPath(targetPath: string, label = "tmp"): string {
@@ -5034,10 +5571,17 @@ async function startApp(): Promise<void> {
     expectIpcArgs(channel, rawArgs, 0);
     const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
     const dialogOptions = {
-      properties: ["openDirectory"],
-      title: "Open LaTeX project",
-      buttonLabel: "Open Folder",
+      properties: ["openFile", "openDirectory"],
+      title: "Open LaTeX project or Research Space",
+      buttonLabel: "Open",
       defaultPath: app.getPath("documents"),
+      filters: [
+        {
+          name: "LatexDo Research Spaces",
+          extensions: [researchSpacePrimaryExtension, "latexdo-workspace"],
+        },
+        { name: "All files", extensions: ["*"] },
+      ],
     } satisfies Electron.OpenDialogOptions;
     const result = window
       ? await dialog.showOpenDialog(window, dialogOptions)
@@ -5045,7 +5589,15 @@ async function startApp(): Promise<void> {
     if (result.canceled || !result.filePaths[0]) {
       return null;
     }
-    return registerProjectIfTrusted(window ?? null, result.filePaths[0]);
+    const selectedPath = result.filePaths[0];
+    const selectedStats = await stat(selectedPath).catch(() => null);
+    if (selectedStats?.isDirectory()) {
+      return registerProjectIfTrusted(window ?? null, selectedPath);
+    }
+    if (selectedStats?.isFile() && isResearchSpaceFile(selectedPath)) {
+      return registerResearchSpaceFileIfTrusted(window ?? null, selectedPath);
+    }
+    throw new Error("Open a folder or a LatexDo Research Space file.");
   });
   ipcMain.handle("project:create", async (_event, ...rawArgs: unknown[]) => {
     const channel = "project:create";
@@ -5082,21 +5634,65 @@ async function startApp(): Promise<void> {
     await trustWorkspace(projectPath);
     return registerProject(projectPath);
   });
+  ipcMain.handle("research-space:create", async (event, ...rawArgs: unknown[]) => {
+    const channel = "research-space:create";
+    expectIpcArgs(channel, rawArgs, 0);
+    const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const openOptions = {
+      properties: ["openDirectory", "multiSelections"],
+      title: "Choose papers and shared folders",
+      buttonLabel: "Add to Research Space",
+      defaultPath: app.getPath("documents"),
+    } satisfies Electron.OpenDialogOptions;
+    const openResult = window
+      ? await dialog.showOpenDialog(window, openOptions)
+      : await dialog.showOpenDialog(openOptions);
+    if (openResult.canceled || openResult.filePaths.length === 0) {
+      return null;
+    }
+
+    const saveOptions = {
+      title: "Save LatexDo Research Space",
+      buttonLabel: "Save Research Space",
+      defaultPath: path.join(
+        app.getPath("documents"),
+        `research-space.${researchSpacePrimaryExtension}`,
+      ),
+      filters: [
+        {
+          name: "LatexDo Research Space",
+          extensions: [researchSpacePrimaryExtension],
+        },
+      ],
+    } satisfies Electron.SaveDialogOptions;
+    const saveResult = window
+      ? await dialog.showSaveDialog(window, saveOptions)
+      : await dialog.showSaveDialog(saveOptions);
+    if (saveResult.canceled || !saveResult.filePath) {
+      return null;
+    }
+
+    const filePath = withResearchSpaceExtension(saveResult.filePath);
+    const space = await createResearchSpaceFile(filePath, openResult.filePaths);
+    await trustWorkspace(path.dirname(space.filePath));
+    for (const folder of space.folders) {
+      await trustWorkspace(folder.path);
+    }
+    return registerResearchSpace(space);
+  });
   ipcMain.handle("project:list", async (_event, ...rawArgs: unknown[]) => {
     const channel = "project:list";
     const [rawProjectId, rawOptions] = expectIpcArgRange(channel, rawArgs, 1, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const options = parseProjectListOptions(channel, rawOptions);
-    const projectPath = getProjectRoot(projectId);
-    return listProject(projectPath, options);
+    return listOpenProject(projectId, options);
   });
   ipcMain.handle("file:exists", async (_event, ...rawArgs: unknown[]) => {
     const channel = "file:exists";
     const [rawProjectId, rawFilePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const filePath = parseRelativePath(channel, rawFilePath);
-    const projectPath = getProjectRoot(projectId);
-    const resolvedPath = resolveProjectPath(projectPath, filePath);
+    const { resolvedPath } = resolveOpenProjectPath(projectId, filePath);
     try {
       await access(resolvedPath);
       return true;
@@ -5109,25 +5705,27 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawFilePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const filePath = parseRelativePath(channel, rawFilePath);
-    const projectPath = getProjectRoot(projectId);
-    const resolvedPath = resolveProjectPath(projectPath, filePath);
-    return readSafeTextFile(projectPath, resolvedPath, filePath);
+    const location = resolveOpenProjectPath(projectId, filePath);
+    return readSafeTextFile(
+      location.projectPath,
+      location.resolvedPath,
+      location.relativePath,
+    );
   });
   ipcMain.handle("file:read-cloud-upload", async (_event, ...rawArgs: unknown[]) => {
     const channel = "file:read-cloud-upload";
     const [rawProjectId, rawFilePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const filePath = parseRelativePath(channel, rawFilePath);
-    const projectPath = getProjectRoot(projectId);
-    const resolvedPath = resolveProjectPath(projectPath, filePath);
-    const file = await stat(resolvedPath);
+    const location = resolveOpenProjectPath(projectId, filePath);
+    const file = await stat(location.resolvedPath);
     if (!file.isFile()) {
       throw new Error(`${filePath} is not a file.`);
     }
     if (file.size > maxCloudUploadFileBytes) {
       throw new Error(`${filePath} exceeds the 2 MiB cloud file limit.`);
     }
-    const content = await readFile(resolvedPath);
+    const content = await readFile(location.resolvedPath);
     if (content.byteLength !== file.size) {
       throw new Error(`${filePath} changed while preparing the cloud upload.`);
     }
@@ -5190,8 +5788,7 @@ async function startApp(): Promise<void> {
     const filePath = parseRelativePath(channel, rawFilePath, {
       extensions: [".png", ".jpg", ".jpeg", ".svg", ".pdf"],
     });
-    const projectPath = getProjectRoot(projectId);
-    const resolvedPath = resolveProjectPath(projectPath, filePath);
+    const { resolvedPath } = resolveOpenProjectPath(projectId, filePath);
     return readFile(resolvedPath);
   });
   ipcMain.handle("file:write", async (_event, ...rawArgs: unknown[]) => {
@@ -5200,8 +5797,7 @@ async function startApp(): Promise<void> {
     const projectId = parseProjectId(channel, rawProjectId);
     const filePath = parseRelativePath(channel, rawFilePath);
     const content = parseTextContent(channel, rawContent);
-    const projectPath = getProjectRoot(projectId);
-    const resolvedPath = resolveProjectPath(projectPath, filePath);
+    const { resolvedPath } = resolveOpenProjectPath(projectId, filePath);
     await atomicWriteUtf8(resolvedPath, content, { backup: true });
   });
   ipcMain.handle("file:create", async (_event, ...rawArgs: unknown[]) => {
@@ -5209,19 +5805,18 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
-    const projectPath = getProjectRoot(projectId);
-    const filePath = resolveProjectPath(projectPath, relativePath);
+    const location = resolveOpenProjectPath(projectId, relativePath);
     try {
-      await atomicWriteUtf8(filePath, starterContent(relativePath), {
+      await atomicWriteUtf8(location.resolvedPath, starterContent(relativePath), {
         exclusive: true,
       });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-        return relativeProjectPath(projectPath, filePath);
+        return relativeOpenProjectPath(location, location.resolvedPath);
       }
       throw error;
     }
-    return relativeProjectPath(projectPath, filePath);
+    return relativeOpenProjectPath(location, location.resolvedPath);
   });
   ipcMain.handle(
     "docx:import",
@@ -5237,11 +5832,12 @@ async function startApp(): Promise<void> {
         }
       }
       const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+      const initialTarget = project ? defaultImportTargetForProject(project) : null;
       const dialogOptions = {
         properties: ["openFile"],
         title: "Import DOCX as LaTeX",
         buttonLabel: "Import DOCX",
-        defaultPath: project?.rootPath ?? app.getPath("documents"),
+        defaultPath: initialTarget?.projectPath ?? app.getPath("documents"),
         filters: [
           { name: "Word documents", extensions: ["docx"] },
           { name: "All files", extensions: ["*"] },
@@ -5264,12 +5860,13 @@ async function startApp(): Promise<void> {
           return null;
         }
       }
+      const importTarget = defaultImportTargetForProject(project);
       const imported = await importDocxIntoProject(
-        project.rootPath,
+        importTarget.projectPath,
         result.filePaths[0],
       );
       return {
-        ...imported,
+        ...prefixImportPathPayload(imported, importTarget),
         project,
       };
     },
@@ -5288,11 +5885,12 @@ async function startApp(): Promise<void> {
         }
       }
       const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+      const initialTarget = project ? defaultImportTargetForProject(project) : null;
       const dialogOptions = {
         properties: ["openFile"],
         title: "Import Markdown as LaTeX",
         buttonLabel: "Import Markdown",
-        defaultPath: project?.rootPath ?? app.getPath("documents"),
+        defaultPath: initialTarget?.projectPath ?? app.getPath("documents"),
         filters: [
           { name: "Markdown documents", extensions: ["md", "markdown"] },
           { name: "All files", extensions: ["*"] },
@@ -5315,9 +5913,13 @@ async function startApp(): Promise<void> {
           return null;
         }
       }
-      const imported = await importMarkdown(project.rootPath, result.filePaths[0]);
+      const importTarget = defaultImportTargetForProject(project);
+      const imported = await importMarkdown(
+        importTarget.projectPath,
+        result.filePaths[0],
+      );
       return {
-        ...imported,
+        ...prefixImportPathPayload(imported, importTarget),
         project,
       };
     },
@@ -5336,11 +5938,12 @@ async function startApp(): Promise<void> {
         }
       }
       const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+      const initialTarget = project ? defaultImportTargetForProject(project) : null;
       const dialogOptions = {
         properties: ["openFile"],
         title: "Import PDF as LaTeX",
         buttonLabel: "Import PDF",
-        defaultPath: project?.rootPath ?? app.getPath("documents"),
+        defaultPath: initialTarget?.projectPath ?? app.getPath("documents"),
         filters: [
           { name: "PDF documents", extensions: ["pdf"] },
           { name: "All files", extensions: ["*"] },
@@ -5363,12 +5966,13 @@ async function startApp(): Promise<void> {
           return null;
         }
       }
+      const importTarget = defaultImportTargetForProject(project);
       const imported = await importPdfIntoProject(
-        project.rootPath,
+        importTarget.projectPath,
         result.filePaths[0],
       );
       return {
-        ...imported,
+        ...prefixImportPathPayload(imported, importTarget),
         project,
       };
     },
@@ -5378,20 +5982,19 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
-    const projectPath = getProjectRoot(projectId);
-    const folderPath = resolveProjectPath(projectPath, relativePath);
+    const location = resolveOpenProjectPath(projectId, relativePath);
     try {
-      await mkdir(folderPath, { recursive: false });
+      await mkdir(location.resolvedPath, { recursive: false });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-        return relativeProjectPath(projectPath, folderPath);
+        return relativeOpenProjectPath(location, location.resolvedPath);
       }
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         throw new Error("Create the parent folder first.");
       }
       throw error;
     }
-    return relativeProjectPath(projectPath, folderPath);
+    return relativeOpenProjectPath(location, location.resolvedPath);
   });
   ipcMain.handle("file:import-external", async (_event, ...rawArgs: unknown[]) => {
     const channel = "file:import-external";
@@ -5406,13 +6009,19 @@ async function startApp(): Promise<void> {
       rawDestinationDirectory,
     );
     const sourcePaths = parseExternalSourcePaths(channel, rawSourcePaths);
-    const projectPath = getProjectRoot(projectId);
-    return importExternalFilesIntoProject(
+    const target = resolveImportDestination(projectId, destinationDirectory);
+    const imported = await importExternalFilesIntoProject(
       channel,
-      projectPath,
-      destinationDirectory,
+      target.projectPath,
+      target.relativePath === "." ? "" : target.relativePath,
       sourcePaths,
     );
+    return imported.map((entry) => ({
+      ...entry,
+      relativePath: target.spaceFolder
+        ? prefixResearchSpaceRelativePath(target.spaceFolder, entry.relativePath)
+        : entry.relativePath,
+    }));
   });
   ipcMain.handle(
     "file:choose-import-external",
@@ -5428,10 +6037,8 @@ async function startApp(): Promise<void> {
         channel,
         rawDestinationDirectory,
       );
-      const projectPath = getProjectRoot(projectId);
-      const destinationRoot = destinationDirectory
-        ? resolveProjectPath(projectPath, destinationDirectory)
-        : projectPath;
+      const target = resolveImportDestination(projectId, destinationDirectory);
+      const destinationRoot = target.resolvedPath;
       const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
       const dialogOptions = {
         properties: ["openFile", "openDirectory", "multiSelections"],
@@ -5447,12 +6054,18 @@ async function startApp(): Promise<void> {
         return [];
       }
 
-      return importExternalFilesIntoProject(
+      const imported = await importExternalFilesIntoProject(
         channel,
-        projectPath,
-        destinationDirectory,
+        target.projectPath,
+        target.relativePath === "." ? "" : target.relativePath,
         parseExternalSourcePaths(channel, result.filePaths),
       );
+      return imported.map((entry) => ({
+        ...entry,
+        relativePath: target.spaceFolder
+          ? prefixResearchSpaceRelativePath(target.spaceFolder, entry.relativePath)
+          : entry.relativePath,
+      }));
     },
   );
   ipcMain.handle("entry:move", async (_event, ...rawArgs: unknown[]) => {
@@ -5465,12 +6078,19 @@ async function startApp(): Promise<void> {
     const projectId = parseProjectId(channel, rawProjectId);
     const fromRelativePath = parseRelativePath(channel, rawFromRelativePath);
     const toRelativePath = parseRelativePath(channel, rawToRelativePath);
-    const projectPath = getProjectRoot(projectId);
-    const sourcePath = resolveProjectPath(projectPath, fromRelativePath);
-    const targetPath = resolveProjectPath(projectPath, toRelativePath);
+    const sourceLocation = resolveOpenProjectPath(projectId, fromRelativePath);
+    const targetLocation = resolveOpenProjectPath(projectId, toRelativePath);
+    const sourcePath = sourceLocation.resolvedPath;
+    const targetPath = targetLocation.resolvedPath;
+
+    if (sourceLocation.spaceFolder && sourceLocation.relativePath === ".") {
+      throw new Error(
+        "Move files inside a Research Space folder, not the folder root.",
+      );
+    }
 
     if (sourcePath === targetPath) {
-      return relativeProjectPath(projectPath, targetPath);
+      return relativeOpenProjectPath(targetLocation, targetPath);
     }
 
     const sourceStats = await stat(sourcePath).catch(() => null);
@@ -5494,12 +6114,16 @@ async function startApp(): Promise<void> {
     }
 
     await rename(sourcePath, targetPath);
-    return relativeProjectPath(projectPath, targetPath);
+    return relativeOpenProjectPath(targetLocation, targetPath);
   });
   ipcMain.handle("git:status", async (_event, ...rawArgs: unknown[]) => {
     const channel = "git:status";
     const [rawProjectId] = expectIpcArgs(channel, rawArgs, 1);
     const projectId = parseProjectId(channel, rawProjectId);
+    const project = getOpenProject(projectId);
+    if (isResearchSpaceProject(project)) {
+      return researchSpaceGitStatus();
+    }
     const projectPath = getProjectRoot(projectId);
     await ensureGitWatchers(projectId, projectPath);
     return readStructuredGitStatus(projectPath);
@@ -5509,16 +6133,16 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
-    const projectPath = getProjectRoot(projectId);
-    await gitAdd(projectPath, relativePath);
+    const location = resolveOpenProjectPath(projectId, relativePath);
+    await gitAdd(location.projectPath, location.relativePath);
   });
   ipcMain.handle("git:unstage", async (_event, ...rawArgs: unknown[]) => {
     const channel = "git:unstage";
     const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
-    const projectPath = getProjectRoot(projectId);
-    await gitUnstage(projectPath, relativePath);
+    const location = resolveOpenProjectPath(projectId, relativePath);
+    await gitUnstage(location.projectPath, location.relativePath);
   });
   ipcMain.handle("git:commit", async (_event, ...rawArgs: unknown[]) => {
     const channel = "git:commit";
@@ -5527,6 +6151,9 @@ async function startApp(): Promise<void> {
     const message = parseString(channel, rawMessage, {
       maxLength: maxGitCommitMessageLength,
     });
+    if (isResearchSpaceProject(getOpenProject(projectId))) {
+      throwResearchSpaceGitUnavailable();
+    }
     const projectPath = getProjectRoot(projectId);
     await gitCommit(projectPath, message);
   });
@@ -5535,10 +6162,10 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
-    const projectPath = getProjectRoot(projectId);
+    const location = resolveOpenProjectPath(projectId, relativePath);
     return {
       path: relativePath,
-      diff: await readGitDiffPreview(projectPath, relativePath),
+      diff: await readGitDiffPreview(location.projectPath, location.relativePath),
     };
   });
   ipcMain.handle("git:discard", async (event, ...rawArgs: unknown[]) => {
@@ -5546,7 +6173,7 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
-    const projectPath = getProjectRoot(projectId);
+    const location = resolveOpenProjectPath(projectId, relativePath);
     const confirmed = await confirmGitDiscard(
       BrowserWindow.fromWebContents(event.sender),
       `Discard changes in ${relativePath}?`,
@@ -5554,12 +6181,22 @@ async function startApp(): Promise<void> {
     if (!confirmed) {
       return { discarded: false };
     }
-    return gitDiscard(projectPath, relativePath);
+    const result = await gitDiscard(location.projectPath, location.relativePath);
+    return {
+      ...result,
+      recoveryPatch:
+        result.recoveryPatch && location.spaceFolder
+          ? prefixResearchSpaceRelativePath(location.spaceFolder, result.recoveryPatch)
+          : result.recoveryPatch,
+    };
   });
   ipcMain.handle("git:stage-all", async (_event, ...rawArgs: unknown[]) => {
     const channel = "git:stage-all";
     const [rawProjectId] = expectIpcArgs(channel, rawArgs, 1);
     const projectId = parseProjectId(channel, rawProjectId);
+    if (isResearchSpaceProject(getOpenProject(projectId))) {
+      throwResearchSpaceGitUnavailable();
+    }
     const projectPath = getProjectRoot(projectId);
     await gitStageAll(projectPath);
   });
@@ -5567,6 +6204,9 @@ async function startApp(): Promise<void> {
     const channel = "git:unstage-all";
     const [rawProjectId] = expectIpcArgs(channel, rawArgs, 1);
     const projectId = parseProjectId(channel, rawProjectId);
+    if (isResearchSpaceProject(getOpenProject(projectId))) {
+      throwResearchSpaceGitUnavailable();
+    }
     const projectPath = getProjectRoot(projectId);
     await gitUnstageAll(projectPath);
   });
@@ -5574,6 +6214,9 @@ async function startApp(): Promise<void> {
     const channel = "git:discard-all";
     const [rawProjectId] = expectIpcArgs(channel, rawArgs, 1);
     const projectId = parseProjectId(channel, rawProjectId);
+    if (isResearchSpaceProject(getOpenProject(projectId))) {
+      throwResearchSpaceGitUnavailable();
+    }
     const projectPath = getProjectRoot(projectId);
     const confirmed = await confirmGitDiscard(
       BrowserWindow.fromWebContents(event.sender),
@@ -5601,18 +6244,37 @@ async function startApp(): Promise<void> {
             pattern: /^(staged|changes)$/,
             rejectControlChars: true,
           });
-    const projectPath = getProjectRoot(projectId);
-    return readWorkingTreeDiffSession(
-      projectPath,
-      relativePath,
+    const location = resolveOpenProjectPath(projectId, relativePath);
+    const session = await readWorkingTreeDiffSession(
+      location.projectPath,
+      location.relativePath,
       area as "staged" | "changes",
     );
+    return location.spaceFolder
+      ? {
+          ...session,
+          relativePath,
+          id: session.id.replace(location.relativePath, relativePath),
+        }
+      : session;
   });
   ipcMain.handle("git:history", async (_event, ...rawArgs: unknown[]) => {
     const channel = "git:history";
     const [rawProjectId, rawRelativePath] = expectIpcArgRange(channel, rawArgs, 1, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseOptionalRelativePath(channel, rawRelativePath);
+    const project = getOpenProject(projectId);
+    if (isResearchSpaceProject(project) && !relativePath) {
+      return { scope: "repo", target: null, commits: [] };
+    }
+    if (relativePath) {
+      const location = resolveOpenProjectPath(projectId, relativePath);
+      const history = await readStructuredGitHistory(
+        location.projectPath,
+        location.relativePath,
+      );
+      return { ...history, target: relativePath };
+    }
     const projectPath = getProjectRoot(projectId);
     return readStructuredGitHistory(projectPath, relativePath);
   });
@@ -5621,6 +6283,9 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawHash] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const hash = parseGitHash(channel, rawHash);
+    if (isResearchSpaceProject(getOpenProject(projectId))) {
+      throwResearchSpaceGitUnavailable();
+    }
     const projectPath = getProjectRoot(projectId);
     return readStructuredGitCommitDetails(projectPath, hash);
   });
@@ -5636,8 +6301,20 @@ async function startApp(): Promise<void> {
     const relativePath = parseRelativePath(channel, rawRelativePath);
     const hash = parseGitHash(channel, rawHash);
     const parentHash = parseOptionalGitHash(channel, rawParentHash);
-    const projectPath = getProjectRoot(projectId);
-    return readCommitDiffSession(projectPath, relativePath, hash, parentHash);
+    const location = resolveOpenProjectPath(projectId, relativePath);
+    const session = await readCommitDiffSession(
+      location.projectPath,
+      location.relativePath,
+      hash,
+      parentHash,
+    );
+    return location.spaceFolder
+      ? {
+          ...session,
+          relativePath,
+          id: session.id.replace(location.relativePath, relativePath),
+        }
+      : session;
   });
   ipcMain.handle("git:blame", async (_event, ...rawArgs: unknown[]) => {
     const channel = "git:blame";
@@ -5649,16 +6326,16 @@ async function startApp(): Promise<void> {
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
     const revision = parseGitRevisionRef(channel, rawRevision);
-    const projectPath = getProjectRoot(projectId);
-    return readGitBlame(projectPath, relativePath, revision);
+    const location = resolveOpenProjectPath(projectId, relativePath);
+    return readGitBlame(location.projectPath, location.relativePath, revision);
   });
   ipcMain.handle("git:reveal-file", async (_event, ...rawArgs: unknown[]) => {
     const channel = "git:reveal-file";
     const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
-    const projectPath = getProjectRoot(projectId);
-    shell.showItemInFolder(resolveProjectPath(projectPath, relativePath));
+    const { resolvedPath } = resolveOpenProjectPath(projectId, relativePath);
+    shell.showItemInFolder(resolvedPath);
   });
   ipcMain.handle("app:check-updates", async (_event, ...rawArgs: unknown[]) => {
     const channel = "app:check-updates";
@@ -5755,23 +6432,23 @@ async function startApp(): Promise<void> {
     const channel = "latex:compile";
     const [rawRequest] = expectIpcArgs(channel, rawArgs, 1);
     const request = parseCompileRequestInput(channel, rawRequest);
-    const projectPath = getProjectRoot(request.projectId);
-    resolveProjectPath(projectPath, request.rootFile);
+    const location = resolveOpenProjectPath(request.projectId, request.rootFile);
     const controller = new AbortController();
     const untrack = trackCompileController(request.projectId, controller);
     try {
       const result = await compileLatex(
         {
-          projectPath,
-          rootFile: request.rootFile,
+          projectPath: location.projectPath,
+          rootFile: location.relativePath,
           engine: request.engine,
         },
         { signal: controller.signal },
       );
+      const mappedResult = prefixResultDiagnostics(result, location);
       return {
-        ...result,
-        pdfPath: result.pdfPath
-          ? relativeProjectPath(projectPath, result.pdfPath)
+        ...mappedResult,
+        pdfPath: mappedResult.pdfPath
+          ? relativeOpenProjectPath(location, mappedResult.pdfPath)
           : undefined,
       };
     } finally {
@@ -5848,22 +6525,22 @@ async function startApp(): Promise<void> {
     const channel = "asymptote:compile";
     const [rawRequest] = expectIpcArgs(channel, rawArgs, 1);
     const request = parseAsymptoteCompileRequestInput(channel, rawRequest);
-    const projectPath = getProjectRoot(request.projectId);
-    resolveProjectPath(projectPath, request.relativePath);
+    const location = resolveOpenProjectPath(request.projectId, request.relativePath);
     const controller = new AbortController();
     const untrack = trackCompileController(request.projectId, controller);
     try {
       const result = await compileAsymptote(
         {
-          projectPath,
-          relativePath: request.relativePath,
+          projectPath: location.projectPath,
+          relativePath: location.relativePath,
         },
         { signal: controller.signal },
       );
+      const mappedResult = prefixResultDiagnostics(result, location);
       return {
-        ...result,
-        pdfPath: result.pdfPath
-          ? relativeProjectPath(projectPath, result.pdfPath)
+        ...mappedResult,
+        pdfPath: mappedResult.pdfPath
+          ? relativeOpenProjectPath(location, mappedResult.pdfPath)
           : undefined,
       };
     } finally {
@@ -5877,8 +6554,7 @@ async function startApp(): Promise<void> {
     const pdfPath = parseRelativePath(channel, rawPdfPath, {
       extensions: [".pdf"],
     });
-    const projectPath = getProjectRoot(projectId);
-    const resolvedPath = resolveProjectPath(projectPath, pdfPath);
+    const { resolvedPath } = resolveOpenProjectPath(projectId, pdfPath);
     return readFile(resolvedPath);
   });
   ipcMain.handle("synctex:forward", async (_event, ...rawArgs: unknown[]) => {
@@ -5894,10 +6570,20 @@ async function startApp(): Promise<void> {
     });
     const line = parseInteger(channel, rawLine, 1, maxSyncTexNumber);
     const column = parseInteger(channel, rawColumn, 1, maxSyncTexNumber);
-    const projectPath = getProjectRoot(projectId);
-    const pdfPath = resolveProjectPath(projectPath, pdfRelativePath);
-    const inputPath = resolveProjectPath(projectPath, inputRelativePath);
-    return forwardSyncTex(projectPath, pdfPath, inputPath, line, column);
+    const pdfLocation = resolveOpenProjectPath(projectId, pdfRelativePath);
+    const inputLocation = resolveOpenProjectPath(projectId, inputRelativePath);
+    if (pdfLocation.projectPath !== inputLocation.projectPath) {
+      throw new Error(
+        "SyncTeX source and PDF must be in the same Research Space folder.",
+      );
+    }
+    return forwardSyncTex(
+      pdfLocation.projectPath,
+      pdfLocation.resolvedPath,
+      inputLocation.resolvedPath,
+      line,
+      column,
+    );
   });
   ipcMain.handle("synctex:backward", async (_event, ...rawArgs: unknown[]) => {
     const channel = "synctex:backward";
@@ -5913,9 +6599,21 @@ async function startApp(): Promise<void> {
     const page = parseInteger(channel, rawPage, 1, 100_000);
     const x = parseFiniteNumber(channel, rawX, 0, maxSyncTexNumber);
     const y = parseFiniteNumber(channel, rawY, 0, maxSyncTexNumber);
-    const projectPath = getProjectRoot(projectId);
-    const pdfPath = resolveProjectPath(projectPath, pdfRelativePath);
-    return backwardSyncTex(projectPath, pdfPath, page, x, y);
+    const pdfLocation = resolveOpenProjectPath(projectId, pdfRelativePath);
+    const result = await backwardSyncTex(
+      pdfLocation.projectPath,
+      pdfLocation.resolvedPath,
+      page,
+      x,
+      y,
+    );
+    if (!result || !pdfLocation.spaceFolder) {
+      return result;
+    }
+    return {
+      ...result,
+      file: prefixResearchSpaceRelativePath(pdfLocation.spaceFolder, result.file),
+    };
   });
 
   const window = createWindow();

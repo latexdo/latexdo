@@ -192,12 +192,66 @@ const project: OpenProject = {
   name: "paper",
 };
 
+const researchSpaceProject: OpenProject = {
+  id: "space:/Users/omar/research/research.latexdo-space",
+  rootPath: "/Users/omar/research/research.latexdo-space",
+  name: "Research Space",
+  researchSpace: {
+    schemaVersion: 1,
+    name: "Research Space",
+    filePath: "/Users/omar/research/research.latexdo-space",
+    folders: [
+      {
+        name: "paper-a",
+        path: "/Users/omar/research/paper-a",
+        kind: "paper",
+      },
+      {
+        name: "shared-bib",
+        path: "/Users/omar/research/shared-bib",
+        kind: "bibliography",
+      },
+    ],
+  },
+};
+
 const entries: ProjectEntry[] = [
   {
     name: "main.tex",
     path: "/Users/omar/project/main.tex",
     relativePath: "main.tex",
     type: "file",
+  },
+];
+
+const researchSpaceEntries: ProjectEntry[] = [
+  {
+    name: "paper-a",
+    path: "/Users/omar/research/paper-a",
+    relativePath: "paper-a",
+    type: "directory",
+    children: [
+      {
+        name: "main.tex",
+        path: "/Users/omar/research/paper-a/main.tex",
+        relativePath: "paper-a/main.tex",
+        type: "file",
+      },
+    ],
+  },
+  {
+    name: "shared-bib",
+    path: "/Users/omar/research/shared-bib",
+    relativePath: "shared-bib",
+    type: "directory",
+    children: [
+      {
+        name: "references.bib",
+        path: "/Users/omar/research/shared-bib/references.bib",
+        relativePath: "shared-bib/references.bib",
+        type: "file",
+      },
+    ],
   },
 ];
 
@@ -275,7 +329,10 @@ function installLatexDoMock(options?: {
   const api = {
     openProject: vi.fn().mockResolvedValue(project),
     createProject: vi.fn().mockResolvedValue(project),
-    listProject: vi.fn().mockResolvedValue(entries),
+    createResearchSpace: vi.fn().mockResolvedValue(researchSpaceProject),
+    listProject: vi.fn(async (projectId: string) =>
+      projectId === researchSpaceProject.id ? researchSpaceEntries : entries,
+    ),
     readFile: vi
       .fn()
       .mockResolvedValue(
@@ -513,6 +570,34 @@ describe("App critical UI controls", () => {
     await waitFor(() => {
       expect(api.openProject).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("creates a Research Space from the welcome screen", async () => {
+    const api = installLatexDoMock();
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /new research space/i }));
+
+    await waitFor(() => {
+      expect(api.createResearchSpace).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByText("Research Space", { selector: ".title-project" }),
+      ).toBeVisible();
+    });
+    expect(api.listProject).toHaveBeenCalledWith(
+      researchSpaceProject.id,
+      expect.any(Object),
+    );
+    expect(api.readFile).toHaveBeenCalledWith(
+      researchSpaceProject.id,
+      "paper-a/main.tex",
+    );
+    expect(
+      screen.getByText("Research Space ready", { selector: ".status-message" }),
+    ).toBeVisible();
   });
 
   it("formats the open TeX document when the Prettier titlebar action is clicked", async () => {

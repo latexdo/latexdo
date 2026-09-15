@@ -27,10 +27,26 @@ export interface ProjectListOptions {
 
 export type ProjectId = string;
 
+export type LatexDoResearchSpaceFolderKind = "paper" | "bibliography" | "shared";
+
+export interface LatexDoResearchSpaceFolder {
+  name: string;
+  path: string;
+  kind: LatexDoResearchSpaceFolderKind;
+}
+
+export interface LatexDoResearchSpace {
+  schemaVersion: 1;
+  name: string;
+  filePath: string;
+  folders: LatexDoResearchSpaceFolder[];
+}
+
 export interface OpenProject {
   id: ProjectId;
   rootPath: string;
   name: string;
+  researchSpace?: LatexDoResearchSpace;
 }
 
 export interface CreateProjectOptions {

@@ -596,6 +596,8 @@ const api = {
     options === undefined
       ? ipcRenderer.invoke("project:create")
       : ipcRenderer.invoke("project:create", options),
+  createResearchSpace: (): Promise<OpenProject | null> =>
+    ipcRenderer.invoke("research-space:create"),
   listProject: (
     projectId: string,
     options?: ProjectListOptions,

@@ -1062,6 +1062,10 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState(
     () => `Welcome to ${productConfig.shortName}`,
   );
+  const [projectDisplayName, setProjectDisplayName] = useState("");
+  const [activeResearchSpace, setActiveResearchSpace] = useState<
+    OpenProject["researchSpace"] | null
+  >(null);
   const {
     settings,
     setSettings,
@@ -1872,8 +1876,21 @@ export default function App() {
   const previewShown =
     previewVisible && !showWelcome && !showBlankWorkspace && !gitDiffSession;
   const projectName = hasVisibleProject
-    ? fileName(projectPath) || "Project"
+    ? projectDisplayName || fileName(projectPath) || "Project"
     : "No Folder";
+  const defaultCreateRelativePath = useCallback(
+    (type: "file" | "folder") => {
+      const baseName = type === "file" ? "chapter.tex" : "chapters";
+      if (!activeResearchSpace || hideProjectEntries) {
+        return baseName;
+      }
+      const root =
+        activeResearchSpace.folders.find((folder) => folder.kind === "paper") ??
+        activeResearchSpace.folders[0];
+      return root ? createPathInDirectory(root.name, baseName) : baseName;
+    },
+    [activeResearchSpace, hideProjectEntries],
+  );
   const exportEnterpriseReport = useCallback(() => {
     const report = buildEnterpriseComplianceReport(enterpriseState, {
       projectName,
@@ -2959,6 +2976,8 @@ ${macroEnd}
       projectIdRef.current = project.id;
       setProjectPath(project.rootPath);
       projectPathRef.current = project.rootPath;
+      setProjectDisplayName(project.name || fileName(project.rootPath) || "Project");
+      setActiveResearchSpace(project.researchSpace ?? null);
       setHideProjectEntries(hideEntries);
       setDocuments([]);
       documentsRef.current = [];
@@ -4210,7 +4229,7 @@ ${macroEnd}
       }
       if (modifier && event.key.toLowerCase() === "n") {
         event.preventDefault();
-        setCreatePath("chapter.tex");
+        setCreatePath(defaultCreateRelativePath("file"));
         setCreateError("");
         setCreateDialog("file");
       }
@@ -4262,6 +4281,7 @@ ${macroEnd}
     closeAiWizard,
     compile,
     createDialog,
+    defaultCreateRelativePath,
     gitContextMenu,
     knowledgeGraphOpen,
     legalAcceptanceRequired,
@@ -6282,6 +6302,26 @@ ${macroEnd}
     }
   };
 
+  const createResearchSpace = async () => {
+    if (requireLegalAcceptance()) {
+      return;
+    }
+    try {
+      setStatusMessage("Creating Research Space...");
+      const project = await window.latexdo.createResearchSpace();
+      if (project) {
+        await loadProject(project, true, false);
+        setStatusMessage("Research Space ready");
+      } else {
+        setStatusMessage(`Welcome to ${productConfig.shortName}`);
+      }
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error ? error.message : "Could not create Research Space",
+      );
+    }
+  };
+
   const createProjectFromTemplate = async (template: WelcomeTemplate) => {
     if (templateCreating) return;
 
@@ -6454,7 +6494,7 @@ ${macroEnd}
       setStatusMessage("Create or open a project before adding files.");
       return;
     }
-    setCreatePath(type === "file" ? "chapter.tex" : "chapters");
+    setCreatePath(defaultCreateRelativePath(type));
     setCreateError("");
     setCreateDialog(type);
   };
@@ -7432,22 +7472,22 @@ ${macroEnd}
       if (requireLegalAcceptance()) {
         return;
       }
-      setCreatePath("chapter.tex");
+      setCreatePath(defaultCreateRelativePath("file"));
       setCreateError("");
       setCreateDialog("file");
     });
-  }, [requireLegalAcceptance]);
+  }, [defaultCreateRelativePath, requireLegalAcceptance]);
 
   useEffect(() => {
     return window.latexdo.onCreateFolderMenu(() => {
       if (requireLegalAcceptance()) {
         return;
       }
-      setCreatePath("chapters");
+      setCreatePath(defaultCreateRelativePath("folder"));
       setCreateError("");
       setCreateDialog("folder");
     });
-  }, [requireLegalAcceptance]);
+  }, [defaultCreateRelativePath, requireLegalAcceptance]);
 
   useEffect(() => {
     return window.latexdo.onImportDocxMenu(() => {
@@ -11022,6 +11062,18 @@ ${macroEnd}
                           <small>{productConfig.newProjectDescription}</small>
                         </span>
                       </button>
+                      <button
+                        className="welcome-action"
+                        onClick={() => void createResearchSpace()}
+                      >
+                        <FolderPlus size={18} />
+                        <span>
+                          <strong>New Research Space</strong>
+                          <small>
+                            Save multiple papers, shared .bib files, figures, and data
+                          </small>
+                        </span>
+                      </button>
                       {hasVisibleProject ? (
                         <button
                           className="welcome-action"
@@ -11074,8 +11126,8 @@ ${macroEnd}
                       <button className="welcome-action" onClick={openProject}>
                         <FolderOpen size={18} />
                         <span>
-                          <strong>Open Folder</strong>
-                          <small>Open an existing LaTeX project</small>
+                          <strong>Open Folder or Research Space</strong>
+                          <small>Open an existing project or .latexdo-space file</small>
                         </span>
                       </button>
                     </section>
