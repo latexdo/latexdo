@@ -467,33 +467,26 @@ export function citationVerificationMarkdown(
 ): string {
   const body = citationHoverMarkdown(entry);
   if (!verification) {
-    return ["**Verification:** Checking against Crossref and OpenAlex…", body]
-      .filter(Boolean)
-      .join("\n\n");
+    return ["⏳", body].filter(Boolean).join("\n\n");
   }
 
   const topMatch = verification.matches[0];
-  const provider = topMatch?.provider;
   let statusLine: string;
   switch (verification.status) {
     case "verified":
-      statusLine = `**Verification:** Verified — matches the record on ${provider}`;
+      statusLine = "✅";
       break;
     case "probable":
-      statusLine = `**Verification:** Likely a match (${Math.round(
-        (topMatch?.score ?? 0) * 100,
-      )}%)`;
+      statusLine = `☑️ ${Math.round((topMatch?.score ?? 0) * 100)}%`;
       break;
     case "mismatch":
-      statusLine = `**Verification:** DOI conflict — the recorded DOI differs from the matching record on ${provider}`;
+      statusLine = "⚠️ DOI";
       break;
     case "unverified":
-      statusLine = "**Verification:** No matching scholarly record found";
+      statusLine = "❔";
       break;
     case "error":
-      statusLine = `**Verification:** Unavailable${
-        verification.error ? ` (${verification.error})` : ""
-      }`;
+      statusLine = verification.error ? `⚠️ ${verification.error}` : "⚠️";
       break;
   }
 
@@ -512,20 +505,24 @@ export function citationVerificationMarkdown(
     .filter(Boolean)
     .join(" · ");
 
-  const matchBlock = topMatch
-    ? [
-        `**Match:** [${topMatch.title.replace(/[*_`]/g, "")}](${topMatch.url ?? ""})`,
-        [
-          topMatch.authors.slice(0, 3).join(", ")
-            ? topMatch.authors.slice(0, 3).join(", ")
-            : undefined,
-          topMatch.venue,
-          topMatch.year ? String(topMatch.year) : undefined,
+  const matchTitle = topMatch?.title.replace(/[*_`[\]]/g, "");
+  const matchLink =
+    topMatch && topMatch.url ? `[${matchTitle}](${topMatch.url})` : matchTitle;
+  const matchBlock =
+    topMatch && matchLink
+      ? [
+          `**Match:** ${matchLink}`,
+          [
+            topMatch.authors.slice(0, 3).join(", ")
+              ? topMatch.authors.slice(0, 3).join(", ")
+              : undefined,
+            topMatch.venue,
+            topMatch.year ? String(topMatch.year) : undefined,
+          ]
+            .filter(Boolean)
+            .join(" · "),
         ]
-          .filter(Boolean)
-          .join(" · "),
-      ]
-    : undefined;
+      : undefined;
 
   const footer =
     verification.providers.length > 0

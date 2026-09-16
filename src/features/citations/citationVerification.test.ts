@@ -304,9 +304,7 @@ describe("citation verification", () => {
   });
 
   it("renders markdown without a cached verification and with each status", () => {
-    expect(citationVerificationMarkdown(smithEntry)).toContain(
-      "Checking against Crossref and OpenAlex",
-    );
+    expect(citationVerificationMarkdown(smithEntry)).toContain("⏳");
     expect(citationVerificationMarkdown(smithEntry)).toContain("**Author:**");
 
     expect(
@@ -328,7 +326,50 @@ describe("citation verification", () => {
         providers: ["Crossref", "OpenAlex"],
         verifiedAt: Date.now(),
       }),
-    ).toContain("Verified");
+    ).toContain("✅");
+    expect(
+      citationVerificationMarkdown(smithEntry, {
+        status: "verified",
+        entry: smithEntry,
+        matches: [
+          {
+            provider: "Crossref",
+            title: "Graph neural networks for citation recommendation",
+            authors: ["Jane Smith"],
+            year: 2020,
+            venue: "Journal of Machine Learning Research",
+            url: "https://doi.org/10.1000/local",
+            score: 1,
+          },
+        ],
+        checks: { doi: "matched", title: 1, author: 1, year: "matched" },
+        providers: ["Crossref"],
+        verifiedAt: Date.now(),
+      }),
+    ).toContain(
+      "[Graph neural networks for citation recommendation](https://doi.org/10.1000/local)",
+    );
+    const markdownWithoutUrl = citationVerificationMarkdown(smithEntry, {
+      status: "verified",
+      entry: smithEntry,
+      matches: [
+        {
+          provider: "Crossref",
+          title: "Graph neural networks for citation recommendation",
+          authors: ["Jane Smith"],
+          year: 2020,
+          venue: "Journal of Machine Learning Research",
+          score: 1,
+        },
+      ],
+      checks: { doi: "matched", title: 1, author: 1, year: "matched" },
+      providers: ["Crossref"],
+      verifiedAt: Date.now(),
+    });
+    expect(markdownWithoutUrl).toContain(
+      "**Match:** Graph neural networks for citation recommendation",
+    );
+    expect(markdownWithoutUrl).not.toContain("]()");
     expect(
       citationVerificationMarkdown(smithEntry, {
         status: "unverified",
@@ -338,7 +379,7 @@ describe("citation verification", () => {
         providers: ["Crossref"],
         verifiedAt: Date.now(),
       }),
-    ).toContain("No matching scholarly record found");
+    ).toContain("❔");
     expect(
       citationVerificationMarkdown(smithEntry, {
         status: "error",
@@ -349,6 +390,6 @@ describe("citation verification", () => {
         error: "Crossref: HTTP 503",
         verifiedAt: Date.now(),
       }),
-    ).toContain("(Crossref: HTTP 503)");
+    ).toContain("⚠️ Crossref: HTTP 503");
   });
 });

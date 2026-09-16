@@ -5165,6 +5165,7 @@ ${macroEnd}
                     entry,
                     peekCachedVerification(entry),
                   ),
+                  isTrusted: true,
                 },
               ],
             };
