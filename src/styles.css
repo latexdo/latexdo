@@ -624,7 +624,6 @@ button {
 .icon-button:focus-visible,
 .activity-button:focus-visible,
 .small-icon:focus-visible,
-.ai-wizard-app-close:focus-visible,
 .ai-chat-tab:focus-visible,
 .ai-chat-tab-close:focus-visible,
 .settings-close:focus-visible {
@@ -4880,13 +4879,6 @@ button {
 .settings-close:hover {
   background: var(--bg-row-hover);
   color: var(--text-primary);
-}
-
-.ai-wizard-app-close {
-  position: fixed;
-  z-index: 1001;
-  top: max(calc(5vh + 12px), calc(50vh - 298px));
-  right: max(calc(3vw + 12px), calc(50vw - 428px));
 }
 
 .ai-chat-tabs {

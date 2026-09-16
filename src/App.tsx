@@ -1375,15 +1375,6 @@ export default function App() {
   useEffect(() => {
     void refreshAiSystemCapabilities();
   }, [refreshAiSystemCapabilities]);
-  const closeAiWizard = useCallback(() => {
-    if (requireLegalAcceptance()) {
-      return;
-    }
-    setAiWizardOpen(false);
-    setAiConfig((current) =>
-      current.setupComplete ? current : { ...current, setupComplete: true },
-    );
-  }, [requireLegalAcceptance]);
   const refreshLatexDoAiModels = useCallback(async () => {
     const models = await listModels();
     const downloaded = new Set(
@@ -4437,11 +4428,6 @@ ${macroEnd}
           setGitContextMenu(null);
           return;
         }
-        if (aiWizardOpen) {
-          event.preventDefault();
-          closeAiWizard();
-          return;
-        }
         if (activeSidebar === "ai" && sidebarVisible) {
           event.preventDefault();
           setSidebarVisible(false);
@@ -4453,9 +4439,7 @@ ${macroEnd}
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     activeSidebar,
-    aiWizardOpen,
     citationManagerOpen,
-    closeAiWizard,
     compile,
     createDialog,
     defaultCreateRelativePath,
@@ -10266,17 +10250,6 @@ ${macroEnd}
           productName={productConfig.shortName}
           productSetupName={`${productConfig.shortName} Setup`}
         />
-      )}
-      {!legalAcceptanceRequired && aiWizardOpen && (
-        <button
-          type="button"
-          className="settings-close ai-wizard-app-close"
-          onClick={closeAiWizard}
-          aria-label="Close setup"
-          title="Close setup"
-        >
-          <X size={17} />
-        </button>
       )}
       {showLegalAcceptanceGate && (
         <LegalAcceptanceGate

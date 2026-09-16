@@ -1829,6 +1829,10 @@ describe("App critical UI controls", () => {
 
     expect(screen.getByText("Set up LatexDo")).toBeVisible();
     fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.getByText("Set up LatexDo")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /skip setup/i }));
     await waitFor(() => {
       expect(screen.queryByText("Set up LatexDo")).not.toBeInTheDocument();
     });
