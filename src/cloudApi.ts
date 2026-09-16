@@ -942,20 +942,16 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
     checkForUpdates: async () => ({
       currentVersion: appVersion,
       latestVersion: null,
-      releaseUrl: "https://app.latexdo.org/downloads/",
+      releaseUrl: "https://latexdo.org/downloads/",
       updateAvailable: false,
     }),
 
     updateNow: async () => {
-      window.open(
-        "https://app.latexdo.org/downloads/",
-        "_blank",
-        "noopener,noreferrer",
-      );
+      window.open("https://latexdo.org/downloads/", "_blank", "noopener,noreferrer");
       return {
         currentVersion: appVersion,
         latestVersion: null,
-        releaseUrl: "https://app.latexdo.org/downloads/",
+        releaseUrl: "https://latexdo.org/downloads/",
         updateAvailable: false,
         installerPath: null,
         opened: false,
@@ -969,7 +965,7 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
 
     async openReleasesPage(releaseUrl) {
       window.open(
-        releaseUrl || "https://app.latexdo.org/downloads/",
+        releaseUrl || "https://latexdo.org/downloads/",
         "_blank",
         "noopener,noreferrer",
       );

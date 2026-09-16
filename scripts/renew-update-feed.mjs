@@ -170,7 +170,7 @@ function safeHttpsUrl(value, label) {
 function assertReleaseUrls(feed, manifest) {
   const downloadsPage = safeHttpsUrl(feed.downloadsPage, "Feed downloadsPage");
   if (
-    downloadsPage.hostname !== "app.latexdo.org" ||
+    downloadsPage.hostname !== "latexdo.org" ||
     downloadsPage.pathname !== `/downloads/${feed.release}/`
   ) {
     throw new Error("Feed downloadsPage does not identify its versioned release.");

@@ -84,8 +84,7 @@ The sync copies `cli/` into `cli.latexdo.org`.
 ## Related Repos
 
 - `/Users/omar/Desktop/Personal/latexdo` - desktop app, shared editor UI, and downstream source.
-- `/Users/omar/Desktop/Personal/latexdo.org` - public website and installer endpoint.
-- `/Users/omar/Desktop/Personal/app.latexdo.org` - desktop downloads and update metadata.
+- `/Users/omar/Desktop/Personal/latexdo.org` - public website, installer endpoint, and update metadata.
 - `/Users/omar/Desktop/Personal/editor.latexdo.org` - hosted Cloudflare editor and backend.
 - `/Users/omar/Desktop/Personal/cli.latexdo.org` - published `latexdo` launcher package.
 - `/Users/omar/Desktop/Personal/docs.latexdo.org` - public documentation site.

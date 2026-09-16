@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 
 const [
   cli,
@@ -9,15 +9,10 @@ const [
   cliPackage,
   electronMain,
   ciWorkflow,
-  releaseWorkflow,
-  websiteWorkflow,
-  editorWorkflow,
-  cliWorkflow,
-  docsWorkflow,
-  storeWorkflow,
-  renewalWorkflow,
   renewalScript,
   downloadsBuilder,
+  downloadsIndexBuilder,
+  workflowFiles,
 ] = await Promise.all([
   readFile("cli/bin/latexdo", "utf8"),
   readFile("cli/install.sh", "utf8"),
@@ -26,16 +21,20 @@ const [
   readFile("cli/package.json", "utf8").then(JSON.parse),
   readFile("electron/main.ts", "utf8"),
   readFile(".github/workflows/ci.yml", "utf8"),
-  readFile(".github/workflows/release.yml", "utf8"),
-  readFile(".github/workflows/deploy-website.yml", "utf8"),
-  readFile(".github/workflows/deploy-editor.yml", "utf8"),
-  readFile(".github/workflows/deploy-cli.yml", "utf8"),
-  readFile(".github/workflows/deploy-docs.yml", "utf8"),
-  readFile(".github/workflows/deploy-store.yml", "utf8"),
-  readFile(".github/workflows/renew-update-feed.yml", "utf8"),
   readFile("scripts/renew-update-feed.mjs", "utf8"),
   readFile("scripts/build-downloads-page.mjs", "utf8"),
+  readFile("scripts/build-downloads-release-index.mjs", "utf8"),
+  readdir(".github/workflows"),
 ]);
+
+const workflowYamlFiles = workflowFiles
+  .filter((file) => file.endsWith(".yml") || file.endsWith(".yaml"))
+  .sort();
+if (workflowYamlFiles.length !== 1 || workflowYamlFiles[0] !== "ci.yml") {
+  throw new Error(
+    `GitHub Actions must expose one workflow only: ${workflowYamlFiles.join(", ")}`,
+  );
+}
 
 if (!cli.includes(publicKey.trim())) {
   throw new Error("CLI update key does not match build/update-public-key.pem.");
@@ -57,6 +56,19 @@ for (const nativeModuleUnpackPattern of [
     );
   }
 }
+
+for (const [label, content] of [
+  ["CLI", cli],
+  ["desktop main process", electronMain],
+  ["downloads builder", downloadsBuilder],
+  ["downloads index builder", downloadsIndexBuilder],
+  ["feed renewal script", renewalScript],
+]) {
+  if (content.includes("app.latexdo.org")) {
+    throw new Error(`${label} must use latexdo.org for downloads and updates.`);
+  }
+}
+
 for (const requiredProtection of [
   "feed freshness window is invalid or expired",
   "feed version ${payload.version} is older than previously trusted",
@@ -81,31 +93,51 @@ for (const requiredProtection of [
     throw new Error(`Desktop update protection is missing: ${requiredProtection}`);
   }
 }
-if (
-  releaseWorkflow.includes("wrangler@latest") ||
-  websiteWorkflow.includes("wrangler@latest") ||
-  editorWorkflow.includes("wrangler@latest") ||
-  cliWorkflow.includes("wrangler@latest") ||
-  docsWorkflow.includes("wrangler@latest") ||
-  storeWorkflow.includes("wrangler@latest") ||
-  renewalWorkflow.includes("wrangler@latest")
-) {
-  throw new Error("Deployment workflows must not resolve Wrangler dynamically.");
-}
-for (const forbiddenCiDispatchControl of [
-  "trigger / downstream CI",
-  "LATEXDO_CI_DISPATCH_TOKEN",
-  "LATEXDO_WEBSITE_TOKEN is required to trigger downstream CI.",
+
+for (const forbiddenWorkflowControl of [
+  "workflow_run:",
+  "repository: latexdo/app.latexdo.org",
+  "repository: latexdo/editor.latexdo.org",
+  "repository: latexdo/cli.latexdo.org",
+  "repository: latexdo/docs.latexdo.org",
+  "repository: latexdo/store.latexdo.org",
+  "deploy-editor",
+  "deploy-cli",
+  "deploy-docs",
+  "deploy-store",
+  "deploy-website",
+  "latexdo-release",
+  "CLOUDFLARE_API_TOKEN",
+  "wrangler@latest",
+  "wrangler deploy",
+  "git -C latexdo-site add -A",
+  "git -C latexdo-site add downloads updates bin/latexdo install.sh",
+  "Deploy downloads to Cloudflare",
+  "Verify deployed downloads",
 ]) {
-  if (ciWorkflow.includes(forbiddenCiDispatchControl)) {
+  if (ciWorkflow.includes(forbiddenWorkflowControl)) {
     throw new Error(
-      `Downstream CI dispatch must happen after publication: ${forbiddenCiDispatchControl}`,
+      `Single CI workflow contains forbidden control: ${forbiddenWorkflowControl}`,
     );
   }
 }
-for (const requiredCiPackageControl of [
+
+for (const requiredCiControl of [
+  "This is the only workflow for validation, packaging, release creation, and downloads publication.",
+  "flowchart TD",
+  "quality / checks and build",
+  "npm run format:check",
+  "npm run lint",
+  "npm run typecheck",
+  "npm test",
+  "npm run test:coverage",
+  "npm audit --audit-level=high",
+  "npm run test:supply-chain",
+  "npm run build",
   "Test packaged macOS application",
   '"$executable" --smoke-test',
+  "macos-15-intel",
+  "LatexDo-macos-x64.dmg",
   "Test packaged Windows application",
   'Start-Process -FilePath $executable.FullName -ArgumentList "--smoke-test" -Wait -PassThru',
   "Test Linux AppImage",
@@ -113,19 +145,18 @@ for (const requiredCiPackageControl of [
   'xvfb-run -a "$executable" --smoke-test',
   'xvfb-run -a "$package_path" --smoke-test',
 ]) {
-  if (!ciWorkflow.includes(requiredCiPackageControl)) {
-    throw new Error(`CI package control is missing: ${requiredCiPackageControl}`);
+  if (!ciWorkflow.includes(requiredCiControl)) {
+    throw new Error(`CI control is missing: ${requiredCiControl}`);
   }
 }
+
 for (const requiredReleaseControl of [
-  "workflow_run:",
-  'workflows: ["latexdo-ci"]',
-  "github.event.workflow_run.conclusion == 'success'",
-  "github.event.workflow_run.head_branch == 'main'",
-  "repository: latexdo/app.latexdo.org",
-  "group: app-latexdo-org-deploy",
+  "publish / GitHub release and latexdo.org downloads",
+  "needs.pipeline.outputs.release_enabled == 'true'",
+  "repository: latexdo/latexdo.org",
+  "group: latexdo-org-downloads",
   "LATEXDO_RELEASE_TARGET_SHA",
-  "LATEXDO_RELEASE_COMMIT: ${{ needs.release_gate.outputs.target_sha }}",
+  "LATEXDO_RELEASE_COMMIT: ${{ needs.pipeline.outputs.target_sha }}",
   "Apple signing is disabled because these secrets are missing:",
   "steps.macos_signing.outputs.signed != 'true'",
   "Publishing an unsigned Windows build.",
@@ -134,206 +165,28 @@ for (const requiredReleaseControl of [
   "steps.windows_signing.outputs.signed == 'true'",
   "bash scripts/verify-macos-release.sh",
   "bash scripts/verify-macos-adhoc-release.sh",
-  "Test packaged macOS application",
-  '"$executable" --smoke-test',
-  "Test Linux AppImage",
-  "Test packaged Windows application",
-  'Start-Process -FilePath $executable.FullName -ArgumentList "--smoke-test" -Wait -PassThru',
-  'chmod +x "$pkg"',
-  'xvfb-run -a "$executable" --smoke-test',
-  'xvfb-run -a "$pkg" --smoke-test',
   "Signed update feed disabled; LATEXDO_UPDATE_SIGNING_KEY is not configured.",
   "LATEXDO_UPDATE_FEED_ENABLED: ${{ steps.publication_credentials.outputs.update_feed_enabled }}",
-  "LATEXDO_DOWNLOAD_BASE_URL: https://app.latexdo.org",
+  "LATEXDO_DOWNLOAD_BASE_URL: https://latexdo.org",
   "rm -f public-downloads/downloads/index.html",
   "if [ -d public-downloads/updates ]; then",
-  "No signed update feed generated; leaving app.latexdo.org updates/ unchanged.",
-  "node scripts/build-downloads-release-index.mjs app-site/downloads --json-only",
-  "git -C app-site add -- downloads",
-  "Dispatch app.latexdo.org CI after publication",
-  "TARGET_WORKFLOW: ci.yml",
-  "Triggered ${TARGET_REPOSITORY}/${TARGET_WORKFLOW} after publication.",
+  "No signed update feed generated; leaving latexdo.org updates/ unchanged.",
+  "node scripts/build-downloads-release-index.mjs latexdo-site/downloads --json-only",
+  "git -C latexdo-site add -- downloads",
+  "git -C latexdo-site add -- updates",
   "Release publication must stage only downloads/ and updates/",
+  "Dispatch latexdo.org validation after publication",
+  "TARGET_REPOSITORY: latexdo/latexdo.org",
+  "TARGET_WORKFLOW: validate.yml",
+  "Triggered ${TARGET_REPOSITORY}/${TARGET_WORKFLOW} after publication.",
 ]) {
-  if (!releaseWorkflow.includes(requiredReleaseControl)) {
+  if (!ciWorkflow.includes(requiredReleaseControl)) {
     throw new Error(
       `Release publication control is missing: ${requiredReleaseControl}`,
     );
   }
 }
-for (const forbiddenReleaseControl of [
-  "CLOUDFLARE_API_TOKEN",
-  "cp cli/bin/latexdo latexdo-org-site/bin/latexdo",
-  "cp cli/install.sh latexdo-org-site/install.sh",
-  "git -C latexdo-org-site add downloads updates bin/latexdo install.sh",
-  "git -C latexdo-org-site add -A",
-  "git -C app-site add -A",
-  "Publishing an unsigned macOS build",
-  "Refusing to publish an unsigned Windows build",
-  "Refusing a partial release. Missing",
-  "Deploy downloads to Cloudflare",
-  "Verify deployed downloads",
-]) {
-  if (releaseWorkflow.includes(forbiddenReleaseControl)) {
-    throw new Error(
-      `Release publication must update only app.latexdo.org downloads: ${forbiddenReleaseControl}`,
-    );
-  }
-}
-for (const requiredWebsiteControl of [
-  "workflow_run:",
-  'workflows: ["latexdo-release"]',
-  "github.event.workflow_run.conclusion == 'success'",
-  "github.event.workflow_run.head_branch == 'main'",
-  "repository: latexdo/app.latexdo.org",
-  "Missing LATEXDO_WEBSITE_TOKEN; cannot update app.latexdo.org downloads.",
-  "This workflow stages only downloads/releases.json.",
-  "node scripts/build-downloads-release-index.mjs app-site/downloads --json-only",
-  "git -C app-site add -- downloads/releases.json",
-  "Downloads index refresh must stage only downloads/releases.json.",
-  "Cloudflare deployment is handled by the app.latexdo.org Git integration.",
-  "Cloudflare Workers Builds can deploy the pushed downloads index commit.",
-]) {
-  if (!websiteWorkflow.includes(requiredWebsiteControl)) {
-    throw new Error(`Website deployment control is missing: ${requiredWebsiteControl}`);
-  }
-}
-for (const forbiddenWebsiteControl of [
-  "rsync -a website/",
-  "git -C latexdo-org-site add -A",
-  "git -C app-site add -A",
-  "npm ci --prefix website",
-  "npm run build --prefix website",
-  "CLOUDFLARE_API_TOKEN",
-  "deploy_mode",
-  "cloudflare_enabled",
-  "Deploy website to Cloudflare",
-  "npm run deploy",
-]) {
-  if (websiteWorkflow.includes(forbiddenWebsiteControl)) {
-    throw new Error(
-      `Website workflow must only push the GitHub repo: ${forbiddenWebsiteControl}`,
-    );
-  }
-}
-for (const requiredEditorControl of [
-  "workflow_run:",
-  'workflows: ["latexdo-ci"]',
-  "github.event.workflow_run.conclusion == 'success'",
-  "github.event.workflow_run.head_branch == 'main'",
-  "repository: latexdo/editor.latexdo.org",
-  "LATEXDO_WEBSITE_TOKEN",
-  "git -C editor-site add -- dist",
-  "Editor publication must stage only dist/.",
-  "Dispatch editor.latexdo.org CI after publication",
-  "TARGET_WORKFLOW: ci.yml",
-  "Triggered ${TARGET_REPOSITORY}/${TARGET_WORKFLOW} after publication.",
-]) {
-  if (!editorWorkflow.includes(requiredEditorControl)) {
-    throw new Error(`Editor deployment control is missing: ${requiredEditorControl}`);
-  }
-}
-for (const requiredCliControl of [
-  "workflow_run:",
-  'workflows: ["latexdo-ci"]',
-  "github.event.workflow_run.conclusion == 'success'",
-  "github.event.workflow_run.head_branch == 'main'",
-  "repository: latexdo/cli.latexdo.org",
-  "LATEXDO_WEBSITE_TOKEN",
-  "git -C cli-site add -- README.md package.json install.sh bin/latexdo LICENSE",
-  "CLI publication must stage only CLI package files.",
-  "cp LICENSE cli-site/LICENSE",
-  "Dispatch cli.latexdo.org CI after publication",
-  "TARGET_WORKFLOW: ci.yml",
-  "Triggered ${TARGET_REPOSITORY}/${TARGET_WORKFLOW} after publication.",
-]) {
-  if (!cliWorkflow.includes(requiredCliControl)) {
-    throw new Error(`CLI deployment control is missing: ${requiredCliControl}`);
-  }
-}
-for (const requiredDocsControl of [
-  "workflow_run:",
-  'workflows: ["latexdo-ci"]',
-  "github.event.workflow_run.conclusion == 'success'",
-  "github.event.workflow_run.head_branch == 'main'",
-  "repository: latexdo/docs.latexdo.org",
-  "LATEXDO_WEBSITE_TOKEN",
-  "git -C docs-site add -- assets/icon.svg site.js",
-  "Docs publication must stage only assets/icon.svg and site.js.",
-]) {
-  if (!docsWorkflow.includes(requiredDocsControl)) {
-    throw new Error(`Docs deployment control is missing: ${requiredDocsControl}`);
-  }
-}
-for (const requiredStoreControl of [
-  "workflow_run:",
-  'workflows: ["latexdo-ci"]',
-  "github.event.workflow_run.conclusion == 'success'",
-  "github.event.workflow_run.head_branch == 'main'",
-  "repository: latexdo/store.latexdo.org",
-  "LATEXDO_WEBSITE_TOKEN",
-  "fallbackExtensionCatalog",
-  "git -C store-site add -- extensions/catalog.json",
-  "Store publication must stage only extensions/catalog.json.",
-  "Dispatch store.latexdo.org validation after publication",
-  "TARGET_WORKFLOW: validate-pr.yml",
-  "Triggered ${TARGET_REPOSITORY}/${TARGET_WORKFLOW} after publication.",
-]) {
-  if (!storeWorkflow.includes(requiredStoreControl)) {
-    throw new Error(`Store deployment control is missing: ${requiredStoreControl}`);
-  }
-}
-for (const [label, workflow] of [
-  ["Editor", editorWorkflow],
-  ["CLI", cliWorkflow],
-  ["Docs", docsWorkflow],
-  ["Store", storeWorkflow],
-]) {
-  for (const forbiddenDownstreamControl of [
-    "CLOUDFLARE_API_TOKEN",
-    "wrangler deploy",
-    "npm run deploy",
-  ]) {
-    if (workflow.includes(forbiddenDownstreamControl)) {
-      throw new Error(
-        `${label} workflow must only push the GitHub repo: ${forbiddenDownstreamControl}`,
-      );
-    }
-  }
-}
-if (cliWorkflow.includes("rsync -a --delete")) {
-  throw new Error("CLI workflow must not delete unrelated cli.latexdo.org files.");
-}
-for (const requiredRenewalControl of [
-  "schedule:",
-  "workflow_dispatch:",
-  "group: app-latexdo-org-deploy",
-  "repository: latexdo/app.latexdo.org",
-  "Detect signed latest feed",
-  "No signed app.latexdo.org update feed is available yet; skipping renewal.",
-  "git -C app-site add -- updates/latest.json",
-  "LATEXDO_UPDATE_MIN_VALIDITY_DAYS: 14",
-  "Cloudflare Workers Builds can deploy the pushed feed commit.",
-]) {
-  if (!renewalWorkflow.includes(requiredRenewalControl)) {
-    throw new Error(
-      `Update-feed renewal control is missing: ${requiredRenewalControl}`,
-    );
-  }
-}
-for (const forbiddenRenewalControl of [
-  "CLOUDFLARE_API_TOKEN",
-  "Deploy renewed feed to Cloudflare",
-  "Verify live signed feed",
-  "npm run deploy",
-  "curl -fsSL",
-]) {
-  if (renewalWorkflow.includes(forbiddenRenewalControl)) {
-    throw new Error(
-      `Update-feed renewal must only push the GitHub repo: ${forbiddenRenewalControl}`,
-    );
-  }
-}
+
 for (const requiredRenewalProtection of [
   "verifyFeedSignature(existingFeed, publicKey)",
   "immutableFeed(existingFeed)",
@@ -363,6 +216,7 @@ for (const requiredDownloadsBuilderControl of [
     );
   }
 }
+
 const expectedHash = installer.match(
   /CLI_SHA256="\$\{LATEXDO_CLI_SHA256:-([a-f0-9]{64})\}"/,
 )?.[1];
@@ -371,4 +225,6 @@ if (!expectedHash || expectedHash !== actualHash) {
   throw new Error(`CLI installer hash is stale: expected ${actualHash}.`);
 }
 
-console.log(`Verified CLI hash ${actualHash} and update signing key.`);
+console.log(
+  `Verified single-workflow CI, CLI hash ${actualHash}, and update signing key.`,
+);

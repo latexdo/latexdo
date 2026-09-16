@@ -702,18 +702,18 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       return {
         currentVersion: appVersion,
         latestVersion: null,
-        releaseUrl: "https://app.latexdo.org/downloads/",
+        releaseUrl: "https://latexdo.org/downloads/",
         updateAvailable: false,
         error: "Update checks are available in the desktop app.",
       };
     },
 
     async updateNow() {
-      await api.openReleasesPage("https://app.latexdo.org/downloads/");
+      await api.openReleasesPage("https://latexdo.org/downloads/");
       return {
         currentVersion: appVersion,
         latestVersion: null,
-        releaseUrl: "https://app.latexdo.org/downloads/",
+        releaseUrl: "https://latexdo.org/downloads/",
         updateAvailable: false,
         installerPath: null,
         opened: false,
@@ -731,7 +731,7 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
 
     async openReleasesPage(releaseUrl) {
       window.open(
-        releaseUrl || "https://app.latexdo.org/downloads/",
+        releaseUrl || "https://latexdo.org/downloads/",
         "_blank",
         "noopener,noreferrer",
       );

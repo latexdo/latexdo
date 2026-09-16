@@ -1,213 +1,92 @@
 # latexdo
 
-LatexDo is the main desktop LaTeX editor and the source of truth for the shared editor experience used across the LatexDo projects. It combines Electron, React, TypeScript, Monaco, Vite, and local LaTeX tooling.
+LatexDo is a desktop LaTeX editor built with Electron, React, TypeScript,
+Monaco, Vite, and local LaTeX tooling.
 
-## Repository Role
-
-- Runs the desktop app for local LaTeX projects.
-- Provides the browser editor used by the CLI and hosted editor builds.
-- Contains the source copy for the CLI in `cli/`.
-- Syncs downstream repositories locally with `npm run sync:downstream` and in
-  GitHub Actions after `latexdo-ci` passes on `main`.
+This repo owns the desktop app, the shared browser editor, the CLI source in
+`cli/`, and the release pipeline that publishes desktop downloads to
+`latexdo/latexdo.org`.
 
 ## Requirements
 
 - Node.js 22.17 or newer.
 - npm.
-- A TeX distribution with `latexmk` for PDF compilation:
+- A TeX distribution with `latexmk`.
   - macOS: MacTeX.
   - Linux: TeX Live.
   - Windows: MiKTeX or TeX Live.
 
-## Run Locally
-
-Run the desktop app:
+## Run
 
 ```sh
 npm install
 npm run dev
 ```
 
-Run only the browser editor:
+Browser-only editor:
 
 ```sh
-npm install
 npm run web
 ```
 
-The browser editor defaults to `http://127.0.0.1:5173`. Use `Cmd/Ctrl + Enter` to compile and `Cmd/Ctrl + S` to save.
+The browser editor runs at `http://127.0.0.1:5173`.
 
-## Common Commands
+## Commands
 
 ```sh
-npm run dev              # Start Vite and Electron together.
-npm run web              # Start the browser-only editor.
-npm run ai:sync          # Regenerate the baked AI catalog from catalog/.
-npm run ai:check         # Validate the AI catalog and integrated source manifest.
-npm run build            # Build web and Electron output.
-npm run typecheck        # Run TypeScript checks.
-npm run lint             # Run ESLint.
-npm run test             # Run Vitest.
-npm run package          # Build unpacked desktop app.
-npm run test:packaged    # Run packaged startup smoke checks.
-npm run test:packaged:e2e # Run opt-in packaged workflow E2E checks.
-npm run release:check    # Run the local release-readiness gate.
-npm run dist             # Build distributable installers.
-npm run sync:downstream  # Refresh CLI and hosted editor repos.
+npm run build             # Build web and Electron output.
+npm run typecheck         # Run TypeScript checks.
+npm run lint              # Run ESLint.
+npm test                  # Run Vitest.
+npm run test:coverage     # Run tests with coverage.
+npm run package           # Build an unpacked desktop app.
+npm run dist              # Build distributable installers.
+npm run release:check     # Run the local release-readiness gate.
+npm run ai:check          # Validate AI catalog/source sync.
+npm run sync:downstream   # Local-only helper for CLI/editor sibling repos.
 ```
+
+## CI And Release
+
+There is one GitHub Actions workflow: `latexdo-ci`.
+
+It does three things:
+
+1. Checks formatting, lint, types, tests, coverage, audit, supply-chain rules,
+   and production build.
+2. Packages and smoke-tests macOS, Windows, and Linux installers.
+3. On `main`, version tags, or manual runs on `main`, publishes release assets
+   and updates only `downloads/` plus optional signed `updates/` in
+   `latexdo/latexdo.org`.
+
+The old split deploy workflows for docs, editor, CLI, store, website, and
+release have been removed. This repo no longer deploys those sites.
+
+Release downloads live at:
+
+- `https://www.latexdo.org/downloads/`
+- `https://www.latexdo.org/updates/latest.json`
+
+Required publication secret:
+
+- `LATEXDO_WEBSITE_TOKEN`
+
+Optional release secrets:
+
+- macOS signing/notarization:
+  `MACOS_CERTIFICATE_P12`, `MACOS_CERTIFICATE_PASSWORD`, `APPLE_API_KEY_P8`,
+  `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `APPLE_TEAM_ID`
+- Windows signing:
+  `WINDOWS_CERTIFICATE_P12`, `WINDOWS_CERTIFICATE_PASSWORD`
+- signed update feed:
+  `LATEXDO_UPDATE_SIGNING_KEY`
+
+If signing secrets are missing, CI still publishes ad-hoc macOS builds and
+unsigned Windows builds. If `LATEXDO_UPDATE_SIGNING_KEY` is missing, CI updates
+downloads and leaves `updates/` unchanged.
 
 ## AI Source
 
-The AI source lives in this repository. The agent loop, prompts, tools, AI
-config, renderer UI, Electron local/Ollama bridge, and AI styles are integrated
-under `src/`, `electron/`, and `src/styles.css`. The public model/provider
-catalog lives at `catalog/latexdo-ai-catalog.v1.json`.
-
-Build and typecheck run `npm run ai:sync` first, which validates the local
-catalog and regenerates `src/features/ai/aiCatalog.generated.ts`. Run
-`npm run ai:check` to validate both the catalog and the integrated AI source
-manifest in `latexdo-sync.json`.
-
-Normal desktop releases bake in that public AI source and catalog, so users can
-install LatexDo, choose a local model in setup, download it, and use AI normally
-on a regular laptop. The host app wiring in `App.tsx`, `electron/main.ts`, and
-`electron/preload.cts` stays in this repository because it connects the synced AI
-modules to the editor shell and IPC.
-
-Advanced distribution builds can explicitly overlay another AI source checkout
-with `LATEXDO_AI_SOURCE_PATH`, another catalog with `LATEXDO_AI_CATALOG_PATH`, or
-a hosted catalog with `LATEXDO_AI_CATALOG_URL`. Set
-`LATEXDO_AI_CATALOG_REQUIRED=1` in release CI to fail when a configured external
-catalog cannot be loaded.
-
-## Downstream Sync
-
-This repo owns the source for pieces published elsewhere. After changing shared editor behavior, CLI files, or hosted frontend expectations, run:
-
-```sh
-npm run sync:downstream
-```
-
-That refreshes:
-
-- `../cli.latexdo.org` from `cli/`.
-- `../editor.latexdo.org/dist` from the built editor frontend.
-
-In GitHub Actions, the matching downstream deploy workflows run after
-`latexdo-ci` succeeds on `main` and push commits to:
-
-- `latexdo/cli.latexdo.org`: the standalone CLI package from `cli/`.
-- `latexdo/editor.latexdo.org`: the hosted editor frontend in `dist/`.
-- `latexdo/docs.latexdo.org`: shared icon and generated docs `site.js`.
-- `latexdo/store.latexdo.org`: `extensions/catalog.json` from the app fallback
-  extension catalog.
-
-They only update GitHub repositories; Cloudflare deployment is handled by each
-connected GitHub repository, not by this repo's workflows. The public website
-lives in `latexdo/latexdo.org`, and downloads and update metadata live in
-`latexdo/app.latexdo.org`; neither receives website files from this repo.
-
-## Hosted Production
-
-`https://editor.latexdo.org` is the only public API and WebSocket origin. The
-The `collaborations-latexdo-org-v2` Worker owns sessions, authorization, projects,
-files, shares, presence, and Yjs rooms behind a service binding. The editor
-gateway owns bounded compile/import admission, stateless compiler containers,
-and private R2 PDF artifacts.
-
-Deploy in this order:
-
-1. Deploy and verify `collaborations-latexdo-org-v2`, including its Durable
-   Object migrations and authenticated internal readiness route. Do not rename,
-   replace, or bind the legacy `collaborations-latexdo-org` Worker.
-2. Deploy `editor.latexdo.org` from a reviewed commit. Roll out a compiler image
-   only through that repository's protected manual workflow.
-3. Use this repository's `deploy-editor` workflow to publish the exact hosted
-   frontend commit to `editor.latexdo.org`. Only the hosted editor repository
-   deploys the production Worker.
-4. Run credentialed project, edit, WebSocket reconnect, import, compile, PDF
-   range, and rollback smoke tests before moving production traffic.
-
-The v2 Durable Object namespace starts empty by design. Production hostname
-cutover is blocked until operators have exported and migrated every retained
-legacy project, validated owner access and file hashes in v2, and recorded an
-approved disposition for any account that cannot be migrated. Keeping the
-legacy Worker available is not itself a migration: reloaded clients receive the
-new frontend. The protected editor deployment must require an explicit
-migration-complete attestation, and rollback remains open until migrated users
-have passed read, edit, compile, share, and reconnect checks.
-
-Production also requires the shared internal service token, independent session
-and compiler secrets, the private compile-artifact R2 bucket and lifecycle, paid
-Workers/Durable Objects/Containers capacity, scoped deployment credentials, and
-an account container quota matching the configured pool. One million registered
-users is not a concurrency target: launch approval requires staged distributed
-load tests against the expected active WebSocket, edit, import, and compile
-arrival rates on the actual Cloudflare account.
-
-## Release
-
-Build local installers with:
-
-```sh
-npm run dist
-```
-
-Before tagging or publishing, run the local gate:
-
-```sh
-npm run release:check
-```
-
-That gate runs lint, type checks, unit tests, coverage, audit, supply-chain
-checks, an unpacked package build, and packaged startup smoke checks. CI and the
-release workflow smoke-test the packaged macOS, Windows, and Linux executables;
-Linux AppImage is tested as the final executable release artifact. Run
-`npm run test:packaged:e2e` manually when you want the heavier packaged workflow
-test on a trusted local machine.
-
-CI also builds non-release smoke-test installers. When `latexdo-ci` passes on
-`main`, the release workflow publishes a build release named
-`v<package version>-build.<run>.<attempt>.<sha>`. Production version tags remain
-supported: an immutable `v<package version>` tag whose version exactly matches
-`package.json` publishes the same release assets under that stable tag. The
-release workflow publishes macOS, Windows, and Linux assets plus the website
-release index at `https://app.latexdo.org/downloads/<release tag>/`.
-`https://app.latexdo.org/updates/latest.json` points the desktop app at that
-versioned release. The feed is signed with the Ed25519 key pinned into every
-desktop package; the app rejects unsigned, modified, or unknown-key feeds before
-downloading an installer. Signed feeds also expire, and both the desktop app and
-CLI persist the highest trusted version and publication date to reject rollbacks.
-The downloads page also publishes an all-release tag index at
-`https://app.latexdo.org/downloads/` and `https://app.latexdo.org/downloads/releases.json`.
-
-Production publication requires `LATEXDO_WEBSITE_TOKEN`. macOS release
-publication uses Apple signing and notarization when these secrets are
-configured: `MACOS_CERTIFICATE_P12` or legacy `CSC_LINK`,
-`MACOS_CERTIFICATE_PASSWORD` or legacy `CSC_KEY_PASSWORD`, `APPLE_API_KEY_P8`,
-`APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, and `APPLE_TEAM_ID`; `APPLE_API_KEY_P8`
-must be the base64-encoded `.p8` key content. When any are missing, the release
-workflow publishes an ad-hoc signed macOS DMG instead. Users may need to approve
-that build from macOS Privacy & Security settings before launching it. Windows
-signing secrets are optional: when they are missing, the workflow publishes an
-unsigned Windows installer. `LATEXDO_UPDATE_SIGNING_KEY` is optional for
-downloads publication: when it is missing, the workflow updates `downloads/` and
-leaves `updates/` unchanged. When present, the secret must be the base64-encoded
-PEM private key matching `build/update-public-key.pem`, and the workflow
-publishes the signed app update feed. The release workflow commits only
-`downloads/` and optionally `updates/` to `latexdo/app.latexdo.org`; site pages,
-CLI scripts, and direct deployment stay out of that path.
-
-The downstream publication workflows require `LATEXDO_WEBSITE_TOKEN`. That token
-refreshes the `app.latexdo.org` downloads index and publishes generated
-downstream content to `latexdo/cli.latexdo.org`, `latexdo/editor.latexdo.org`,
-`latexdo/docs.latexdo.org`, and `latexdo/store.latexdo.org`. After CLI, editor,
-and store publication finishes, the same token dispatches downstream validation
-in `latexdo/cli.latexdo.org`, `latexdo/editor.latexdo.org`, and
-`latexdo/store.latexdo.org`. Cloudflare deploys from the pushed GitHub commits.
-
-Automatic publication to `app.latexdo.org` is scoped to download/update data in
-`downloads/` and `updates/`. The design-owned `downloads/index.html`, site
-pages, CSS, and JavaScript live in the `latexdo/app.latexdo.org` repository;
-the downloads page hydrates from `downloads/releases.json` and the latest
-manifests.
+AI catalog/source files are kept in this repo and synced into generated code by
+`npm run ai:sync`, which also runs before build and typecheck. The public catalog
+is `catalog/latexdo-ai-catalog.v1.json`.
