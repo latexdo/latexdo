@@ -341,6 +341,10 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
     setProgress({ received: 0, total: null });
     const unsub = subscribeDownload((p) => {
       if (p.modelId !== tier.runtime.modelId) return;
+      if (p.stage === "verifying") {
+        setDownloadError("");
+        return;
+      }
       if (p.error) {
         setDownloadError(p.error);
         return;
@@ -351,11 +355,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
         setProgress({ received: p.receivedBytes, total: p.totalBytes });
       }
     });
-    const result = await downloadModel(
-      tier.runtime.modelId,
-      tier.runtime.downloadUrl,
-      tier.runtime.fileName,
-    );
+    const result = await downloadModel(tier.id);
     unsub();
     setDownloading(false);
     if (!result.ok) {
@@ -466,7 +466,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
     ? selectedTierAvailability.state === "available" &&
       (downloaded || config.modelDownloaded)
     : config.provider === "cloud"
-      ? config.cloud.apiKey.trim().length > 0
+      ? config.cloud.credentialConfigured
       : config.provider === "ollama"
         ? isDesktop && config.ollamaModel.trim().length > 0
         : config.provider === "local"

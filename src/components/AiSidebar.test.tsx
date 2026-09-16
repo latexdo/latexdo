@@ -140,7 +140,7 @@ describe("AiSidebar", () => {
 
   it("shows the empty setup state for unconfigured providers", () => {
     const { onOpenSettings } = renderSidebar(
-      makeConfig({ provider: "cloud", cloud: { apiKey: "" } }),
+      makeConfig({ provider: "cloud", cloud: { credentialConfigured: false } }),
     );
 
     expect(screen.getByText("Cloud · claude-haiku-4-5")).toBeVisible();

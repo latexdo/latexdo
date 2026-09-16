@@ -211,7 +211,10 @@ function buildRequest(
       cloudBaseUrl:
         runtime.provider === "cloud" ? runtime.baseUrl : config.cloud.baseUrl,
       cloudModel: runtime.provider === "cloud" ? runtime.model : config.cloud.model,
-      cloudApiKey: runtime.provider === "cloud" ? runtime.apiKey : config.cloud.apiKey,
+      cloudCredentialId:
+        runtime.provider === "cloud"
+          ? runtime.credentialId
+          : config.cloud.credentialId,
     },
   };
 }

@@ -12,6 +12,22 @@ import type { GenerateRequest, GenerationStep } from "./aiTypes";
 import { generateStep } from "./aiClient";
 import { resolveAiRuntime } from "./product/aiRuntimeResolver";
 
+/** Structural Monaco range; keeps tests and the editor decoupled from monaco types. */
+export interface SelectionRange {
+  startLineNumber: number;
+  startColumn: number;
+  endLineNumber: number;
+  endColumn: number;
+}
+
+interface MonacoEditorLike {
+  getSelection(): SelectionRange | null;
+  getModel(): {
+    getValueInRange(range: SelectionRange): string;
+    getVersionId(): number;
+  } | null;
+}
+
 // ---------------------------------------------------------------------------
 // Selection snapshot
 // ---------------------------------------------------------------------------
@@ -30,9 +46,9 @@ export interface AiSelectionSnapshot {
 }
 
 interface MonacoEditorLike {
-  getSelection(): import("monaco-editor").editor.ISelection | null;
+  getSelection(): SelectionRange | null;
   getModel(): {
-    getValueInRange(range: import("monaco-editor").editor.IRange): string;
+    getValueInRange(range: SelectionRange): string;
     getVersionId(): number;
   } | null;
 }
@@ -153,8 +169,10 @@ export async function performReformulation(
         runtime.provider === "cloud" ? runtime.baseUrl : config.cloud.baseUrl,
       cloudModel:
         runtime.provider === "cloud" ? runtime.model : config.cloud.model,
-      cloudApiKey:
-        runtime.provider === "cloud" ? runtime.apiKey : config.cloud.apiKey,
+      cloudCredentialId:
+        runtime.provider === "cloud"
+          ? runtime.credentialId
+          : config.cloud.credentialId,
     },
   };
   const step = await generateStep(req, onToken ?? (() => {}));
@@ -198,8 +216,8 @@ export function buildReformulationProposal(
  */
 export function validateSnapshotRange(
   editor: {
-    getSelection(): import("monaco-editor").editor.ISelection | null;
-    getModel(): { getValueInRange(range: import("monaco-editor").editor.IRange): string } | null;
+    getSelection(): SelectionRange | null;
+    getModel(): { getValueInRange(range: SelectionRange): string } | null;
   } | null,
   snapshot: AiSelectionSnapshot,
 ): boolean {

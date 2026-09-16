@@ -40,6 +40,16 @@ export interface LatexDoAiTierDefinition {
     modelId: string;
     fileName: string;
     downloadUrl: string;
+    /** Trusted manifest entry. Compiled from official model metadata. */
+    expectedSizeBytes: number;
+    /** Expected size bands (bytes) accepted by the download verifier. */
+    expectedSizeRangeBytes: { min: number; max: number };
+    /**
+     * If set, the downloaded artifact must match this hash exactly before it
+     * is moved into place. Populated by release tooling from upstream model
+     * metadata; `null` means the size band verification still applies.
+     */
+    expectedSha256: string | null;
   };
   requirements: {
     minSystemRamBytes: number;
@@ -58,6 +68,12 @@ export const latexDoAiTiers: readonly LatexDoAiTierDefinition[] = [
       fileName: "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
       downloadUrl:
         "https://huggingface.co/bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf",
+      expectedSizeBytes: 1.12 * GB,
+      expectedSizeRangeBytes: {
+        min: Math.floor(1.12 * GB * 0.5),
+        max: Math.ceil(1.12 * GB * 1.15),
+      },
+      expectedSha256: null,
     },
     requirements: {
       minSystemRamBytes: 8 * GB,
@@ -74,6 +90,12 @@ export const latexDoAiTiers: readonly LatexDoAiTierDefinition[] = [
       fileName: "qwen2.5-coder-3b-instruct-q4_k_m.gguf",
       downloadUrl:
         "https://huggingface.co/bartowski/Qwen2.5-Coder-3B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf",
+      expectedSizeBytes: 2.0 * GB,
+      expectedSizeRangeBytes: {
+        min: Math.floor(2.0 * GB * 0.5),
+        max: Math.ceil(2.0 * GB * 1.15),
+      },
+      expectedSha256: null,
     },
     requirements: {
       minSystemRamBytes: 8 * GB,
@@ -90,6 +112,12 @@ export const latexDoAiTiers: readonly LatexDoAiTierDefinition[] = [
       fileName: "qwen3-4b-q4_k_m.gguf",
       downloadUrl:
         "https://huggingface.co/bartowski/Qwen_Qwen3-4B-GGUF/resolve/main/Qwen_Qwen3-4B-Q4_K_M.gguf",
+      expectedSizeBytes: 2.5 * GB,
+      expectedSizeRangeBytes: {
+        min: Math.floor(2.5 * GB * 0.5),
+        max: Math.ceil(2.5 * GB * 1.15),
+      },
+      expectedSha256: null,
     },
     requirements: {
       minSystemRamBytes: 12 * GB,
@@ -106,6 +134,12 @@ export const latexDoAiTiers: readonly LatexDoAiTierDefinition[] = [
       fileName: "qwen3-8b-q4_k_m.gguf",
       downloadUrl:
         "https://huggingface.co/bartowski/Qwen_Qwen3-8B-GGUF/resolve/main/Qwen_Qwen3-8B-Q4_K_M.gguf",
+      expectedSizeBytes: 5.03 * GB,
+      expectedSizeRangeBytes: {
+        min: Math.floor(5.03 * GB * 0.5),
+        max: Math.ceil(5.03 * GB * 1.15),
+      },
+      expectedSha256: null,
     },
     requirements: {
       minSystemRamBytes: 16 * GB,

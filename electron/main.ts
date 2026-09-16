@@ -54,6 +54,7 @@ import {
 } from "./compiler.js";
 import { createGarbageCollector, type CollectNowOptions } from "./garbageCollector.js";
 import { importDocxIntoProject } from "./docxImport.js";
+import { assertCanonicalCompileInside } from "./compileTrust.js";
 import { importMarkdown } from "./markdownImport.js";
 import { importPdfIntoProject } from "./pdfImport/index.js";
 import { backwardSyncTex, forwardSyncTex } from "./synctex.js";
@@ -6532,6 +6533,7 @@ async function startApp(): Promise<void> {
     const [rawRequest] = expectIpcArgs(channel, rawArgs, 1);
     const request = parseCompileRequestInput(channel, rawRequest);
     const location = resolveOpenProjectPath(request.projectId, request.rootFile);
+    await assertCanonicalCompileInside(location.projectPath, location.resolvedPath);
     const controller = new AbortController();
     const untrack = trackCompileController(request.projectId, controller);
     try {
@@ -6600,6 +6602,10 @@ async function startApp(): Promise<void> {
       name: `Shared project ${request.projectId}`,
     });
     resolveProjectPath(projectPath, request.rootFile);
+    await assertCanonicalCompileInside(
+      projectPath,
+      path.join(projectPath, request.rootFile),
+    );
 
     const controller = new AbortController();
     const untrack = trackCompileController(request.projectId, controller);
@@ -6643,6 +6649,7 @@ async function startApp(): Promise<void> {
     const [rawRequest] = expectIpcArgs(channel, rawArgs, 1);
     const request = parseAsymptoteCompileRequestInput(channel, rawRequest);
     const location = resolveOpenProjectPath(request.projectId, request.relativePath);
+    await assertCanonicalCompileInside(location.projectPath, location.resolvedPath);
     const controller = new AbortController();
     const untrack = trackCompileController(request.projectId, controller);
     try {

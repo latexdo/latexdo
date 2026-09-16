@@ -82,6 +82,11 @@ export interface GenerateRequest {
     cloudBaseUrl?: string;
     cloudModel?: string;
     cloudApiKey?: string;
+    /**
+     * Desktop builds resolve the cloud secret from the main-process OS vault at
+     * request time. When set, it takes precedence over `cloudApiKey`.
+     */
+    cloudCredentialId?: string;
   };
 }
 
@@ -100,6 +105,8 @@ export interface DownloadProgress {
   totalBytes: number | null;
   done: boolean;
   error?: string;
+  /** Download stage. "verifying" runs after the network transfer completes. */
+  stage?: "downloading" | "verifying";
 }
 
 export interface AiSystemCapabilities {

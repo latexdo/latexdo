@@ -60,8 +60,17 @@ export interface CloudConfig {
   model: string;
   /** For OpenAI-compatible / self-hosted gateways; empty = vendor default. */
   baseUrl: string;
-  /** Stored locally only; never synced. */
-  apiKey: string;
+  /**
+   * Id of the credential stored in the main-process OS vault. The API key
+   * itself is NEVER persisted in renderer storage.
+   */
+  credentialId: string;
+  /**
+   * Whether a usable credential exists. Based on the vault during config
+   * migration and on legacy configs with a previously saved key; flipped back
+   * to false when the user clears or the vault entry is missing.
+   */
+  credentialConfigured: boolean;
 }
 
 export interface AiAccessConfig {
@@ -118,7 +127,8 @@ const defaultCloudConfig: CloudConfig = {
   vendor: defaultCloudProvider?.apiShape ?? "anthropic",
   model: defaultCloudProvider?.defaultModel ?? "claude-haiku-4-5",
   baseUrl: defaultCloudProvider?.baseUrl ?? "",
-  apiKey: "",
+  credentialId: "credential-anthropic-primary",
+  credentialConfigured: false,
 };
 
 export const defaultAiConfig: AiConfig = {
@@ -184,12 +194,22 @@ function normalizeCloud(value: unknown): CloudConfig {
   // Older configs used "openai-compatible"; fold it into "openai".
   const vendorRaw = raw.vendor as unknown;
   const vendor = vendorRaw === "openai-compatible" ? "openai" : vendorRaw;
+  const providerId = str(raw.providerId, defaultAiConfig.cloud.providerId);
+  // Legacy configs carried a plaintext apiKey. We never persist it anymore; it
+  // only proves a credential exists, and the value has already been (or will
+  // be) moved into the OS vault by migrateLegacyCloudApiKey().
+  const legacyHasKey =
+    typeof (raw as { apiKey?: unknown }).apiKey === "string" &&
+    ((raw as { apiKey?: unknown }).apiKey as string).trim().length > 0;
   return {
-    providerId: str(raw.providerId, defaultAiConfig.cloud.providerId),
+    providerId,
     vendor: isVendor(vendor) ? vendor : defaultAiConfig.cloud.vendor,
     model: str(raw.model, defaultAiConfig.cloud.model),
     baseUrl: str(raw.baseUrl, defaultAiConfig.cloud.baseUrl),
-    apiKey: str(raw.apiKey, defaultAiConfig.cloud.apiKey),
+    credentialId: str(raw.credentialId, cloudCredentialId(providerId)),
+    credentialConfigured: legacyHasKey
+      ? true
+      : bool(raw.credentialConfigured, defaultAiConfig.cloud.credentialConfigured),
   };
 }
 
@@ -374,7 +394,7 @@ export function saveAiConfig(config: AiConfig): void {
  */
 export function isAiReady(config: AiConfig, isDesktop: boolean): boolean {
   if (config.provider === "off") return false;
-  if (config.provider === "cloud") return config.cloud.apiKey.trim().length > 0;
+  if (config.provider === "cloud") return config.cloud.credentialConfigured;
   if (!isDesktop) return false;
   if (config.provider === "local") return config.modelDownloaded;
   return true; // ollama

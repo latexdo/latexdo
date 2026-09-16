@@ -7,8 +7,20 @@ const cloudMock = vi.hoisted(() => ({
   generateStepCloud: vi.fn(),
 }));
 
+const credentialMock = vi.hoisted(() => ({
+  saveCredential: vi.fn(),
+  loadCredential: vi.fn(),
+  removeCredential: vi.fn(),
+}));
+
 vi.mock("../features/ai/aiCloud", () => ({
   generateStepCloud: cloudMock.generateStepCloud,
+}));
+
+vi.mock("../features/ai/cloudCredentials", () => ({
+  saveCloudCredential: credentialMock.saveCredential,
+  loadCloudCredential: credentialMock.loadCredential,
+  removeCloudCredential: credentialMock.removeCredential,
 }));
 
 import { CloudProviderForm } from "./CloudProviderForm";
@@ -16,7 +28,7 @@ import { CloudProviderForm } from "./CloudProviderForm";
 function cloud(overrides: Partial<CloudConfig> = {}): CloudConfig {
   return {
     ...defaultAiConfig.cloud,
-    apiKey: "sk-test",
+    credentialConfigured: true,
     ...overrides,
   };
 }
@@ -28,6 +40,12 @@ describe("CloudProviderForm", () => {
       type: "text",
       content: " ok\n",
     });
+    credentialMock.saveCredential.mockReset();
+    credentialMock.saveCredential.mockResolvedValue(true);
+    credentialMock.loadCredential.mockReset();
+    credentialMock.loadCredential.mockResolvedValue("sk-test");
+    credentialMock.removeCredential.mockReset();
+    credentialMock.removeCredential.mockResolvedValue(undefined);
   });
 
   it("selects provider presets and opens provider key pages", () => {
@@ -59,6 +77,67 @@ describe("CloudProviderForm", () => {
     );
   });
 
+  it("stores a new key via the credential vault when saved", async () => {
+    const onChange = vi.fn();
+    render(
+      <CloudProviderForm
+        cloud={cloud({ credentialConfigured: false })}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("Paste your API key"), {
+      target: { value: "sk-new" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save/i }));
+
+    await waitFor(() => {
+      expect(credentialMock.saveCredential).toHaveBeenCalledWith(
+        "credential-anthropic-primary",
+        "sk-new",
+      );
+    });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ credentialConfigured: true }),
+    );
+  });
+
+  it("signals a clear error when secure storage is unavailable", async () => {
+    credentialMock.saveCredential.mockResolvedValue(false);
+    const onChange = vi.fn();
+    render(
+      <CloudProviderForm
+        cloud={cloud({ credentialConfigured: false })}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("Paste your API key"), {
+      target: { value: "sk-new" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save/i }));
+
+    expect(await screen.findByText(/Secure credential storage is unavailable/i))
+      .toBeVisible();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("removes a stored key and clears configuration", async () => {
+    const onChange = vi.fn();
+    render(<CloudProviderForm cloud={cloud()} onChange={onChange} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Remove/i }));
+
+    await waitFor(() => {
+      expect(credentialMock.removeCredential).toHaveBeenCalledWith(
+        "credential-anthropic-primary",
+      );
+    });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ credentialConfigured: false }),
+    );
+  });
+
   it("patches editable fields and shows custom base URLs", () => {
     const onChange = vi.fn();
     render(
@@ -68,16 +147,10 @@ describe("CloudProviderForm", () => {
           vendor: "openai",
           baseUrl: "http://localhost:4000/v1",
           model: "local-model",
+          credentialConfigured: false,
         })}
         onChange={onChange}
       />,
-    );
-
-    fireEvent.change(screen.getByPlaceholderText("Paste your API key"), {
-      target: { value: "sk-new" },
-    });
-    expect(onChange).toHaveBeenLastCalledWith(
-      expect.objectContaining({ apiKey: "sk-new" }),
     );
 
     fireEvent.change(screen.getByPlaceholderText("Model id"), {
@@ -103,6 +176,9 @@ describe("CloudProviderForm", () => {
     await waitFor(() => {
       expect(screen.getByText("ok")).toBeVisible();
     });
+    expect(credentialMock.loadCredential).toHaveBeenCalledWith(
+      "credential-anthropic-primary",
+    );
     expect(cloudMock.generateStepCloud).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: "cloud",

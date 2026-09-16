@@ -2,6 +2,7 @@ import type { BeforeMount, OnMount } from "@monaco-editor/react";
 import type * as Monaco from "monaco-editor";
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowLeftToLine,
   ArrowRightToLine,
   Bookmark,
@@ -30,6 +31,7 @@ import {
   History,
   ImageUp,
   Italic,
+  KeyRound,
   Link,
   List,
   ListOrdered,
@@ -118,6 +120,12 @@ import {
   subscribeDownload,
 } from "./features/ai/aiClient";
 import { generateStepCloud } from "./features/ai/aiCloud";
+import {
+  loadCloudCredential,
+  migrateLegacyCloudApiKey,
+  removeCloudCredential,
+  saveCloudCredential,
+} from "./features/ai/cloudCredentials";
 import { cloudProviders, findCloudProvider } from "./features/ai/cloudProviders";
 import { localModelCatalog, type LocalModelInfo } from "./features/ai/aiModels";
 import {
@@ -1220,6 +1228,9 @@ export default function App() {
     "idle" | "testing" | "ok" | "error"
   >("idle");
   const [cloudConnectionMessage, setCloudConnectionMessage] = useState("");
+  const [settingsCloudKey, setSettingsCloudKey] = useState("");
+  const [settingsCloudKeySaving, setSettingsCloudKeySaving] = useState(false);
+  const [settingsCloudKeyError, setSettingsCloudKeyError] = useState("");
   const [customLatexDoAiModels, setCustomLatexDoAiModels] = useState(
     loadCustomLatexDoAiModels,
   );
@@ -1238,6 +1249,21 @@ export default function App() {
   const [aiSystemCapabilitiesState, setAiSystemCapabilitiesState] = useState<
     "idle" | "loading" | "ready" | "unavailable"
   >(aiIsDesktop ? "loading" : "unavailable");
+  useEffect(() => {
+    // Move any legacy localStorage API key into the OS credential vault before
+    // the save effect below overwrites (and sanitizes) the stored config.
+    void (async () => {
+      try {
+        const raw = window.localStorage.getItem(aiConfigStorageKey);
+        const migrated = await migrateLegacyCloudApiKey(raw);
+        if (migrated) {
+          window.localStorage.setItem(aiConfigStorageKey, migrated);
+        }
+      } catch {
+        // Best effort; the key stays out of the next save either way.
+      }
+    })();
+  }, []);
   useEffect(() => {
     saveAiConfig(aiConfig);
   }, [aiConfig]);
@@ -1394,6 +1420,10 @@ export default function App() {
       });
       const unsubscribe = subscribeDownload((progress) => {
         if (progress.modelId !== tier.runtime.modelId) return;
+        if (progress.stage === "verifying") {
+          setLatexDoAiModelMessage("Verifying downloaded model…");
+          return;
+        }
         setLatexDoAiDownload({
           modelId: tier.runtime.modelId,
           receivedBytes: progress.receivedBytes,
@@ -1401,11 +1431,7 @@ export default function App() {
         });
         if (progress.error) setLatexDoAiModelMessage(progress.error);
       });
-      const result = await downloadModel(
-        tier.runtime.modelId,
-        tier.runtime.downloadUrl,
-        tier.runtime.fileName,
-      );
+      const result = await downloadModel(tier.id);
       unsubscribe();
       setLatexDoAiDownload(null);
       if (!result.ok) {
@@ -1527,6 +1553,12 @@ export default function App() {
   const testCloudConnection = useCallback(async () => {
     setCloudConnectionState("testing");
     setCloudConnectionMessage("");
+    const apiKey = (await loadCloudCredential(aiConfig.cloud.credentialId)) ?? "";
+    if (!apiKey) {
+      setCloudConnectionState("error");
+      setCloudConnectionMessage("No API key stored. Enter one in the field below.");
+      return;
+    }
     const step = await generateStepCloud(
       {
         requestId: "settings-test",
@@ -1537,7 +1569,7 @@ export default function App() {
           cloudVendor: aiConfig.cloud.vendor,
           cloudBaseUrl: aiConfig.cloud.baseUrl,
           cloudModel: aiConfig.cloud.model,
-          cloudApiKey: aiConfig.cloud.apiKey,
+          cloudApiKey: apiKey,
           maxTokens: 16,
           temperature: 0,
         },
@@ -1552,6 +1584,29 @@ export default function App() {
     setCloudConnectionState("ok");
     setCloudConnectionMessage(step.content.trim().slice(0, 80) || "Connected.");
   }, [aiConfig.cloud]);
+  const saveSettingsCloudKey = useCallback(async () => {
+    if (!settingsCloudKey.trim()) return;
+    setSettingsCloudKeySaving(true);
+    setSettingsCloudKeyError("");
+    const ok = await saveCloudCredential(
+      aiConfig.cloud.credentialId,
+      settingsCloudKey.trim(),
+    );
+    setSettingsCloudKeySaving(false);
+    if (ok) {
+      setSettingsCloudKey("");
+      patchCloudConfig({ credentialConfigured: true });
+    } else {
+      setSettingsCloudKeyError(
+        "Secure credential storage is unavailable on this system; the key was not saved.",
+      );
+    }
+  }, [settingsCloudKey, aiConfig.cloud.credentialId, patchCloudConfig]);
+  const clearSettingsCloudKey = useCallback(async () => {
+    await removeCloudCredential(aiConfig.cloud.credentialId);
+    setSettingsCloudKey("");
+    patchCloudConfig({ credentialConfigured: false });
+  }, [aiConfig.cloud.credentialId, patchCloudConfig]);
   const refreshOllamaModels = useCallback(async () => {
     if (!aiIsDesktop) {
       setOllamaModels([]);
@@ -13644,17 +13699,61 @@ ${macroEnd}
                   {activeAiSelectionValue === "customize" &&
                   aiConfig.provider === "cloud" ? (
                     <div className="cloud-form ai-provider-form ai-provider-settings">
-                      <label className="cloud-form-field">
+                      <div className="cloud-form-field">
                         <span>API key</span>
-                        <input
-                          type="password"
-                          value={aiConfig.cloud.apiKey}
-                          autoComplete="off"
-                          onChange={(event) =>
-                            patchCloudConfig({ apiKey: event.target.value })
-                          }
-                        />
-                      </label>
+                        {aiConfig.cloud.credentialConfigured && !settingsCloudKey ? (
+                          <div className="cloud-form-saved">
+                            <KeyRound size={13} />
+                            <span>Stored in the OS credential store</span>
+                            <button
+                              type="button"
+                              className="cloud-form-link"
+                              onClick={() => void clearSettingsCloudKey()}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="cloud-form-key-row">
+                            <input
+                              type="password"
+                              placeholder="Paste your API key"
+                              aria-label="API key"
+                              value={settingsCloudKey}
+                              autoComplete="off"
+                              onChange={(event) => {
+                                setSettingsCloudKey(event.target.value);
+                                setSettingsCloudKeyError("");
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  void saveSettingsCloudKey();
+                                }
+                              }}
+                            />
+                            {settingsCloudKey ? (
+                              <button
+                                type="button"
+                                className="ai-wizard-ghost"
+                                onClick={() => void saveSettingsCloudKey()}
+                                disabled={settingsCloudKeySaving}
+                              >
+                                {settingsCloudKeySaving ? (
+                                  <LoaderCircle size={13} className="spin" />
+                                ) : (
+                                  <Check size={13} />
+                                )}
+                                Save
+                              </button>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                      {settingsCloudKeyError ? (
+                        <span className="cloud-form-error">
+                          <AlertTriangle size={13} /> {settingsCloudKeyError}
+                        </span>
+                      ) : null}
                       {selectedCloudProvider?.apiKeyUrl ? (
                         <button
                           type="button"
@@ -13684,7 +13783,8 @@ ${macroEnd}
                           className="ai-wizard-ghost"
                           onClick={() => void testCloudConnection()}
                           disabled={
-                            !aiConfig.cloud.apiKey ||
+                            (!aiConfig.cloud.credentialConfigured &&
+                              !settingsCloudKey.trim()) ||
                             !aiConfig.cloud.model ||
                             cloudConnectionState === "testing"
                           }

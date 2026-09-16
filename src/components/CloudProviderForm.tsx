@@ -1,8 +1,13 @@
 import React from "react";
-import { Cloud, ExternalLink, Check, Loader2, AlertTriangle } from "lucide-react";
+import { Cloud, ExternalLink, Check, Loader2, AlertTriangle, KeyRound } from "lucide-react";
 import type { CloudConfig } from "../features/ai/aiConfig";
 import { cloudProviders, findCloudProvider } from "../features/ai/cloudProviders";
 import { generateStepCloud } from "../features/ai/aiCloud";
+import {
+  loadCloudCredential,
+  removeCloudCredential,
+  saveCloudCredential,
+} from "../features/ai/cloudCredentials";
 
 interface CloudProviderFormProps {
   cloud: CloudConfig;
@@ -16,6 +21,11 @@ export const CloudProviderForm: React.FC<CloudProviderFormProps> = ({
   onOpenExternal,
 }) => {
   const preset = findCloudProvider(cloud.providerId);
+  const [keyInput, setKeyInput] = React.useState("");
+  const [saveState, setSaveState] = React.useState<"idle" | "saving" | "ok" | "error">(
+    "idle",
+  );
+  const [saveMessage, setSaveMessage] = React.useState("");
   const [testState, setTestState] = React.useState<"idle" | "testing" | "ok" | "error">(
     "idle",
   );
@@ -39,9 +49,41 @@ export const CloudProviderForm: React.FC<CloudProviderFormProps> = ({
     setTestState("idle");
   };
 
+  const saveKey = async () => {
+    if (!keyInput.trim()) return;
+    setSaveState("saving");
+    setSaveMessage("");
+    const ok = await saveCloudCredential(cloud.credentialId, keyInput.trim());
+    if (ok) {
+      setSaveState("ok");
+      setSaveMessage("Saved to the OS credential store.");
+      setKeyInput("");
+      patch({ credentialConfigured: true });
+    } else {
+      setSaveState("error");
+      setSaveMessage(
+        "Secure credential storage is unavailable on this system; the key was not saved.",
+      );
+    }
+  };
+
+  const clearKey = async () => {
+    await removeCloudCredential(cloud.credentialId);
+    setKeyInput("");
+    patch({ credentialConfigured: false });
+    setSaveState("idle");
+  };
+
   const testConnection = async () => {
     setTestState("testing");
     setTestMessage("");
+    const apiKey =
+      keyInput.trim() || (await loadCloudCredential(cloud.credentialId)) || "";
+    if (!apiKey) {
+      setTestState("error");
+      setTestMessage("Enter an API key first.");
+      return;
+    }
     const step = await generateStepCloud(
       {
         requestId: "test",
@@ -52,7 +94,7 @@ export const CloudProviderForm: React.FC<CloudProviderFormProps> = ({
           cloudVendor: cloud.vendor,
           cloudBaseUrl: cloud.baseUrl,
           cloudModel: cloud.model,
-          cloudApiKey: cloud.apiKey,
+          cloudApiKey: apiKey,
           maxTokens: 16,
           temperature: 0,
         },
@@ -86,16 +128,60 @@ export const CloudProviderForm: React.FC<CloudProviderFormProps> = ({
         </select>
       </label>
 
-      <label className="cloud-form-field">
+      <div className="cloud-form-field">
         <span>API key</span>
-        <input
-          type="password"
-          placeholder="Paste your API key"
-          value={cloud.apiKey}
-          autoComplete="off"
-          onChange={(e) => patch({ apiKey: e.target.value })}
-        />
-      </label>
+        {cloud.credentialConfigured && !keyInput ? (
+          <div className="cloud-form-saved">
+            <KeyRound size={13} />
+            <span>Stored in the OS credential store</span>
+            <button type="button" className="cloud-form-link" onClick={clearKey}>
+              Remove
+            </button>
+          </div>
+        ) : (
+          <div className="cloud-form-key-row">
+            <input
+              type="password"
+              placeholder="Paste your API key"
+              aria-label="API key"
+              value={keyInput}
+              autoComplete="off"
+              onChange={(e) => {
+                setKeyInput(e.target.value);
+                setSaveState("idle");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void saveKey();
+              }}
+            />
+            {keyInput && (
+              <button
+                type="button"
+                className="ai-wizard-ghost"
+                onClick={() => void saveKey()}
+                disabled={saveState === "saving"}
+              >
+                {saveState === "saving" ? (
+                  <Loader2 size={13} className="spin" />
+                ) : (
+                  <Check size={13} />
+                )}
+                Save
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      {saveState === "error" && (
+        <span className="cloud-form-error">
+          <AlertTriangle size={13} /> {saveMessage}
+        </span>
+      )}
+      {saveState === "ok" && (
+        <span className="cloud-form-ok">
+          <Check size={13} /> {saveMessage}
+        </span>
+      )}
       {preset?.apiKeyUrl && (
         <button
           type="button"
@@ -139,7 +225,10 @@ export const CloudProviderForm: React.FC<CloudProviderFormProps> = ({
           type="button"
           className="ai-wizard-ghost"
           onClick={testConnection}
-          disabled={!cloud.apiKey || testState === "testing"}
+          disabled={
+            (!cloud.credentialConfigured && !keyInput.trim()) ||
+            testState === "testing"
+          }
         >
           {testState === "testing" ? (
             <>

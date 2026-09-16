@@ -29,6 +29,58 @@ import {
   type TierAvailability,
 } from "./productTiers.js";
 import { getAiSystemCapabilities } from "./systemCapabilities.js";
+import {
+  deleteCredential,
+  getCredential,
+  hasCredential,
+  isCredentialStorageAvailable,
+  setCredential,
+} from "./secretStorage.js";
+
+const credentialIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+function parseCredentialId(channel: string, value: unknown): string {
+  if (typeof value !== "string" || !credentialIdPattern.test(value)) {
+    throw new Error(`Invalid credential identifier for ${channel}.`);
+  }
+  return value;
+}
+
+function registerCredentialIpc(): void {
+  ipcMain.handle("ai:credentials-supported", async () => {
+    return isCredentialStorageAvailable();
+  });
+
+  ipcMain.handle(
+    "ai:credential-set",
+    async (_event, rawId: unknown, rawSecret: unknown) => {
+      const id = parseCredentialId("ai:credential-set", rawId);
+      if (typeof rawSecret !== "string") {
+        throw new Error("Invalid credential payload.");
+      }
+      await setCredential(id, rawSecret);
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle("ai:credential-get", async (_event, rawId: unknown) => {
+    const id = parseCredentialId("ai:credential-get", rawId);
+    // The secret is handed back only for the duration of an in-flight provider
+    // request. Nothing about it is logged or persisted by main.
+    return getCredential(id);
+  });
+
+  ipcMain.handle("ai:credential-has", async (_event, rawId: unknown) => {
+    const id = parseCredentialId("ai:credential-has", rawId);
+    return hasCredential(id);
+  });
+
+  ipcMain.handle("ai:credential-delete", async (_event, rawId: unknown) => {
+    const id = parseCredentialId("ai:credential-delete", rawId);
+    await deleteCredential(id);
+    return { ok: true };
+  });
+}
 
 interface GenerateRequest {
   requestId: string;
@@ -201,60 +253,65 @@ export function registerAiIpc(): void {
 
   ipcMain.handle(
     "ai:download-model",
-    async (
-      event: IpcMainInvokeEvent,
-      modelId: string,
-      url: string,
-      fileName: string,
-    ) => {
-      if (await modelExists(fileName)) return { ok: true };
-      const tier = findLatexDoAiTierByRuntime(modelId, fileName);
-      if (tier) {
-        const blocked = tierAvailabilityMessage(
-          tier.name,
-          fastTierAvailability(tier, getAiSystemCapabilities()),
-        );
-        if (blocked) return { ok: false, error: blocked };
+    async (event: IpcMainInvokeEvent, rawTierId: unknown) => {
+      if (typeof rawTierId !== "string" || rawTierId.trim() === "") {
+        return { ok: false, error: "Invalid model id." };
       }
+      const tierId = rawTierId.trim();
+      // Official model downloads are locked to the trusted catalog: the renderer
+      // only picks a tier id, and the main process resolves the URL, filename,
+      // expected size, and optional SHA-256. Renderer-provided URLs and
+      // filenames are never trusted.
+      const tier = findLatexDoAiTier(tierId);
+      if (!tier) {
+        return { ok: false, error: "This model is not part of the LatexDo catalog." };
+      }
+      const { modelId, fileName, downloadUrl, expectedSizeRangeBytes } = tier.runtime;
+      if (await modelExists(fileName)) return { ok: true };
+      const blocked = tierAvailabilityMessage(
+        tier.name,
+        fastTierAvailability(tier, getAiSystemCapabilities()),
+      );
+      if (blocked) return { ok: false, error: blocked };
+
       const controller = new AbortController();
-      activeDownloads.set(modelId, controller);
+      activeDownloads.set(tierId, controller);
+      const sendProgress = (progress: {
+        receivedBytes: number;
+        totalBytes: number | null;
+        done: boolean;
+        error?: string;
+        stage?: "downloading" | "verifying";
+      }) => {
+        if (event.sender.isDestroyed()) return;
+        event.sender.send("ai:download-progress", { modelId, ...progress });
+      };
       try {
-        await downloadModelFile(url, fileName, {
+        await downloadModelFile(downloadUrl, fileName, {
           signal: controller.signal,
-          onProgress: (received, total) => {
-            if (!event.sender.isDestroyed()) {
-              event.sender.send("ai:download-progress", {
-                modelId,
-                receivedBytes: received,
-                totalBytes: total,
-                done: false,
-              });
-            }
-          },
+          onProgress: (received, total) =>
+            sendProgress({
+              receivedBytes: received,
+              totalBytes: total,
+              done: false,
+              stage: "downloading",
+            }),
+          onStage: (stage) =>
+            sendProgress({
+              receivedBytes: 0,
+              totalBytes: null,
+              done: false,
+              stage,
+            }),
         });
-        if (!event.sender.isDestroyed()) {
-          event.sender.send("ai:download-progress", {
-            modelId,
-            receivedBytes: 0,
-            totalBytes: null,
-            done: true,
-          });
-        }
+        sendProgress({ receivedBytes: 0, totalBytes: null, done: true });
         return { ok: true };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (!event.sender.isDestroyed()) {
-          event.sender.send("ai:download-progress", {
-            modelId,
-            receivedBytes: 0,
-            totalBytes: null,
-            done: true,
-            error: message,
-          });
-        }
+        sendProgress({ receivedBytes: 0, totalBytes: null, done: true, error: message });
         return { ok: false, error: message };
       } finally {
-        activeDownloads.delete(modelId);
+        activeDownloads.delete(tierId);
       }
     },
   );
@@ -308,4 +365,6 @@ export function registerAiIpc(): void {
     if (result.canceled || result.filePaths.length === 0) return null;
     return importGgufModel(result.filePaths[0]);
   });
+
+  registerCredentialIpc();
 }

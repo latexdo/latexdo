@@ -16,6 +16,7 @@ import type {
 } from "./aiTypes";
 import type { LatexDoAiTier } from "./product/latexDoAiTiers";
 import { generateStepCloud } from "./aiCloud";
+import { loadCloudCredential } from "./cloudCredentials";
 
 /** Shape of the `ai` object exposed by preload on window.electronApi. */
 export interface AiBridge {
@@ -25,11 +26,12 @@ export interface AiBridge {
   ): () => void;
   abort(requestId: string): Promise<void>;
   listModels(): Promise<ModelStatus[]>;
-  downloadModel(
-    modelId: string,
-    url: string,
-    fileName: string,
-  ): Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Download an official LatexDo AI model. The renderer supplies ONLY the tier
+   * id; the main process resolves the trusted URL, filename and integrity
+   * checks from its own catalog.
+   */
+  downloadModel(tierId: string): Promise<{ ok: boolean; error?: string }>;
   subscribeDownload(cb: (p: DownloadProgress) => void): () => void;
   deleteModel(fileName: string): Promise<void>;
   importModel?(): Promise<ImportedModelManifest | null>;
@@ -37,6 +39,12 @@ export interface AiBridge {
   detectOllama(baseUrl: string): Promise<{ available: boolean; models: string[] }>;
   getSystemCapabilities?(): Promise<AiSystemCapabilities>;
   getTierAvailability?(tierId: LatexDoAiTier): Promise<TierAvailability>;
+  /** Main-process OS credential vault. Only the desktop build exposes this. */
+  credentialsSupported?(): Promise<boolean>;
+  setCredential?(credentialId: string, secret: string): Promise<{ ok: boolean }>;
+  getCredential?(credentialId: string): Promise<string | null>;
+  hasCredential?(credentialId: string): Promise<boolean>;
+  deleteCredential?(credentialId: string): Promise<{ ok: boolean }>;
 }
 
 function bridge(): AiBridge | null {
@@ -53,7 +61,20 @@ export async function generateStep(
   onToken: (text: string) => void,
 ): Promise<GenerationStep> {
   if (req.provider === "cloud") {
-    return generateStepCloud(req, onToken);
+    // The renderer never carries the secret in persisted state. Desktop builds
+    // resolve it from the main-process vault for the duration of this request.
+    const apiKey =
+      req.options.cloudCredentialId && !req.options.cloudApiKey
+        ? ((await loadCloudCredential(req.options.cloudCredentialId)) ?? "")
+        : req.options.cloudApiKey;
+    if (!apiKey) {
+      return {
+        type: "error",
+        content:
+          "The cloud AI API key is not available. Open AI settings and re-enter your API key.",
+      };
+    }
+    return generateStepCloud({ ...req, options: { ...req.options, cloudApiKey: apiKey } }, onToken);
   }
   const ai = bridge();
   if (!ai) {
@@ -82,13 +103,11 @@ export async function listModels(): Promise<ModelStatus[]> {
 }
 
 export async function downloadModel(
-  modelId: string,
-  url: string,
-  fileName: string,
+  tierId: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const ai = bridge();
   if (!ai) return { ok: false, error: "Model download requires the desktop app." };
-  return ai.downloadModel(modelId, url, fileName);
+  return ai.downloadModel(tierId);
 }
 
 export function subscribeDownload(cb: (p: DownloadProgress) => void): () => void {

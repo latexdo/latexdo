@@ -26,11 +26,21 @@ function makeSnapshot(overrides: Partial<AiSelectionSnapshot> = {}): AiSelection
 }
 
 type FakeModel = {
-  getValueInRange: (range: unknown) => string;
+  getValueInRange: (range: {
+    startLineNumber: number;
+    startColumn: number;
+    endLineNumber: number;
+    endColumn: number;
+  }) => string;
   getVersionId: () => number;
 };
 type FakeEditor = {
-  getSelection: () => unknown;
+  getSelection: () => {
+    startLineNumber: number;
+    startColumn: number;
+    endLineNumber: number;
+    endColumn: number;
+  } | null;
   getModel: () => FakeModel | null;
 };
 

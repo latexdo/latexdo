@@ -18,7 +18,8 @@ export type ResolvedAiRuntime =
       vendor: string;
       baseUrl: string;
       model: string;
-      apiKey: string;
+      /** Id used to fetch the secret from the OS vault at request time. */
+      credentialId: string;
     };
 
 export function resolveAiRuntime(config: AiConfig): ResolvedAiRuntime {
@@ -76,7 +77,7 @@ export function resolveAiRuntime(config: AiConfig): ResolvedAiRuntime {
       vendor: config.cloud.vendor,
       baseUrl: config.selection.custom.baseUrl ?? config.cloud.baseUrl,
       model: config.selection.custom.model || config.cloud.model,
-      apiKey: config.cloud.apiKey,
+      credentialId: config.selection.custom.credentialId || config.cloud.credentialId,
     };
   }
 
@@ -86,7 +87,7 @@ export function resolveAiRuntime(config: AiConfig): ResolvedAiRuntime {
       vendor: config.cloud.vendor,
       baseUrl: config.cloud.baseUrl,
       model: config.cloud.model,
-      apiKey: config.cloud.apiKey,
+      credentialId: config.cloud.credentialId,
     };
   }
 
@@ -95,6 +96,6 @@ export function resolveAiRuntime(config: AiConfig): ResolvedAiRuntime {
     vendor: config.cloud.vendor,
     baseUrl: config.cloud.baseUrl,
     model: config.cloud.model,
-    apiKey: config.cloud.apiKey,
+    credentialId: config.cloud.credentialId,
   };
 }

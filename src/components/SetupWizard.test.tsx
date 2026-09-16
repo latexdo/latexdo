@@ -110,7 +110,7 @@ describe("SetupWizard", () => {
       <SetupWizard
         initialConfig={makeConfig({
           provider: "cloud",
-          cloud: { apiKey: "sk-test" },
+          cloud: { credentialConfigured: true },
         })}
         isDesktop={false}
         onApplyTheme={onApplyTheme}
@@ -173,15 +173,15 @@ describe("SetupWizard", () => {
       progressHandler = handler;
       return unsubscribe;
     });
-    aiClientMock.downloadModel.mockImplementation(async (modelId: string) => {
+    aiClientMock.downloadModel.mockImplementation(async (tierId: string) => {
       progressHandler?.({
-        modelId,
+        modelId: "qwen2.5-coder-3b",
         receivedBytes: 1024,
         totalBytes: 2048,
         done: false,
       });
       progressHandler?.({
-        modelId,
+        modelId: "qwen2.5-coder-3b",
         receivedBytes: 2048,
         totalBytes: 2048,
         done: true,
@@ -209,11 +209,7 @@ describe("SetupWizard", () => {
     await waitFor(() => {
       expect(screen.getByText("LatexDo AI Plus is ready.")).toBeVisible();
     });
-    expect(aiClientMock.downloadModel).toHaveBeenCalledWith(
-      "qwen2.5-coder-3b",
-      expect.stringContaining("Qwen2.5-Coder-3B-Instruct-GGUF"),
-      "qwen2.5-coder-3b-instruct-q4_k_m.gguf",
-    );
+    expect(aiClientMock.downloadModel).toHaveBeenCalledWith("latexdo-ai-plus");
     expect(unsubscribe).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: /Finish/i }));

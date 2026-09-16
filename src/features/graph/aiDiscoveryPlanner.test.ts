@@ -51,7 +51,7 @@ function cloudConfig(): AiConfig {
     provider: "cloud",
     cloud: {
       ...defaultAiConfig.cloud,
-      apiKey: "test-key",
+      credentialConfigured: true,
       model: "gpt-test",
       vendor: "openai",
     },

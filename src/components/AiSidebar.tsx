@@ -87,7 +87,7 @@ function providerLabel(config: AiConfig): string {
 
 function isConfigured(config: AiConfig, isDesktop: boolean): boolean {
   if (config.provider === "off") return false;
-  if (config.provider === "cloud") return config.cloud.apiKey.trim().length > 0;
+  if (config.provider === "cloud") return config.cloud.credentialConfigured;
   if (!isDesktop) return false; // local/ollama need desktop
   if (config.provider === "local") return config.modelDownloaded;
   return true; // ollama

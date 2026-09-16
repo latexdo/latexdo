@@ -1820,7 +1820,7 @@ describe("App critical UI controls", () => {
         provider: "cloud",
         cloud: {
           ...defaultAiConfig.cloud,
-          apiKey: "",
+          credentialConfigured: false,
         },
       }),
     );
@@ -1908,7 +1908,7 @@ describe("App critical UI controls", () => {
         cloud: {
           ...defaultAiConfig.cloud,
           providerId: "openai",
-          apiKey: "",
+          credentialConfigured: false,
         },
       }),
     );
@@ -2043,11 +2043,7 @@ describe("App critical UI controls", () => {
 
     fireEvent.click(await within(dialog).findByRole("button", { name: /Download/i }));
     await waitFor(() => {
-      expect(downloadModel).toHaveBeenCalledWith(
-        "qwen2.5-coder-3b",
-        expect.stringContaining(".gguf"),
-        "qwen2.5-coder-3b-instruct-q4_k_m.gguf",
-      );
+      expect(downloadModel).toHaveBeenCalledWith("latexdo-ai-plus");
     });
 
     fireEvent.change(providerSelect, { target: { value: "customize" } });
@@ -2087,7 +2083,7 @@ describe("App critical UI controls", () => {
         provider: "cloud",
         cloud: {
           ...defaultAiConfig.cloud,
-          apiKey: "sk-test",
+          credentialConfigured: true,
         },
       }),
     );
@@ -2145,7 +2141,7 @@ describe("App critical UI controls", () => {
         provider: "cloud",
         cloud: {
           ...defaultAiConfig.cloud,
-          apiKey: "sk-test",
+          credentialConfigured: true,
         },
       }),
     );

@@ -15,7 +15,8 @@ describe("resolveAiRuntime", () => {
           vendor: "openai",
           model: "gpt-4.1-mini",
           baseUrl: "https://api.openai.com/v1",
-          apiKey: "sk-test",
+          credentialId: "credential-openai-primary",
+          credentialConfigured: true,
         },
       }),
     ).toEqual({
@@ -23,7 +24,7 @@ describe("resolveAiRuntime", () => {
       vendor: "openai",
       baseUrl: "https://api.openai.com/v1",
       model: "gpt-4.1-mini",
-      apiKey: "sk-test",
+      credentialId: "credential-openai-primary",
     });
   });
 

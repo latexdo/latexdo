@@ -12814,6 +12814,24 @@ button {
   max-width: 100%;
   word-break: break-word;
 }
+.cloud-form-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.cloud-form-key-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cloud-form-key-row .ai-wizard-ghost {
+  padding: 6px 10px;
+  white-space: nowrap;
+}
 
 /* ----- Researcher profile dialog ----- */
 .profile-dialog {

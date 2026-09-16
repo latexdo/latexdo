@@ -32,7 +32,7 @@ function providerFor(config: AiConfig): "local" | "ollama" | "cloud" {
 
 export function aiDiscoveryAvailable(config: AiConfig, isDesktop: boolean): boolean {
   if (config.provider === "off") return false;
-  if (config.provider === "cloud") return config.cloud.apiKey.trim().length > 0;
+  if (config.provider === "cloud") return config.cloud.credentialConfigured;
   if (!isDesktop) return false;
   if (config.provider === "local") return config.modelDownloaded;
   return Boolean(config.ollamaModel.trim());
@@ -161,7 +161,7 @@ function requestFor(
       cloudVendor: config.cloud.vendor,
       cloudBaseUrl: config.cloud.baseUrl,
       cloudModel: config.cloud.model,
-      cloudApiKey: config.cloud.apiKey,
+      cloudCredentialId: config.cloud.credentialId,
     },
   };
 }

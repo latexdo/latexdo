@@ -1284,12 +1284,8 @@ const aiApi = {
 
   listModels: (): Promise<unknown[]> => ipcRenderer.invoke("ai:list-models"),
 
-  downloadModel: (
-    modelId: string,
-    url: string,
-    fileName: string,
-  ): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke("ai:download-model", modelId, url, fileName),
+  downloadModel: (tierId: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke("ai:download-model", tierId),
 
   cancelDownload: (modelId: string): Promise<void> =>
     ipcRenderer.invoke("ai:cancel-download", modelId),
@@ -1316,6 +1312,24 @@ const aiApi = {
 
   getTierAvailability: (tierId: string): Promise<unknown> =>
     ipcRenderer.invoke("ai:tier-availability", tierId),
+
+  // Cloud API key handling. The key is not persisted in renderer storage; it
+  // is forwarded once to main's OS-backed credential vault. `getCredential`
+  // returns it only for an in-flight provider request.
+  credentialsSupported: (): Promise<boolean> =>
+    ipcRenderer.invoke("ai:credentials-supported"),
+
+  setCredential: (credentialId: string, secret: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke("ai:credential-set", credentialId, secret),
+
+  getCredential: (credentialId: string): Promise<string | null> =>
+    ipcRenderer.invoke("ai:credential-get", credentialId),
+
+  hasCredential: (credentialId: string): Promise<boolean> =>
+    ipcRenderer.invoke("ai:credential-has", credentialId),
+
+  deleteCredential: (credentialId: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke("ai:credential-delete", credentialId),
 };
 
 contextBridge.exposeInMainWorld("aiApi", aiApi);
