@@ -161,6 +161,7 @@ describe("AiSidebar", () => {
 
     fireEvent.click(screen.getByTitle("New chat"));
     expect(agentMock.state.reset).toHaveBeenCalledTimes(1);
+    expect(screen.getByTitle("Clear chat")).toBeDisabled();
 
     expect(
       screen.queryByRole("button", { name: /Autonomous/i }),
@@ -174,6 +175,38 @@ describe("AiSidebar", () => {
 
     expect(agentMock.state.send).toHaveBeenCalledWith("Fix the compile errors");
     expect(input).toHaveValue("");
+  });
+
+  it("clears the current AI chat from the trash button", () => {
+    resetAgent({
+      messages: [
+        {
+          id: "user-1",
+          role: "user",
+          text: "Can you fix this?",
+          activity: [],
+        },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "Yes.",
+          activity: [],
+        },
+      ],
+    });
+    renderSidebar(
+      makeConfig({
+        provider: "ollama",
+        ollamaModel: "qwen2.5-coder:3b",
+      }),
+    );
+
+    const clearButton = screen.getByRole("button", { name: "Clear chat" });
+    expect(clearButton).toBeEnabled();
+
+    fireEvent.click(clearButton);
+
+    expect(agentMock.state.reset).toHaveBeenCalledTimes(1);
   });
 
   it("offers quick command suggestions and accepts them from the keyboard", () => {

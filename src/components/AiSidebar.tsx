@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   CircleSlash,
+  Trash2,
 } from "lucide-react";
 import type { AiConfig } from "../features/ai/aiConfig";
 import type { AgentContext } from "../features/ai/aiTools";
@@ -104,6 +105,8 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
   const configured = isConfigured(config, isDesktop);
+  const canClearChat =
+    messages.length > 0 || isRunning || Boolean(status) || Boolean(pendingApproval);
   const cloudProvider =
     config.provider === "cloud" ? findCloudProvider(config.cloud.providerId) : null;
 
@@ -227,6 +230,16 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
           </button>
           <button className="small-icon" title="New chat" onClick={reset}>
             <Plus size={15} />
+          </button>
+          <button
+            type="button"
+            className="small-icon"
+            title="Clear chat"
+            aria-label="Clear chat"
+            onClick={reset}
+            disabled={!canClearChat}
+          >
+            <Trash2 size={14} />
           </button>
           <button className="small-icon" title="AI settings" onClick={onOpenSettings}>
             <Settings2 size={15} />

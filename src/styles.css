@@ -605,10 +605,15 @@ button {
   text-align: center;
 }
 
-.icon-button:hover,
-.small-icon:hover {
+.icon-button:hover:not(:disabled),
+.small-icon:hover:not(:disabled) {
   background: var(--bg-row-hover);
   color: var(--text-primary);
+}
+
+.small-icon:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .icon-button.active {

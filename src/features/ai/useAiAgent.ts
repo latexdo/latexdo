@@ -503,10 +503,15 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext, storageKey?: str
   );
 
   const reset = useCallback(() => {
+    abortRef.current?.abort();
+    if (activeRequestId.current) void abortGeneration(activeRequestId.current);
+    abortRef.current = null;
+    activeRequestId.current = "";
     clearPendingApproval(false);
     historyRef.current = [];
     setMessages([]);
     clearPersistedState(storageKey);
+    setIsRunning(false);
     setStatus("");
   }, [clearPendingApproval, setMessages, storageKey]);
 
