@@ -1,7 +1,25 @@
 import type { CitationEntry } from "../../latex/latexIndex";
 import { authorLastNames, titleTokens, type KnowledgeGraph } from "./knowledgeGraph";
+import {
+  defaultScholarlyRetryDelayMs,
+  defaultScholarlyTimeoutMs,
+  isAbortError,
+  normalizeDoi,
+  normalizeTitle,
+  providerErrorLabel,
+  providerOnCooldown,
+  rememberProviderFailure,
+  scholarlyFetcher,
+  searchCrossref,
+  searchOpenAlex,
+} from "../scholarly/scholarlyClient";
+import type {
+  ScholarlyFetchOptions,
+  ScholarlyPaper,
+  ScholarlyProvider,
+} from "../scholarly/scholarlyTypes";
 
-export type ScholarlyProvider = "OpenAlex" | "Crossref";
+export type { ScholarlyProvider };
 
 export interface DiscoveredPaper {
   id: string;
@@ -38,21 +56,6 @@ export interface ScholarlyDiscoveryOptions {
   currentYear?: number;
 }
 
-interface RawPaper {
-  source: ScholarlyProvider;
-  sourceId?: string;
-  sourceType?: string;
-  title: string;
-  authors: string[];
-  year: number | null;
-  venue?: string;
-  doi?: string;
-  url?: string;
-  pdfUrl?: string;
-  citationCount?: number;
-  providerScore?: number;
-}
-
 interface DiscoveryFingerprint {
   weightedTerms: Map<string, number>;
   topTerms: string[];
@@ -63,47 +66,13 @@ interface DiscoveryFingerprint {
   currentYear: number;
 }
 
-interface FetchJsonOptions {
-  signal?: AbortSignal;
-  timeoutMs: number;
-  retryDelayMs: number;
-  fetcher: typeof fetch;
-}
-
-interface ScholarlyDesktopApi {
-  fetchScholarlyJson?: (url: string) => Promise<unknown>;
-}
-
-class DiscoveryHttpError extends Error {
-  retryable: boolean;
-  status?: number;
-  retryAfterMs?: number;
-
-  constructor(
-    message: string,
-    retryable: boolean,
-    status?: number,
-    retryAfterMs?: number,
-  ) {
-    super(message);
-    this.name = "DiscoveryHttpError";
-    this.retryable = retryable;
-    this.status = status;
-    this.retryAfterMs = retryAfterMs;
-  }
-}
-
 const defaultDiscoveryLimit = 28;
 const defaultPerProviderLimit = 10;
-const defaultTimeoutMs = 9000;
-const defaultRetryDelayMs = 300;
 const discoveryCacheTtlMs = 10 * 60 * 1000;
-const defaultProviderCooldownMs = 10 * 60 * 1000;
 const discoveryCache = new Map<
   string,
   { savedAt: number; result: ScholarlyDiscoveryResult }
 >();
-const providerCooldownUntil = new Map<ScholarlyProvider, number>();
 
 const bibtexTypeByProviderType: Record<string, string> = {
   article: "article",
@@ -130,67 +99,6 @@ const queryStopTerms = new Set([
   "toward",
   "based",
 ]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function isDesktopFetchEnvelope(
-  value: unknown,
-): value is
-  | { ok: true; json: unknown }
-  | { ok: false; status?: number; retryAfterMs?: number; error?: string } {
-  return isRecord(value) && typeof value.ok === "boolean";
-}
-
-function readString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function readNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function firstString(value: unknown): string | undefined {
-  if (typeof value === "string") return readString(value);
-  if (!Array.isArray(value)) return undefined;
-  for (const item of value) {
-    const text = readString(item);
-    if (text) return text;
-  }
-  return undefined;
-}
-
-function cleanText(value: string): string {
-  return value
-    .replace(/<[^>]+>/g, " ")
-    .replace(/[{}]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-export function normalizeDoi(value: string | undefined): string {
-  return (value ?? "")
-    .toLowerCase()
-    .replace(/^https?:\/\/(?:dx\.)?doi\.org\//, "")
-    .replace(/^doi:/, "")
-    .trim();
-}
-
-function doiToUrl(doi: string | undefined): string | undefined {
-  const normalized = normalizeDoi(doi);
-  return normalized ? `https://doi.org/${normalized}` : undefined;
-}
-
-function normalizeIdentityTitle(value: string | undefined): string {
-  return (value ?? "")
-    .toLowerCase()
-    .replace(/\\[a-zA-Z]+/g, " ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\b(the|a|an)\b/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 function buildFingerprint(
   graph: KnowledgeGraph,
@@ -233,9 +141,7 @@ function buildFingerprint(
       entries.map((entry) => normalizeDoi(entry.doi)).filter(Boolean),
     ),
     existingTitles: new Set(
-      entries
-        .map((entry) => normalizeIdentityTitle(entry.title))
-        .filter((title) => title.length >= 16),
+      entries.map((entry) => normalizeTitle(entry.title)).filter((title) => title.length >= 16),
     ),
     currentYear,
   };
@@ -273,64 +179,6 @@ function mergeDiscoveryQueries(
   for (const query of aiQueries ?? []) add(normalizeExternalQuery(query));
   for (const query of graphQueries) add(query);
   return merged.slice(0, 5);
-}
-
-function requestUrl(input: RequestInfo | URL): string {
-  if (typeof input === "string") return input;
-  if (input instanceof URL) return input.toString();
-  return input.url;
-}
-
-function abortError(): DOMException {
-  return new DOMException("Discovery aborted", "AbortError");
-}
-
-function desktopScholarlyFetcher(): typeof fetch | undefined {
-  const api =
-    typeof window === "undefined"
-      ? undefined
-      : (window.latexdo as ScholarlyDesktopApi | undefined);
-  if (typeof api?.fetchScholarlyJson !== "function") return undefined;
-
-  return async (input, init) => {
-    const signal = init?.signal;
-    if (signal?.aborted) throw abortError();
-    const request = api.fetchScholarlyJson?.(requestUrl(input));
-    if (!request) throw new Error("Scholarly metadata API is unavailable.");
-
-    const json = signal
-      ? await new Promise<unknown>((resolve, reject) => {
-          const onAbort = () => reject(abortError());
-          signal.addEventListener("abort", onAbort, { once: true });
-          request.then(resolve, reject).finally(() => {
-            signal.removeEventListener("abort", onAbort);
-          });
-        })
-      : await request;
-
-    if (isDesktopFetchEnvelope(json)) {
-      if (json.ok) {
-        return new Response(JSON.stringify(json.json), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      return new Response(JSON.stringify({ error: json.error ?? "Request failed" }), {
-        status: json.status ?? 502,
-        headers: {
-          "Content-Type": "application/json",
-          ...(json.retryAfterMs
-            ? { "x-latexdo-retry-after-ms": String(json.retryAfterMs) }
-            : {}),
-        },
-      });
-    }
-
-    return new Response(JSON.stringify(json), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  };
 }
 
 export function buildDiscoveryQueries(
@@ -375,245 +223,8 @@ export function buildDiscoveryQueries(
   return queries.slice(0, 4);
 }
 
-function isAbortError(error: unknown): boolean {
-  return (
-    (error instanceof DOMException && error.name === "AbortError") ||
-    (error instanceof Error && error.name === "AbortError")
-  );
-}
-
-function providerOnCooldown(provider: ScholarlyProvider): boolean {
-  return (providerCooldownUntil.get(provider) ?? 0) > Date.now();
-}
-
-function rememberProviderFailure(provider: ScholarlyProvider, error: unknown): void {
-  if (!(error instanceof DiscoveryHttpError)) return;
-  if (error.status === 429) {
-    providerCooldownUntil.set(
-      provider,
-      Date.now() + (error.retryAfterMs ?? defaultProviderCooldownMs),
-    );
-  }
-}
-
-function wait(ms: number, signal: AbortSignal | undefined): Promise<void> {
-  if (ms <= 0) return Promise.resolve();
-  if (signal?.aborted) {
-    return Promise.reject(abortError());
-  }
-  return new Promise((resolve, reject) => {
-    let timer: ReturnType<typeof setTimeout>;
-    function cleanup() {
-      signal?.removeEventListener("abort", onAbort);
-    }
-    function onAbort() {
-      clearTimeout(timer);
-      cleanup();
-      reject(abortError());
-    }
-    timer = setTimeout(() => {
-      cleanup();
-      resolve();
-    }, ms);
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
-async function fetchJson(url: string, options: FetchJsonOptions): Promise<unknown> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
-    const onAbort = () => controller.abort();
-    options.signal?.addEventListener("abort", onAbort, { once: true });
-
-    try {
-      const response = await options.fetcher(url, {
-        signal: controller.signal,
-        headers: { Accept: "application/json" },
-      });
-      if (!response.ok) {
-        const retryAfterMs = Number(response.headers.get("x-latexdo-retry-after-ms"));
-        throw new DiscoveryHttpError(
-          `HTTP ${response.status} from ${new URL(url).hostname}`,
-          response.status >= 500,
-          response.status,
-          Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? retryAfterMs : undefined,
-        );
-      }
-      return await response.json();
-    } catch (error) {
-      if (isAbortError(error) || options.signal?.aborted) throw error;
-      lastError = error;
-      const retryable =
-        error instanceof DiscoveryHttpError ? error.retryable : attempt === 0;
-      if (!retryable || attempt === 1) break;
-      await wait(options.retryDelayMs, options.signal);
-    } finally {
-      clearTimeout(timeout);
-      options.signal?.removeEventListener("abort", onAbort);
-    }
-  }
-
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("Scholarly metadata request failed");
-}
-
-function openAlexAuthors(work: Record<string, unknown>): string[] {
-  const authorships = Array.isArray(work.authorships) ? work.authorships : [];
-  return authorships
-    .map((authorship) => {
-      if (!isRecord(authorship) || !isRecord(authorship.author)) return undefined;
-      return readString(authorship.author.display_name);
-    })
-    .filter((author): author is string => Boolean(author))
-    .slice(0, 12);
-}
-
-function openAlexVenue(work: Record<string, unknown>): string | undefined {
-  const primaryLocation = isRecord(work.primary_location)
-    ? work.primary_location
-    : undefined;
-  const source =
-    primaryLocation && isRecord(primaryLocation.source)
-      ? primaryLocation.source
-      : undefined;
-  const bestOa = isRecord(work.best_oa_location) ? work.best_oa_location : undefined;
-  const bestOaSource = bestOa && isRecord(bestOa.source) ? bestOa.source : undefined;
-  const hostVenue = isRecord(work.host_venue) ? work.host_venue : undefined;
-  return (
-    readString(source?.display_name) ??
-    readString(bestOaSource?.display_name) ??
-    readString(hostVenue?.display_name)
-  );
-}
-
-function paperFromOpenAlex(work: unknown): RawPaper | null {
-  if (!isRecord(work)) return null;
-  if (work.is_retracted === true || work.is_paratext === true) return null;
-  const title = cleanText(
-    readString(work.display_name) ?? readString(work.title) ?? "",
-  );
-  if (!title) return null;
-
-  const primaryLocation = isRecord(work.primary_location)
-    ? work.primary_location
-    : undefined;
-  const bestOa = isRecord(work.best_oa_location) ? work.best_oa_location : undefined;
-  const doi = normalizeDoi(readString(work.doi));
-  const doiUrl = doiToUrl(doi);
-  const landingUrl =
-    doiUrl ??
-    readString(primaryLocation?.landing_page_url) ??
-    readString(bestOa?.landing_page_url) ??
-    readString(work.id);
-  const pdfUrl = readString(primaryLocation?.pdf_url) ?? readString(bestOa?.pdf_url);
-
-  return {
-    source: "OpenAlex",
-    sourceId: readString(work.id),
-    title,
-    authors: openAlexAuthors(work),
-    year: readNumber(work.publication_year) ?? null,
-    venue: openAlexVenue(work),
-    doi: doi || undefined,
-    url: landingUrl,
-    pdfUrl,
-    citationCount: readNumber(work.cited_by_count),
-    providerScore: readNumber(work.relevance_score),
-  };
-}
-
-async function searchOpenAlex(
-  query: string,
-  options: FetchJsonOptions,
-  perProviderLimit: number,
-): Promise<RawPaper[]> {
-  const url = new URL("https://api.openalex.org/works");
-  url.searchParams.set("search", query);
-  url.searchParams.set("per-page", String(perProviderLimit));
-  const json = await fetchJson(url.toString(), options);
-  if (!isRecord(json) || !Array.isArray(json.results)) return [];
-  return json.results
-    .map(paperFromOpenAlex)
-    .filter((paper): paper is RawPaper => Boolean(paper));
-}
-
-function crossrefAuthors(item: Record<string, unknown>): string[] {
-  const authors = Array.isArray(item.author) ? item.author : [];
-  return authors
-    .map((author) => {
-      if (!isRecord(author)) return undefined;
-      const given = readString(author.given);
-      const family = readString(author.family);
-      return compactQuery([given ?? "", family ?? ""]);
-    })
-    .filter((author): author is string => Boolean(author))
-    .slice(0, 12);
-}
-
-function crossrefYear(item: Record<string, unknown>): number | null {
-  const issued = isRecord(item.issued) ? item.issued : undefined;
-  const dateParts = Array.isArray(issued?.["date-parts"])
-    ? issued?.["date-parts"]
-    : undefined;
-  const firstPart = Array.isArray(dateParts?.[0]) ? dateParts[0] : undefined;
-  const year = readNumber(firstPart?.[0]);
-  return year ?? null;
-}
-
-function paperFromCrossref(item: unknown): RawPaper | null {
-  if (!isRecord(item)) return null;
-  const title = cleanText(firstString(item.title) ?? "");
-  if (!title) return null;
-  const doi = normalizeDoi(readString(item.DOI));
-  const type = readString(item.type);
-  const venue = cleanText(firstString(item["container-title"]) ?? "");
-  return {
-    source: "Crossref",
-    sourceId: doi || readString(item.URL),
-    title,
-    authors: crossrefAuthors(item),
-    year: crossrefYear(item),
-    venue: venue || undefined,
-    doi: doi || undefined,
-    url: doiToUrl(doi) ?? readString(item.URL),
-    citationCount: readNumber(item["is-referenced-by-count"]),
-    providerScore: readNumber(item.score),
-    sourceType: type,
-  };
-}
-
-async function searchCrossref(
-  query: string,
-  options: FetchJsonOptions,
-  perProviderLimit: number,
-): Promise<RawPaper[]> {
-  const url = new URL("https://api.crossref.org/works");
-  url.searchParams.set("query.bibliographic", query);
-  url.searchParams.set("rows", String(perProviderLimit));
-  const json = await fetchJson(url.toString(), options);
-  if (
-    !isRecord(json) ||
-    !isRecord(json.message) ||
-    !Array.isArray(json.message.items)
-  ) {
-    return [];
-  }
-  return json.message.items
-    .map(paperFromCrossref)
-    .filter((paper): paper is RawPaper => Boolean(paper));
-}
-
-function paperIdentity(raw: RawPaper): string {
-  const doi = normalizeDoi(raw.doi);
-  if (doi) return `doi:${doi}`;
-  return `title:${normalizeIdentityTitle(raw.title)}:${raw.year ?? ""}`;
-}
-
 function scoreRawPaper(
-  paper: RawPaper,
+  paper: ScholarlyPaper,
   fingerprint: DiscoveryFingerprint,
 ): { score: number; reasons: string[] } {
   const candidateTokens = titleTokens(paper.title);
@@ -679,17 +290,21 @@ function scoreRawPaper(
 }
 
 function bibtexEscape(value: string): string {
-  return cleanText(value).replace(/[{}]/g, "").replace(/\s+/g, " ").trim();
+  return value
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[{}]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function bibtexType(raw: RawPaper): string {
-  return bibtexTypeByProviderType[(raw.sourceType ?? "").toLowerCase()] ?? "article";
+function bibtexType(paper: ScholarlyPaper): string {
+  return bibtexTypeByProviderType[(paper.sourceType ?? "").toLowerCase()] ?? "article";
 }
 
-function buildBibtexKey(raw: RawPaper, usedKeys: Set<string>): string {
-  const firstAuthor = authorLastNames(raw.authors[0])?.[0] ?? "paper";
-  const firstTitleToken = [...titleTokens(raw.title)]?.[0] ?? "work";
-  const year = raw.year ? String(raw.year) : "nd";
+function buildBibtexKey(paper: ScholarlyPaper, usedKeys: Set<string>): string {
+  const firstAuthor = authorLastNames(paper.authors[0])?.[0] ?? "paper";
+  const firstTitleToken = [...titleTokens(paper.title)]?.[0] ?? "work";
+  const year = paper.year ? String(paper.year) : "nd";
   const base = `${firstAuthor}${year}${firstTitleToken}`
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "");
@@ -703,14 +318,14 @@ function buildBibtexKey(raw: RawPaper, usedKeys: Set<string>): string {
   return key;
 }
 
-function buildBibtex(raw: RawPaper, key: string): string {
+function buildBibtex(paper: ScholarlyPaper, key: string): string {
   const fields: Array<[string, string | undefined]> = [
-    ["title", raw.title],
-    ["author", raw.authors.length ? raw.authors.join(" and ") : undefined],
-    ["year", raw.year ? String(raw.year) : undefined],
-    [bibtexType(raw) === "inproceedings" ? "booktitle" : "journal", raw.venue],
-    ["doi", normalizeDoi(raw.doi) || undefined],
-    ["url", raw.url],
+    ["title", paper.title],
+    ["author", paper.authors.length ? paper.authors.join(" and ") : undefined],
+    ["year", paper.year ? String(paper.year) : undefined],
+    [bibtexType(paper) === "inproceedings" ? "booktitle" : "journal", paper.venue],
+    ["doi", normalizeDoi(paper.doi) || undefined],
+    ["url", paper.url],
   ];
   const presentFields = fields
     .filter((field): field is [string, string] => Boolean(field[1]))
@@ -719,59 +334,60 @@ function buildBibtex(raw: RawPaper, key: string): string {
       return `  ${name} = {${bibtexEscape(value)}}${comma}`;
     });
 
-  return [`@${bibtexType(raw)}{${key},`, ...presentFields, "}"].join("\n");
+  return [`@${bibtexType(paper)}{${key},`, ...presentFields, "}"].join("\n");
+}
+
+function paperIdentity(paper: ScholarlyPaper): string {
+  const doi = normalizeDoi(paper.doi);
+  if (doi) return `doi:${doi}`;
+  return `title:${normalizeTitle(paper.title)}:${paper.year ?? ""}`;
 }
 
 function materializePaper(
-  raw: RawPaper,
+  paper: ScholarlyPaper,
   fingerprint: DiscoveryFingerprint,
   usedKeys: Set<string>,
 ): DiscoveredPaper | null {
-  const doi = normalizeDoi(raw.doi);
+  const doi = normalizeDoi(paper.doi);
   if (doi && fingerprint.existingDois.has(doi)) return null;
 
-  const titleIdentity = normalizeIdentityTitle(raw.title);
+  const titleIdentity = normalizeTitle(paper.title);
   if (titleIdentity.length >= 16 && fingerprint.existingTitles.has(titleIdentity)) {
     return null;
   }
 
-  const { score, reasons } = scoreRawPaper(raw, fingerprint);
+  const { score, reasons } = scoreRawPaper(paper, fingerprint);
   const hasGraphSignal = reasons.some(
     (reason) =>
       reason.startsWith("Matches graph terms:") || reason.startsWith("Shares author:"),
   );
   if (score < 0.09 || !hasGraphSignal) return null;
 
-  const bibtexKey = buildBibtexKey(raw, usedKeys);
+  const bibtexKey = buildBibtexKey(paper, usedKeys);
   return {
-    id: paperIdentity(raw),
-    source: raw.source,
-    title: raw.title,
-    authors: raw.authors,
-    year: raw.year,
-    venue: raw.venue,
+    id: paperIdentity(paper),
+    source: paper.provider,
+    title: paper.title,
+    authors: paper.authors,
+    year: paper.year,
+    venue: paper.venue,
     doi: doi || undefined,
-    url: raw.url,
-    pdfUrl: raw.pdfUrl,
-    citationCount: raw.citationCount,
+    url: paper.url,
+    pdfUrl: paper.pdfUrl,
+    citationCount: paper.citationCount,
     score,
     reasons,
     bibtexKey,
-    bibtex: buildBibtex(raw, bibtexKey),
+    bibtex: buildBibtex(paper, bibtexKey),
   };
-}
-
-function providerErrorLabel(provider: ScholarlyProvider, error: unknown): string {
-  if (error instanceof Error) return `${provider}: ${error.message}`;
-  return `${provider}: request failed`;
 }
 
 async function collectProviderPapers(
   provider: ScholarlyProvider,
   queries: string[],
-  fetchOptions: FetchJsonOptions,
+  fetchOptions: ScholarlyFetchOptions,
   perProviderLimit: number,
-): Promise<{ papers: RawPaper[]; errors: string[] }> {
+): Promise<{ papers: ScholarlyPaper[]; errors: string[] }> {
   if (queries.length === 0 || providerOnCooldown(provider)) {
     return { papers: [], errors: [] };
   }
@@ -779,12 +395,12 @@ async function collectProviderPapers(
   const settled = await Promise.allSettled(
     queries.map((query) =>
       provider === "OpenAlex"
-        ? searchOpenAlex(query, fetchOptions, perProviderLimit)
-        : searchCrossref(query, fetchOptions, perProviderLimit),
+        ? searchOpenAlex(query, { ...fetchOptions, perProviderLimit })
+        : searchCrossref(query, { ...fetchOptions, perProviderLimit }),
     ),
   );
 
-  const papers: RawPaper[] = [];
+  const papers: ScholarlyPaper[] = [];
   const errors: string[] = [];
   for (const result of settled) {
     if (result.status === "fulfilled") {
@@ -801,7 +417,7 @@ async function collectProviderPapers(
 }
 
 function materializeDiscoveredPapers(
-  rawPapers: RawPaper[],
+  rawPapers: ScholarlyPaper[],
   fingerprint: DiscoveryFingerprint,
 ): DiscoveredPaper[] {
   const usedKeys = new Set(fingerprint.existingKeys);
@@ -838,10 +454,7 @@ export async function discoverRelatedPapers(
   entries: CitationEntry[],
   options: ScholarlyDiscoveryOptions = {},
 ): Promise<ScholarlyDiscoveryResult> {
-  const fetcher =
-    options.fetcher ??
-    desktopScholarlyFetcher() ??
-    (typeof fetch === "function" ? fetch.bind(globalThis) : undefined);
+  const fetcher = scholarlyFetcher(options.fetcher);
   if (!fetcher) {
     throw new Error("Network fetch is unavailable in this runtime.");
   }
@@ -865,11 +478,11 @@ export async function discoverRelatedPapers(
     return cached.result;
   }
 
-  const fetchOptions: FetchJsonOptions = {
+  const fetchOptions: ScholarlyFetchOptions = {
     fetcher,
     signal: options.signal,
-    timeoutMs: options.timeoutMs ?? defaultTimeoutMs,
-    retryDelayMs: options.retryDelayMs ?? defaultRetryDelayMs,
+    timeoutMs: options.timeoutMs ?? defaultScholarlyTimeoutMs,
+    retryDelayMs: options.retryDelayMs ?? defaultScholarlyRetryDelayMs,
   };
   const perProviderLimit = options.perProviderLimit ?? defaultPerProviderLimit;
   const providerErrors: string[] = [];
@@ -880,7 +493,7 @@ export async function discoverRelatedPapers(
     perProviderLimit,
   );
   if (options.signal?.aborted) {
-    throw abortError();
+    throw new DOMException("Discovery aborted", "AbortError");
   }
   providerErrors.push(...openAlex.errors);
 
@@ -895,7 +508,7 @@ export async function discoverRelatedPapers(
       Math.min(5, perProviderLimit),
     );
     if (options.signal?.aborted) {
-      throw abortError();
+      throw new DOMException("Discovery aborted", "AbortError");
     }
     providerErrors.push(...crossref.errors);
     rawPapers = [...rawPapers, ...crossref.papers];

@@ -251,10 +251,12 @@ import {
   rankedCitationCompletions,
 } from "./latex/citationCompletion";
 import { parseBibFile } from "./latex/parseBib";
+import { citationKeyAtPosition } from "./latex/citationHover";
 import {
-  citationHoverMarkdown,
-  citationKeyAtPosition,
-} from "./latex/citationHover";
+  citationVerificationMarkdown,
+  peekCachedVerification,
+  verifyCitationCached,
+} from "./features/citations/citationVerification";
 import type { CitationEntry } from "./latex/latexIndex";
 import { getLatexListEnterEdit } from "./latex/listContinuation";
 import { SYMBOL_PALETTE } from "./components/mathSymbolPalette";
@@ -5132,6 +5134,7 @@ ${macroEnd}
             if (!citation) return null;
             const entry = citationEntriesByKeyRef.current.get(citation.key);
             if (!entry) return null;
+            void verifyCitationCached(entry);
             return {
               range: new instance.Range(
                 position.lineNumber,
@@ -5141,7 +5144,10 @@ ${macroEnd}
               ),
               contents: [
                 {
-                  value: citationHoverMarkdown(entry),
+                  value: citationVerificationMarkdown(
+                    entry,
+                    peekCachedVerification(entry),
+                  ),
                 },
               ],
             };
@@ -11809,6 +11815,7 @@ ${macroEnd}
                   onInsertCitation={handleInsertCitationCode}
                   onAppendBibEntry={handleAppendBibEntry}
                   onClose={() => setCitationManagerOpen(false)}
+                  verifyEntry={verifyCitationCached}
                 />
               </div>
             </div>

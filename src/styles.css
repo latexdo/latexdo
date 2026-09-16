@@ -9543,6 +9543,31 @@ button {
   color: var(--warning);
 }
 
+.citation-card-heading span.citation-verification.verified {
+  border-color: rgba(120, 196, 142, 0.45);
+  color: var(--success);
+}
+
+.citation-card-heading span.citation-verification.probable {
+  border-color: rgba(134, 162, 232, 0.45);
+  color: var(--info);
+}
+
+.citation-card-heading span.citation-verification.mismatch {
+  border-color: rgba(226, 119, 119, 0.45);
+  color: var(--danger);
+}
+
+.citation-card-heading span.citation-verification.unverified {
+  border-color: rgba(220, 179, 101, 0.35);
+  color: var(--warning);
+}
+
+.citation-card-heading span.citation-verification.error {
+  border-color: var(--border-subtle);
+  color: var(--text-muted);
+}
+
 .citation-card h3 {
   margin: 0 0 5px;
   color: var(--text-primary);

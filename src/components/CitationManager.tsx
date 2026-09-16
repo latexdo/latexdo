@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -16,6 +16,7 @@ import {
   createBibtexStub,
   type CitationLibraryAnalysis,
 } from "../latex/citationAnalysis";
+import type { CitationVerification } from "../features/citations/citationVerification";
 
 type CitationManagerTab = "library" | "used" | "gaps" | "quality";
 export type CitationInsertCommand = "cite" | "citep" | "citet" | "parencite";
@@ -28,6 +29,7 @@ interface CitationManagerProps {
   onInsertCitation?: (key: string, command: CitationInsertCommand) => void;
   onAppendBibEntry?: (targetFile: string, bibtex: string) => void;
   onClose?: () => void;
+  verifyEntry?: (entry: CitationEntry) => Promise<CitationVerification>;
 }
 
 const citationTabs: Array<{ id: CitationManagerTab; label: string }> = [
@@ -47,6 +49,39 @@ const citationCommands: Array<{
   { command: "citet", label: "\\citet", description: "Textual author cite" },
   { command: "parencite", label: "\\parencite", description: "biblatex style" },
 ];
+
+function verificationStatusLabel(status: CitationVerification["status"]): string {
+  switch (status) {
+    case "verified":
+      return "Verified";
+    case "probable":
+      return "Likely";
+    case "mismatch":
+      return "DOI conflict";
+    case "unverified":
+      return "Unverified";
+    case "error":
+      return "Error";
+  }
+}
+
+function verificationStatusTitle(verification: CitationVerification): string {
+  const match = verification.matches[0];
+  switch (verification.status) {
+    case "verified":
+      return `Verified against ${match?.provider ?? "Crossref"}`;
+    case "probable":
+      return `Likely a match (${Math.round((match?.score ?? 0) * 100)}%)`;
+    case "mismatch":
+      return "Recorded DOI disagrees with the matching paper";
+    case "unverified":
+      return "No matching scholarly record found";
+    case "error":
+      return verification.error
+        ? `Verification unavailable (${verification.error})`
+        : "Verification unavailable";
+  }
+}
 
 function entrySearchText(entry: CitationEntry): string {
   return [
@@ -117,12 +152,58 @@ export function CitationManager({
   onInsertCitation,
   onAppendBibEntry,
   onClose,
+  verifyEntry,
 }: CitationManagerProps) {
   const [activeTab, setActiveTab] = useState<CitationManagerTab>("library");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCommand, setSelectedCommand] = useState<CitationInsertCommand>("cite");
   const [targetBibFile, setTargetBibFile] = useState(analysis.bibFiles[0] ?? "");
   const [copied, setCopied] = useState<string | null>(null);
+  const [verificationByKey, setVerificationByKey] = useState<
+    ReadonlyMap<string, CitationVerification>
+  >(() => new Map());
+  const verificationWorkerIndex = useRef(0);
+  const verificationStale = useRef(false);
+
+  useEffect(() => {
+    if (!verifyEntry || analysis.entries.length === 0) {
+      verificationWorkerIndex.current = 0;
+      return;
+    }
+    verificationStale.current = false;
+    verificationWorkerIndex.current = 0;
+
+    const worker = async () => {
+      while (!verificationStale.current) {
+        const index = verificationWorkerIndex.current;
+        verificationWorkerIndex.current += 1;
+        if (index >= analysis.entries.length) return;
+        const entry = analysis.entries[index];
+        if (!entry.key) continue;
+        try {
+          const verification = await verifyEntry(entry);
+          if (verificationStale.current) return;
+          setVerificationByKey((prev) =>
+            new Map(prev).set(entry.key, verification),
+          );
+        } catch {
+          // Abort or provider failure; the global cache records errors itself.
+        }
+      }
+    };
+
+    const workers = Array.from(
+      { length: Math.min(3, Math.max(analysis.entries.length, 1)) },
+      () => {
+        void worker();
+      },
+    );
+    void Promise.all(workers);
+
+    return () => {
+      verificationStale.current = true;
+    };
+  }, [analysis.entries, verifyEntry]);
 
   useEffect(() => {
     if (!analysis.bibFiles.length) {
@@ -336,6 +417,20 @@ export function CitationManager({
                           {usageCount ? `${usageCount} cited` : "Unused"}
                         </span>
                         <span>{score}% quality</span>
+                        {verificationByKey.has(entry.key) ? (
+                          <span
+                            className={`citation-verification ${
+                              verificationByKey.get(entry.key)?.status ?? "error"
+                            }`}
+                            title={verificationStatusTitle(
+                              verificationByKey.get(entry.key)!,
+                            )}
+                          >
+                            {verificationStatusLabel(
+                              verificationByKey.get(entry.key)!.status,
+                            )}
+                          </span>
+                        ) : null}
                       </div>
                       <h3>{entry.title || "Untitled reference"}</h3>
                       <p>
