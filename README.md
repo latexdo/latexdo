@@ -3,19 +3,6 @@
 LatexDo is a desktop LaTeX editor built with Electron, React, TypeScript,
 Monaco, Vite, and local LaTeX tooling.
 
-This repo owns the desktop app, the shared browser editor, the CLI source in
-`cli/`, and the release pipeline that publishes desktop downloads to
-`latexdo/latexdo.org`.
-
-## Requirements
-
-- Node.js 22.17 or newer.
-- npm.
-- A TeX distribution with `latexmk`.
-  - macOS: MacTeX.
-  - Linux: TeX Live.
-  - Windows: MiKTeX or TeX Live.
-
 ## Run
 
 ```sh
@@ -59,9 +46,6 @@ It does three things:
    and updates only `downloads/` plus optional signed `updates/` in
    `latexdo/latexdo.org`.
 
-The old split deploy workflows for docs, editor, CLI, store, website, and
-release have been removed. This repo no longer deploys those sites.
-
 Release downloads live at:
 
 - `https://www.latexdo.org/downloads/`
@@ -81,12 +65,8 @@ Optional release secrets:
 - signed update feed:
   `LATEXDO_UPDATE_SIGNING_KEY`
 
-If signing secrets are missing, CI still publishes ad-hoc macOS builds and
-unsigned Windows builds. If `LATEXDO_UPDATE_SIGNING_KEY` is missing, CI updates
-downloads and leaves `updates/` unchanged.
-
 ## AI Source
 
 AI catalog/source files are kept in this repo and synced into generated code by
-`npm run ai:sync`, which also runs before build and typecheck. The public catalog
+`npm run ai:sync`, which also runs before build and typecheck. The public catalog 
 is `catalog/latexdo-ai-catalog.v1.json`.
