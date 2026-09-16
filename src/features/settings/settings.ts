@@ -765,6 +765,8 @@ export const minProjectTreeDepth = 1;
 export const maxProjectTreeDepth = 50;
 export const minProjectTreeEntries = 100;
 export const maxProjectTreeEntries = 100_000;
+export const minEditorFontSize = 11;
+export const maxEditorFontSize = 22;
 export const defaultSettings: AppSettings = {
   legalAccepted: false,
   legalAcceptedAt: "",
@@ -1154,8 +1156,8 @@ export function loadSettings(): AppSettings {
           : defaultSettings.livePreview,
       editorFontSize:
         typeof saved.editorFontSize === "number" &&
-        saved.editorFontSize >= 11 &&
-        saved.editorFontSize <= 22
+        saved.editorFontSize >= minEditorFontSize &&
+        saved.editorFontSize <= maxEditorFontSize
           ? saved.editorFontSize
           : defaultSettings.editorFontSize,
       wordWrap:

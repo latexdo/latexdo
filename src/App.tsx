@@ -79,6 +79,7 @@ import {
 import appIconUrl from "../build/icon.svg";
 import FileTree from "./FileTree";
 import { productConfig, productIsPro } from "./productConfig";
+import { appVersion } from "./appVersion";
 import type { PdfClickLocation } from "./PdfPreview";
 import TikzCanvas from "./TikzCanvas";
 import TableCanvas from "./TableCanvas";
@@ -309,6 +310,8 @@ import {
   type MonacoNextEditAdapter,
 } from "./features/editor/nextEdit/monacoNextEditAdapter";
 import "./features/editor/nextEdit/nextEdit.css";
+import { createLatexDoCommandService } from "./features/commands/commandExecutor";
+import type { LatexDoCommandContext } from "./features/commands/commandTypes";
 import {
   bookmarkKey,
   bookmarksStorageKey,
@@ -334,6 +337,7 @@ import {
   projectListOptionsFromSettings,
   remapBookmarkLinesForContentChange,
   storeCollaborationDisplayName,
+  type AppSettings,
   type BookmarkStore,
   type WelcomeTemplate,
 } from "./features/settings/settings";
@@ -1898,6 +1902,41 @@ export default function App() {
   const forwardSyncRef = useRef<((position: Monaco.Position) => Promise<void>) | null>(
     null,
   );
+  const latexDoCommandService = useMemo(() => {
+    const context: LatexDoCommandContext = {
+      getSettings: () => settingsRef.current,
+      updateSetting: (key, value) => {
+        setSettings((current) => {
+          const next = { ...current, [key]: value } as AppSettings;
+          settingsRef.current = next;
+          return next;
+        });
+
+        if (key === "defaultEngine") {
+          const nextEngine = value as Engine;
+          setEngine(nextEngine);
+          engineRef.current = nextEngine;
+        }
+      },
+      resetSetting: (key) => {
+        const value = defaultSettings[key];
+        setSettings((current) => {
+          const next = { ...current, [key]: value } as AppSettings;
+          settingsRef.current = next;
+          return next;
+        });
+
+        if (key === "defaultEngine") {
+          setEngine(defaultSettings.defaultEngine);
+          engineRef.current = defaultSettings.defaultEngine;
+        }
+      },
+      setStatusMessage,
+      getVersion: () => appVersion,
+    };
+
+    return createLatexDoCommandService(context);
+  }, [setSettings]);
 
   useEffect(() => {
     if (latexEditorView === "visual") {
@@ -12525,6 +12564,7 @@ ${macroEnd}
                         projectId={projectId}
                         workspacePath={projectPath}
                         active={activePanel === "terminal"}
+                        commandService={latexDoCommandService}
                       />
                     </Suspense>
                   </section>

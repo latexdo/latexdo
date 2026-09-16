@@ -169,6 +169,70 @@ describe("TerminalPanel", () => {
     expect(window.terminalApi.dispose).toHaveBeenCalledWith(7);
   });
 
+  it("handles LatexDo commands locally without sending them to the PTY", async () => {
+    const commandService = {
+      execute: vi.fn().mockResolvedValue({
+        ok: true,
+        message: "✓ Theme changed to Graphite Pro.",
+      }),
+      complete: vi.fn(() => []),
+      help: vi.fn(),
+    };
+
+    render(
+      <TerminalPanel
+        projectId="project-1"
+        workspacePath="/Users/omar/paper"
+        active
+        commandService={commandService}
+      />,
+    );
+
+    await waitFor(() => expect(window.terminalApi.create).toHaveBeenCalledTimes(1));
+
+    const terminal = xtermMocks.terminalInstances[0];
+    act(() => {
+      terminal.emitData("latexdo theme graphite\r");
+    });
+
+    await waitFor(() => {
+      expect(commandService.execute).toHaveBeenCalledWith("latexdo theme graphite");
+    });
+    expect(window.terminalApi.write).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(terminal.write).toHaveBeenCalledWith(
+        "✓ Theme changed to Graphite Pro.\r\n",
+      );
+    });
+  });
+
+  it("continues to send ordinary commands to the PTY", async () => {
+    const commandService = {
+      execute: vi.fn(),
+      complete: vi.fn(() => []),
+      help: vi.fn(),
+    };
+
+    render(
+      <TerminalPanel
+        projectId="project-1"
+        workspacePath="/Users/omar/paper"
+        active
+        commandService={commandService}
+      />,
+    );
+
+    await waitFor(() => expect(window.terminalApi.create).toHaveBeenCalledTimes(1));
+
+    const terminal = xtermMocks.terminalInstances[0];
+    act(() => {
+      terminal.emitData("ls\n");
+    });
+
+    expect(commandService.execute).not.toHaveBeenCalled();
+    expect(window.terminalApi.write).toHaveBeenCalledWith(7, "ls\n");
+  });
+
   it("creates additional terminal tabs and restarts the active session", async () => {
     render(
       <TerminalPanel projectId="project-1" workspacePath="/Users/omar/paper" active />,

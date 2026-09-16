@@ -19,6 +19,12 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { formatCommandResultForTerminal } from "../features/commands/commandExecutor";
+import type { LatexDoCommandService } from "../features/commands/commandTypes";
+import {
+  isLatexDoCommandLine,
+  isPotentialLatexDoCommandPrefix,
+} from "../features/commands/commandParser";
 
 import "@xterm/xterm/css/xterm.css";
 
@@ -26,6 +32,7 @@ type TerminalPanelProps = {
   projectId?: string;
   workspacePath?: string;
   active?: boolean;
+  commandService?: LatexDoCommandService;
 };
 
 type TerminalSessionState = "starting" | "ready" | "exited" | "error";
@@ -51,6 +58,7 @@ type TerminalSessionViewProps = {
   sessionKey: string;
   projectId?: string;
   active: boolean;
+  commandService?: LatexDoCommandService;
   onStateChange: (key: string, patch: Partial<TerminalSessionMeta>) => void;
 };
 
@@ -115,7 +123,10 @@ function createTerminalSessionMeta(index: number): TerminalSessionMeta {
 }
 
 const TerminalSessionView = forwardRef<TerminalSessionHandle, TerminalSessionViewProps>(
-  function TerminalSessionView({ sessionKey, projectId, active, onStateChange }, ref) {
+  function TerminalSessionView(
+    { sessionKey, projectId, active, commandService, onStateChange },
+    ref,
+  ) {
     const [sessionNonce, setSessionNonce] = useState(0);
     const containerRef = useRef<HTMLDivElement | null>(null);
     const terminalRef = useRef<XTerm | null>(null);
@@ -124,10 +135,15 @@ const TerminalSessionView = forwardRef<TerminalSessionHandle, TerminalSessionVie
     const sessionModeRef = useRef<"pty" | "pipe">("pty");
     const inputBufferRef = useRef("");
     const activeRef = useRef(active);
+    const commandServiceRef = useRef(commandService);
 
     useEffect(() => {
       activeRef.current = active;
     }, [active]);
+
+    useEffect(() => {
+      commandServiceRef.current = commandService;
+    }, [commandService]);
 
     const patchSession = useCallback(
       (patch: Partial<TerminalSessionMeta>) => {
@@ -249,46 +265,184 @@ const TerminalSessionView = forwardRef<TerminalSessionHandle, TerminalSessionVie
       let removeExitListener: (() => void) | undefined;
       let disposed = false;
       const initialFitTimer = window.setTimeout(fitAndResize, 80);
+      let ptyInputBuffer = "";
+      let ptyInputMode: "candidate" | "local" | "passthrough" = "candidate";
+
+      const resetPtyInput = () => {
+        ptyInputBuffer = "";
+        ptyInputMode = "candidate";
+      };
+
+      const writeCommandResult = (
+        result: Awaited<ReturnType<LatexDoCommandService["execute"]>>,
+      ) => {
+        terminal.write(`${formatCommandResultForTerminal(result)}\r\n`);
+        patchSession({
+          status: result.ok ? result.message.replace(/^✓\s*/, "") : "Command failed",
+        });
+      };
+
+      const executeLatexDoCommand = (command: string) => {
+        const service = commandServiceRef.current;
+        if (!service) return false;
+
+        void service
+          .execute(command)
+          .then(writeCommandResult)
+          .catch((error) => {
+            writeCommandResult({
+              ok: false,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : `Command failed: ${String(error)}`,
+            });
+          });
+        return true;
+      };
+
+      const handlePipeInput = (data: string, id: number) => {
+        const chunks = Array.from(data);
+
+        for (const chunk of chunks) {
+          if (chunk === "\r" || chunk === "\n") {
+            const command = inputBufferRef.current;
+            terminal.write("\r\n");
+            inputBufferRef.current = "";
+
+            if (isLatexDoCommandLine(command) && executeLatexDoCommand(command)) {
+              continue;
+            }
+
+            window.terminalApi.write(id, `${command}\n`);
+            continue;
+          }
+
+          if (chunk === "\u007f") {
+            if (inputBufferRef.current.length > 0) {
+              inputBufferRef.current = inputBufferRef.current.slice(0, -1);
+              terminal.write("\b \b");
+            }
+            continue;
+          }
+
+          if (chunk === "\u0003") {
+            inputBufferRef.current = "";
+            terminal.write("^C\r\n");
+            window.terminalApi.write(id, "\u0003");
+            continue;
+          }
+
+          if (chunk >= " " && chunk !== "\u007f") {
+            inputBufferRef.current += chunk;
+            terminal.write(chunk);
+          }
+        }
+      };
+
+      const handlePtyInput = (data: string, id: number) => {
+        if (!commandServiceRef.current) {
+          window.terminalApi.write(id, data);
+          return;
+        }
+
+        let shellData = "";
+        const flushCandidateToShell = () => {
+          if (!ptyInputBuffer) return;
+          shellData += ptyInputBuffer;
+          ptyInputBuffer = "";
+        };
+
+        for (const chunk of Array.from(data)) {
+          if (ptyInputMode === "passthrough") {
+            shellData += chunk;
+            if (chunk === "\r" || chunk === "\n" || chunk === "\u0003") {
+              resetPtyInput();
+            }
+            continue;
+          }
+
+          if (chunk === "\r" || chunk === "\n") {
+            const command = ptyInputBuffer;
+            if (isLatexDoCommandLine(command)) {
+              if (ptyInputMode === "candidate") {
+                terminal.write(command);
+              }
+              terminal.write("\r\n");
+              resetPtyInput();
+              executeLatexDoCommand(command);
+              continue;
+            }
+
+            flushCandidateToShell();
+            shellData += "\n";
+            resetPtyInput();
+            continue;
+          }
+
+          if (chunk === "\u007f") {
+            if (ptyInputBuffer.length > 0) {
+              ptyInputBuffer = ptyInputBuffer.slice(0, -1);
+              if (ptyInputMode === "local") {
+                terminal.write("\b \b");
+              }
+            } else {
+              shellData += chunk;
+              ptyInputMode = "passthrough";
+            }
+            continue;
+          }
+
+          if (chunk === "\u0003") {
+            if (ptyInputMode === "local") {
+              terminal.write("^C\r\n");
+            }
+            resetPtyInput();
+            shellData += chunk;
+            continue;
+          }
+
+          if (chunk < " ") {
+            flushCandidateToShell();
+            shellData += chunk;
+            ptyInputMode = "passthrough";
+            continue;
+          }
+
+          ptyInputBuffer += chunk;
+
+          if (ptyInputMode === "local") {
+            terminal.write(chunk);
+            continue;
+          }
+
+          if (isLatexDoCommandLine(ptyInputBuffer)) {
+            ptyInputMode = "local";
+            terminal.write(ptyInputBuffer);
+            continue;
+          }
+
+          if (!isPotentialLatexDoCommandPrefix(ptyInputBuffer)) {
+            flushCandidateToShell();
+            ptyInputMode = "passthrough";
+          }
+        }
+
+        if (shellData) {
+          window.terminalApi.write(id, shellData);
+        }
+      };
+
       const dataDisposable = terminal.onData((data) => {
         const id = terminalIdRef.current;
         if (!id) return;
 
         if (sessionModeRef.current === "pipe") {
-          const chunks = Array.from(data);
-
-          for (const chunk of chunks) {
-            if (chunk === "\r") {
-              const command = inputBufferRef.current;
-              terminal.write("\r\n");
-              window.terminalApi.write(id, `${command}\n`);
-              inputBufferRef.current = "";
-              continue;
-            }
-
-            if (chunk === "\u007f") {
-              if (inputBufferRef.current.length > 0) {
-                inputBufferRef.current = inputBufferRef.current.slice(0, -1);
-                terminal.write("\b \b");
-              }
-              continue;
-            }
-
-            if (chunk === "\u0003") {
-              inputBufferRef.current = "";
-              terminal.write("^C\r\n");
-              window.terminalApi.write(id, "\u0003");
-              continue;
-            }
-
-            if (chunk >= " " && chunk !== "\u007f") {
-              inputBufferRef.current += chunk;
-              terminal.write(chunk);
-            }
-          }
+          handlePipeInput(data, id);
           return;
         }
 
-        window.terminalApi.write(id, data);
+        handlePtyInput(data, id);
       });
       const selectionDisposable = terminal.onSelectionChange(() => {
         patchSession({ hasSelection: Boolean(terminal.getSelection()) });
@@ -402,6 +556,7 @@ export function TerminalPanel({
   projectId,
   workspacePath,
   active = false,
+  commandService,
 }: TerminalPanelProps) {
   const sessionCounterRef = useRef(1);
   const [sessions, setSessions] = useState<TerminalSessionMeta[]>(() => [
@@ -591,6 +746,7 @@ export function TerminalPanel({
             sessionKey={session.key}
             projectId={projectId}
             active={active && session.key === activeSessionKey}
+            commandService={commandService}
             onStateChange={updateSessionState}
           />
         ))}

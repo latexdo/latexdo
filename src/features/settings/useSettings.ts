@@ -7,6 +7,7 @@ import {
 } from "../../extensions";
 import {
   extensionTemplateToWelcomeTemplate,
+  defaultSettings,
   installedExtensionsStorageKey,
   loadInstalledExtensionIds,
   loadSettings,
@@ -35,6 +36,23 @@ export function useSettings(onStatusMessage: (message: string) => void) {
   const [installedExtensionIds, setInstalledExtensionIds] = useState<string[]>(
     loadInstalledExtensionIds,
   );
+
+  const updateSetting = useCallback(
+    <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+      setSettings((current) => ({
+        ...current,
+        [key]: value,
+      }));
+    },
+    [],
+  );
+
+  const resetSetting = useCallback(<K extends keyof AppSettings>(key: K) => {
+    setSettings((current) => ({
+      ...current,
+      [key]: defaultSettings[key],
+    }));
+  }, []);
 
   const installedExtensionIdSet = useMemo(
     () => new Set(installedExtensionIds),
@@ -171,6 +189,8 @@ export function useSettings(onStatusMessage: (message: string) => void) {
   return {
     settings,
     setSettings,
+    updateSetting,
+    resetSetting,
     settingsOpen,
     setSettingsOpen,
     settingsTab,
