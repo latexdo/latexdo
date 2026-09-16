@@ -4184,6 +4184,59 @@ button {
   content: "";
 }
 
+.monaco-editor .suggest-details {
+  border-radius: 7px;
+  box-shadow: 0 14px 38px rgb(0 0 0 / 34%);
+}
+
+.monaco-editor .suggest-details > .monaco-scrollable-element > .body {
+  padding: 8px;
+}
+
+.monaco-editor .suggest-details > .monaco-scrollable-element > .body > .header > .type {
+  margin-right: 28px;
+  padding: 0 0 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.monaco-editor
+  .suggest-details
+  > .monaco-scrollable-element
+  > .body
+  > .docs.markdown-docs
+  > div {
+  padding: 0;
+}
+
+.monaco-editor .suggest-details .docs.markdown-docs h3 {
+  margin: 0 0 9px;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.monaco-editor .suggest-details .docs.markdown-docs p {
+  margin: 0 0 8px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.monaco-editor .suggest-details .docs.markdown-docs strong {
+  color: var(--text-primary);
+  font-weight: 650;
+}
+
+.monaco-editor .suggest-details .docs.markdown-docs a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.monaco-editor .suggest-details .docs.markdown-docs a:hover {
+  text-decoration: underline;
+}
+
 .monaco-editor .yRemoteSelection {
   background: rgb(47 111 219 / 18%);
 }

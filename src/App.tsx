@@ -5023,6 +5023,7 @@ ${macroEnd}
                       detail: citationCompletionDetail(entry),
                       documentation: {
                         value: citationCompletionMarkdown(entry),
+                        isTrusted: true,
                       },
                       filterText: citationCompletionFilterText(entry),
                       sortText: citationCompletionSortText(
@@ -5877,6 +5878,26 @@ ${macroEnd}
         contextMenuGroupId: "navigation",
         contextMenuOrder: 3,
         run: () => jumpToBookmark("previous"),
+      }),
+      editor.addAction({
+        id: "latexdo.showCompletionDetails",
+        label: "Completion: Show Details",
+        keybindings: [monaco.KeyCode.RightArrow],
+        precondition:
+          "suggestWidgetVisible && suggestWidgetHasFocusedSuggestion && !suggestWidgetDetailsVisible",
+        run: (targetEditor) => {
+          targetEditor.trigger("keyboard", "toggleSuggestionDetails", null);
+        },
+      }),
+      editor.addAction({
+        id: "latexdo.hideCompletionDetails",
+        label: "Completion: Hide Details",
+        keybindings: [monaco.KeyCode.LeftArrow],
+        precondition:
+          "suggestWidgetVisible && suggestWidgetHasFocusedSuggestion && suggestWidgetDetailsVisible",
+        run: (targetEditor) => {
+          targetEditor.trigger("keyboard", "toggleSuggestionDetails", null);
+        },
       }),
       editor.addAction({
         id: "latexdo.openLinkAtCursor",
@@ -11497,7 +11518,12 @@ ${macroEnd}
                             strings: true,
                           },
                           snippetSuggestions: "top",
-                          suggest: { showSnippets: true },
+                          suggest: {
+                            showSnippets: true,
+                            showStatusBar: true,
+                            showInlineDetails: true,
+                            preview: true,
+                          },
                         }}
                       />
                     </Suspense>

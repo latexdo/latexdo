@@ -988,6 +988,11 @@ describe("App critical UI controls", () => {
       expect.objectContaining({
         acceptSuggestionOnEnter: "on",
         tabCompletion: "on",
+        suggest: expect.objectContaining({
+          preview: true,
+          showInlineDetails: true,
+          showStatusBar: true,
+        }),
       }),
     );
   });

@@ -73,18 +73,38 @@ export function citationCompletionInfo(entry: CitationEntry): string {
 }
 
 export function citationCompletionMarkdown(entry: CitationEntry): string {
+  const people = citationPeople(entry);
+  const venue = citationVenue(entry);
+  const doiLink = doiUrl(entry.doi);
+  const safeUrl = safeHttpUrl(entry.url);
+  const abstract = truncateField(entry.abstract, 640);
+  const metadata = [
+    people ? `**Authors:** ${escapeMarkdownText(people)}` : undefined,
+    entry.year ? `**Year:** ${escapeMarkdownText(entry.year)}` : undefined,
+    venue ? `**Venue:** ${escapeMarkdownText(venue)}` : undefined,
+    entry.type
+      ? `**Type:** ${escapeMarkdownText(entry.type.toUpperCase())}`
+      : undefined,
+    doiLink && entry.doi
+      ? `**DOI:** [${escapeMarkdownText(entry.doi)}](${doiLink})`
+      : entry.doi
+        ? `**DOI:** ${escapeMarkdownText(entry.doi)}`
+        : undefined,
+    entry.eprint ? `**Eprint:** ${escapeMarkdownText(entry.eprint)}` : undefined,
+    safeUrl
+      ? `**URL:** [${escapeMarkdownText(safeUrl)}](${safeUrl})`
+      : entry.url
+        ? `**URL:** ${escapeMarkdownText(entry.url)}`
+        : undefined,
+    `**Source:** \`${entry.sourceFile}\``,
+  ].filter(Boolean);
+
   return [
-    entry.title ? `**${entry.title}**` : undefined,
-    citationPeople(entry) ? `Author: ${citationPeople(entry)}` : undefined,
-    entry.year ? `Year: ${entry.year}` : undefined,
-    citationVenue(entry) ? `Venue: ${citationVenue(entry)}` : undefined,
-    entry.doi ? `DOI: ${entry.doi}` : undefined,
-    entry.eprint ? `Eprint: ${entry.eprint}` : undefined,
-    entry.url ? `URL: ${entry.url}` : undefined,
-    "",
-    `Source: \`${entry.sourceFile}\``,
+    entry.title ? `### ${escapeMarkdownText(entry.title)}` : `### ${entry.key}`,
+    metadata.join("\n\n"),
+    abstract ? `**Abstract**\n\n${escapeMarkdownText(abstract)}` : undefined,
   ]
-    .filter((part) => part !== undefined)
+    .filter(Boolean)
     .join("\n\n");
 }
 
@@ -185,4 +205,36 @@ function normalizeForCitationSearch(value: string | undefined): string {
 
 function letters(value: string): string[] {
   return value.split("");
+}
+
+function escapeMarkdownText(value: string): string {
+  return value.replace(/([\\`*_{}\[\]()#+.!|>])/g, "\\$1");
+}
+
+function truncateField(value: string | undefined, limit: number): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return undefined;
+  return normalized.length > limit
+    ? `${normalized.slice(0, limit - 3)}...`
+    : normalized;
+}
+
+function doiUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const doi = value.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "").trim();
+  if (!doi) return undefined;
+  return `https://doi.org/${encodeURI(doi)}`;
+}
+
+function safeHttpUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  try {
+    const url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
 }

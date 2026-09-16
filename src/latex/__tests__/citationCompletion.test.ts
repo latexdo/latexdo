@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   citationCompletionDetail,
   citationCompletionFilterText,
+  citationCompletionMarkdown,
   citationCompletionTriggerCharacters,
   rankedCitationCompletions,
 } from "../citationCompletion";
@@ -68,6 +69,26 @@ describe("citationCompletion", () => {
     expect(citationCompletionDetail(entry)).toContain(
       "A Lazy and Heuristic-Driven Code-Completion Architecture",
     );
+  });
+
+  it("builds rich trusted-presenter markdown for citation details", () => {
+    const markdown = citationCompletionMarkdown({
+      ...entries[0]!,
+      abstract:
+        "ThingLab introduced constraint-oriented programming ideas for interactive systems.",
+      url: "dl.acm.org/doi/10.1145/357146.357150",
+    });
+
+    expect(markdown).toContain("### The Programming Language Aspects of ThingLab");
+    expect(markdown).toContain("**Authors:** Alan Borning");
+    expect(markdown).toContain(
+      "**DOI:** [10\\.1145/357146\\.357150](https://doi.org/10.1145/357146.357150)",
+    );
+    expect(markdown).toContain(
+      "**URL:** [https://dl\\.acm\\.org/doi/10\\.1145/357146\\.357150](https://dl.acm.org/doi/10.1145/357146.357150)",
+    );
+    expect(markdown).toContain("**Abstract**");
+    expect(markdown).toContain("**Source:** `refs.bib`");
   });
 
   it("exports citation trigger characters for normal title typing", () => {
