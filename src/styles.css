@@ -494,8 +494,8 @@ button {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 2px;
-  padding-right: 8px;
+  gap: 8px;
+  padding-right: 12px;
 }
 
 .title-actions * {
@@ -505,12 +505,12 @@ button {
 .title-history-button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 28px;
+  gap: 7px;
+  height: 30px;
   max-width: 118px;
-  padding: 0 8px;
+  padding: 0 10px;
   border: 1px solid var(--border-card);
-  border-radius: 5px;
+  border-radius: 7px;
   background: var(--bg-button-secondary);
   color: var(--text-secondary);
   cursor: pointer;
@@ -543,7 +543,7 @@ button {
 }
 
 .title-share-button {
-  min-width: 84px;
+  min-width: 92px;
   max-width: 142px;
   border-color: color-mix(in srgb, var(--accent) 56%, var(--border-hover));
   background: var(--accent-bg);
@@ -551,8 +551,19 @@ button {
 }
 
 .title-prettier-button {
-  min-width: 86px;
-  max-width: 96px;
+  min-width: 100px;
+  max-width: 108px;
+}
+
+.title-actions .icon-button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+}
+
+.title-actions .title-history-button + .icon-button {
+  margin-left: 2px;
 }
 
 .title-history-count {
