@@ -242,6 +242,7 @@ describe("collectProjectGarbage", () => {
       );
       expect(stats.collectedBuildJobs).toHaveLength(3);
       expect(stats.collectedSnapshots).toEqual([orphanOld]);
+      expect(stats.freedSnapshotBytes).toBe(6);
 
       for (const name of [...keptRecent, ...keptYoung, collected[0], notManaged]) {
         await expect(access(path.join(buildDirectory, name))).resolves.not.toThrow();
@@ -279,6 +280,65 @@ describe("collectProjectGarbage", () => {
       expect(stats.skippedHistoryIndex).toBe(true);
       await expect(
         access(path.join(snapshotsDirectory, "orphan.txt")),
+      ).resolves.not.toThrow();
+    });
+  });
+
+  it("skips snapshot collection when the history index is malformed", async () => {
+    await withTempProject(async (projectRoot) => {
+      const snapshotsDirectory = path.join(
+        projectRoot,
+        ".latexdo",
+        "history",
+        "snapshots",
+      );
+      await mkdir(snapshotsDirectory, { recursive: true });
+      await writeFile(path.join(snapshotsDirectory, "orphan.txt"), "orphan");
+      await touch(path.join(snapshotsDirectory, "orphan.txt"), 90 * day);
+      await writeFile(
+        path.join(projectRoot, ".latexdo", "history", "recent.json"),
+        "{not-json",
+      );
+
+      const stats = await collectProjectGarbage(projectRoot, {
+        now: () => now,
+        orphanHistoryGraceMs: 7 * day,
+      });
+
+      expect(stats.skippedHistoryIndex).toBe(true);
+      expect(stats.collectedSnapshots).toEqual([]);
+      await expect(
+        access(path.join(snapshotsDirectory, "orphan.txt")),
+      ).resolves.not.toThrow();
+    });
+  });
+
+  it("does not remove directories that look like snapshot file names", async () => {
+    await withTempProject(async (projectRoot) => {
+      const snapshotsDirectory = path.join(
+        projectRoot,
+        ".latexdo",
+        "history",
+        "snapshots",
+      );
+      const directorySnapshot = path.join(snapshotsDirectory, "folder.txt");
+      await mkdir(directorySnapshot, { recursive: true });
+      await writeFile(path.join(directorySnapshot, "nested.txt"), "keep me");
+      await touch(directorySnapshot, 90 * day);
+      await writeFile(
+        path.join(projectRoot, ".latexdo", "history", "recent.json"),
+        JSON.stringify({ schemaVersion: 2, snapshots: [] }),
+      );
+
+      const stats = await collectProjectGarbage(projectRoot, {
+        now: () => now,
+        orphanHistoryGraceMs: 7 * day,
+      });
+
+      expect(stats.collectedSnapshots).toEqual([]);
+      await expect(access(directorySnapshot)).resolves.not.toThrow();
+      await expect(
+        access(path.join(directorySnapshot, "nested.txt")),
       ).resolves.not.toThrow();
     });
   });
@@ -409,6 +469,31 @@ describe("collectProjectGarbage with a size budget", () => {
 
       expect(stats.collectedBuildJobs).toEqual([]);
       expect(stats.freedBuildBytes).toBe(0);
+    });
+  });
+
+  it("reports freed bytes for stale jobs when a budget asks for size accounting", async () => {
+    await withTempProject(async (projectRoot) => {
+      await mkdir(buildDirectory(projectRoot), { recursive: true });
+      for (let index = 0; index < 6; index += 1) {
+        const name = `job-12${index}`;
+        const directory = path.join(buildDirectory(projectRoot), name);
+        await mkdir(directory, { recursive: true });
+        await writeFile(path.join(directory, "main.pdf"), "x".repeat(12_345));
+        await touch(directory, (40 + index) * day);
+      }
+
+      const stats = await collectProjectGarbage(projectRoot, {
+        now: () => now,
+        buildPolicy: {
+          keepRecent: 5,
+          minAgeMs: 30 * minute,
+          maxTotalBytes: 1_000_000,
+        },
+      });
+
+      expect(stats.collectedBuildJobs).toEqual(["job-125"]);
+      expect(stats.freedBuildBytes).toBe(12_345);
     });
   });
 });

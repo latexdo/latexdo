@@ -140,11 +140,15 @@ function normalizeContentPath(contentPath: string): string {
  * normalized to POSIX relative paths.
  */
 export function parseHistoryIndexReferencedPaths(content: string): Set<string> {
+  return parseHistoryIndexReferencedPathsStrict(content) ?? new Set();
+}
+
+function parseHistoryIndexReferencedPathsStrict(content: string): Set<string> | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
   } catch {
-    return new Set();
+    return null;
   }
 
   const rawSnapshots = Array.isArray(parsed)
@@ -169,6 +173,7 @@ export function parseHistoryIndexReferencedPaths(content: string): Set<string> {
 export interface SnapshotFileEntry {
   name: string;
   mtimeMs: number;
+  sizeBytes?: number;
 }
 
 /**
@@ -337,8 +342,8 @@ async function collectBuildJobs(
     .map((entry) => entry.name)
     .filter((name) => !collectable.includes(name));
 
-  if (typeof policy.maxTotalBytes === "number" && retainedNames.length > 0) {
-    await measureRetainedSizes(fs, buildDirectory, entries, retainedNames);
+  if (typeof policy.maxTotalBytes === "number" && entries.length > 0) {
+    await measureBuildSizes(fs, buildDirectory, entries);
     const budgetEvictions = enforceBuildSizeBudget(entries, retainedNames, {
       keepRecent: policy.keepRecent,
       maxTotalBytes: policy.maxTotalBytes,
@@ -362,17 +367,12 @@ async function collectBuildJobs(
   }
 }
 
-async function measureRetainedSizes(
+async function measureBuildSizes(
   fs: CollectorFs,
   buildDirectory: string,
   entries: BuildJobEntry[],
-  retainedNames: readonly string[],
 ): Promise<void> {
-  const retained = new Set(retainedNames);
   for (const entry of entries) {
-    if (!retained.has(entry.name)) {
-      continue;
-    }
     const state = { bytes: 0, files: 0 };
     await directorySizeBytes(fs, path.join(buildDirectory, entry.name), state);
     entry.sizeBytes = state.bytes;
@@ -434,7 +434,12 @@ async function collectOrphanSnapshots(
   const indexPath = path.join(projectRoot, historyIndexRelativePath);
   let referenced: Set<string>;
   try {
-    referenced = parseHistoryIndexReferencedPaths(await fs.readFile(indexPath));
+    const parsed = parseHistoryIndexReferencedPathsStrict(await fs.readFile(indexPath));
+    if (!parsed) {
+      stats.skippedHistoryIndex = true;
+      return;
+    }
+    referenced = parsed;
   } catch {
     stats.skippedHistoryIndex = true;
     return;
@@ -453,7 +458,14 @@ async function collectOrphanSnapshots(
     const entryPath = path.join(snapshotsDirectory, name);
     try {
       const info = await fs.stat(entryPath);
-      entries.push({ name, mtimeMs: nowInfo(info, now) });
+      if (info.isDirectory()) {
+        continue;
+      }
+      entries.push({
+        name,
+        mtimeMs: nowInfo(info, now),
+        sizeBytes: typeof info.size === "number" && info.size > 0 ? info.size : 0,
+      });
     } catch {
       // A snapshot file may have been removed concurrently; skip it.
     }
@@ -469,6 +481,10 @@ async function collectOrphanSnapshots(
     try {
       await fs.rm(path.join(snapshotsDirectory, name));
       stats.collectedSnapshots.push(name);
+      const knownBytes = entries.find((entry) => entry.name === name)?.sizeBytes;
+      if (typeof knownBytes === "number") {
+        stats.freedSnapshotBytes += knownBytes;
+      }
     } catch {
       stats.failedSnapshots.push(name);
     }
