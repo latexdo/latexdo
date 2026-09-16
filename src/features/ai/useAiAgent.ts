@@ -524,5 +524,7 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext, storageKey?: str
     reset,
     pendingApproval,
     resolveApproval,
+    /** Expose approval for external selection-AI workflows (reformulate). */
+    proposeEdit: requestApprovalInteractive,
   };
 }

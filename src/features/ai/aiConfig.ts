@@ -368,6 +368,18 @@ export function saveAiConfig(config: AiConfig): void {
   window.localStorage.setItem(aiConfigStorageKey, JSON.stringify(config));
 }
 
+/**
+ * Returns true when the AI provider is configured and ready to generate.
+ * Used by selection-AI features to gate context-menu actions.
+ */
+export function isAiReady(config: AiConfig, isDesktop: boolean): boolean {
+  if (config.provider === "off") return false;
+  if (config.provider === "cloud") return config.cloud.apiKey.trim().length > 0;
+  if (!isDesktop) return false;
+  if (config.provider === "local") return config.modelDownloaded;
+  return true; // ollama
+}
+
 /** Layout presets map onto the app's existing panel visibility state. */
 export interface LayoutFlags {
   sidebarVisible: boolean;

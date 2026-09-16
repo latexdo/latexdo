@@ -109,6 +109,7 @@ import {
   type AiProvider,
 } from "./features/ai/aiConfig";
 import {
+  abortGeneration,
   detectOllama,
   downloadModel,
   getSystemCapabilities,
@@ -139,6 +140,17 @@ import {
   type EnterpriseState,
 } from "./features/enterprise/enterprise";
 import type { AgentContext, EditProposal } from "./features/ai/aiTools";
+import { isAiReady } from "./features/ai/aiConfig";
+import {
+  captureEditorSelection,
+  performReformulation,
+  buildReformulationProposal,
+  validateSelectionForReformulation,
+  validateSnapshotRange,
+  type AiSelectionSnapshot,
+  type AiComposerSelectionContext,
+} from "./features/ai/selectionAi";
+import type { AiSidebarApi } from "./components/AiSidebar";
 import { generateRebuttalLetter } from "./rebuttalGenerator";
 import {
   escapeLatexText,
@@ -1191,6 +1203,12 @@ export default function App() {
   const [activeAiChatId, setActiveAiChatId] = useState(initialAiChatTabs.activeId);
   const nextAiChatNumberRef = useRef(initialAiChatTabs.nextNumber);
   const [aiWizardOpen, setAiWizardOpen] = useState(!initialAiConfig.setupComplete);
+  // Selection-AI: ref to the active chat's imperative handle.
+  const activeAiSidebarApiRef = useRef<AiSidebarApi | null>(null);
+  // Selection-AI: reformulation in-flight state for cancellation support.
+  const reformulationInFlightRef = useRef(false);
+  const reformulationCancelledRef = useRef(false);
+  const reformulationRequestIdRef = useRef<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const aiIsDesktop = Boolean((window as { aiApi?: unknown }).aiApi);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
@@ -5847,36 +5865,60 @@ ${macroEnd}
       }),
     );
     editorActionDisposablesRef.current = [
+      // LatexDo AI selection actions — visible only when there is a selection.
+      editor.addAction({
+        id: "latexdo.ai.reformulateSelection",
+        label: "Reformulate with AI",
+        contextMenuGroupId: "2_ai",
+        contextMenuOrder: 0,
+        precondition: "editorHasSelection",
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyR],
+        run: () => {
+          void reformulateSelectionWithAi();
+        },
+      }),
+      editor.addAction({
+        id: "latexdo.ai.askAboutSelection",
+        label: "Ask AI about Selection",
+        contextMenuGroupId: "2_ai",
+        contextMenuOrder: 1,
+        precondition: "editorHasSelection",
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyA],
+        run: () => {
+          askAiAboutSelection();
+        },
+      }),
+      editor.addAction({
+        id: "latexdo.ai.cancelReformulation",
+        label: "Cancel Reformulation",
+        precondition: "editorTextFocus",
+        keybindings: [monaco.KeyCode.Escape],
+        run: () => {
+          cancelReformulation();
+        },
+      }),
       editor.addAction({
         id: "latexdo.toggleFileBlame",
         label: "Git: Toggle File Blame Annotations",
         keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyB],
-        contextMenuGroupId: "navigation",
-        contextMenuOrder: 0,
         run: () => setFileBlameEnabled((current) => !current),
       }),
       editor.addAction({
         id: "latexdo.toggleBookmark",
         label: "Toggle Bookmark",
         keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.F2],
-        contextMenuGroupId: "navigation",
-        contextMenuOrder: 1,
         run: () => toggleBookmarkAtCurrentLine(),
       }),
       editor.addAction({
         id: "latexdo.nextBookmark",
         label: "Go to Next Bookmark",
         keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.F2],
-        contextMenuGroupId: "navigation",
-        contextMenuOrder: 2,
         run: () => jumpToBookmark("next"),
       }),
       editor.addAction({
         id: "latexdo.previousBookmark",
         label: "Go to Previous Bookmark",
         keybindings: [monaco.KeyMod.Alt | monaco.KeyMod.Shift | monaco.KeyCode.F2],
-        contextMenuGroupId: "navigation",
-        contextMenuOrder: 3,
         run: () => jumpToBookmark("previous"),
       }),
       editor.addAction({
@@ -5915,7 +5957,7 @@ ${macroEnd}
       }),
       editor.addAction({
         id: "latexdo.prettierLists",
-        label: "Prettier: Format LaTeX Lists",
+        label: "Format Document",
         contextMenuGroupId: "1_modification",
         contextMenuOrder: 0,
         run: () => applyLatexPrettier(),
@@ -7229,6 +7271,170 @@ ${macroEnd}
     },
     [activeTextDocument, projectId],
   );
+
+  // --- Selection → AI workflows (reformulate / ask about selection) -------
+
+  /**
+   * Apply a validated reformulation proposal. Verifies the snapshot range still
+   * matches the original text before mutating, so a slow asynchronous AI
+   * response can never overwrite newer user work.
+   */
+  const applyAiSelectionProposal = useCallback(
+    (snapshot: AiSelectionSnapshot, newText: string) => {
+      const editor = editorRef.current;
+      if (!editor || !validateSnapshotRange(editor, snapshot)) {
+        setStatusMessage(
+          "The selected text changed while the AI suggestion was being generated. Please select it again and retry.",
+        );
+        return;
+      }
+      const model = editor.getModel();
+      if (!model) return;
+      const range = new monaco.Range(
+        snapshot.range.startLineNumber,
+        snapshot.range.startColumn,
+        snapshot.range.endLineNumber,
+        snapshot.range.endColumn,
+      );
+      editor.pushUndoStop();
+      editor.executeEdits("latexdo-ai-reformulate", [
+        { range, text: newText, forceMoveMarkers: true },
+      ]);
+      // Reveal + focus the replacement as one undoable operation.
+      const position = editor.getPosition();
+      if (position) {
+        editor.revealRangeInCenterIfOutsideViewport(
+          new monaco.Range(
+            Math.max(1, position.lineNumber - 2),
+            1,
+            position.lineNumber + 3,
+            1,
+          ),
+          monaco.editor.ScrollType.Smooth,
+        );
+      }
+      editor.focus();
+      setStatusMessage("Reformulation applied.");
+    },
+    [setStatusMessage],
+  );
+
+  /** Reformulate the selected text via the AI provider, then ask for approval. */
+  const reformulateSelectionWithAi = useCallback(async () => {
+    const editor = editorRef.current;
+    const snapshot = captureEditorSelection(
+      editor,
+      activeTextDocument?.relativePath ?? null,
+    );
+    if (!snapshot) {
+      setStatusMessage("Select text to reformulate.");
+      return;
+    }
+    if (!isAiReady(aiConfig, aiIsDesktop)) {
+      setStatusMessage(
+        "AI is not configured. Open AI settings and choose a provider first.",
+      );
+      return;
+    }
+    if (reformulationInFlightRef.current) {
+      setStatusMessage("A reformulation is already in progress.");
+      return;
+    }
+    const sizeError = validateSelectionForReformulation(snapshot);
+    if (sizeError) {
+      setStatusMessage(sizeError);
+      return;
+    }
+
+    reformulationInFlightRef.current = true;
+    reformulationCancelledRef.current = false;
+    setStatusMessage("Reformulating selection…");
+    try {
+      const { requestId, step } = await performReformulation(
+        aiConfig,
+        snapshot,
+        () => {},
+      );
+      reformulationRequestIdRef.current = requestId;
+      if (reformulationCancelledRef.current) {
+        setStatusMessage("Reformulation cancelled.");
+        return;
+      }
+      if (step.type === "error") {
+        setStatusMessage(`Could not reformulate the selection: ${step.content}`);
+        return;
+      }
+      const proposal = buildReformulationProposal(snapshot, step.content);
+      if (!proposal) {
+        setStatusMessage("Could not reformulate the selection: empty result.");
+        return;
+      }
+
+      // Surface the proposal in the active AI chat's approval UI.
+      const api = activeAiSidebarApiRef.current;
+      let approved = false;
+      if (api) {
+        openSidebar("ai");
+        approved = await api.proposeEdit(proposal);
+      }
+      if (!approved) {
+        setStatusMessage("Reformulation declined. No changes made.");
+        return;
+      }
+      applyAiSelectionProposal(snapshot, proposal.newText);
+    } catch (error) {
+      setStatusMessage(
+        `Could not reformulate the selection: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    } finally {
+      reformulationInFlightRef.current = false;
+      reformulationRequestIdRef.current = null;
+    }
+  }, [
+    activeTextDocument,
+    aiConfig,
+    aiIsDesktop,
+    openSidebar,
+    setStatusMessage,
+    applyAiSelectionProposal,
+  ]);
+
+  /** Cancel an in-flight reformulation (invoked via Escape). */
+  const cancelReformulation = useCallback(() => {
+    if (!reformulationInFlightRef.current) return;
+    reformulationCancelledRef.current = true;
+    if (reformulationRequestIdRef.current) {
+      void abortGeneration(reformulationRequestIdRef.current);
+    }
+    setStatusMessage("Reformulation cancelled.");
+  }, [setStatusMessage]);
+
+  /** Attach the current selection to the active AI chat for user-directed questions. */
+  const askAiAboutSelection = useCallback(() => {
+    const editor = editorRef.current;
+    const snapshot = captureEditorSelection(
+      editor,
+      activeTextDocument?.relativePath ?? null,
+    );
+    if (!snapshot) {
+      setStatusMessage("Select text to ask AI about.");
+      return;
+    }
+    openSidebar("ai");
+    const selectionContext: AiComposerSelectionContext = {
+      type: "editor-selection",
+      filePath: snapshot.filePath,
+      text: snapshot.text,
+      startLine: snapshot.range.startLineNumber,
+      endLine: snapshot.range.endLineNumber,
+    };
+    // Defer one frame so the sidebar finishes mounting before we focus.
+    requestAnimationFrame(() => {
+      activeAiSidebarApiRef.current?.appendSelectionContext(selectionContext);
+    });
+  }, [activeTextDocument, openSidebar, setStatusMessage]);
 
   const insertCitationKey = useCallback(
     (key: string) => {
@@ -10173,6 +10379,7 @@ ${macroEnd}
                         }
                         onOpenSettings={openAiSettings}
                         onOpenExternal={openExternalLink}
+                        apiRef={active ? activeAiSidebarApiRef : undefined}
                       />
                     </div>
                   );

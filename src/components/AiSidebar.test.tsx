@@ -1,8 +1,10 @@
+import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultAiConfig, type AiConfig } from "../features/ai/aiConfig";
 import type { AgentContext, EditProposal } from "../features/ai/aiTools";
 import type { UiMessage } from "../features/ai/useAiAgent";
+import type { AiSidebarApi } from "./AiSidebar";
 
 const agentMock = vi.hoisted(() => ({
   state: {
@@ -14,6 +16,7 @@ const agentMock = vi.hoisted(() => ({
     reset: vi.fn(),
     pendingApproval: null as EditProposal | null,
     resolveApproval: vi.fn(),
+    proposeEdit: vi.fn(),
   },
 }));
 
@@ -76,6 +79,7 @@ function resetAgent(overrides: Partial<typeof agentMock.state> = {}) {
   agentMock.state.reset = vi.fn();
   agentMock.state.pendingApproval = null;
   agentMock.state.resolveApproval = vi.fn();
+  agentMock.state.proposeEdit = vi.fn().mockResolvedValue(true);
   Object.assign(agentMock.state, overrides);
 }
 
@@ -93,6 +97,22 @@ function renderSidebar(config = makeConfig(), isDesktop = true) {
     />,
   );
   return { onOpenSettings, onToggleExpanded };
+}
+
+function renderSidebarWithApi(config = makeConfig()) {
+  const apiRef: React.MutableRefObject<AiSidebarApi | null> = { current: null };
+  render(
+    <AiSidebar
+      config={config}
+      ctx={ctx}
+      isDesktop={true}
+      expanded={false}
+      onToggleExpanded={vi.fn()}
+      onOpenSettings={vi.fn()}
+      apiRef={apiRef}
+    />,
+  );
+  return apiRef;
 }
 
 function typeInAiInput(value: string) {
@@ -341,5 +361,122 @@ describe("AiSidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: /Decline/i }));
     expect(agentMock.state.resolveApproval).toHaveBeenNthCalledWith(1, true);
     expect(agentMock.state.resolveApproval).toHaveBeenNthCalledWith(2, false);
+  });
+
+  it("labels reformulate proposals distinctly from agent edits", () => {
+    resetAgent({
+      pendingApproval: {
+        path: "main.tex",
+        kind: "replace-selection",
+        oldText: "Original prose.",
+        newText: "Refined prose.",
+        source: "reformulate",
+      },
+    });
+
+    renderSidebar(makeConfig({ provider: "local", modelDownloaded: true }));
+
+    expect(screen.getByText(/Reformulate selection/)).toBeVisible();
+    expect(screen.getByText("Original prose.")).toBeVisible();
+    expect(screen.getByText("Refined prose.")).toBeVisible();
+  });
+
+  it("attaches a selection context via apiRef and sends it with the next message", async () => {
+    resetAgent();
+    const apiRef = renderSidebarWithApi(
+      makeConfig({
+        provider: "ollama",
+        ollamaModel: "qwen2.5-coder:3b",
+      }),
+    );
+
+    apiRef.current?.appendSelectionContext({
+      type: "editor-selection",
+      filePath: "main.tex",
+      text: "The method reduces complexity from $O(n^2)$ to $O(n \\log n)$.",
+      startLine: 42,
+      endLine: 44,
+    });
+
+    expect(
+      await screen.findByText(/Selection: main\.tex · lines 42–44/),
+    ).toBeVisible();
+    expect(
+      await screen.findByText(/The method reduces complexity/),
+    ).toBeVisible();
+
+    const input = screen.getByPlaceholderText(/Ask about the selection/);
+    fireEvent.change(input, { target: { value: "Explain this claim." } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(agentMock.state.send).toHaveBeenCalledTimes(1);
+    const sent = agentMock.state.send.mock.calls[0][0];
+    expect(sent).toContain("Selection from main.tex (lines 42–44)");
+    expect(sent).toContain("$O(n^2)$");
+    expect(sent).toContain("Explain this claim.");
+  });
+
+  it("removes the selection context chip without sending anything", async () => {
+    const apiRef = renderSidebarWithApi(
+      makeConfig({
+        provider: "ollama",
+        ollamaModel: "qwen2.5-coder:3b",
+      }),
+    );
+
+    apiRef.current?.appendSelectionContext({
+      type: "editor-selection",
+      filePath: "main.tex",
+      text: "Some prose.",
+      startLine: 1,
+      endLine: 2,
+    });
+    expect(await screen.findByText(/Selection: main\.tex/)).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: /Remove selection context/i }));
+    await waitFor(() =>
+      expect(screen.queryByText(/Selection: main\.tex/)).not.toBeInTheDocument(),
+    );
+    expect(agentMock.state.send).not.toHaveBeenCalled();
+  });
+
+  it("enables Send when only the selection is attached", async () => {
+    const apiRef = renderSidebarWithApi(
+      makeConfig({
+        provider: "ollama",
+        ollamaModel: "qwen2.5-coder:3b",
+      }),
+    );
+
+    const sendButton = screen.getByTitle("Send") as HTMLButtonElement;
+    expect(sendButton).toBeDisabled();
+
+    apiRef.current?.appendSelectionContext({
+      type: "editor-selection",
+      filePath: "main.tex",
+      text: "Selected.",
+      startLine: 1,
+      endLine: 2,
+    });
+    await waitFor(() => expect(screen.getByTitle("Send")).toBeEnabled());
+
+    fireEvent.click(screen.getByTitle("Send"));
+    expect(agentMock.state.send).toHaveBeenCalledTimes(1);
+    expect(agentMock.state.send.mock.calls[0][0]).toContain("Selected.");
+  });
+
+  it("exposes proposeEdit through apiRef for reformulation approval", () => {
+    resetAgent({
+      proposeEdit: vi.fn(),
+    });
+    const apiRef = renderSidebarWithApi(
+      makeConfig({
+        provider: "ollama",
+        ollamaModel: "qwen2.5-coder:3b",
+      }),
+    );
+
+    expect(apiRef.current?.proposeEdit).toBeDefined();
+    expect(typeof apiRef.current?.proposeEdit).toBe("function");
   });
 });

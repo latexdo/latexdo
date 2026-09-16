@@ -16,6 +16,8 @@ export interface EditProposal {
   newText: string;
   /** For diff UI. */
   oldText?: string;
+  /** Provenance label shown in the approval UI. */
+  source?: "agent" | "reformulate";
 }
 
 /**

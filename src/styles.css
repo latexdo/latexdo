@@ -12432,10 +12432,63 @@ button {
 .ai-sidebar-input {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 10px 12px;
   border-top: 1px solid var(--border-subtle);
   align-items: flex-end;
+}
+.ai-selection-context {
+  flex: 1 1 100%;
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  background: var(--accent-soft);
+  padding: 8px 10px 10px;
+}
+.ai-selection-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  word-break: break-all;
+}
+.ai-selection-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-selection-chip-remove {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 5px;
+}
+.ai-selection-chip-remove:hover {
+  background: var(--bg-button-secondary);
+  color: var(--text-secondary);
+}
+.ai-selection-chip-preview {
+  margin: 0;
+  max-height: 90px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  color: var(--text-secondary);
 }
 .ai-sidebar-hints-tip {
   margin-top: 10px;

@@ -16,7 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { AiConfig } from "../features/ai/aiConfig";
-import type { AgentContext } from "../features/ai/aiTools";
+import type { AgentContext, EditProposal } from "../features/ai/aiTools";
 import { findLocalModel } from "../features/ai/aiModels";
 import { findCloudProvider } from "../features/ai/cloudProviders";
 import { findLatexDoAiTier } from "../features/ai/product/latexDoAiTiers";
@@ -27,6 +27,10 @@ import {
   filterFileSuggestions,
   type MentionTrigger,
 } from "../features/ai/aiMentions";
+import {
+  buildSelectionMessageText,
+  type AiComposerSelectionContext,
+} from "../features/ai/selectionAi";
 
 interface Suggestion {
   /** Text inserted after the trigger character. */
@@ -40,6 +44,12 @@ interface SuggestState {
   items: Suggestion[];
 }
 
+/** Imperative handle exposed via apiRef so App can propose edits and attach selections. */
+export interface AiSidebarApi {
+  proposeEdit(proposal: EditProposal): Promise<boolean>;
+  appendSelectionContext(selection: AiComposerSelectionContext): void;
+}
+
 interface AiSidebarProps {
   config: AiConfig;
   ctx: AgentContext;
@@ -49,6 +59,8 @@ interface AiSidebarProps {
   onOpenSettings: () => void;
   onOpenExternal?: (url: string) => void;
   storageKey?: string;
+  /** Pass only for the active chat pane so App can drive selection-AI workflows. */
+  apiRef?: React.MutableRefObject<AiSidebarApi | null>;
 }
 
 const editKindLabel: Record<string, string> = {
@@ -90,6 +102,7 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
   onOpenSettings,
   onOpenExternal,
   storageKey,
+  apiRef,
 }) => {
   const {
     messages,
@@ -100,6 +113,7 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
     reset,
     pendingApproval,
     resolveApproval,
+    proposeEdit,
   } = useAiAgent(config, ctx, storageKey);
   const [input, setInput] = React.useState("");
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -109,6 +123,31 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
     messages.length > 0 || isRunning || Boolean(status) || Boolean(pendingApproval);
   const cloudProvider =
     config.provider === "cloud" ? findCloudProvider(config.cloud.providerId) : null;
+
+  // Selection context for Ask AI about Selection workflow.
+  const [composerSelection, setComposerSelection] =
+    React.useState<AiComposerSelectionContext | null>(null);
+
+  // Imperative handle: App calls these via apiRef.
+  const appendSelectionContext = React.useCallback(
+    (sel: AiComposerSelectionContext) => {
+      setComposerSelection(sel);
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+      });
+    },
+    [],
+  );
+
+  // Expose proposeEdit + appendSelectionContext to App via apiRef.
+  React.useEffect(() => {
+    if (!apiRef) return;
+    apiRef.current = { proposeEdit, appendSelectionContext };
+    return () => {
+      apiRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposeEdit, appendSelectionContext]);
 
   // `@` file mentions and `\` quick commands: an autocomplete popup driven by
   // the caret position. Project files are (re)fetched when a file popup opens.
@@ -180,10 +219,16 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
 
   const submit = () => {
     const text = input.trim();
-    if (!text || isRunning) return;
+    if (isRunning) return;
+    // Compose message: selection context (if attached) + user's own text.
+    const block = composerSelection ? buildSelectionMessageText(composerSelection) : "";
+    const fullMessage = block
+      ? text ? `${block}\n\n${text}` : block
+      : text;
+    if (!fullMessage) return;
     setInput("");
     setSuggest(null);
-    void send(text);
+    void send(fullMessage);
   };
 
   const onInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -329,8 +374,10 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
               <div className="ai-approval-head">
                 <ShieldCheck size={14} />
                 <span>
-                  {editKindLabel[pendingApproval.kind] ?? "Apply change"} ·{" "}
-                  {pendingApproval.path}
+                  {pendingApproval.source === "reformulate"
+                    ? "Reformulate selection"
+                    : editKindLabel[pendingApproval.kind] ?? "Apply change"}{" "}
+                  · {pendingApproval.path}
                 </span>
               </div>
               {pendingApproval.oldText != null &&
@@ -360,6 +407,29 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
           )}
 
           <div className="ai-sidebar-input">
+            {composerSelection && (
+              <div className="ai-selection-context">
+                <div className="ai-selection-chip">
+                  <span className="ai-selection-chip-label">
+                    Selection: {composerSelection.filePath} · lines{" "}
+                    {composerSelection.startLine}–{composerSelection.endLine}
+                  </span>
+                  <button
+                    type="button"
+                    className="ai-selection-chip-remove"
+                    onClick={() => setComposerSelection(null)}
+                    title="Remove selection context"
+                    aria-label="Remove selection context"
+                  >
+                    ×
+                  </button>
+                </div>
+                <pre className="ai-selection-chip-preview">
+                  {composerSelection.text.slice(0, 200)}
+                  {composerSelection.text.length > 200 ? "…" : ""}
+                </pre>
+              </div>
+            )}
             {suggest && (
               <div className="ai-mention-popup" role="listbox">
                 <div className="ai-mention-popup-title">
@@ -392,7 +462,11 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
             <textarea
               ref={inputRef}
               value={input}
-              placeholder="Ask the AI… @ attaches a file, \ for commands"
+              placeholder={
+                composerSelection
+                  ? "Ask about the selection…"
+                  : "Ask the AI… @ attaches a file, \\ for commands"
+              }
               rows={2}
               onChange={(e) => {
                 setInput(e.target.value);
@@ -413,7 +487,7 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
               <button
                 className="ai-send-button"
                 onClick={submit}
-                disabled={!input.trim()}
+                disabled={!input.trim() && !composerSelection}
                 title="Send"
               >
                 <Send size={15} />
