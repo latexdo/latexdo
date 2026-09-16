@@ -63,6 +63,15 @@ function advanceToModelStep() {
   continueSetup();
 }
 
+function modelChoiceButton(name: string): HTMLButtonElement {
+  const card = screen
+    .getByText(name, { selector: ".ai-wizard-model-name" })
+    .closest(".ai-wizard-model");
+  const button = card?.querySelector<HTMLButtonElement>(".ai-wizard-model-choice");
+  expect(button).toBeTruthy();
+  return button as HTMLButtonElement;
+}
+
 describe("SetupWizard", () => {
   beforeEach(() => {
     aiClientMock.downloadModel.mockReset();
@@ -101,6 +110,33 @@ describe("SetupWizard", () => {
 
     expect(onAcceptLegal).toHaveBeenCalledTimes(1);
     expect(screen.getByText("What should LatexDo call you?")).toBeVisible();
+  });
+
+  it("allows the legal checkbox to be unchecked and rechecked", () => {
+    render(
+      <SetupWizard
+        initialConfig={makeConfig()}
+        isDesktop
+        legalAccepted
+        onApplyTheme={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    );
+
+    const checkbox = screen.getByLabelText("Accept Terms of Use and Privacy Policy");
+    const continueButton = screen.getByRole("button", { name: /continue/i });
+
+    expect(checkbox).toBeChecked();
+    expect(checkbox).not.toBeDisabled();
+    expect(continueButton).toBeEnabled();
+
+    fireEvent.click(checkbox);
+    expect(checkbox).not.toBeChecked();
+    expect(continueButton).toBeDisabled();
+
+    fireEvent.click(checkbox);
+    expect(checkbox).toBeChecked();
+    expect(continueButton).toBeEnabled();
   });
 
   it("walks through onboarding and completes with a cloud provider", () => {
@@ -247,6 +283,28 @@ describe("SetupWizard", () => {
     expect(await screen.findByText("Download failed")).toBeVisible();
   });
 
+  it("shows a resource scanner while local AI capabilities are loading", () => {
+    render(
+      <SetupWizard
+        initialConfig={makeConfig({
+          provider: "local",
+          modelDownloaded: false,
+        })}
+        isDesktop
+        systemCapabilities={null}
+        systemCapabilitiesState="loading"
+        onApplyTheme={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    );
+    advanceToModelStep();
+
+    expect(
+      screen.getByRole("status", { name: /detecting machine resources/i }),
+    ).toBeVisible();
+    expect(screen.getByText("Detecting this machine")).toBeVisible();
+  });
+
   it("disables local AI tiers that do not fit the current machine", () => {
     render(
       <SetupWizard
@@ -267,21 +325,9 @@ describe("SetupWizard", () => {
     );
     advanceToModelStep();
 
-    expect(
-      screen
-        .getByText("LatexDo AI", { selector: ".ai-wizard-model-name" })
-        .closest("button"),
-    ).not.toBeDisabled();
-    expect(
-      screen
-        .getByText("LatexDo AI Plus", { selector: ".ai-wizard-model-name" })
-        .closest("button"),
-    ).toBeDisabled();
-    expect(
-      screen
-        .getByText("LatexDo Pro Max", { selector: ".ai-wizard-model-name" })
-        .closest("button"),
-    ).toBeDisabled();
+    expect(modelChoiceButton("LatexDo AI")).not.toBeDisabled();
+    expect(modelChoiceButton("LatexDo AI Plus")).toBeDisabled();
+    expect(modelChoiceButton("LatexDo Pro Max")).toBeDisabled();
   });
 
   it("blocks local model downloads when storage is too low", () => {
@@ -350,6 +396,34 @@ describe("SetupWizard", () => {
       expect.objectContaining({
         setupComplete: true,
         provider: "off",
+      }),
+    );
+  });
+
+  it("can finish from the AI model step without enabling AI", () => {
+    const onComplete = vi.fn();
+    render(
+      <SetupWizard
+        initialConfig={makeConfig({
+          provider: "local",
+          modelDownloaded: false,
+        })}
+        isDesktop
+        systemCapabilities={highRamCapabilities}
+        systemCapabilitiesState="ready"
+        onApplyTheme={vi.fn()}
+        onComplete={onComplete}
+      />,
+    );
+    advanceToModelStep();
+
+    fireEvent.click(screen.getByRole("button", { name: /i don't need ai/i }));
+    expect(onComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setupComplete: true,
+        provider: "off",
+        selection: { mode: "off" },
+        modelDownloaded: false,
       }),
     );
   });

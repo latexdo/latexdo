@@ -196,7 +196,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
 
   const goNext = () => setStepIndex((i) => Math.min(i + 1, steps.length - 1));
   const goBack = () => setStepIndex((i) => Math.max(i - 1, 0));
-  const legalReady = legalAccepted || legalConsent;
+  const legalReady = legalConsent;
 
   React.useEffect(() => {
     if (legalAccepted) {
@@ -437,6 +437,16 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
     });
   };
 
+  const skipAiSetup = () => {
+    onComplete({
+      ...config,
+      provider: "off",
+      selection: { mode: "off" },
+      setupComplete: true,
+      modelDownloaded: false,
+    });
+  };
+
   const selectedTierId =
     config.provider === "local" && config.selection.mode === "latexdo"
       ? config.selection.tier
@@ -555,8 +565,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                 <label className="setup-legal-check">
                   <input
                     type="checkbox"
-                    checked={legalReady}
-                    disabled={legalAccepted}
+                    checked={legalConsent}
                     onChange={(event) => setLegalConsent(event.target.checked)}
                     aria-label="Accept Terms of Use and Privacy Policy"
                   />
@@ -675,6 +684,38 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                     : "The browser build can't run local AI tiers. Use Customize to connect an API provider."}
                 </p>
 
+                {isDesktop &&
+                systemCapabilitiesState === "loading" &&
+                !systemCapabilities ? (
+                  <div
+                    className="ai-wizard-resource-scan"
+                    role="status"
+                    aria-label="Detecting machine resources"
+                  >
+                    <div className="ai-wizard-resource-scan-head">
+                      <Cpu size={15} />
+                      <strong>Detecting this machine</strong>
+                      <span>RAM, storage, and local AI runtime</span>
+                    </div>
+                    <div className="ai-wizard-resource-grid" aria-hidden="true">
+                      {["RAM", "Storage", "Runtime"].map((label, index) => (
+                        <div
+                          key={label}
+                          className="ai-wizard-resource-tile"
+                          style={
+                            {
+                              "--scan-delay": `${index * 140}ms`,
+                            } as React.CSSProperties
+                          }
+                        >
+                          <span>{label}</span>
+                          <div className="ai-wizard-resource-track" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="ai-wizard-privacy">
                   <ShieldCheck size={16} aria-hidden="true" />
                   <div>
@@ -684,98 +725,6 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                       ? " Nothing leaves your computer unless you choose to connect a provider."
                       : ""}
                   </div>
-                </div>
-
-                <div className="ai-wizard-model-list">
-                  {latexDoAiTiers.map((tier) => {
-                    const tierInstalled =
-                      config.provider === "local" &&
-                      config.modelId === tier.runtime.modelId &&
-                      (downloaded || config.modelDownloaded);
-                    const availability = tierInstalled
-                      ? tierRunAvailability(tier)
-                      : tierAvailability(tier);
-                    const available = availability.state === "available";
-                    const selected =
-                      config.selection.mode === "latexdo" &&
-                      config.selection.tier === tier.id;
-                    return (
-                      <button
-                        key={tier.id}
-                        className={`ai-wizard-model ${
-                          selected ? "selected" : ""
-                        } ${available ? "" : "unavailable"}`}
-                        onClick={() => selectTier(tier)}
-                        disabled={!available}
-                      >
-                        <div className="ai-wizard-model-head">
-                          <span className="ai-wizard-model-name">{tier.name}</span>
-                          <span
-                            className={`ai-wizard-tier ${
-                              available ? "tier-recommended" : "tier-unavailable"
-                            }`}
-                          >
-                            {available ? "Available" : "Unavailable"}
-                          </span>
-                        </div>
-                        <div className="ai-wizard-model-desc">{tier.description}</div>
-                        <div className="ai-wizard-model-capabilities">
-                          {tier.capabilities.slice(0, 3).map((capabilityId) => {
-                            const capability = capabilityById(capabilityId);
-                            if (!capability) return null;
-                            return (
-                              <span key={capabilityId} className="ai-wizard-capability">
-                                {capability.label}
-                              </span>
-                            );
-                          })}
-                        </div>
-                        {tier.capabilities.length > 3 ? (
-                          <div className="ai-wizard-capability-more">
-                            +{tier.capabilities.length - 3} more — see the comparison
-                            below
-                          </div>
-                        ) : null}
-                        <div className="ai-wizard-model-meta">
-                          <span>{availabilityLabel(availability)}</span>
-                        </div>
-                        {(() => {
-                          const guidance = tierUnlockGuidance(availability);
-                          if (!guidance) return null;
-                          return (
-                            <div className="ai-wizard-unlock">
-                              <div className="ai-wizard-unlock-heading">
-                                {guidance.heading}
-                              </div>
-                              <ol className="ai-wizard-unlock-steps">
-                                {guidance.steps.map((stepText, index) => (
-                                  <li key={`${guidance.heading}-${index}`}>
-                                    {stepText}
-                                  </li>
-                                ))}
-                              </ol>
-                            </div>
-                          );
-                        })()}
-                      </button>
-                    );
-                  })}
-
-                  <button
-                    className={`ai-wizard-model ai-wizard-cloud ${
-                      customSelected ? "selected" : ""
-                    }`}
-                    onClick={selectCustomize}
-                  >
-                    <div className="ai-wizard-model-head">
-                      <span className="ai-wizard-model-name">
-                        <Cloud size={14} /> Customize
-                      </span>
-                    </div>
-                    <div className="ai-wizard-model-desc">
-                      Bring your own model or AI provider.
-                    </div>
-                  </button>
                 </div>
 
                 <button
@@ -864,6 +813,164 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                     </table>
                   </div>
                 )}
+
+                <div className="ai-wizard-model-list">
+                  {latexDoAiTiers.map((tier) => {
+                    const tierInstalled =
+                      config.provider === "local" &&
+                      config.modelId === tier.runtime.modelId &&
+                      (downloaded || config.modelDownloaded);
+                    const availability = tierInstalled
+                      ? tierRunAvailability(tier)
+                      : tierAvailability(tier);
+                    const available = availability.state === "available";
+                    const selected =
+                      config.selection.mode === "latexdo" &&
+                      config.selection.tier === tier.id;
+                    return (
+                      <div
+                        key={tier.id}
+                        className={`ai-wizard-model ${
+                          selected ? "selected" : ""
+                        } ${available ? "" : "unavailable"}`}
+                      >
+                        <button
+                          type="button"
+                          className="ai-wizard-model-choice"
+                          onClick={() => selectTier(tier)}
+                          disabled={!available}
+                        >
+                          <div className="ai-wizard-model-head">
+                            <span className="ai-wizard-model-name">{tier.name}</span>
+                            <span
+                              className={`ai-wizard-tier ${
+                                available ? "tier-recommended" : "tier-unavailable"
+                              }`}
+                            >
+                              {available ? "Available" : "Unavailable"}
+                            </span>
+                          </div>
+                          <div className="ai-wizard-model-desc">{tier.description}</div>
+                          <div className="ai-wizard-model-capabilities">
+                            {tier.capabilities.slice(0, 3).map((capabilityId) => {
+                              const capability = capabilityById(capabilityId);
+                              if (!capability) return null;
+                              return (
+                                <span
+                                  key={capabilityId}
+                                  className="ai-wizard-capability"
+                                >
+                                  {capability.label}
+                                </span>
+                              );
+                            })}
+                          </div>
+                          {tier.capabilities.length > 3 ? (
+                            <div className="ai-wizard-capability-more">
+                              +{tier.capabilities.length - 3} more — see the comparison
+                              below
+                            </div>
+                          ) : null}
+                          <div className="ai-wizard-model-meta">
+                            <span>{availabilityLabel(availability)}</span>
+                          </div>
+                          {(() => {
+                            const guidance = tierUnlockGuidance(availability);
+                            if (!guidance) return null;
+                            return (
+                              <div className="ai-wizard-unlock">
+                                <div className="ai-wizard-unlock-heading">
+                                  {guidance.heading}
+                                </div>
+                                <ol className="ai-wizard-unlock-steps">
+                                  {guidance.steps.map((stepText, index) => (
+                                    <li key={`${guidance.heading}-${index}`}>
+                                      {stepText}
+                                    </li>
+                                  ))}
+                                </ol>
+                              </div>
+                            );
+                          })()}
+                        </button>
+                        {selected && (
+                          <div className="ai-wizard-model-action">
+                            {availability.state === "memory-pressure" ||
+                            availability.state === "storage-pressure" ? (
+                              <button
+                                type="button"
+                                className="ai-wizard-ghost"
+                                onClick={() => void onRefreshSystemCapabilities?.()}
+                              >
+                                <RefreshCw size={13} /> Check again
+                              </button>
+                            ) : null}
+                            {availability.state === "unsupported" ? (
+                              <div className="ai-wizard-error">
+                                <AlertCircle size={13} />{" "}
+                                {availabilityLabel(availability)}
+                              </div>
+                            ) : tierInstalled ? (
+                              <div className="ai-wizard-download-done">
+                                <Check size={16} /> {tier.name} is ready.
+                              </div>
+                            ) : downloading ? (
+                              <div className="ai-wizard-download-progress">
+                                <Loader2 size={16} className="spin" />
+                                <div className="ai-wizard-progress-bar">
+                                  <div
+                                    className="ai-wizard-progress-fill"
+                                    style={{
+                                      width: progress.total
+                                        ? `${Math.round(
+                                            (progress.received / progress.total) * 100,
+                                          )}%`
+                                        : "40%",
+                                    }}
+                                  />
+                                </div>
+                                <span>
+                                  {formatBytes(progress.received)}
+                                  {progress.total
+                                    ? ` / ${formatBytes(progress.total)}`
+                                    : ""}
+                                </span>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                className="ai-wizard-primary ai-wizard-model-download"
+                                onClick={() => startDownload(tier)}
+                                disabled={availability.state !== "available"}
+                              >
+                                <Download size={15} /> Download {tier.name}
+                              </button>
+                            )}
+                            {downloadError && (
+                              <div className="ai-wizard-error">{downloadError}</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  <button
+                    className={`ai-wizard-model ai-wizard-cloud ${
+                      customSelected ? "selected" : ""
+                    }`}
+                    onClick={selectCustomize}
+                  >
+                    <div className="ai-wizard-model-head">
+                      <span className="ai-wizard-model-name">
+                        <Cloud size={14} /> Customize
+                      </span>
+                    </div>
+                    <div className="ai-wizard-model-desc">
+                      Bring your own model or AI provider.
+                    </div>
+                  </button>
+                </div>
 
                 {customSelected && (
                   <div className="ai-wizard-custom-form">
@@ -1057,60 +1164,6 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                 {customSelected && downloadError ? (
                   <div className="ai-wizard-error">{downloadError}</div>
                 ) : null}
-
-                {config.selection.mode === "latexdo" && selectedTier && (
-                  <div className="ai-wizard-download">
-                    {selectedTierAvailability.state === "memory-pressure" ||
-                    selectedTierAvailability.state === "storage-pressure" ? (
-                      <button
-                        type="button"
-                        className="ai-wizard-ghost"
-                        onClick={() => void onRefreshSystemCapabilities?.()}
-                      >
-                        <RefreshCw size={13} /> Check again
-                      </button>
-                    ) : null}
-                    {selectedTierAvailability.state === "unsupported" ? (
-                      <div className="ai-wizard-error">
-                        <AlertCircle size={13} />{" "}
-                        {availabilityLabel(selectedTierAvailability)}
-                      </div>
-                    ) : downloaded || config.modelDownloaded ? (
-                      <div className="ai-wizard-download-done">
-                        <Check size={16} /> {selectedTier.name} is ready.
-                      </div>
-                    ) : downloading ? (
-                      <div className="ai-wizard-download-progress">
-                        <Loader2 size={16} className="spin" />
-                        <div className="ai-wizard-progress-bar">
-                          <div
-                            className="ai-wizard-progress-fill"
-                            style={{
-                              width: progress.total
-                                ? `${Math.round((progress.received / progress.total) * 100)}%`
-                                : "40%",
-                            }}
-                          />
-                        </div>
-                        <span>
-                          {formatBytes(progress.received)}
-                          {progress.total ? ` / ${formatBytes(progress.total)}` : ""}
-                        </span>
-                      </div>
-                    ) : (
-                      <button
-                        className="ai-wizard-primary"
-                        onClick={() => startDownload(selectedTier)}
-                        disabled={selectedTierAvailability.state !== "available"}
-                      >
-                        <Download size={15} /> Download {selectedTier.name}
-                      </button>
-                    )}
-                    {downloadError && (
-                      <div className="ai-wizard-error">{downloadError}</div>
-                    )}
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -1130,18 +1183,23 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                 </button>
               )}
               {step === "model" ? (
-                <button
-                  className="ai-wizard-primary"
-                  onClick={finish}
-                  disabled={!canFinish}
-                  title={
-                    canFinish
-                      ? ""
-                      : "Download the model or pick a cloud provider first."
-                  }
-                >
-                  Finish <Check size={15} />
-                </button>
+                <>
+                  <button className="ai-wizard-ghost" onClick={skipAiSetup}>
+                    I don't need AI
+                  </button>
+                  <button
+                    className="ai-wizard-primary"
+                    onClick={finish}
+                    disabled={!canFinish}
+                    title={
+                      canFinish
+                        ? ""
+                        : "Download the model or pick a cloud provider first."
+                    }
+                  >
+                    Finish <Check size={15} />
+                  </button>
+                </>
               ) : (
                 <button
                   className="ai-wizard-primary"

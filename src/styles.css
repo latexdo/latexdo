@@ -11826,8 +11826,10 @@ button {
 }
 
 .ai-wizard-anonymous {
+  display: inline-flex;
+  align-items: center;
   width: max-content;
-  margin-top: 10px;
+  margin-top: 18px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -11882,8 +11884,31 @@ button {
   }
 }
 
+@keyframes ai-resource-sweep {
+  from {
+    transform: translateX(0) skewX(-16deg);
+  }
+  to {
+    transform: translateX(760%) skewX(-16deg);
+  }
+}
+
+@keyframes ai-resource-pulse {
+  0%,
+  100% {
+    opacity: 0.62;
+    transform: translateX(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(160%);
+  }
+}
+
 .ai-wizard-input {
+  display: block;
   margin-top: 18px;
+  margin-bottom: 0;
   width: 100%;
   max-width: 400px;
   padding: 11px 13px;
@@ -11975,6 +12000,19 @@ button {
   cursor: pointer;
   width: 100%;
 }
+.ai-wizard-model-choice {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.ai-wizard-model-choice:disabled {
+  cursor: not-allowed;
+}
 .ai-wizard-model:hover {
   border-color: var(--border-hover);
 }
@@ -12039,8 +12077,17 @@ button {
   padding: 2px 7px;
   border-radius: 5px;
 }
-.ai-wizard-download {
-  margin-top: 8px;
+.ai-wizard-model-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-card);
+}
+.ai-wizard-model-download {
+  width: auto;
 }
 .ai-wizard-download-done {
   display: flex;
@@ -12089,6 +12136,98 @@ button {
 .ai-wizard-privacy strong {
   color: var(--text-primary);
 }
+
+.ai-wizard-resource-scan {
+  position: relative;
+  display: grid;
+  max-width: 560px;
+  gap: 12px;
+  margin: 14px 0 4px;
+  padding: 12px;
+  border: 1px solid var(--border-card);
+  border-radius: 9px;
+  background:
+    linear-gradient(135deg, rgb(91 169 255 / 10%), transparent 48%), var(--bg-card);
+  overflow: hidden;
+}
+
+.ai-wizard-resource-scan::after {
+  content: "";
+  position: absolute;
+  inset: -35% auto -35% -24%;
+  width: 18%;
+  background: linear-gradient(90deg, transparent, rgb(132 170 255 / 18%), transparent);
+  animation: ai-resource-sweep 1.7s ease-in-out infinite;
+}
+
+.ai-wizard-resource-scan-head {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+
+.ai-wizard-resource-scan-head svg {
+  color: var(--accent);
+}
+
+.ai-wizard-resource-scan-head span {
+  color: var(--text-muted);
+}
+
+.ai-wizard-resource-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ai-wizard-resource-tile {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: rgb(255 255 255 / 3%);
+}
+
+.ai-wizard-resource-tile span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.ai-wizard-resource-track {
+  position: relative;
+  height: 24px;
+  border-radius: 6px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgb(124 166 255 / 16%) 0 7px,
+      transparent 7px 12px
+    ),
+    var(--bg-button-secondary);
+  overflow: hidden;
+}
+
+.ai-wizard-resource-track::after {
+  content: "";
+  position: absolute;
+  inset: 4px auto 4px 4px;
+  width: 34%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent), rgb(144 191 255 / 58%));
+  box-shadow: 0 0 16px rgb(124 166 255 / 32%);
+  animation: ai-resource-pulse 1.25s ease-in-out infinite;
+  animation-delay: var(--scan-delay, 0ms);
+}
 .ai-wizard-model-capabilities {
   display: flex;
   flex-wrap: wrap;
@@ -12133,7 +12272,8 @@ button {
   margin-top: 2px;
 }
 .ai-wizard-compare {
-  margin-top: 10px;
+  width: min(760px, calc(100% + 48px));
+  margin: 10px -24px 0;
   overflow-x: auto;
   background: var(--bg-card);
   border: 1px solid var(--border-card);
@@ -12141,7 +12281,7 @@ button {
 }
 .ai-wizard-compare-table {
   width: 100%;
-  min-width: 620px;
+  min-width: 720px;
   border-collapse: collapse;
   font-size: 12px;
 }
@@ -12168,7 +12308,7 @@ button {
   color: var(--text-muted);
 }
 .ai-wizard-compare-table tbody th {
-  min-width: 190px;
+  min-width: 230px;
   font-weight: 400;
   color: var(--text-secondary);
 }
