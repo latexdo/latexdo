@@ -3714,7 +3714,7 @@ button {
 .visual-latex-paragraph,
 .visual-latex-list-item,
 .visual-latex-math,
-.visual-latex-raw {
+.visual-latex-preserved {
   width: 100%;
   min-width: 0;
   border: 1px solid transparent;
@@ -3727,8 +3727,7 @@ button {
 .visual-latex-heading:focus,
 .visual-latex-paragraph:focus,
 .visual-latex-list-item:focus,
-.visual-latex-math:focus,
-.visual-latex-raw:focus {
+.visual-latex-math:focus {
   border-color: var(--border-focus);
   background: var(--bg-input);
 }
@@ -3769,11 +3768,13 @@ button {
 
 .visual-latex-paragraph,
 .visual-latex-list-item {
-  resize: vertical;
+  min-height: 32px;
   padding: 3px 6px;
   font-family: Georgia, "Times New Roman", serif;
   font-size: 18px;
   line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .visual-latex-list {
@@ -3791,7 +3792,7 @@ button {
 }
 
 .visual-latex-math,
-.visual-latex-raw {
+.visual-latex-preserved {
   resize: vertical;
   padding: 10px 12px;
   border-color: var(--border-input);
@@ -3803,6 +3804,71 @@ button {
 
 .visual-latex-math {
   color: var(--accent);
+}
+
+.visual-latex-token,
+.visual-latex-inline-format {
+  display: inline-flex;
+  align-items: baseline;
+  max-width: 100%;
+  margin: 0 2px;
+  border-radius: 4px;
+  vertical-align: baseline;
+  white-space: normal;
+}
+
+.visual-latex-token {
+  padding: 1px 5px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  color: var(--accent);
+  font-family: "SFMono-Regular", "Cascadia Code", "Fira Code", Menlo, monospace;
+  font-size: 0.78em;
+  line-height: 1.45;
+}
+
+.visual-latex-token.token-latex {
+  border-color: transparent;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 1em;
+  font-weight: 600;
+  padding-inline: 0;
+}
+
+.visual-latex-token.token-math {
+  color: var(--text-primary);
+  border-color: var(--border-card);
+  background: var(--bg-panel);
+  font-family: "SFMono-Regular", "Cascadia Code", "Fira Code", Menlo, monospace;
+}
+
+.visual-latex-token.token-link {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.visual-latex-preserved {
+  display: inline-flex;
+  width: auto;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+  padding: 4px 8px;
+  resize: none;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.visual-latex-preserved span:first-child {
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 4px;
 }
 
 .visual-latex-spacer {

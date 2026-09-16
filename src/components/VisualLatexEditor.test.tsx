@@ -54,12 +54,58 @@ describe("VisualLatexEditor", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("List item"), {
-      target: { value: "Updated point" },
-    });
+    const item = screen.getByLabelText("List item");
+    item.textContent = "Updated point";
+    fireEvent.input(item);
 
     expect(onChange).toHaveBeenLastCalledWith(
       "\\begin{itemize}\n  \\item Updated point\n\\end{itemize}",
     );
+  });
+
+  it("hides source-only LaTeX wrappers from the visual writing surface", () => {
+    render(
+      <VisualLatexEditor
+        content={[
+          "\\documentclass{article}",
+          "\\usepackage{graphicx}",
+          "\\begin{document}",
+          "\\section{Intro}",
+          "People can write here.",
+          "\\end{document}",
+        ].join("\n")}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(/\\documentclass/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\\begin\{document\}/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("section title")).toHaveValue("Intro");
+    expect(screen.getByText("People can write here.")).toBeVisible();
+  });
+
+  it("renders common inline LaTeX as readable visual tokens", () => {
+    render(
+      <VisualLatexEditor
+        content={"Use {\\LaTeX} with \\cite{smith2026} and $E=mc^2$."}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("LaTeX")).toBeVisible();
+    expect(screen.getByText("[smith2026]")).toBeVisible();
+    expect(screen.getByText("E=mc^2")).toBeVisible();
+    expect(screen.queryByText(/\\cite/)).not.toBeInTheDocument();
+  });
+
+  it("writes normal visual paragraph edits back as plain LaTeX text", () => {
+    const onChange = vi.fn();
+    render(<VisualLatexEditor content={"Original paragraph."} onChange={onChange} />);
+
+    const paragraph = screen.getByLabelText("Paragraph");
+    paragraph.textContent = "AT&T uses 100% renewable energy.";
+    fireEvent.input(paragraph);
+
+    expect(onChange).toHaveBeenLastCalledWith("AT\\&T uses 100\\% renewable energy.");
   });
 });

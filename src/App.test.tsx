@@ -666,9 +666,9 @@ describe("App critical UI controls", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^Visual$/i }));
 
-    fireEvent.change(await screen.findByLabelText("Paragraph"), {
-      target: { value: "Updated paragraph." },
-    });
+    const paragraph = await screen.findByLabelText("Paragraph");
+    paragraph.textContent = "Updated paragraph.";
+    fireEvent.input(paragraph);
 
     fireEvent.click(screen.getByRole("button", { name: /^Code$/i }));
 
