@@ -1613,6 +1613,34 @@ async function availableProjectPath(
   throw new Error(`Could not find an available folder named "${folderName}".`);
 }
 
+function folderNameFromProviderProjectUrl(value: string): string {
+  try {
+    const parsed = new URL(value);
+    const lastPathSegment = parsed.pathname.split("/").filter(Boolean).pop();
+    const rawName = lastPathSegment || "overleaf-project";
+    const safeName = rawName
+      .replace(/\.git$/i, "")
+      .replace(/[^A-Za-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80);
+    return safeName || "overleaf-project";
+  } catch {
+    return "overleaf-project";
+  }
+}
+
+function parseOverleafGitUrl(channel: string, value: unknown): string {
+  const url = parseHttpUrl(channel, value);
+  if (!url) {
+    invalidIpcInput(channel);
+  }
+  const parsed = new URL(url);
+  if (parsed.hostname.toLowerCase() !== "git.overleaf.com") {
+    throw new Error(`${channel}: expected an Overleaf Git URL from git.overleaf.com`);
+  }
+  return parsed.toString();
+}
+
 function parseRelativePath(
   channel: string,
   value: unknown,
@@ -5638,6 +5666,38 @@ async function startApp(): Promise<void> {
       }
       throw error;
     }
+    await trustWorkspace(projectPath);
+    return registerProject(projectPath);
+  });
+  ipcMain.handle("provider:import-overleaf-project", async (event, ...rawArgs) => {
+    const channel = "provider:import-overleaf-project";
+    const [rawGitUrl] = expectIpcArgs(channel, rawArgs, 1);
+    const gitUrl = parseOverleafGitUrl(channel, rawGitUrl);
+    const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const result = window
+      ? await dialog.showOpenDialog(window, {
+          properties: ["openDirectory", "createDirectory"],
+          title: "Choose where to save the Overleaf project",
+          buttonLabel: "Fetch Project",
+          defaultPath: app.getPath("documents"),
+        })
+      : await dialog.showOpenDialog({
+          properties: ["openDirectory", "createDirectory"],
+          title: "Choose where to save the Overleaf project",
+          buttonLabel: "Fetch Project",
+          defaultPath: app.getPath("documents"),
+        });
+    if (result.canceled || !result.filePaths[0]) {
+      return null;
+    }
+
+    const projectPath = await availableProjectPath(
+      result.filePaths[0],
+      folderNameFromProviderProjectUrl(gitUrl),
+    );
+    await runGitText(result.filePaths[0], ["clone", "--", gitUrl, projectPath], {
+      maxBytes: 512 * 1024,
+    });
     await trustWorkspace(projectPath);
     return registerProject(projectPath);
   });

@@ -6086,6 +6086,20 @@ ${macroEnd}
     }
   };
 
+  const importOverleafProject = useCallback(
+    async (gitUrl: string) => {
+      if (requireLegalAcceptance()) {
+        return;
+      }
+      const project = await window.latexdo.importOverleafProject(gitUrl);
+      if (project) {
+        await loadProject(project, true, false);
+        setStatusMessage("Overleaf project fetched locally");
+      }
+    },
+    [loadProject, requireLegalAcceptance],
+  );
+
   const copyToClipboard = async (text: string): Promise<void> => {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
@@ -9716,6 +9730,7 @@ ${macroEnd}
           onChange={(profile) => setAiConfig((c) => ({ ...c, profile }))}
           onClose={() => setProfileOpen(false)}
           onOpenExternal={openExternalLink}
+          onImportOverleafProject={importOverleafProject}
         />
       )}
       <header className="titlebar">

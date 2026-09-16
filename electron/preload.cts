@@ -600,6 +600,8 @@ const api = {
     options === undefined
       ? ipcRenderer.invoke("project:create")
       : ipcRenderer.invoke("project:create", options),
+  importOverleafProject: (gitUrl: string): Promise<OpenProject | null> =>
+    ipcRenderer.invoke("provider:import-overleaf-project", gitUrl),
   createResearchSpace: (): Promise<OpenProject | null> =>
     ipcRenderer.invoke("research-space:create"),
   listProject: (

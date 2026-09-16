@@ -11,6 +11,20 @@ export interface PaperRef {
 }
 
 export type ProfileMode = "anonymous" | "orcid";
+export type AcademicTitle = "" | "Dr" | "Prof" | "Prof. Dr" | "Mx";
+export type ExternalProviderId = "overleaf" | "zotero" | "mendeley" | "readcube";
+
+export interface ExternalProviderConnection {
+  provider: ExternalProviderId;
+  username: string;
+  displayName: string;
+  title: AcademicTitle;
+  affiliation?: string;
+  confirmed: boolean;
+  connectedAt: number;
+  updatedAt: number;
+  projectFetchUrl?: string;
+}
 
 export interface ResearcherProfile {
   mode: ProfileMode;
@@ -19,7 +33,9 @@ export interface ResearcherProfile {
   /** ORCID iD, e.g. 0000-0002-1825-0097. */
   orcidId: string;
   displayName: string;
+  title: AcademicTitle;
   affiliation: string;
+  externalProviders: ExternalProviderConnection[];
   papers: PaperRef[];
   papersFetchedAt: number;
   /** Feed the profile (name, affiliation, paper titles) to the agent. */
@@ -184,7 +200,9 @@ export const defaultResearcherProfile: ResearcherProfile = {
   token: "",
   orcidId: "",
   displayName: "",
+  title: "",
   affiliation: "",
+  externalProviders: [],
   papers: [],
   papersFetchedAt: 0,
   includeInContext: true,
@@ -192,6 +210,123 @@ export const defaultResearcherProfile: ResearcherProfile = {
 
 function str(value: unknown, fallback: string): string {
   return typeof value === "string" ? value : fallback;
+}
+
+const academicTitles = new Set<AcademicTitle>(["", "Dr", "Prof", "Prof. Dr", "Mx"]);
+const externalProviderIds = new Set<ExternalProviderId>([
+  "overleaf",
+  "zotero",
+  "mendeley",
+  "readcube",
+]);
+
+function normalizeAcademicTitle(value: unknown): AcademicTitle {
+  return academicTitles.has(value as AcademicTitle) ? (value as AcademicTitle) : "";
+}
+
+function normalizeExternalProviders(value: unknown): ExternalProviderConnection[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const connections: ExternalProviderConnection[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const record = raw as Partial<ExternalProviderConnection>;
+    if (!externalProviderIds.has(record.provider as ExternalProviderId)) continue;
+    const provider = record.provider as ExternalProviderId;
+    const username = str(record.username, "").trim().slice(0, 120);
+    if (!username) continue;
+    const key = `${provider}:${username.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const connectedAt =
+      typeof record.connectedAt === "number" && Number.isFinite(record.connectedAt)
+        ? record.connectedAt
+        : Date.now();
+    connections.push({
+      provider,
+      username,
+      displayName: str(record.displayName, "").trim().slice(0, 120),
+      title: normalizeAcademicTitle(record.title),
+      affiliation: str(record.affiliation, "").trim().slice(0, 200) || undefined,
+      confirmed: record.confirmed === true,
+      connectedAt,
+      updatedAt:
+        typeof record.updatedAt === "number" && Number.isFinite(record.updatedAt)
+          ? record.updatedAt
+          : connectedAt,
+      projectFetchUrl:
+        typeof record.projectFetchUrl === "string"
+          ? record.projectFetchUrl.trim().slice(0, 1000) || undefined
+          : undefined,
+    });
+  }
+  return connections.slice(0, 20);
+}
+
+export function displayNameWithTitle(
+  profile: Pick<ResearcherProfile, "title" | "displayName">,
+): string {
+  const name = profile.displayName.trim();
+  const title = profile.title.trim();
+  if (!name) return "";
+  return title ? `${title} ${name}` : name;
+}
+
+export function providerDisplayNameWithTitle(
+  connection: Pick<ExternalProviderConnection, "title" | "displayName" | "username">,
+): string {
+  const displayName = connection.displayName.trim() || connection.username.trim();
+  const title = connection.title.trim();
+  return title ? `${title} ${displayName}` : displayName;
+}
+
+function titleCase(value: string): string {
+  return value
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .map((part) =>
+      part.length <= 2
+        ? part.toUpperCase()
+        : `${part[0].toUpperCase()}${part.slice(1).toLowerCase()}`,
+    )
+    .join(" ");
+}
+
+export function suggestDisplayNameFromProviderUsername(username: string): string {
+  const raw = username.trim().replace(/^@+/, "");
+  const hasExplicitSeparator = /[\s._-]/.test(raw);
+  const cleaned = username
+    .trim()
+    .replace(/^@+/, "")
+    .replace(/\d+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return "";
+
+  const compact = cleaned.toLowerCase();
+  const knownGivenNames = [
+    "omar",
+    "mohamed",
+    "mohammed",
+    "ahmed",
+    "ali",
+    "ada",
+    "grace",
+    "john",
+    "jane",
+  ];
+  const givenName = hasExplicitSeparator
+    ? undefined
+    : knownGivenNames.find(
+        (candidate) =>
+          compact.startsWith(candidate) && compact.length > candidate.length,
+      );
+  if (givenName) {
+    return titleCase(compact.slice(givenName.length));
+  }
+  return titleCase(cleaned);
 }
 
 function normalizePapers(value: unknown): PaperRef[] {
@@ -218,7 +353,9 @@ export function normalizeResearcherProfile(raw: unknown): ResearcherProfile {
     token,
     orcidId: str(saved.orcidId, "").slice(0, 40),
     displayName: str(saved.displayName, "").slice(0, 120),
+    title: normalizeAcademicTitle(saved.title),
     affiliation: str(saved.affiliation, "").slice(0, 200),
+    externalProviders: normalizeExternalProviders(saved.externalProviders),
     papers: normalizePapers(saved.papers),
     papersFetchedAt:
       typeof saved.papersFetchedAt === "number" ? saved.papersFetchedAt : 0,
@@ -235,7 +372,8 @@ export function buildResearchContext(profile: ResearcherProfile): string | null 
   if (!profile.includeInContext) return null;
 
   const lines: string[] = [];
-  if (profile.displayName) lines.push(`Author: ${profile.displayName}`);
+  const titledName = displayNameWithTitle(profile);
+  if (titledName) lines.push(`Author: ${titledName}`);
   if (profile.affiliation) lines.push(`Affiliation: ${profile.affiliation}`);
   if (profile.mode === "orcid" && profile.orcidId) {
     lines.push(`ORCID: ${profile.orcidId}`);

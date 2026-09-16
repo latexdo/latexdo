@@ -12570,6 +12570,72 @@ button {
   cursor: pointer;
   margin-top: 4px;
 }
+.profile-name-preview,
+.profile-provider-note {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+.profile-provider-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 650;
+}
+.profile-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.profile-provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.profile-provider-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  background: var(--bg-card);
+  padding: 10px 12px;
+}
+.profile-provider-card > div:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.profile-provider-card strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.profile-provider-card span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.profile-provider-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+@media (max-width: 640px) {
+  .profile-provider-grid {
+    grid-template-columns: 1fr;
+  }
+  .profile-provider-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .profile-provider-actions {
+    flex-wrap: wrap;
+  }
+}
 
 /* ---------- Knowledge graph ---------- */
 .kg-modal-content {

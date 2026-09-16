@@ -605,6 +605,10 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       return project;
     },
 
+    importOverleafProject: async () => {
+      throw new Error("Overleaf project import requires the LatexDo desktop app.");
+    },
+
     createResearchSpace: async () => {
       const project = await requestJson<OpenProject>("/api/projects", {
         method: "POST",

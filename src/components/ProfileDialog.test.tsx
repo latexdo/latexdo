@@ -36,7 +36,9 @@ function profile(overrides: Partial<ResearcherProfile> = {}): ResearcherProfile 
     token: "sch-lunar-beacon-abc",
     orcidId: "",
     displayName: "",
+    title: "",
     affiliation: "",
+    externalProviders: [],
     papers: [],
     papersFetchedAt: 0,
     includeInContext: true,
@@ -162,6 +164,68 @@ describe("ProfileDialog", () => {
       }),
     );
     expect(onOpenExternal).toHaveBeenCalledWith("https://orcid.org/register");
+  });
+
+  it("confirms provider usernames with a separate titled display name", () => {
+    const onChange = vi.fn();
+    render(<ProfileDialog profile={profile()} onChange={onChange} onClose={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "omarabedelkader" },
+    });
+    expect(screen.getByLabelText("Suggested display name")).toHaveValue("Abedelkader");
+    fireEvent.change(screen.getAllByLabelText("Title")[1], {
+      target: { value: "Dr" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /confirm local connection/i }));
+
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        displayName: "Abedelkader",
+        title: "Dr",
+        externalProviders: [
+          expect.objectContaining({
+            provider: "overleaf",
+            username: "omarabedelkader",
+            displayName: "Abedelkader",
+            title: "Dr",
+            confirmed: true,
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("imports a connected Overleaf project through the desktop callback", async () => {
+    const onImportOverleafProject = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ProfileDialog
+        profile={profile({
+          externalProviders: [
+            {
+              provider: "overleaf",
+              username: "omarabedelkader",
+              displayName: "Abedelkader",
+              title: "Dr",
+              confirmed: true,
+              connectedAt: 1,
+              updatedAt: 1,
+              projectFetchUrl: "https://git.overleaf.com/project",
+            },
+          ],
+        })}
+        onChange={vi.fn()}
+        onClose={vi.fn()}
+        onImportOverleafProject={onImportOverleafProject}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /fetch project/i }));
+    await waitFor(() => {
+      expect(onImportOverleafProject).toHaveBeenCalledWith(
+        "https://git.overleaf.com/project",
+      );
+    });
   });
 
   it("renders linked paper summaries and refreshes ORCID data", async () => {

@@ -426,6 +426,10 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       return projectToOpenProject(project);
     },
 
+    async importOverleafProject() {
+      throw browserUnavailable("Overleaf project import");
+    },
+
     async createResearchSpace() {
       const store = readStore();
       const project = createProjectRecord("Research Space");
