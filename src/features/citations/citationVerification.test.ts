@@ -88,7 +88,13 @@ function buildCrossref(items: unknown[]) {
   return (api: string): unknown => {
     if (api.includes("filter=doi:")) {
       const doi = decodeURIComponent(api.split("filter=doi:")[1]?.split("&")[0] ?? "");
-      return { message: { items: items.filter((item) => (item as { DOI: string }).DOI.toLowerCase() === doi.toLowerCase()) } };
+      return {
+        message: {
+          items: items.filter(
+            (item) => (item as { DOI: string }).DOI.toLowerCase() === doi.toLowerCase(),
+          ),
+        },
+      };
     }
     return { message: { items } };
   };
@@ -152,11 +158,7 @@ describe("citation verification", () => {
   });
 
   it("flags a DOI conflict as a mismatch", async () => {
-    const crossrefHandler = buildCrossref(
-      [
-        smithCrossrefItem("10.9999/other"),
-      ],
-    );
+    const crossrefHandler = buildCrossref([smithCrossrefItem("10.9999/other")]);
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const api = requestApi(input);
       return jsonResponse(
@@ -298,9 +300,7 @@ describe("citation verification", () => {
     for (const verification of results.values()) {
       expect(verification.status).toBe("verified");
     }
-    expect(maxActive).toBeLessThanOrEqual(
-      __test.verificationConcurrency * 2,
-    );
+    expect(maxActive).toBeLessThanOrEqual(__test.verificationConcurrency * 2);
   });
 
   it("renders markdown without a cached verification and with each status", () => {

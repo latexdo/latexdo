@@ -183,9 +183,7 @@ export function CitationManager({
         try {
           const verification = await verifyEntry(entry);
           if (verificationStale.current) return;
-          setVerificationByKey((prev) =>
-            new Map(prev).set(entry.key, verification),
-          );
+          setVerificationByKey((prev) => new Map(prev).set(entry.key, verification));
         } catch {
           // Abort or provider failure; the global cache records errors itself.
         }

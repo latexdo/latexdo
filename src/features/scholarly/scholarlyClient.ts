@@ -185,9 +185,7 @@ export function desktopScholarlyFetcher(): typeof fetch | undefined {
   };
 }
 
-export function scholarlyFetcher(
-  custom?: typeof fetch,
-): typeof fetch | undefined {
+export function scholarlyFetcher(custom?: typeof fetch): typeof fetch | undefined {
   if (custom) return custom;
   return (
     desktopScholarlyFetcher() ??
@@ -239,16 +237,12 @@ export async function fetchJson(
         headers: { Accept: "application/json" },
       });
       if (!response.ok) {
-        const retryAfterMs = Number(
-          response.headers.get("x-latexdo-retry-after-ms"),
-        );
+        const retryAfterMs = Number(response.headers.get("x-latexdo-retry-after-ms"));
         throw new ScholarlyHttpError(
           `HTTP ${response.status} from ${new URL(url).hostname}`,
           response.status >= 500,
           response.status,
-          Number.isFinite(retryAfterMs) && retryAfterMs > 0
-            ? retryAfterMs
-            : undefined,
+          Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? retryAfterMs : undefined,
         );
       }
       return await response.json();

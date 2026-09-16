@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  citationHoverMarkdown,
-  citationKeyAtPosition,
-} from "../citationHover";
+import { citationHoverMarkdown, citationKeyAtPosition } from "../citationHover";
 import type { CitationEntry } from "../latexIndex";
 
 describe("citationKeyAtPosition", () => {
@@ -28,19 +25,25 @@ describe("citationKeyAtPosition", () => {
     });
   });
 
-  it.each(["cite", "citep", "citet", "citealp", "parencite", "textcite", "autocite", "footcite"])(
-    "supports \\%s{...}",
-    (command) => {
-      const line = `\\${command}{Ref:2020}`;
-      const offset = line.indexOf("Ref:2020");
-      const result = citationKeyAtPosition(line, offset);
-      expect(result).toEqual({
-        key: "Ref:2020",
-        start: offset,
-        end: offset + "Ref:2020".length,
-      });
-    },
-  );
+  it.each([
+    "cite",
+    "citep",
+    "citet",
+    "citealp",
+    "parencite",
+    "textcite",
+    "autocite",
+    "footcite",
+  ])("supports \\%s{...}", (command) => {
+    const line = `\\${command}{Ref:2020}`;
+    const offset = line.indexOf("Ref:2020");
+    const result = citationKeyAtPosition(line, offset);
+    expect(result).toEqual({
+      key: "Ref:2020",
+      start: offset,
+      end: offset + "Ref:2020".length,
+    });
+  });
 
   it("handles optional arguments", () => {
     const line = "See \\citep[see][p. 5]{Doey99} for details.";
@@ -62,9 +65,7 @@ describe("citationKeyAtPosition", () => {
 
   it("returns null when the cursor is not over a citation key", () => {
     expect(citationKeyAtPosition("\\cite{Zait20a,Anqu22a}", 0)).toBeNull();
-    expect(
-      citationKeyAtPosition("\\cite{Zait20a}", "\\cite".length),
-    ).toBeNull();
+    expect(citationKeyAtPosition("\\cite{Zait20a}", "\\cite".length)).toBeNull();
     expect(citationKeyAtPosition("\\ref{sec:intro}", 5)).toBeNull();
     expect(citationKeyAtPosition("plain text, no citations here", 10)).toBeNull();
   });
@@ -93,9 +94,7 @@ describe("citationHoverMarkdown", () => {
     expect(markdown).toContain(
       "**Title:** What do developers consider magic literals?",
     );
-    expect(markdown).toContain(
-      "**Journal:** Information and Software Technology",
-    );
+    expect(markdown).toContain("**Journal:** Information and Software Technology");
     expect(markdown).toContain("**Year:** 2022");
   });
 

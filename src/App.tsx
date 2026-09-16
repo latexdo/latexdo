@@ -5127,10 +5127,7 @@ ${macroEnd}
         instance.languages.registerHoverProvider("latex", {
           provideHover: (model, position) => {
             const lineContent = model.getLineContent(position.lineNumber);
-            const citation = citationKeyAtPosition(
-              lineContent,
-              position.column - 1,
-            );
+            const citation = citationKeyAtPosition(lineContent, position.column - 1);
             if (!citation) return null;
             const entry = citationEntriesByKeyRef.current.get(citation.key);
             if (!entry) return null;

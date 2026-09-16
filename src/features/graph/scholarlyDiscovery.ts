@@ -141,7 +141,9 @@ function buildFingerprint(
       entries.map((entry) => normalizeDoi(entry.doi)).filter(Boolean),
     ),
     existingTitles: new Set(
-      entries.map((entry) => normalizeTitle(entry.title)).filter((title) => title.length >= 16),
+      entries
+        .map((entry) => normalizeTitle(entry.title))
+        .filter((title) => title.length >= 16),
     ),
     currentYear,
   };

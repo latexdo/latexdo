@@ -92,10 +92,7 @@ function verificationFingerprint(paper: ScholarlyPaper): string {
   return `title:${normalizeTitle(paper.title)}:${paper.year ?? ""}`;
 }
 
-function scoredPaper(
-  paper: ScholarlyPaper,
-  score: number,
-): VerifiedPaper {
+function scoredPaper(paper: ScholarlyPaper, score: number): VerifiedPaper {
   return {
     provider: paper.provider,
     title: paper.title,
@@ -177,9 +174,7 @@ function verificationQuery(entry: CitationEntry): string | null {
   return query.length >= 8 ? query : null;
 }
 
-function collectUnique(
-  ...lists: Array<ScholarlyPaper[]>
-): ScholarlyPaper[] {
+function collectUnique(...lists: Array<ScholarlyPaper[]>): ScholarlyPaper[] {
   const seen = new Set<string>();
   const papers: ScholarlyPaper[] = [];
   for (const list of lists) {
@@ -196,7 +191,11 @@ function collectUnique(
 async function lookupByDoi(
   doi: string,
   options: ScholarlySearchOptions,
-): Promise<{ papers: ScholarlyPaper[]; errors: string[]; providers: ScholarlyProvider[] }> {
+): Promise<{
+  papers: ScholarlyPaper[];
+  errors: string[];
+  providers: ScholarlyProvider[];
+}> {
   const providers: ScholarlyProvider[] = [];
   const errors: string[] = [];
   const settled = await Promise.allSettled([
@@ -267,12 +266,7 @@ export async function verifyCitation(
         return {
           status: "verified",
           entry,
-          matches: [
-            scoredPaper(
-              top,
-              top.doi ? 1 : scored.base,
-            ),
-          ],
+          matches: [scoredPaper(top, top.doi ? 1 : scored.base)],
           checks: {
             doi: "matched",
             title: scored.title,
@@ -364,9 +358,9 @@ export async function verifyCitation(
     status = "unverified";
   }
 
-  const matches = scored.slice(0, 3).map(({ candidate, score }) =>
-    scoredPaper(candidate, score),
-  );
+  const matches = scored
+    .slice(0, 3)
+    .map(({ candidate, score }) => scoredPaper(candidate, score));
 
   return {
     status,
@@ -473,10 +467,7 @@ export function citationVerificationMarkdown(
 ): string {
   const body = citationHoverMarkdown(entry);
   if (!verification) {
-    return [
-      "**Verification:** Checking against Crossref and OpenAlex…",
-      body,
-    ]
+    return ["**Verification:** Checking against Crossref and OpenAlex…", body]
       .filter(Boolean)
       .join("\n\n");
   }
@@ -516,9 +507,7 @@ export function citationVerificationMarkdown(
     verification.checks.year !== "unknown"
       ? `year ${verification.checks.year}`
       : undefined,
-    verification.checks.doi !== "absent"
-      ? `doi ${verification.checks.doi}`
-      : undefined,
+    verification.checks.doi !== "absent" ? `doi ${verification.checks.doi}` : undefined,
   ]
     .filter(Boolean)
     .join(" · ");
