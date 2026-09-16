@@ -738,8 +738,8 @@ export interface AppSettings {
 export const settingsStorageKey = "latexdo.settings";
 export const installedExtensionsStorageKey = "latexdo.extensions.installed.v1";
 export const legalPolicyVersion = "2026-08-26-google-tag-manager";
-export const legalTermsUrl = `https://latexdo.org/terms?__latexdo_asset_version=${legalPolicyVersion}`;
-export const legalPrivacyUrl = `https://latexdo.org/privacy?__latexdo_asset_version=${legalPolicyVersion}`;
+export const legalTermsUrl = `https://www.latexdo.org/terms?__latexdo_asset_version=${legalPolicyVersion}`;
+export const legalPrivacyUrl = `https://www.latexdo.org/privacy?__latexdo_asset_version=${legalPolicyVersion}`;
 const cloudClientNameKey = "latexdo.cloud.clientName";
 
 export function hasAcceptedLegalPolicies(

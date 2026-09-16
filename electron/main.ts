@@ -154,7 +154,7 @@ const extensionStoreCatalogUrl =
   envString("LATEXDO_EXTENSION_CATALOG_URL") ??
   "https://store.latexdo.org/extensions/catalog.json";
 const privacyInfoUrl =
-  envString("LATEXDO_PRIVACY_URL") ?? "https://latexdo.org/privacy.html";
+  envString("LATEXDO_PRIVACY_URL") ?? "https://www.latexdo.org/privacy";
 const externalUrlHosts = new Set([
   "aistudio.google.com",
   "console.anthropic.com",

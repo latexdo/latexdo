@@ -35,7 +35,7 @@ LatexDo does not currently collect personal analytics, sell user data, or track 
 LatexDo stores app settings, trusted folder choices, editor preferences, and install state on this device.
 LatexDo reads and writes files in folders you create, open, or trust. Update checks, downloads, extension catalog access, external links, and optional proofreading can contact LatexDo services or the provider you configure.
 
-Privacy information: https://latexdo.org/privacy.html
+Privacy information: https://www.latexdo.org/privacy
 NOTICE
 
   printf '%s' 'Type "yes" to accept and continue installing LatexDo: ' >/dev/tty
