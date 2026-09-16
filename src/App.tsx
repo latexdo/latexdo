@@ -420,6 +420,7 @@ interface AiChatTab {
 }
 const collaborationProjectReconciliationMs = 5 * 60_000;
 const startupUpdateCheckDelayMs = import.meta.env.MODE === "test" ? 0 : 2_000;
+const forceSetupWizardEveryDevLaunch = import.meta.env.MODE === "development";
 const aiChatTabsStorageKey = "latexdo.ai.chatTabs.v1";
 const aiChatStateStoragePrefix = "latexdo.ai.chatState.";
 const legacyDefaultOllamaModel = "qwen2.5-coder:3b";
@@ -707,13 +708,17 @@ function loadAiConfigForApp(): AiConfig {
   const customModels = loadCustomLatexDoAiModels();
   installCustomLatexDoAiModels(customModels);
   const config = loadAiConfig();
+  const prepareConfig = (nextConfig: AiConfig): AiConfig =>
+    forceSetupWizardEveryDevLaunch
+      ? { ...nextConfig, setupComplete: false }
+      : nextConfig;
   try {
     const saved = JSON.parse(
       window.localStorage.getItem(aiConfigStorageKey) ?? "{}",
     ) as Partial<AiConfig>;
     const savedModelId = typeof saved.modelId === "string" ? saved.modelId : "";
     if (customModels.some((model) => model.id === savedModelId)) {
-      return {
+      return prepareConfig({
         ...config,
         selection: {
           mode: "custom",
@@ -726,18 +731,18 @@ function loadAiConfigForApp(): AiConfig {
           saved.ollamaModel !== legacyDefaultOllamaModel
             ? saved.ollamaModel
             : "",
-      };
+      });
     }
     if (
       typeof saved.ollamaModel !== "string" ||
       saved.ollamaModel === legacyDefaultOllamaModel
     ) {
-      return { ...config, ollamaModel: "" };
+      return prepareConfig({ ...config, ollamaModel: "" });
     }
   } catch {
-    return { ...config, ollamaModel: "" };
+    return prepareConfig({ ...config, ollamaModel: "" });
   }
-  return config;
+  return prepareConfig(config);
 }
 
 type LatexToolbarCommand =
