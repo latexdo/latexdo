@@ -163,7 +163,19 @@ describe("SetupWizard", () => {
     });
     continueSetup();
 
-    fireEvent.click(screen.getByRole("button", { name: /Power/i }));
+    expect(screen.getByRole("img", { name: /focus workspace preview/i })).toBeVisible();
+    expect(
+      screen.getByRole("img", { name: /balanced workspace preview/i }),
+    ).toBeVisible();
+    expect(screen.getByRole("img", { name: /power workspace preview/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Balanced/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    const powerWorkspace = screen.getByRole("button", { name: /Power/i });
+    fireEvent.click(powerWorkspace);
+    expect(powerWorkspace).toHaveAttribute("aria-pressed", "true");
     continueSetup();
 
     fireEvent.click(screen.getByRole("button", { name: /Studio White/i }));

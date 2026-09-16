@@ -197,6 +197,61 @@ function labelForGgufFile(fileName: string): string {
   );
 }
 
+function WorkspacePresetFigure({ preset }: { preset: LayoutPreset }) {
+  const hasSidebar = preset !== "focus";
+  const hasPanel = preset === "power";
+  const hasMinimap = preset !== "focus";
+
+  return (
+    <div
+      className={`workspace-preset-figure workspace-preset-${preset}`}
+      role="img"
+      aria-label={`${preset} workspace preview`}
+    >
+      <div className="workspace-preset-titlebar">
+        <span />
+        <span />
+        <span />
+      </div>
+      <div className="workspace-preset-shell">
+        {hasSidebar ? (
+          <div className="workspace-preset-sidebar">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+        ) : null}
+        <div className="workspace-preset-main">
+          <div className="workspace-preset-split">
+            <div className="workspace-preset-editor">
+              <span className="wide" />
+              <span />
+              <span className="short" />
+              <span />
+              <span className="medium" />
+              {hasMinimap ? <i /> : null}
+            </div>
+            <div className="workspace-preset-pdf">
+              <em />
+              <span />
+              <span className="short" />
+              <span />
+            </div>
+          </div>
+          {hasPanel ? (
+            <div className="workspace-preset-bottom">
+              <span />
+              <span />
+              <span />
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function availabilityLabel(availability: TierAvailability): string {
   if (availability.state === "available") return "Available on this machine";
   if (availability.state === "memory-pressure") {
@@ -1046,19 +1101,34 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
               <div className="ai-wizard-section">
                 <LayoutGrid size={28} className="ai-wizard-hero-icon" />
                 <h2 id="ai-wizard-title">How do you want your workspace?</h2>
-                <div className="ai-wizard-cards">
-                  {layoutPresetInfo.map((preset) => (
-                    <button
-                      key={preset.id}
-                      className={`ai-wizard-card ${
-                        config.layoutPreset === preset.id ? "selected" : ""
-                      }`}
-                      onClick={() => patch({ layoutPreset: preset.id as LayoutPreset })}
-                    >
-                      <div className="ai-wizard-card-title">{preset.name}</div>
-                      <div className="ai-wizard-card-desc">{preset.description}</div>
-                    </button>
-                  ))}
+                <div className="ai-wizard-workspace-grid">
+                  {layoutPresetInfo.map((preset) => {
+                    const selected = config.layoutPreset === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        className={`ai-wizard-card ai-wizard-workspace-card ${
+                          selected ? "selected" : ""
+                        }`}
+                        onClick={() =>
+                          patch({ layoutPreset: preset.id as LayoutPreset })
+                        }
+                        aria-pressed={selected}
+                      >
+                        <WorkspacePresetFigure preset={preset.id} />
+                        <div className="ai-wizard-card-title">
+                          <span>{preset.name}</span>
+                          {selected ? (
+                            <span className="ai-wizard-workspace-selected">
+                              <Check size={12} /> Selected
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="ai-wizard-card-desc">{preset.description}</div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}

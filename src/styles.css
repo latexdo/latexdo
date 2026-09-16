@@ -12145,6 +12145,12 @@ button {
   gap: 10px;
   margin-top: 18px;
 }
+.ai-wizard-workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
 .ai-wizard-card {
   text-align: left;
   padding: 14px 16px;
@@ -12162,6 +12168,10 @@ button {
   background: var(--accent-soft);
 }
 .ai-wizard-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 4px;
@@ -12169,6 +12179,171 @@ button {
 .ai-wizard-card-desc {
   font-size: 12.5px;
   line-height: 1.5;
+}
+.ai-wizard-workspace-card {
+  display: flex;
+  min-height: 250px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+.ai-wizard-workspace-card:hover .workspace-preset-figure,
+.ai-wizard-workspace-card.selected .workspace-preset-figure {
+  border-color: var(--accent);
+}
+.ai-wizard-workspace-selected {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--text-on-accent);
+  font-size: 9.5px;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+.workspace-preset-figure {
+  display: flex;
+  height: 118px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  background: var(--bg-button-secondary);
+  transition: border-color 0.15s ease;
+}
+.workspace-preset-titlebar {
+  display: flex;
+  flex: 0 0 14px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgb(255 255 255 / 5%);
+}
+.workspace-preset-titlebar span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.65;
+}
+.workspace-preset-shell {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+.workspace-preset-sidebar {
+  display: flex;
+  width: 24px;
+  flex: 0 0 24px;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 5px;
+  border-right: 1px solid var(--border-subtle);
+  background: rgb(0 0 0 / 11%);
+}
+.workspace-preset-sidebar span {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--text-muted);
+  opacity: 0.45;
+}
+.workspace-preset-sidebar span:nth-child(2) {
+  width: 70%;
+}
+.workspace-preset-sidebar span:nth-child(3) {
+  width: 90%;
+}
+.workspace-preset-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.workspace-preset-split {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: 1fr 0.86fr;
+}
+.workspace-preset-editor,
+.workspace-preset-pdf {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px;
+}
+.workspace-preset-editor {
+  border-right: 1px solid var(--border-subtle);
+}
+.workspace-preset-editor span,
+.workspace-preset-pdf span {
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--text-secondary);
+  opacity: 0.54;
+}
+.workspace-preset-editor span.wide {
+  width: 92%;
+}
+.workspace-preset-editor span.medium {
+  width: 72%;
+}
+.workspace-preset-editor span.short,
+.workspace-preset-pdf span.short {
+  width: 48%;
+}
+.workspace-preset-editor i {
+  position: absolute;
+  top: 7px;
+  right: 6px;
+  bottom: 7px;
+  width: 5px;
+  border-radius: 4px;
+  background: linear-gradient(to bottom, rgb(255 255 255 / 30%), rgb(255 255 255 / 8%));
+}
+.workspace-preset-pdf {
+  align-items: center;
+  justify-content: center;
+  background: rgb(255 255 255 / 5%);
+}
+.workspace-preset-pdf em {
+  width: 34px;
+  height: 42px;
+  border: 1px solid var(--border-card);
+  border-radius: 3px;
+  background: var(--bg-card);
+}
+.workspace-preset-pdf span {
+  width: 48px;
+}
+.workspace-preset-bottom {
+  display: flex;
+  flex: 0 0 24px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border-subtle);
+  background: rgb(0 0 0 / 15%);
+}
+.workspace-preset-bottom span {
+  width: 34px;
+  height: 4px;
+  border-radius: 3px;
+  background: var(--accent);
+  opacity: 0.75;
+}
+.workspace-preset-focus .workspace-preset-split {
+  grid-template-columns: 1fr 0.92fr;
+}
+.workspace-preset-power .workspace-preset-split {
+  grid-template-columns: 1fr 0.78fr;
 }
 .ai-wizard-theme-grid {
   display: grid;
@@ -13181,6 +13356,14 @@ button {
     right: 18px;
     bottom: 16px;
     width: min(190px, calc(100% - 36px));
+  }
+
+  .ai-wizard-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-wizard-workspace-card {
+    min-height: 0;
   }
 }
 
