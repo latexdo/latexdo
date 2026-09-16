@@ -651,6 +651,30 @@ describe("App critical UI controls", () => {
     ).toBeVisible();
   });
 
+  it("edits an open TeX document through the visual editor view", async () => {
+    const api = installLatexDoMock();
+    api.readFile.mockResolvedValue("\\section{Intro}\nOriginal paragraph.\n");
+
+    render(<App />);
+
+    await openProjectFromWelcome();
+    expect(await screen.findByLabelText("mock editor")).toHaveValue(
+      "\\section{Intro}\nOriginal paragraph.\n",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Visual$/i }));
+
+    fireEvent.change(await screen.findByLabelText("Paragraph"), {
+      target: { value: "Updated paragraph." },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Code$/i }));
+
+    expect(await screen.findByLabelText("mock editor")).toHaveValue(
+      "\\section{Intro}\nUpdated paragraph.\n",
+    );
+  });
+
   it("shows LatexDo setup before the standalone legal gate on first launch", async () => {
     const api = installLatexDoMock();
     window.localStorage.setItem(settingsStorageKey, JSON.stringify(defaultSettings));

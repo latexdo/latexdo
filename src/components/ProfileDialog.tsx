@@ -436,7 +436,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               <span>Username</span>
               <input
                 value={providerDraft.username}
-                placeholder="omarabedelkader"
+                placeholder="john-doe"
                 onChange={(event) =>
                   updateProviderDraft(
                     { username: event.target.value },
@@ -449,7 +449,7 @@ export const ProfileDialog: React.FC<ProfileDialogProps> = ({
               <span>Suggested display name</span>
               <input
                 value={providerDraft.displayName}
-                placeholder="Confirm the real name"
+                placeholder="John Doe"
                 onChange={(event) =>
                   updateProviderDraft({ displayName: event.target.value })
                 }

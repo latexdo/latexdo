@@ -58,13 +58,34 @@ function startElectron() {
 
 function stopElectron() {
   if (!electronProcess) {
-    return;
+    return Promise.resolve();
   }
 
   const runningProcess = electronProcess;
   electronProcess = null;
   runningProcess.removeAllListeners("exit");
-  runningProcess.kill();
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve();
+    };
+    const fallback = setTimeout(settle, 1500);
+    fallback.unref?.();
+    runningProcess.once("exit", settle);
+    runningProcess.once("error", settle);
+    runningProcess.kill();
+  });
+}
+
+async function restartElectron() {
+  await stopElectron();
+  if (!stopping) {
+    startElectron();
+  }
 }
 
 function scheduleRestart() {
@@ -78,9 +99,8 @@ function scheduleRestart() {
 
   restartTimer = setTimeout(() => {
     restartTimer = null;
-    stopElectron();
-    startElectron();
-  }, 200);
+    void restartElectron();
+  }, 350);
 }
 
 async function main() {
@@ -101,8 +121,9 @@ function shutdown(signal) {
     clearTimeout(restartTimer);
     restartTimer = null;
   }
-  stopElectron();
-  process.exit(signal === "SIGINT" ? 130 : 0);
+  void stopElectron().finally(() => {
+    process.exit(signal === "SIGINT" ? 130 : 0);
+  });
 }
 
 process.on("SIGINT", () => shutdown("SIGINT"));

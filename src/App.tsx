@@ -28,7 +28,6 @@ import {
   Heading1,
   Heading2,
   History,
-  House,
   ImageUp,
   Italic,
   Link,
@@ -99,6 +98,7 @@ import { ExtensionsSidebar } from "./components/ExtensionsSidebar";
 import { SetupWizard } from "./components/SetupWizard";
 import { LegalAcceptanceGate } from "./components/LegalAcceptanceGate";
 import { ProfileDialog } from "./components/ProfileDialog";
+import { VisualLatexEditor } from "./components/VisualLatexEditor";
 import {
   loadAiConfig,
   saveAiConfig,
@@ -1785,6 +1785,7 @@ export default function App() {
   const [pdfRotation, setPdfRotation] = useState(0);
   const [bookmarkStore, setBookmarkStore] = useState<BookmarkStore>(loadBookmarkStore);
   const [splitPercent, setSplitPercent] = useState(52);
+  const [latexEditorView, setLatexEditorView] = useState<"code" | "visual">("code");
   const [mode, setMode] = useState<EditorMode>("author");
   const [reviewChats, setReviewChats] = useState<ReviewChat[]>([]);
   const [rebuttalItems, setRebuttalItems] = useState<RebuttalItem[]>([]);
@@ -1808,6 +1809,12 @@ export default function App() {
   const forwardSyncRef = useRef<((position: Monaco.Position) => Promise<void>) | null>(
     null,
   );
+
+  useEffect(() => {
+    if (latexEditorView === "visual") {
+      editorRef.current = null;
+    }
+  }, [latexEditorView]);
   const pendingSourceRef = useRef<PendingSourceLocation | null>(null);
   const sourceSyncDecorationsRef = useRef<string[]>([]);
   const sourceSyncClearTimerRef = useRef<number | null>(null);
@@ -5951,6 +5958,10 @@ ${macroEnd}
   }, []);
 
   useLayoutEffect(() => {
+    if (latexEditorView !== "code") {
+      return;
+    }
+
     const editor = editorRef.current;
     const model = editor?.getModel();
     if (!editor || !model || !activeDocument) {
@@ -5987,7 +5998,7 @@ ${macroEnd}
     }
     editor.setScrollTop(scrollTop);
     editor.setScrollLeft(scrollLeft);
-  }, [activeDocument?.content, activeDocument?.path]);
+  }, [activeDocument?.content, activeDocument?.path, latexEditorView]);
 
   const insertLatexBlockAtEditorPosition = useCallback(
     (text: string, position?: Monaco.IPosition | null): boolean => {
@@ -9845,13 +9856,6 @@ ${macroEnd}
         <nav className="activity-bar">
           <div>
             <button
-              className="activity-button welcome-activity"
-              onClick={showWelcomePage}
-              title="Welcome"
-            >
-              <House size={21} />
-            </button>
-            <button
               className={`activity-button ${
                 sidebarVisible && activeSidebar === "explorer" ? "active" : ""
               }`}
@@ -10899,6 +10903,35 @@ ${macroEnd}
                     </div>
                   </div>
 
+                  {activeDocumentIsLatex ? (
+                    <div
+                      className="latex-editor-view-toggle"
+                      role="group"
+                      aria-label="Editor view"
+                    >
+                      <button
+                        type="button"
+                        className={latexEditorView === "code" ? "active" : ""}
+                        onClick={() => setLatexEditorView("code")}
+                        aria-pressed={latexEditorView === "code"}
+                        title="Code editor"
+                      >
+                        <Code2 size={13} />
+                        <span>Code</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={latexEditorView === "visual" ? "active" : ""}
+                        onClick={() => setLatexEditorView("visual")}
+                        aria-pressed={latexEditorView === "visual"}
+                        title="Visual editor"
+                      >
+                        <BookOpenText size={13} />
+                        <span>Visual</span>
+                      </button>
+                    </div>
+                  ) : null}
+
                   <div className="collaboration-control">
                     <button
                       type="button"
@@ -10913,7 +10946,7 @@ ${macroEnd}
                     </button>
                   </div>
 
-                  {activeDocumentIsLatex ? (
+                  {activeDocumentIsLatex && latexEditorView === "code" ? (
                     <div
                       className="tex-format-toolbar"
                       role="toolbar"
@@ -11292,68 +11325,79 @@ ${macroEnd}
                       <span>{activeCollaborationReadOnlyMessage}</span>
                     </div>
                   ) : null}
-                  <Suspense
-                    fallback={
-                      <div className="editor-loading" role="status">
-                        Loading editor...
-                      </div>
-                    }
-                  >
-                    <MonacoEditor
-                      key={activeDocument.path}
-                      path={activeDocument.path}
-                      defaultValue={activeDocument.content}
-                      defaultLanguage={languageFor(activeDocument.name)}
-                      language={languageFor(activeDocument.name)}
-                      theme={editorTheme}
-                      beforeMount={configureMonaco}
-                      onMount={handleEditorMount}
+                  {activeDocumentIsLatex && latexEditorView === "visual" ? (
+                    <VisualLatexEditor
+                      key={`${activeDocument.path}:visual`}
+                      content={activeDocument.content}
+                      readOnly={Boolean(activeCollaborationReadOnlyMessage)}
                       onChange={(value) =>
                         handleEditorChange(activeDocument.path, value)
                       }
-                      options={{
-                        readOnly: Boolean(activeCollaborationReadOnlyMessage),
-                        readOnlyMessage: {
-                          value:
-                            activeCollaborationReadOnlyMessage ||
-                            "This document is read-only.",
-                        },
-                        fontFamily:
-                          "'SFMono-Regular', 'Cascadia Code', 'Fira Code', Menlo, monospace",
-                        fontSize: settings.editorFontSize,
-                        lineHeight: 22,
-                        minimap: { enabled: settings.minimap, scale: 0.75 },
-                        padding: { top: 16, bottom: 24 },
-                        renderWhitespace: "selection",
-                        smoothScrolling: true,
-                        cursorSmoothCaretAnimation: "on",
-                        bracketPairColorization: { enabled: true },
-                        guides: { bracketPairs: true, indentation: true },
-                        wordWrap: settings.wordWrap ? "on" : "off",
-                        glyphMargin: true,
-                        folding: true,
-                        foldingStrategy: "auto",
-                        showFoldingControls: "mouseover",
-                        links: true,
-                        multiCursorModifier: "alt",
-                        multiCursorPaste: "spread",
-                        columnSelection: false,
-                        scrollBeyondLastLine: false,
-                        automaticLayout: true,
-                        fixedOverflowWidgets: false,
-                        acceptSuggestionOnCommitCharacter: false,
-                        acceptSuggestionOnEnter: "on",
-                        tabCompletion: "on",
-                        quickSuggestions: {
-                          other: true,
-                          comments: false,
-                          strings: true,
-                        },
-                        snippetSuggestions: "top",
-                        suggest: { showSnippets: true },
-                      }}
                     />
-                  </Suspense>
+                  ) : (
+                    <Suspense
+                      fallback={
+                        <div className="editor-loading" role="status">
+                          Loading editor...
+                        </div>
+                      }
+                    >
+                      <MonacoEditor
+                        key={activeDocument.path}
+                        path={activeDocument.path}
+                        defaultValue={activeDocument.content}
+                        defaultLanguage={languageFor(activeDocument.name)}
+                        language={languageFor(activeDocument.name)}
+                        theme={editorTheme}
+                        beforeMount={configureMonaco}
+                        onMount={handleEditorMount}
+                        onChange={(value) =>
+                          handleEditorChange(activeDocument.path, value)
+                        }
+                        options={{
+                          readOnly: Boolean(activeCollaborationReadOnlyMessage),
+                          readOnlyMessage: {
+                            value:
+                              activeCollaborationReadOnlyMessage ||
+                              "This document is read-only.",
+                          },
+                          fontFamily:
+                            "'SFMono-Regular', 'Cascadia Code', 'Fira Code', Menlo, monospace",
+                          fontSize: settings.editorFontSize,
+                          lineHeight: 22,
+                          minimap: { enabled: settings.minimap, scale: 0.75 },
+                          padding: { top: 16, bottom: 24 },
+                          renderWhitespace: "selection",
+                          smoothScrolling: true,
+                          cursorSmoothCaretAnimation: "on",
+                          bracketPairColorization: { enabled: true },
+                          guides: { bracketPairs: true, indentation: true },
+                          wordWrap: settings.wordWrap ? "on" : "off",
+                          glyphMargin: true,
+                          folding: true,
+                          foldingStrategy: "auto",
+                          showFoldingControls: "mouseover",
+                          links: true,
+                          multiCursorModifier: "alt",
+                          multiCursorPaste: "spread",
+                          columnSelection: false,
+                          scrollBeyondLastLine: false,
+                          automaticLayout: true,
+                          fixedOverflowWidgets: false,
+                          acceptSuggestionOnCommitCharacter: false,
+                          acceptSuggestionOnEnter: "on",
+                          tabCompletion: "on",
+                          quickSuggestions: {
+                            other: true,
+                            comments: false,
+                            strings: true,
+                          },
+                          snippetSuggestions: "top",
+                          suggest: { showSnippets: true },
+                        }}
+                      />
+                    </Suspense>
+                  )}
                 </div>
               ) : gitDiffSession ? (
                 <GitDiffWorkbench

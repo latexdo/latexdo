@@ -591,4 +591,47 @@ describe("createGarbageCollector collectNow", () => {
       collector.dispose();
     });
   });
+
+  it("collects every root returned for a multi-folder project", async () => {
+    await withTempProject(async (firstRoot) => {
+      await withTempProject(async (secondRoot) => {
+        for (const [projectRoot, jobName] of [
+          [firstRoot, "job-a1"],
+          [secondRoot, "job-b2"],
+        ] as const) {
+          const buildDir = path.join(projectRoot, ".latexdo", "build", jobName);
+          await mkdir(buildDir, { recursive: true });
+          await writeFile(path.join(buildDir, "main.pdf"), "x");
+          await touch(buildDir, 40 * day);
+        }
+
+        const collector = createCollector({
+          getProjectRoot: () => firstRoot,
+          getProjectRoots: () => [firstRoot, secondRoot],
+          now: () => now,
+        });
+        const stats = await collector.collectNow("space-1", {
+          buildPolicy: {
+            keepRecent: 0,
+            minAgeMs: 30 * minute,
+            maxTotalBytes: 1_000_000,
+          },
+        });
+
+        expect(stats?.projectRoots).toEqual([firstRoot, secondRoot]);
+        expect(stats?.collectedBuildJobs).toEqual([
+          `${path.basename(firstRoot)}/job-a1`,
+          `${path.basename(secondRoot)}/job-b2`,
+        ]);
+        expect(stats?.freedBuildBytes).toBe(2);
+        await expect(
+          access(path.join(firstRoot, ".latexdo", "build", "job-a1")),
+        ).rejects.toThrow();
+        await expect(
+          access(path.join(secondRoot, ".latexdo", "build", "job-b2")),
+        ).rejects.toThrow();
+        collector.dispose();
+      });
+    });
+  });
 });

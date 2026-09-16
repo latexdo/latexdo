@@ -674,16 +674,6 @@ button {
   content: "";
 }
 
-.welcome-activity {
-  border-bottom: 1px solid var(--border-activity);
-  color: var(--accent-dim);
-}
-
-.welcome-activity:hover {
-  background: var(--bg-row-hover);
-  color: var(--accent);
-}
-
 .sidebar {
   position: relative;
   display: flex;
@@ -2927,6 +2917,48 @@ button {
   align-items: center;
 }
 
+.latex-editor-view-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border-input);
+  border-radius: 6px;
+  background: var(--bg-panel);
+}
+
+.latex-editor-view-toggle button {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.latex-editor-view-toggle button:hover {
+  background: var(--bg-row-hover);
+  color: var(--text-primary);
+}
+
+.latex-editor-view-toggle button.active {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.latex-editor-view-toggle button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .collaboration-button {
   display: inline-flex;
   height: 28px;
@@ -3639,6 +3671,158 @@ button {
 .editor-drop-zone > * {
   min-width: 0;
   min-height: 0;
+}
+
+.visual-latex-editor {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+  background: var(--editor-bg);
+  color: var(--text-primary);
+}
+
+.visual-latex-page {
+  width: min(880px, 100%);
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 30px 44px 80px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--bg-canvas);
+  box-shadow: 0 14px 34px rgb(0 0 0 / 18%);
+}
+
+.visual-latex-heading-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.visual-latex-heading,
+.visual-latex-paragraph,
+.visual-latex-list-item,
+.visual-latex-math,
+.visual-latex-raw {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.visual-latex-heading:focus,
+.visual-latex-paragraph:focus,
+.visual-latex-list-item:focus,
+.visual-latex-math:focus,
+.visual-latex-raw:focus {
+  border-color: var(--border-focus);
+  background: var(--bg-input);
+}
+
+.visual-latex-heading {
+  flex: 1;
+  padding: 4px 6px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.visual-latex-heading.level-1 {
+  font-size: 27px;
+}
+
+.visual-latex-heading.level-2 {
+  font-size: 23px;
+}
+
+.visual-latex-heading.level-3 {
+  font-size: 19px;
+}
+
+.visual-latex-heading.level-4 {
+  font-size: 16px;
+}
+
+.visual-latex-label {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-row-active);
+  color: var(--accent);
+  font-family: "SFMono-Regular", "Cascadia Code", "Fira Code", Menlo, monospace;
+  font-size: 11px;
+}
+
+.visual-latex-paragraph,
+.visual-latex-list-item {
+  resize: vertical;
+  padding: 3px 6px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 18px;
+  line-height: 1.65;
+}
+
+.visual-latex-list {
+  margin: 8px 0 8px 28px;
+  padding: 0;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.visual-latex-list li {
+  padding-left: 4px;
+}
+
+.visual-latex-list-item {
+  display: block;
+}
+
+.visual-latex-math,
+.visual-latex-raw {
+  resize: vertical;
+  padding: 10px 12px;
+  border-color: var(--border-input);
+  background: var(--bg-panel);
+  font-family: "SFMono-Regular", "Cascadia Code", "Fira Code", Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.visual-latex-math {
+  color: var(--accent);
+}
+
+.visual-latex-spacer {
+  height: 13px;
+}
+
+@media (max-width: 780px) {
+  .visual-latex-editor {
+    padding: 10px;
+  }
+
+  .visual-latex-page {
+    padding: 20px 16px 56px;
+  }
+
+  .visual-latex-heading.level-1 {
+    font-size: 24px;
+  }
+
+  .visual-latex-heading.level-2 {
+    font-size: 21px;
+  }
+
+  .visual-latex-paragraph,
+  .visual-latex-list-item {
+    font-size: 16px;
+  }
+
+  .latex-editor-view-toggle button {
+    padding: 0 7px;
+  }
 }
 
 .asset-source-toolbar {

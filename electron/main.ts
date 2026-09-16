@@ -783,6 +783,21 @@ function getProjectRoot(projectId: string): string {
   return project.rootPath;
 }
 
+function getProjectRoots(projectId: string): string[] {
+  if (!projectId) {
+    throw new Error("Open a project before using this action.");
+  }
+
+  const project = openProjects.get(projectId);
+  if (!project) {
+    throw new Error("The requested project is not open.");
+  }
+  if (isResearchSpaceProject(project)) {
+    return project.researchSpace.folders.map((folder) => folder.path);
+  }
+  return [project.rootPath];
+}
+
 function getOpenProject(projectId: string): OpenProject {
   if (!projectId) {
     throw new Error("Open a project before using this action.");
@@ -828,9 +843,19 @@ function cancelActiveCompiles(projectId: string): boolean {
 
 const projectGarbageCollector = createGarbageCollector({
   getProjectRoot,
+  getProjectRoots,
   hasActiveCompiles: (projectId) =>
     Boolean(activeCompileControllers.get(projectId)?.size),
 });
+
+function scheduleProjectGarbageCollection(
+  project: OpenProject | null,
+): OpenProject | null {
+  if (project) {
+    projectGarbageCollector.schedule(project.id);
+  }
+  return project;
+}
 
 function isInside(parent: string, child: string): boolean {
   const relative = path.relative(path.resolve(parent), path.resolve(child));
@@ -5627,10 +5652,14 @@ async function startApp(): Promise<void> {
     const selectedPath = result.filePaths[0];
     const selectedStats = await stat(selectedPath).catch(() => null);
     if (selectedStats?.isDirectory()) {
-      return registerProjectIfTrusted(window ?? null, selectedPath);
+      return scheduleProjectGarbageCollection(
+        await registerProjectIfTrusted(window ?? null, selectedPath),
+      );
     }
     if (selectedStats?.isFile() && isResearchSpaceFile(selectedPath)) {
-      return registerResearchSpaceFileIfTrusted(window ?? null, selectedPath);
+      return scheduleProjectGarbageCollection(
+        await registerResearchSpaceFileIfTrusted(window ?? null, selectedPath),
+      );
     }
     throw new Error("Open a folder or a LatexDo Research Space file.");
   });
@@ -5667,7 +5696,7 @@ async function startApp(): Promise<void> {
       throw error;
     }
     await trustWorkspace(projectPath);
-    return registerProject(projectPath);
+    return scheduleProjectGarbageCollection(registerProject(projectPath));
   });
   ipcMain.handle("provider:import-overleaf-project", async (event, ...rawArgs) => {
     const channel = "provider:import-overleaf-project";
@@ -5699,7 +5728,7 @@ async function startApp(): Promise<void> {
       maxBytes: 512 * 1024,
     });
     await trustWorkspace(projectPath);
-    return registerProject(projectPath);
+    return scheduleProjectGarbageCollection(registerProject(projectPath));
   });
   ipcMain.handle("research-space:create", async (event, ...rawArgs: unknown[]) => {
     const channel = "research-space:create";
@@ -5745,7 +5774,7 @@ async function startApp(): Promise<void> {
     for (const folder of space.folders) {
       await trustWorkspace(folder.path);
     }
-    return registerResearchSpace(space);
+    return scheduleProjectGarbageCollection(registerResearchSpace(space));
   });
   ipcMain.handle("project:list", async (_event, ...rawArgs: unknown[]) => {
     const channel = "project:list";
@@ -5927,6 +5956,7 @@ async function startApp(): Promise<void> {
           return null;
         }
       }
+      scheduleProjectGarbageCollection(project);
       const importTarget = defaultImportTargetForProject(project);
       const imported = await importDocxIntoProject(
         importTarget.projectPath,
@@ -5980,6 +6010,7 @@ async function startApp(): Promise<void> {
           return null;
         }
       }
+      scheduleProjectGarbageCollection(project);
       const importTarget = defaultImportTargetForProject(project);
       const imported = await importMarkdown(
         importTarget.projectPath,
@@ -6033,6 +6064,7 @@ async function startApp(): Promise<void> {
           return null;
         }
       }
+      scheduleProjectGarbageCollection(project);
       const importTarget = defaultImportTargetForProject(project);
       const imported = await importPdfIntoProject(
         importTarget.projectPath,

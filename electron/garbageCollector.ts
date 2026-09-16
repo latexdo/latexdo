@@ -231,6 +231,7 @@ export interface CollectorFs {
 
 export interface GarbageCollectionStats {
   projectRoot: string;
+  projectRoots?: string[];
   collectedBuildJobs: string[];
   failedBuildJobs: string[];
   collectedSnapshots: string[];
@@ -493,6 +494,7 @@ async function collectOrphanSnapshots(
 
 export interface GarbageCollectorOptions {
   getProjectRoot: (projectId: string) => string;
+  getProjectRoots?: (projectId: string) => string[];
   hasActiveCompiles: (projectId: string) => boolean;
   debounceMs?: number;
   retryDelayMs?: number;
@@ -588,11 +590,7 @@ export function createGarbageCollector(
         return;
       }
 
-      const projectRoot = options.getProjectRoot(projectId);
-      const stats = await collectProjectGarbage(projectRoot, {
-        now: options.now,
-        fs: options.fs,
-      });
+      const stats = await collectProjectRoots(projectId);
       retries.delete(projectId);
       logger(
         `[gc] ${projectId}: removed ${stats.collectedBuildJobs.length} build job(s), ` +
@@ -661,12 +659,7 @@ export function createGarbageCollector(
         logger(`[gc] manual ${projectId}: compile in progress`);
         return emptyStats("compile-in-progress");
       }
-      const projectRoot = options.getProjectRoot(projectId);
-      const stats = await collectProjectGarbage(projectRoot, {
-        now: options.now,
-        fs: options.fs,
-        buildPolicy: collectOptions.buildPolicy,
-      });
+      const stats = await collectProjectRoots(projectId, collectOptions);
       retries.delete(projectId);
       logger(
         `[gc] manual ${projectId}: removed ${stats.collectedBuildJobs.length} build job(s), ` +
@@ -682,5 +675,69 @@ export function createGarbageCollector(
     }
   }
 
+  async function collectProjectRoots(
+    projectId: string,
+    collectOptions: CollectNowOptions = {},
+  ): Promise<GarbageCollectionStats> {
+    const roots = rootsForProject(projectId);
+    const stats: GarbageCollectionStats[] = [];
+    for (const projectRoot of roots) {
+      stats.push(
+        await collectProjectGarbage(projectRoot, {
+          now: options.now,
+          fs: options.fs,
+          buildPolicy: collectOptions.buildPolicy,
+        }),
+      );
+    }
+    return mergeGarbageCollectionStats(stats);
+  }
+
+  function rootsForProject(projectId: string): string[] {
+    const roots = options.getProjectRoots?.(projectId);
+    if (roots?.length) {
+      return [...new Set(roots)];
+    }
+    return [options.getProjectRoot(projectId)];
+  }
+
   return { schedule, collectNow, dispose };
+}
+
+export function mergeGarbageCollectionStats(
+  statsList: readonly GarbageCollectionStats[],
+): GarbageCollectionStats {
+  if (statsList.length === 1) {
+    return statsList[0];
+  }
+
+  const projectRoots = statsList.map((stats) => stats.projectRoot);
+  const prefix = (stats: GarbageCollectionStats, name: string) =>
+    `${path.basename(stats.projectRoot)}/${name}`;
+  const entries = (
+    selector: (stats: GarbageCollectionStats) => readonly string[],
+  ): string[] =>
+    statsList.flatMap((stats) =>
+      selector(stats).map((name) =>
+        statsList.length > 1 ? prefix(stats, name) : name,
+      ),
+    );
+
+  return {
+    projectRoot: projectRoots[0] ?? "",
+    projectRoots,
+    collectedBuildJobs: entries((stats) => stats.collectedBuildJobs),
+    failedBuildJobs: entries((stats) => stats.failedBuildJobs),
+    collectedSnapshots: entries((stats) => stats.collectedSnapshots),
+    failedSnapshots: entries((stats) => stats.failedSnapshots),
+    skippedHistoryIndex: statsList.some((stats) => stats.skippedHistoryIndex),
+    freedBuildBytes: statsList.reduce(
+      (total, stats) => total + stats.freedBuildBytes,
+      0,
+    ),
+    freedSnapshotBytes: statsList.reduce(
+      (total, stats) => total + stats.freedSnapshotBytes,
+      0,
+    ),
+  };
 }
