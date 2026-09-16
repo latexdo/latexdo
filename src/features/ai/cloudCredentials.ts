@@ -52,7 +52,9 @@ export async function saveCloudCredential(
 }
 
 /** Fetch the secret back only for an in-flight request. Never persisted. */
-export async function loadCloudCredential(credentialId: string): Promise<string | null> {
+export async function loadCloudCredential(
+  credentialId: string,
+): Promise<string | null> {
   const fromMemory = memoryVault.get(credentialId);
   if (fromMemory !== undefined) return fromMemory;
   const bridged = bridge();
@@ -71,7 +73,9 @@ export async function loadCloudCredential(credentialId: string): Promise<string 
 }
 
 /** Whether a usable secret exists without revealing it. */
-export async function cloudCredentialConfigured(credentialId: string): Promise<boolean> {
+export async function cloudCredentialConfigured(
+  credentialId: string,
+): Promise<boolean> {
   if (memoryVault.has(credentialId)) return true;
   const bridged = bridge();
   if (bridged?.hasCredential) {
@@ -121,8 +125,11 @@ export async function migrateLegacyCloudApiKey(
   ) {
     return null;
   }
-  const cloud = (parsed as { cloud?: { apiKey?: unknown; credentialId?: unknown; providerId?: unknown } })
-    .cloud as { apiKey?: unknown; credentialId?: unknown; providerId?: unknown };
+  const cloud = (
+    parsed as {
+      cloud?: { apiKey?: unknown; credentialId?: unknown; providerId?: unknown };
+    }
+  ).cloud as { apiKey?: unknown; credentialId?: unknown; providerId?: unknown };
   const legacyKey = typeof cloud.apiKey === "string" ? cloud.apiKey : "";
   if (!legacyKey.trim() || cloud.credentialId) {
     return null;

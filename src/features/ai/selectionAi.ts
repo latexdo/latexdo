@@ -162,17 +162,13 @@ export async function performReformulation(
       maxTokens: 2048,
       ollamaBaseUrl:
         runtime.provider === "ollama" ? runtime.baseUrl : config.ollamaBaseUrl,
-      ollamaModel:
-        runtime.provider === "ollama" ? runtime.model : config.ollamaModel,
+      ollamaModel: runtime.provider === "ollama" ? runtime.model : config.ollamaModel,
       cloudVendor: config.cloud.vendor,
       cloudBaseUrl:
         runtime.provider === "cloud" ? runtime.baseUrl : config.cloud.baseUrl,
-      cloudModel:
-        runtime.provider === "cloud" ? runtime.model : config.cloud.model,
+      cloudModel: runtime.provider === "cloud" ? runtime.model : config.cloud.model,
       cloudCredentialId:
-        runtime.provider === "cloud"
-          ? runtime.credentialId
-          : config.cloud.credentialId,
+        runtime.provider === "cloud" ? runtime.credentialId : config.cloud.credentialId,
     },
   };
   const step = await generateStep(req, onToken ?? (() => {}));

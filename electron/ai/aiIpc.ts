@@ -308,7 +308,12 @@ export function registerAiIpc(): void {
         return { ok: true };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        sendProgress({ receivedBytes: 0, totalBytes: null, done: true, error: message });
+        sendProgress({
+          receivedBytes: 0,
+          totalBytes: null,
+          done: true,
+          error: message,
+        });
         return { ok: false, error: message };
       } finally {
         activeDownloads.delete(tierId);

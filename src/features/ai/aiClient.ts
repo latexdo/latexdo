@@ -74,7 +74,10 @@ export async function generateStep(
           "The cloud AI API key is not available. Open AI settings and re-enter your API key.",
       };
     }
-    return generateStepCloud({ ...req, options: { ...req.options, cloudApiKey: apiKey } }, onToken);
+    return generateStepCloud(
+      { ...req, options: { ...req.options, cloudApiKey: apiKey } },
+      onToken,
+    );
   }
   const ai = bridge();
   if (!ai) {

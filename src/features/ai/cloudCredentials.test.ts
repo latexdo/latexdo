@@ -47,9 +47,9 @@ describe("cloudCredentials", () => {
     mocks.setCredential.mockResolvedValue({ ok: true });
     mocks.getCredential.mockResolvedValue("sk-vault");
 
-    expect(
-      await saveCloudCredential("credential-anthropic-primary", "sk-vault"),
-    ).toBe(true);
+    expect(await saveCloudCredential("credential-anthropic-primary", "sk-vault")).toBe(
+      true,
+    );
     expect(mocks.setCredential).toHaveBeenCalledWith(
       "credential-anthropic-primary",
       "sk-vault",
@@ -71,9 +71,7 @@ describe("cloudCredentials", () => {
   it("does not reveal a secret through the configured check", async () => {
     const mocks = installBridge();
     mocks.hasCredential.mockResolvedValue(true);
-    expect(
-      await cloudCredentialConfigured("credential-openai-primary"),
-    ).toBe(true);
+    expect(await cloudCredentialConfigured("credential-openai-primary")).toBe(true);
     expect(mocks.hasCredential).toHaveBeenCalledWith("credential-openai-primary");
     expect(mocks.getCredential).not.toHaveBeenCalled();
   });
@@ -85,12 +83,8 @@ describe("cloudCredentials", () => {
     await saveCloudCredential("credential-anthropic-primary", "sk");
     await removeCloudCredential("credential-anthropic-primary");
 
-    expect(mocks.deleteCredential).toHaveBeenCalledWith(
-      "credential-anthropic-primary",
-    );
-    expect(
-      await isSecureCredentialStorageAvailable(),
-    ).toBe(true);
+    expect(mocks.deleteCredential).toHaveBeenCalledWith("credential-anthropic-primary");
+    expect(await isSecureCredentialStorageAvailable()).toBe(true);
     expect(mocks.credentialsSupported).toHaveBeenCalled();
   });
 
@@ -112,7 +106,9 @@ describe("cloudCredentials", () => {
       "credential-groq-primary",
       "sk-legacy",
     );
-    const parsed = migrated ? (JSON.parse(migrated) as { cloud: Record<string, unknown> }) : null;
+    const parsed = migrated
+      ? (JSON.parse(migrated) as { cloud: Record<string, unknown> })
+      : null;
     expect(parsed?.cloud).toEqual({
       providerId: "groq",
       credentialId: "credential-groq-primary",

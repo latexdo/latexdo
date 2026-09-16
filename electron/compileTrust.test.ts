@@ -66,10 +66,12 @@ describe("compileTrust", () => {
     const linkedPath = path.join(root, "linked-main.tex");
     await symlink(outsideSecret, linkedPath);
 
-    await expect(
-      assertCanonicalCompileInside(root, linkedPath),
-    ).rejects.toThrow(/escapes the open project via a symbolic link/);
-    await import("node:fs/promises").then((fs) => fs.rm(outsideSecret, { force: true }));
+    await expect(assertCanonicalCompileInside(root, linkedPath)).rejects.toThrow(
+      /escapes the open project via a symbolic link/,
+    );
+    await import("node:fs/promises").then((fs) =>
+      fs.rm(outsideSecret, { force: true }),
+    );
   });
 
   it("allows a missing root file that is lexically inside the project", async () => {

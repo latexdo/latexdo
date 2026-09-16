@@ -5927,7 +5927,9 @@ ${macroEnd}
         contextMenuGroupId: "2_ai",
         contextMenuOrder: 0,
         precondition: "editorHasSelection",
-        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyR],
+        keybindings: [
+          monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyR,
+        ],
         run: () => {
           void reformulateSelectionWithAi();
         },
@@ -5938,7 +5940,9 @@ ${macroEnd}
         contextMenuGroupId: "2_ai",
         contextMenuOrder: 1,
         precondition: "editorHasSelection",
-        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyA],
+        keybindings: [
+          monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyA,
+        ],
         run: () => {
           askAiAboutSelection();
         },

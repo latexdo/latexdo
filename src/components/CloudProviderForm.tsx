@@ -1,5 +1,12 @@
 import React from "react";
-import { Cloud, ExternalLink, Check, Loader2, AlertTriangle, KeyRound } from "lucide-react";
+import {
+  Cloud,
+  ExternalLink,
+  Check,
+  Loader2,
+  AlertTriangle,
+  KeyRound,
+} from "lucide-react";
 import type { CloudConfig } from "../features/ai/aiConfig";
 import { cloudProviders, findCloudProvider } from "../features/ai/cloudProviders";
 import { generateStepCloud } from "../features/ai/aiCloud";
@@ -226,8 +233,7 @@ export const CloudProviderForm: React.FC<CloudProviderFormProps> = ({
           className="ai-wizard-ghost"
           onClick={testConnection}
           disabled={
-            (!cloud.credentialConfigured && !keyInput.trim()) ||
-            testState === "testing"
+            (!cloud.credentialConfigured && !keyInput.trim()) || testState === "testing"
           }
         >
           {testState === "testing" ? (

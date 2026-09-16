@@ -398,12 +398,8 @@ describe("AiSidebar", () => {
       endLine: 44,
     });
 
-    expect(
-      await screen.findByText(/Selection: main\.tex · lines 42–44/),
-    ).toBeVisible();
-    expect(
-      await screen.findByText(/The method reduces complexity/),
-    ).toBeVisible();
+    expect(await screen.findByText(/Selection: main\.tex · lines 42–44/)).toBeVisible();
+    expect(await screen.findByText(/The method reduces complexity/)).toBeVisible();
 
     const input = screen.getByPlaceholderText(/Ask about the selection/);
     fireEvent.change(input, { target: { value: "Explain this claim." } });

@@ -103,7 +103,10 @@ export function isCredentialStorageAvailable(): boolean {
   }
 }
 
-export async function setCredential(credentialId: string, secret: string): Promise<void> {
+export async function setCredential(
+  credentialId: string,
+  secret: string,
+): Promise<void> {
   if (!credentialIdPattern.test(credentialId)) {
     throw new Error("Invalid credential identifier.");
   }

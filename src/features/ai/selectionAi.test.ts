@@ -10,7 +10,9 @@ import {
   type AiSelectionSnapshot,
 } from "./selectionAi";
 
-function makeSnapshot(overrides: Partial<AiSelectionSnapshot> = {}): AiSelectionSnapshot {
+function makeSnapshot(
+  overrides: Partial<AiSelectionSnapshot> = {},
+): AiSelectionSnapshot {
   return {
     filePath: "main.tex",
     text: "The proposed architecture improves the result by $12.4\\%$ as shown in \\cref{fig:architecture}.",
@@ -144,8 +146,7 @@ describe("buildReformulationMessages", () => {
   });
 
   it("instructs the model to preserve LaTeX structure", () => {
-    const system = buildReformulationMessages(makeSnapshot())[0]
-      .content;
+    const system = buildReformulationMessages(makeSnapshot())[0].content;
     expect(system).toContain("\\cite{...}");
     expect(system).toContain("\\ref{...}");
     expect(system).toContain("Preserve ALL valid LaTeX commands");
@@ -205,15 +206,18 @@ describe("validateSnapshotRange", () => {
       }),
     } as unknown as Parameters<typeof validateSnapshotRange>[0];
     expect(
-      validateSnapshotRange(editor, makeSnapshot({
-        text,
-        range: {
-          startLineNumber: 5,
-          startColumn: 3,
-          endLineNumber: 6,
-          endColumn: 12,
-        },
-      })),
+      validateSnapshotRange(
+        editor,
+        makeSnapshot({
+          text,
+          range: {
+            startLineNumber: 5,
+            startColumn: 3,
+            endLineNumber: 6,
+            endColumn: 12,
+          },
+        }),
+      ),
     ).toBe(true);
   });
 

@@ -117,8 +117,9 @@ describe("CloudProviderForm", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /Save/i }));
 
-    expect(await screen.findByText(/Secure credential storage is unavailable/i))
-      .toBeVisible();
+    expect(
+      await screen.findByText(/Secure credential storage is unavailable/i),
+    ).toBeVisible();
     expect(onChange).not.toHaveBeenCalled();
   });
 

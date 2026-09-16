@@ -222,9 +222,7 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
     if (isRunning) return;
     // Compose message: selection context (if attached) + user's own text.
     const block = composerSelection ? buildSelectionMessageText(composerSelection) : "";
-    const fullMessage = block
-      ? text ? `${block}\n\n${text}` : block
-      : text;
+    const fullMessage = block ? (text ? `${block}\n\n${text}` : block) : text;
     if (!fullMessage) return;
     setInput("");
     setSuggest(null);
@@ -376,7 +374,7 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
                 <span>
                   {pendingApproval.source === "reformulate"
                     ? "Reformulate selection"
-                    : editKindLabel[pendingApproval.kind] ?? "Apply change"}{" "}
+                    : (editKindLabel[pendingApproval.kind] ?? "Apply change")}{" "}
                   · {pendingApproval.path}
                 </span>
               </div>
