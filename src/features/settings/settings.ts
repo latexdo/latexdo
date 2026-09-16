@@ -885,6 +885,66 @@ export function normalizeBookmarkLines(lines: unknown): number[] {
   ];
 }
 
+export function remapBookmarkLinesForContentChange(
+  lines: unknown,
+  previousContent: string,
+  nextContent: string,
+): number[] {
+  const bookmarks = normalizeBookmarkLines(lines);
+  if (!bookmarks.length || previousContent === nextContent) {
+    return bookmarks;
+  }
+
+  const previousLines = previousContent.replace(/\r\n?/g, "\n").split("\n");
+  const nextLines = nextContent.replace(/\r\n?/g, "\n").split("\n");
+
+  let prefixLength = 0;
+  while (
+    prefixLength < previousLines.length &&
+    prefixLength < nextLines.length &&
+    previousLines[prefixLength] === nextLines[prefixLength]
+  ) {
+    prefixLength += 1;
+  }
+
+  let suffixLength = 0;
+  while (
+    suffixLength < previousLines.length - prefixLength &&
+    suffixLength < nextLines.length - prefixLength &&
+    previousLines[previousLines.length - 1 - suffixLength] ===
+      nextLines[nextLines.length - 1 - suffixLength]
+  ) {
+    suffixLength += 1;
+  }
+
+  const oldChangedCount = previousLines.length - prefixLength - suffixLength;
+  const newChangedCount = nextLines.length - prefixLength - suffixLength;
+  const delta = newChangedCount - oldChangedCount;
+  const changedStartLine = prefixLength + 1;
+  const oldChangedEndLine = prefixLength + oldChangedCount;
+  const nextLineCount = Math.max(1, nextLines.length);
+
+  return normalizeBookmarkLines(
+    bookmarks
+      .map((line) => {
+        if (oldChangedCount === 0) {
+          return line >= changedStartLine ? line + delta : line;
+        }
+        if (line < changedStartLine) {
+          return line;
+        }
+        if (line > oldChangedEndLine) {
+          return line + delta;
+        }
+
+        const offset = line - changedStartLine;
+        const replacementOffset = Math.min(offset, Math.max(0, newChangedCount - 1));
+        return Math.min(changedStartLine + replacementOffset, nextLineCount);
+      })
+      .filter((line) => line <= nextLineCount),
+  );
+}
+
 export function loadBookmarkStore(): BookmarkStore {
   try {
     const parsed = JSON.parse(

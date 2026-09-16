@@ -312,6 +312,7 @@ import {
   normalizeBookmarkLines,
   parseProjectTreeIgnoredNamesText,
   projectListOptionsFromSettings,
+  remapBookmarkLinesForContentChange,
   storeCollaborationDisplayName,
   type BookmarkStore,
   type WelcomeTemplate,
@@ -513,6 +514,12 @@ function loadPersistedAiChatTabs(): PersistedAiChatTabs {
   } catch {
     return defaultAiChatTabs();
   }
+}
+
+function bookmarkLinesEqual(left: number[], right: number[]): boolean {
+  return (
+    left.length === right.length && left.every((line, index) => line === right[index])
+  );
 }
 
 function savePersistedAiChatTabs(state: PersistedAiChatTabs): void {
@@ -1791,6 +1798,7 @@ export default function App() {
   const [pdfScale, setPdfScale] = useState(100);
   const [pdfRotation, setPdfRotation] = useState(0);
   const [bookmarkStore, setBookmarkStore] = useState<BookmarkStore>(loadBookmarkStore);
+  const [editorCursorLine, setEditorCursorLine] = useState<number | null>(null);
   const [splitPercent, setSplitPercent] = useState(52);
   const [latexEditorView, setLatexEditorView] = useState<"code" | "visual">("code");
   const [mode, setMode] = useState<EditorMode>("author");
@@ -1880,6 +1888,8 @@ export default function App() {
       normalizeBookmarkLines(activeBookmarkKey ? bookmarkStore[activeBookmarkKey] : []),
     [activeBookmarkKey, bookmarkStore],
   );
+  const currentLineHasBookmark =
+    editorCursorLine !== null && activeBookmarkLines.includes(editorCursorLine);
   const activeCollaborationReadOnlyMessage =
     activeTextDocument && collaborationState.enabled && collaborationState.token
       ? currentUserRole === "viewer"
@@ -4520,6 +4530,7 @@ ${macroEnd}
     const nextLines = exists
       ? currentLines.filter((line) => line !== position.lineNumber)
       : [...currentLines, position.lineNumber];
+    setEditorCursorLine(position.lineNumber);
     writeActiveBookmarkLines(nextLines);
     setStatusMessage(
       exists
@@ -4617,6 +4628,15 @@ ${macroEnd}
     },
     [activeDocument],
   );
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !activePath || !editorModelMatchesPath(editor, activePath)) {
+      setEditorCursorLine(null);
+      return;
+    }
+    setEditorCursorLine(editor.getPosition()?.lineNumber ?? null);
+  }, [activePath]);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -5772,6 +5792,7 @@ ${macroEnd}
 
   const handleEditorMount: OnMount = (editor) => {
     editorRef.current = editor;
+    setEditorCursorLine(editor.getPosition()?.lineNumber ?? null);
     nextEditAdapterRef.current?.dispose();
     nextEditAdapterRef.current = null;
     editorMouseDisposableRef.current?.dispose();
@@ -5782,10 +5803,12 @@ ${macroEnd}
       disposable.dispose();
     }
     editorBlameDisposablesRef.current = [
-      editor.onDidChangeCursorPosition(() => {
+      editor.onDidChangeCursorPosition((event) => {
+        setEditorCursorLine(event.position.lineNumber);
         applyEditorBlameDecorations();
       }),
       editor.onDidChangeModel(() => {
+        setEditorCursorLine(editor.getPosition()?.lineNumber ?? null);
         inlineBlameDecorationsRef.current = [];
         fileBlameDecorationsRef.current = [];
         applyEditorBlameDecorations();
@@ -5978,11 +6001,41 @@ ${macroEnd}
   const handleEditorChange = useCallback((documentPath: string, value?: string) => {
     const nextContent = value ?? "";
     if (!documentPath) return;
-    if (
-      documentsRef.current.find((document) => document.path === documentPath)
-        ?.content === nextContent
-    ) {
+    const previousDocument = documentsRef.current.find(
+      (document) => document.path === documentPath,
+    );
+    if (previousDocument?.content === nextContent) {
       return;
+    }
+
+    if (previousDocument && isTextDocument(previousDocument)) {
+      const key = bookmarkKey(
+        projectPathRef.current || projectIdRef.current,
+        previousDocument.relativePath,
+      );
+      setBookmarkStore((current) => {
+        const previousLines = normalizeBookmarkLines(current[key]);
+        if (!previousLines.length) {
+          return current;
+        }
+
+        const remappedLines = remapBookmarkLinesForContentChange(
+          previousLines,
+          previousDocument.content,
+          nextContent,
+        );
+        if (bookmarkLinesEqual(previousLines, remappedLines)) {
+          return current;
+        }
+
+        const next = { ...current };
+        if (remappedLines.length) {
+          next[key] = remappedLines;
+        } else {
+          delete next[key];
+        }
+        return next;
+      });
     }
 
     setDocuments((current) => {
@@ -11125,10 +11178,21 @@ ${macroEnd}
                       </button>
                       <button
                         type="button"
-                        className="tex-format-button icon-only"
+                        className={`tex-format-button icon-only ${
+                          currentLineHasBookmark ? "active" : ""
+                        }`}
                         onClick={toggleBookmarkAtCurrentLine}
-                        title="Toggle bookmark"
-                        aria-label="Toggle bookmark"
+                        title={
+                          currentLineHasBookmark
+                            ? "Remove bookmark at cursor"
+                            : "Bookmark current line"
+                        }
+                        aria-label={
+                          currentLineHasBookmark
+                            ? "Remove bookmark at cursor"
+                            : "Bookmark current line"
+                        }
+                        aria-pressed={currentLineHasBookmark}
                       >
                         <Bookmark size={14} />
                       </button>
@@ -12666,7 +12730,17 @@ ${macroEnd}
               <button
                 type="button"
                 onClick={toggleBookmarkAtCurrentLine}
-                title="Toggle bookmark at cursor"
+                title={
+                  currentLineHasBookmark
+                    ? "Remove bookmark at cursor"
+                    : "Bookmark current line"
+                }
+                aria-label={
+                  currentLineHasBookmark
+                    ? "Remove bookmark at cursor"
+                    : "Bookmark current line"
+                }
+                aria-pressed={currentLineHasBookmark}
               >
                 <Bookmark size={13} /> {activeBookmarkLines.length}
               </button>

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   defaultSettings,
   loadSettings,
+  remapBookmarkLinesForContentChange,
   settingsStorageKey,
   type AppSettings,
 } from "./settings";
@@ -68,5 +69,43 @@ describe("settings round trip", () => {
     );
 
     expect(loadSettings()[key]).toBe(custom);
+  });
+});
+
+describe("bookmark line remapping", () => {
+  it("moves bookmarks down when lines are inserted before them", () => {
+    expect(
+      remapBookmarkLinesForContentChange(
+        [3],
+        "alpha\nbeta\ngamma",
+        "intro\nalpha\nbeta\ngamma",
+      ),
+    ).toEqual([4]);
+  });
+
+  it("moves bookmarks up when lines are deleted before them", () => {
+    expect(
+      remapBookmarkLinesForContentChange(
+        [4],
+        "alpha\nbeta\ngamma\ndelta",
+        "alpha\ngamma\ndelta",
+      ),
+    ).toEqual([3]);
+  });
+
+  it("keeps bookmarks on edited lines", () => {
+    expect(
+      remapBookmarkLinesForContentChange(
+        [2],
+        "alpha\nbeta\ngamma",
+        "alpha\nBETA\ngamma",
+      ),
+    ).toEqual([2]);
+  });
+
+  it("clamps bookmarks from deleted lines to the nearest remaining line", () => {
+    expect(
+      remapBookmarkLinesForContentChange([2], "alpha\nbeta\ngamma", "alpha\ngamma"),
+    ).toEqual([2]);
   });
 });

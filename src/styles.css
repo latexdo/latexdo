@@ -3092,6 +3092,12 @@ button {
   color: var(--text-primary);
 }
 
+.tex-format-button.active,
+.tex-format-button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+
 .tex-format-button:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: 1px;
@@ -6787,6 +6793,10 @@ button {
 
 .statusbar button:hover {
   background: rgb(255 255 255 / 11%);
+}
+
+.statusbar button[aria-pressed="true"] {
+  background: rgb(255 255 255 / 18%);
 }
 
 .statusbar button:disabled {

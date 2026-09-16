@@ -11,6 +11,8 @@ import App from "./App";
 import { fallbackExtensionCatalog, type LatexDoExtensionCatalog } from "./extensions";
 import { aiConfigStorageKey, defaultAiConfig } from "./features/ai/aiConfig";
 import {
+  bookmarkKey,
+  bookmarksStorageKey,
   defaultSettings,
   installedExtensionsStorageKey,
   legalPolicyVersion,
@@ -933,6 +935,28 @@ describe("App critical UI controls", () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText("mock editor")).toHaveValue("Late main edit\n");
+    });
+  });
+
+  it("remaps saved bookmarks when document lines change", async () => {
+    const api = installLatexDoMock();
+    const key = bookmarkKey(project.rootPath, entries[0].relativePath);
+    window.localStorage.setItem(bookmarksStorageKey, JSON.stringify({ [key]: [3] }));
+    api.readFile.mockResolvedValue("alpha\nbeta\ngamma\n");
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    await screen.findByLabelText("mock editor");
+    act(() => {
+      editorChangeHandlers.get(entries[0].path)?.("intro\nalpha\nbeta\ngamma\n");
+    });
+
+    await waitFor(() => {
+      const stored = JSON.parse(
+        window.localStorage.getItem(bookmarksStorageKey) ?? "{}",
+      ) as Record<string, number[]>;
+      expect(stored[key]).toEqual([4]);
     });
   });
 
