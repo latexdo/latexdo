@@ -637,9 +637,11 @@ const enginePassWindows: ReadonlyArray<readonly [start: number, end: number]> = 
 
 /** Page markers (`[1`, `[2{...}`, ...) only count at the start of a line. */
 const pageMarkerPattern = /(?:^|\n)[ \t]*\[(\d+)/g;
+const outputWrittenPattern = /Output written on\s+.+\(\d+\s+pages?(?:,|\))/;
 
 const engineRunPattern =
   /Latexmk:\s*Run number\s+(\d+)\s+of\s+rule\s+'((?:pdf|xe|lua)latex)'/g;
+const engineApplyPattern = /Latexmk:\s*applying rule\s+'((?:pdf|xe|lua)latex)'/g;
 
 /** Bibliography / index work (bibtex, biber, makeindex, ...) gets a bump. */
 const auxRulePattern =
@@ -650,19 +652,10 @@ const engineActivityPattern =
 
 /**
  * Pages inside a single engine pass needed to interpolate across the full
- * window. More pages keep filling the pass slice; they never overflow it.
+ * window. Most LatexDo documents are short papers, so fill this slice quickly
+ * and rely on pass completion to snap to the end of the slice.
  */
-const pagesToFillPass = 50;
-
-function firstEnginePassMention(output: string): number | null {
-  const applyingMatch = /Latexmk:\s*applying rule\s+'((?:pdf|xe|lua)latex)'/.exec(
-    output,
-  );
-  if (!applyingMatch) {
-    return null;
-  }
-  return 1;
-}
+const pagesToFillPass = 12;
 
 function lastEngineRun(output: string): { pass: number; at: number } | null {
   const matches = [...output.matchAll(engineRunPattern)];
@@ -674,14 +667,39 @@ function lastEngineRun(output: string): { pass: number; at: number } | null {
   return { pass: Number(last[1]), at: pushedAt };
 }
 
+function lastEngineApply(output: string): { pass: number; at: number } | null {
+  const matches = [...output.matchAll(engineApplyPattern)];
+  const last = matches[matches.length - 1];
+  if (!last) {
+    return null;
+  }
+  const pushedAt = output.lastIndexOf(last[0]) + last[0].length;
+  return { pass: matches.length, at: pushedAt };
+}
+
+function lastEngineInvocation(output: string): { pass: number; at: number } | null {
+  const run = lastEngineRun(output);
+  const apply = lastEngineApply(output);
+  if (!run) {
+    return apply;
+  }
+  if (!apply) {
+    return run;
+  }
+  if (apply.at > run.at && apply.pass > run.pass) {
+    return apply;
+  }
+  return run;
+}
+
 function interpolatePass(output: string, fallbackPass: number): number | null {
-  const run = lastEngineRun(output) ?? null;
-  const pass = run?.pass ?? fallbackPass;
+  const invocation = lastEngineInvocation(output) ?? null;
+  const pass = invocation?.pass ?? fallbackPass;
   if (!pass) {
     return null;
   }
 
-  const passSegment = run === null ? output : output.slice(run.at);
+  const passSegment = invocation === null ? output : output.slice(invocation.at);
   let maxPage = 0;
   for (const match of passSegment.matchAll(pageMarkerPattern)) {
     maxPage = Math.max(maxPage, Number(match[1]));
@@ -689,6 +707,9 @@ function interpolatePass(output: string, fallbackPass: number): number | null {
 
   const [windowStart, windowEnd] =
     enginePassWindows[Math.min(pass, enginePassWindows.length) - 1];
+  if (outputWrittenPattern.test(passSegment)) {
+    return windowEnd;
+  }
   if (maxPage <= 0) {
     return windowStart;
   }
@@ -734,11 +755,11 @@ export function estimateCompileProgress(output: string): number {
   }
 
   if (engineActivityPattern.test(output)) {
-    const passProgress = interpolatePass(output, firstEnginePassMention(output) ?? 1);
+    const passProgress = interpolatePass(output, 1);
     progress = Math.max(progress, passProgress ?? 0);
   }
 
-  const enginePass = lastEngineRun(output)?.pass ?? 1;
+  const enginePass = lastEngineInvocation(output)?.pass ?? 1;
   if (auxRulePattern.test(output)) {
     const auxWindow: Record<number, number> = { 1: 46, 2: 60, 3: 70, 4: 74 };
     progress = Math.max(progress, auxWindow[enginePass] ?? 74);

@@ -3358,6 +3358,9 @@ ${macroEnd}
       const isLatestCompile = compileRunId === compileRunIdRef.current;
       if (isLatestCompile) {
         setCompileResult(result);
+        if (result.ok) {
+          setCompileProgress(100);
+        }
       }
 
       if (result.ok && result.pdfPath) {
@@ -13107,13 +13110,18 @@ ${macroEnd}
           <button onClick={() => openPanel("problems")}>
             <AlertCircle size={13} /> {warnings}
           </button>
-          {compiling ? (
+          {compiling || (compileProgress === 100 && compileResult?.ok) ? (
             <>
               <span className="status-compile">
-                <LoaderCircle size={13} className="spin" />
+                {compiling ? (
+                  <LoaderCircle size={13} className="spin" />
+                ) : (
+                  <Check size={13} />
+                )}
                 <span>
-                  {compileJobCount} compile job
-                  {compileJobCount === 1 ? "" : "s"}
+                  {compiling
+                    ? `${compileJobCount} compile job${compileJobCount === 1 ? "" : "s"}`
+                    : "Compile complete"}
                 </span>
                 {compileProgress > 0 ? (
                   <span className="status-compile-meta">

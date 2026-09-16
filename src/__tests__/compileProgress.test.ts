@@ -58,8 +58,16 @@ describe("estimateCompileProgress", () => {
     expect(estimateCompileProgress(passOneOpen([1]))).toBeGreaterThan(0);
     const one = estimateCompileProgress(passOneOpen([1]));
     const three = estimateCompileProgress(passOneOpen([1, 2, 3]));
+    const ten = estimateCompileProgress(passOneOpen([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]));
     expect(three).toBeGreaterThanOrEqual(one);
     expect(three).toBeLessThanOrEqual(26);
+    expect(ten).toBeGreaterThan(13);
+  });
+
+  it("finishes an engine pass when the output file is written", () => {
+    const firstPassComplete = `${passOneOpen([1, 2, 3])}
+${completedPass([1, 2, 3])}`;
+    expect(estimateCompileProgress(firstPassComplete)).toBe(26);
   });
 
   it("opens each engine pass at its own window", () => {
@@ -69,6 +77,22 @@ Latexmk: Run number 2 of rule 'pdflatex'`;
     const runThree = `${completedPass([1, 2, 3])}
 Latexmk: Run number 3 of rule 'pdflatex'`;
     expect(estimateCompileProgress(runThree)).toBeGreaterThan(40);
+  });
+
+  it("tracks latexmk reruns that only repeat applying rule lines", () => {
+    const runTwo = `${passOneOpen([1, 2, 3])}
+${completedPass([1, 2, 3])}
+Latexmk: applying rule 'pdflatex'...
+This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2024) (preloaded format=pdflatex)
+entering extended mode
+[1]
+[2]`;
+    expect(estimateCompileProgress(runTwo)).toBeGreaterThan(26);
+    expect(estimateCompileProgress(runTwo)).toBeLessThanOrEqual(42);
+
+    const runTwoComplete = `${runTwo}
+${completedPass([1, 2, 3])}`;
+    expect(estimateCompileProgress(runTwoComplete)).toBe(42);
   });
 
   it("credits bibliography/index rules between engine passes", () => {
