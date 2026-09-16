@@ -5,8 +5,7 @@
 If you believe you have found a security vulnerability in LatexDo, please report
 it privately and do not disclose it publicly until it has been reviewed.
 
-Use this private form to submit a report:
-[LatexDo Security Report](https://docs.google.com/forms/d/e/1FAIpQLSdymFB-ioWMXRBpecbajMDhCwgmMmHtTmPyB4T9EuTYZOiaUQ/viewform?usp=dialog)
+Send us am email:
 
 Please do not open a public issue, pull request, or discussion for security
 reports.

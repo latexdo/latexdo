@@ -251,6 +251,11 @@ import {
   rankedCitationCompletions,
 } from "./latex/citationCompletion";
 import { parseBibFile } from "./latex/parseBib";
+import {
+  citationHoverMarkdown,
+  citationKeyAtPosition,
+} from "./latex/citationHover";
+import type { CitationEntry } from "./latex/latexIndex";
 import { getLatexListEnterEdit } from "./latex/listContinuation";
 import { SYMBOL_PALETTE } from "./components/mathSymbolPalette";
 import {
@@ -1797,6 +1802,7 @@ export default function App() {
   const documentsRef = useRef<OpenDocument[]>([]);
   const documentHistoryRef = useRef<DocumentHistorySnapshot[]>([]);
   const projectEntriesRef = useRef<ProjectEntry[]>([]);
+  const citationEntriesByKeyRef = useRef<Map<string, CitationEntry>>(new Map());
   const projectIdRef = useRef("");
   const projectPathRef = useRef("");
   const hideProjectEntriesRef = useRef(true);
@@ -2015,6 +2021,9 @@ export default function App() {
     () => new Map(citationAnalysis.entries.map((entry) => [entry.key, entry])),
     [citationAnalysis],
   );
+  useEffect(() => {
+    citationEntriesByKeyRef.current = citationEntriesByKey;
+  }, [citationEntriesByKey]);
   const [knowledgeGraphOpen, setKnowledgeGraphOpen] = useState(false);
   useEffect(() => {
     storeKnowledgeGraphParams(knowledgeGraphParams);
@@ -5109,6 +5118,33 @@ ${macroEnd}
             }
 
             return { suggestions: [] };
+          },
+        }),
+      );
+      providerDisposables.push(
+        instance.languages.registerHoverProvider("latex", {
+          provideHover: (model, position) => {
+            const lineContent = model.getLineContent(position.lineNumber);
+            const citation = citationKeyAtPosition(
+              lineContent,
+              position.column - 1,
+            );
+            if (!citation) return null;
+            const entry = citationEntriesByKeyRef.current.get(citation.key);
+            if (!entry) return null;
+            return {
+              range: new instance.Range(
+                position.lineNumber,
+                citation.start + 1,
+                position.lineNumber,
+                citation.end + 1,
+              ),
+              contents: [
+                {
+                  value: citationHoverMarkdown(entry),
+                },
+              ],
+            };
           },
         }),
       );
