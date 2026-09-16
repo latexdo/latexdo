@@ -11854,6 +11854,212 @@ button {
   color: var(--accent-hover);
 }
 
+.ai-wizard-identity-step {
+  max-width: 620px;
+}
+
+.ai-wizard-identity-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  margin-top: 18px;
+  padding: 4px;
+  border: 1px solid var(--border-card);
+  border-radius: 10px;
+  background: var(--bg-button-secondary);
+}
+
+.ai-wizard-identity-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.ai-wizard-identity-tabs button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+.ai-wizard-identity-tabs button:focus-visible,
+.ai-wizard-identity-destinations button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.ai-wizard-identity-card,
+.ai-wizard-known-profile {
+  width: 100%;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--border-card);
+  border-radius: 10px;
+  background: var(--bg-card);
+}
+
+.ai-wizard-identity-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ai-wizard-identity-card strong,
+.ai-wizard-identity-card span {
+  display: block;
+}
+
+.ai-wizard-identity-card span:not(.ai-wizard-identity-pill) {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.ai-wizard-identity-pill {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--text-on-accent);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.ai-wizard-known-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ai-wizard-identity-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 160px);
+  gap: 10px;
+}
+
+.ai-wizard-known-profile .ai-wizard-input {
+  max-width: none;
+  margin-top: 0;
+}
+
+.ai-wizard-identity-destinations {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-wizard-identity-destinations > span {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.ai-wizard-identity-destinations > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-wizard-identity-destinations button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 6px 9px;
+  border: 1px solid var(--border-card);
+  border-radius: 999px;
+  background: var(--bg-button-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.ai-wizard-identity-destinations button svg {
+  opacity: 0;
+}
+
+.ai-wizard-identity-destinations button.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+.ai-wizard-identity-destinations button.selected svg {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.ai-wizard-provider-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-wizard-provider-panel {
+  max-height: 0;
+  margin-top: -6px;
+  padding: 0 10px;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    max-height 0.22s ease,
+    margin-top 0.22s ease,
+    opacity 0.18s ease,
+    transform 0.22s ease;
+}
+
+.ai-wizard-provider-panel.open {
+  max-height: 270px;
+  margin-top: 0;
+  padding: 10px;
+  border: 1px solid var(--border-card);
+  border-radius: 9px;
+  background: var(--bg-button-secondary);
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.ai-wizard-provider-panel-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.ai-wizard-provider-panel-head strong {
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+
+.ai-wizard-provider-panel-head span,
+.ai-wizard-provider-panel small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.ai-wizard-provider-panel .cloud-form-field + .cloud-form-field {
+  margin-top: 8px;
+}
+
 @keyframes setup-window-rise {
   from {
     opacity: 0;

@@ -29,6 +29,12 @@ import {
   type LayoutPreset,
   type AiProvider,
 } from "../features/ai/aiConfig";
+import type {
+  AcademicTitle,
+  ExternalProviderConnection,
+  ExternalProviderId,
+  ResearcherProfile,
+} from "../features/ai/researcherProfile";
 import {
   fastTierAvailability,
   fastTierRuntimeAvailability,
@@ -100,6 +106,67 @@ interface SetupWizardProps {
 type Step = "welcome" | "name" | "layout" | "theme" | "model";
 const steps: Step[] = ["welcome", "name", "layout", "theme", "model"];
 const defaultProductName = "LatexDo";
+const academicTitleOptions: AcademicTitle[] = ["", "Dr", "Prof", "Prof. Dr", "Mx"];
+
+type IdentityMode = "anonymous" | "known";
+type IdentityDestination = "latexdo" | "ai" | ExternalProviderId;
+type ExternalProviderDraft = {
+  username: string;
+  projectFetchUrl: string;
+};
+
+const identityProviderOptions: {
+  id: ExternalProviderId;
+  label: string;
+  placeholder: string;
+  hint: string;
+}[] = [
+  {
+    id: "overleaf",
+    label: "Overleaf",
+    placeholder: "overleaf-user",
+    hint: "Save the local identity used for Overleaf project workflows.",
+  },
+  {
+    id: "zotero",
+    label: "Zotero",
+    placeholder: "zotero-user",
+    hint: "Save the local identity used for bibliography workflows.",
+  },
+  {
+    id: "mendeley",
+    label: "Mendeley",
+    placeholder: "mendeley-user",
+    hint: "Save the local identity used for reference workflows.",
+  },
+  {
+    id: "readcube",
+    label: "ReadCube",
+    placeholder: "readcube-user",
+    hint: "Save the local identity used for paper-library workflows.",
+  },
+];
+const identityProviderIds = identityProviderOptions.map((provider) => provider.id);
+
+function blankProviderDrafts(): Record<ExternalProviderId, ExternalProviderDraft> {
+  return {
+    overleaf: { username: "", projectFetchUrl: "" },
+    zotero: { username: "", projectFetchUrl: "" },
+    mendeley: { username: "", projectFetchUrl: "" },
+    readcube: { username: "", projectFetchUrl: "" },
+  };
+}
+
+function blankIdentityDestinations(): Record<IdentityDestination, boolean> {
+  return {
+    latexdo: false,
+    ai: false,
+    overleaf: false,
+    zotero: false,
+    mendeley: false,
+    readcube: false,
+  };
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -187,6 +254,33 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   const [importing, setImporting] = React.useState(false);
   const [importedManifest, setImportedManifest] =
     React.useState<ImportedModelManifest | null>(null);
+  const initialProviderDrafts = React.useMemo(() => {
+    const drafts = blankProviderDrafts();
+    for (const connection of initialConfig.profile.externalProviders) {
+      drafts[connection.provider] = {
+        username: connection.username,
+        projectFetchUrl: connection.projectFetchUrl ?? "",
+      };
+    }
+    return drafts;
+  }, [initialConfig.profile.externalProviders]);
+  const [identityMode, setIdentityMode] = React.useState<IdentityMode>("known");
+  const [identityDestinations, setIdentityDestinations] = React.useState<
+    Record<IdentityDestination, boolean>
+  >(() => {
+    const destinations = blankIdentityDestinations();
+    destinations.latexdo = true;
+    destinations.ai =
+      initialConfig.access.researcherProfile && initialConfig.profile.includeInContext;
+    for (const connection of initialConfig.profile.externalProviders) {
+      destinations[connection.provider] = true;
+    }
+    return destinations;
+  });
+  const [externalProviderDrafts, setExternalProviderDrafts] =
+    React.useState<Record<ExternalProviderId, ExternalProviderDraft>>(
+      initialProviderDrafts,
+    );
 
   const step = steps[stepIndex];
   const patch = (p: Partial<AiConfig>) => setConfig((c) => ({ ...c, ...p }));
@@ -204,6 +298,163 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   const openPolicy = (event: React.MouseEvent<HTMLAnchorElement>, url: string) => {
     event.preventDefault();
     onOpenExternal(url);
+  };
+
+  const buildIdentityProfile = (
+    baseProfile: ResearcherProfile,
+    destinations: Record<IdentityDestination, boolean> = identityDestinations,
+    drafts: Record<ExternalProviderId, ExternalProviderDraft> = externalProviderDrafts,
+  ): ResearcherProfile => {
+    const externalProviders = baseProfile.externalProviders.filter(
+      (connection) => !identityProviderIds.includes(connection.provider),
+    );
+
+    for (const provider of identityProviderOptions) {
+      const draft = drafts[provider.id];
+      const username = draft.username.trim();
+      if (!destinations[provider.id] || !username) continue;
+      const previous = config.profile.externalProviders.find(
+        (connection) => connection.provider === provider.id,
+      );
+      const now = Date.now();
+      const connection: ExternalProviderConnection = {
+        provider: provider.id,
+        username,
+        displayName: baseProfile.displayName.trim() || username,
+        title: baseProfile.title,
+        affiliation: baseProfile.affiliation.trim() || undefined,
+        confirmed: true,
+        connectedAt: previous?.connectedAt ?? now,
+        updatedAt: now,
+        projectFetchUrl:
+          provider.id === "overleaf"
+            ? draft.projectFetchUrl.trim() || undefined
+            : undefined,
+      };
+      externalProviders.push(connection);
+    }
+
+    return {
+      ...baseProfile,
+      externalProviders,
+    };
+  };
+
+  const updateKnownProfile = (part: Partial<ResearcherProfile>) => {
+    const nextProfile = buildIdentityProfile(
+      {
+        ...config.profile,
+        ...part,
+        includeInContext: identityDestinations.ai,
+      },
+      identityDestinations,
+      externalProviderDrafts,
+    );
+    patch({
+      profile: nextProfile,
+      userName: identityDestinations.latexdo ? nextProfile.displayName : "",
+      access: {
+        ...config.access,
+        researcherProfile: identityDestinations.ai,
+      },
+    });
+  };
+
+  const chooseIdentityMode = (mode: IdentityMode) => {
+    setIdentityMode(mode);
+    if (mode === "anonymous") {
+      const anonymousDestinations = blankIdentityDestinations();
+      setIdentityDestinations(anonymousDestinations);
+      patch({
+        userName: "",
+        access: {
+          ...config.access,
+          researcherProfile: false,
+        },
+        profile: buildIdentityProfile(
+          {
+            ...config.profile,
+            mode: "anonymous",
+            displayName: "",
+            title: "",
+            affiliation: "",
+            includeInContext: false,
+          },
+          anonymousDestinations,
+          externalProviderDrafts,
+        ),
+      });
+      return;
+    }
+
+    setIdentityDestinations((current) => {
+      const next = {
+        ...current,
+        latexdo: true,
+        ai: true,
+      };
+      patch({
+        userName: config.profile.displayName || config.userName,
+        access: {
+          ...config.access,
+          researcherProfile: true,
+        },
+        profile: buildIdentityProfile(
+          {
+            ...config.profile,
+            includeInContext: true,
+          },
+          next,
+          externalProviderDrafts,
+        ),
+      });
+      return next;
+    });
+  };
+
+  const toggleIdentityDestination = (destination: IdentityDestination) => {
+    setIdentityDestinations((current) => {
+      const next = {
+        ...current,
+        [destination]: !current[destination],
+      };
+      const nextProfile = buildIdentityProfile(
+        {
+          ...config.profile,
+          includeInContext: next.ai,
+        },
+        next,
+        externalProviderDrafts,
+      );
+      patch({
+        profile: nextProfile,
+        userName: next.latexdo ? nextProfile.displayName : "",
+        access: {
+          ...config.access,
+          researcherProfile: next.ai,
+        },
+      });
+      return next;
+    });
+  };
+
+  const updateExternalProviderDraft = (
+    provider: ExternalProviderId,
+    part: Partial<ExternalProviderDraft>,
+  ) => {
+    setExternalProviderDrafts((current) => {
+      const next = {
+        ...current,
+        [provider]: {
+          ...current[provider],
+          ...part,
+        },
+      };
+      patch({
+        profile: buildIdentityProfile(config.profile, identityDestinations, next),
+      });
+      return next;
+    });
   };
 
   const continueFromIntro = () => {
@@ -592,31 +843,202 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
             )}
 
             {step === "name" && (
-              <div className="ai-wizard-section">
+              <div className="ai-wizard-section ai-wizard-identity-step">
                 <User size={28} className="ai-wizard-hero-icon" />
-                <h2 id="ai-wizard-title">What should {productName} call you?</h2>
+                <h2 id="ai-wizard-title">Choose your research identity</h2>
                 <p className="ai-wizard-lead">
-                  Used to personalize responses. Stored locally, never uploaded.
+                  Decide whether {productName} should know you by name or keep this
+                  workspace anonymous.
                 </p>
-                <input
-                  className="ai-wizard-input"
-                  autoFocus
-                  placeholder="Your name"
-                  value={config.userName}
-                  maxLength={80}
-                  onChange={(e) => patch({ userName: e.target.value })}
-                  onKeyDown={(e) => e.key === "Enter" && goNext()}
-                />
-                <button
-                  type="button"
-                  className="ai-wizard-anonymous"
-                  onClick={() => {
-                    patch({ userName: "" });
-                    goNext();
-                  }}
+
+                <div
+                  className="ai-wizard-identity-tabs"
+                  role="tablist"
+                  aria-label="Research identity"
                 >
-                  Stay anonymous
-                </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    className={identityMode === "anonymous" ? "active" : ""}
+                    aria-selected={identityMode === "anonymous"}
+                    onClick={() => chooseIdentityMode("anonymous")}
+                  >
+                    <ShieldCheck size={15} />
+                    <span>Anonymous reviewer</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    className={identityMode === "known" ? "active" : ""}
+                    aria-selected={identityMode === "known"}
+                    onClick={() => chooseIdentityMode("known")}
+                  >
+                    <User size={15} />
+                    <span>Named researcher</span>
+                  </button>
+                </div>
+
+                {identityMode === "anonymous" ? (
+                  <div className="ai-wizard-identity-card">
+                    <div>
+                      <strong>Stay anonymous in this workspace</strong>
+                      <span>
+                        No display name is saved, and researcher profile context stays
+                        off for AI prompts.
+                      </span>
+                    </div>
+                    <span className="ai-wizard-identity-pill">
+                      <Check size={12} /> Private
+                    </span>
+                  </div>
+                ) : (
+                  <div className="ai-wizard-known-profile">
+                    <div className="ai-wizard-identity-grid">
+                      <label className="cloud-form-field">
+                        <span>Display name</span>
+                        <input
+                          className="ai-wizard-input"
+                          autoFocus
+                          placeholder="Your name"
+                          value={config.profile.displayName || config.userName}
+                          maxLength={80}
+                          onChange={(event) =>
+                            updateKnownProfile({
+                              displayName: event.target.value,
+                            })
+                          }
+                          onKeyDown={(event) => event.key === "Enter" && goNext()}
+                        />
+                      </label>
+                      <label className="cloud-form-field">
+                        <span>Title</span>
+                        <select
+                          value={config.profile.title}
+                          onChange={(event) =>
+                            updateKnownProfile({
+                              title: event.target.value as AcademicTitle,
+                            })
+                          }
+                        >
+                          {academicTitleOptions.map((title) => (
+                            <option key={title || "none"} value={title}>
+                              {title || "No title"}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <label className="cloud-form-field">
+                      <span>Affiliation</span>
+                      <input
+                        className="ai-wizard-input"
+                        placeholder="Lab, university, or company"
+                        value={config.profile.affiliation}
+                        maxLength={120}
+                        onChange={(event) =>
+                          updateKnownProfile({
+                            affiliation: event.target.value,
+                          })
+                        }
+                        onKeyDown={(event) => event.key === "Enter" && goNext()}
+                      />
+                    </label>
+
+                    <div className="ai-wizard-identity-destinations">
+                      <span>Use this identity in</span>
+                      <div>
+                        <button
+                          type="button"
+                          className={identityDestinations.latexdo ? "selected" : ""}
+                          onClick={() => toggleIdentityDestination("latexdo")}
+                          aria-pressed={identityDestinations.latexdo}
+                        >
+                          <Check size={12} />
+                          {productName}
+                        </button>
+                        <button
+                          type="button"
+                          className={identityDestinations.ai ? "selected" : ""}
+                          onClick={() => toggleIdentityDestination("ai")}
+                          aria-pressed={identityDestinations.ai}
+                        >
+                          <Check size={12} />
+                          AI context
+                        </button>
+                        {identityProviderOptions.map((provider) => (
+                          <button
+                            key={provider.id}
+                            type="button"
+                            className={
+                              identityDestinations[provider.id] ? "selected" : ""
+                            }
+                            onClick={() => toggleIdentityDestination(provider.id)}
+                            aria-pressed={identityDestinations[provider.id]}
+                          >
+                            <Check size={12} />
+                            {provider.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="ai-wizard-provider-panels">
+                      {identityProviderOptions.map((provider) => {
+                        const selected = identityDestinations[provider.id];
+                        const draft = externalProviderDrafts[provider.id];
+                        return (
+                          <div
+                            key={provider.id}
+                            className={`ai-wizard-provider-panel ${
+                              selected ? "open" : ""
+                            }`}
+                            aria-hidden={!selected}
+                          >
+                            <div className="ai-wizard-provider-panel-head">
+                              <strong>{provider.label}</strong>
+                              <span>{provider.hint}</span>
+                            </div>
+                            <label className="cloud-form-field">
+                              <span>
+                                {provider.label} username or local account name
+                              </span>
+                              <input
+                                className="ai-wizard-input"
+                                placeholder={provider.placeholder}
+                                value={draft.username}
+                                maxLength={120}
+                                disabled={!selected}
+                                onChange={(event) =>
+                                  updateExternalProviderDraft(provider.id, {
+                                    username: event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                            {provider.id === "overleaf" ? (
+                              <label className="cloud-form-field">
+                                <span>Overleaf Git URL (optional)</span>
+                                <input
+                                  type="url"
+                                  className="ai-wizard-input"
+                                  placeholder="https://git.overleaf.com/project-id"
+                                  value={draft.projectFetchUrl}
+                                  maxLength={240}
+                                  disabled={!selected}
+                                  onChange={(event) =>
+                                    updateExternalProviderDraft(provider.id, {
+                                      projectFetchUrl: event.target.value,
+                                    })
+                                  }
+                                />
+                              </label>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

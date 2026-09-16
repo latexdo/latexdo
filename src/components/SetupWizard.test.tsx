@@ -110,7 +110,7 @@ describe("SetupWizard", () => {
     fireEvent.click(screen.getByRole("button", { name: /continue/i }));
 
     expect(onAcceptLegal).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("What should LatexDo call you?")).toBeVisible();
+    expect(screen.getByText("Choose your research identity")).toBeVisible();
   });
 
   it("allows the legal checkbox to be unchecked and rechecked", () => {
@@ -197,10 +197,68 @@ describe("SetupWizard", () => {
     );
 
     continueSetup();
-    fireEvent.click(screen.getByRole("button", { name: /stay anonymous/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /anonymous reviewer/i }));
+    continueSetup();
 
     expect(screen.getByText("How do you want your workspace?")).toBeVisible();
     expect(screen.queryByDisplayValue("Ada")).not.toBeInTheDocument();
+  });
+
+  it("saves named identity destinations for research providers from onboarding", () => {
+    const onComplete = vi.fn();
+    render(
+      <SetupWizard
+        initialConfig={makeConfig()}
+        isDesktop
+        onApplyTheme={vi.fn()}
+        onComplete={onComplete}
+      />,
+    );
+
+    continueSetup();
+    fireEvent.change(screen.getByPlaceholderText("Your name"), {
+      target: { value: "Ada Lovelace" },
+    });
+    expect(screen.getByRole("button", { name: /^Overleaf$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Mendeley$/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^ReadCube$/i })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Overleaf$/i }));
+    fireEvent.change(screen.getByLabelText("Overleaf username or local account name"), {
+      target: { value: "ada-overleaf" },
+    });
+    fireEvent.change(screen.getByLabelText("Overleaf Git URL (optional)"), {
+      target: { value: "https://git.overleaf.com/ada-paper" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Zotero$/i }));
+    fireEvent.change(screen.getByLabelText("Zotero username or local account name"), {
+      target: { value: "ada-zotero" },
+    });
+    continueSetup();
+    fireEvent.click(screen.getByRole("button", { name: /Skip setup/i }));
+
+    expect(onComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userName: "Ada Lovelace",
+        profile: expect.objectContaining({
+          displayName: "Ada Lovelace",
+          externalProviders: expect.arrayContaining([
+            expect.objectContaining({
+              provider: "overleaf",
+              username: "ada-overleaf",
+              displayName: "Ada Lovelace",
+              projectFetchUrl: "https://git.overleaf.com/ada-paper",
+            }),
+            expect.objectContaining({
+              provider: "zotero",
+              username: "ada-zotero",
+              displayName: "Ada Lovelace",
+            }),
+          ]),
+        }),
+      }),
+    );
   });
 
   it("downloads a local model before completing desktop setup", async () => {
