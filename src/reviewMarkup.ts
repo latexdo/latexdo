@@ -30,6 +30,11 @@ interface BraceArgument {
   endIndex: number;
 }
 
+export interface RemoveInsertedReviewMarkupResult {
+  content: string;
+  removed: boolean;
+}
+
 function skipWhitespace(content: string, index: number): number {
   let cursor = index;
   while (cursor < content.length && /\s/.test(content[cursor])) {
@@ -275,4 +280,146 @@ export function normalizeLatexDoReviewMarkup(content: string): string {
   }
 
   return output;
+}
+
+function startsWithCommandAt(content: string, command: string, index: number): boolean {
+  return content.slice(index, index + command.length) === command;
+}
+
+function stripOneInsertedLineBreak(content: string, index: number): string {
+  if (content.startsWith("\r\n", index)) {
+    return content.slice(index + 2);
+  }
+  if (content.startsWith("\n", index)) {
+    return content.slice(index + 1);
+  }
+  return content.slice(index);
+}
+
+function removeReviewerCommentWrapperAt(
+  content: string,
+  commandIndex: number,
+  selectionText: string,
+): RemoveInsertedReviewMarkupResult | null {
+  const command = "\\reviewercomment";
+  if (!startsWithCommandAt(content, command, commandIndex)) {
+    return null;
+  }
+
+  const firstArgumentStart = skipWhitespace(content, commandIndex + command.length);
+  const textArgument = readBraceArgument(content, firstArgumentStart);
+  if (!textArgument || textArgument.value !== selectionText) {
+    return null;
+  }
+
+  const secondArgumentStart = skipWhitespace(content, textArgument.endIndex);
+  const commentArgument = readBraceArgument(content, secondArgumentStart);
+  if (!commentArgument) {
+    return null;
+  }
+
+  return {
+    content:
+      content.slice(0, commandIndex) +
+      textArgument.value +
+      content.slice(commentArgument.endIndex),
+    removed: true,
+  };
+}
+
+function removeReviewerCommentBlockAfterSelectionAt(
+  content: string,
+  selectionStart: number,
+  selectionText: string,
+): RemoveInsertedReviewMarkupResult | null {
+  const command = "\\latexdoreviewercomment";
+  const selectionEnd = selectionStart + selectionText.length;
+  if (content.slice(selectionStart, selectionEnd) !== selectionText) {
+    return null;
+  }
+
+  const trailing = splitTrailingPunctuation(content, selectionEnd);
+  const preservedEnd = trailing.punctuation ? trailing.nextIndex : selectionEnd;
+  const commandIndex = skipWhitespace(content, preservedEnd);
+  if (!startsWithCommandAt(content, command, commandIndex)) {
+    return null;
+  }
+
+  const firstArgumentStart = skipWhitespace(content, commandIndex + command.length);
+  const commentArgument = readBraceArgument(content, firstArgumentStart);
+  if (!commentArgument) {
+    return null;
+  }
+
+  return {
+    content:
+      content.slice(0, preservedEnd) +
+      stripOneInsertedLineBreak(content, commentArgument.endIndex),
+    removed: true,
+  };
+}
+
+export function removeInsertedReviewMarkup(
+  content: string,
+  selectionText: string,
+  preferredStartIndex?: number,
+): RemoveInsertedReviewMarkupResult {
+  if (!selectionText) {
+    return { content, removed: false };
+  }
+
+  const preferredIndexes =
+    typeof preferredStartIndex === "number" && preferredStartIndex >= 0
+      ? [preferredStartIndex]
+      : [];
+
+  for (const index of preferredIndexes) {
+    const wrapperResult = removeReviewerCommentWrapperAt(content, index, selectionText);
+    if (wrapperResult) {
+      return wrapperResult;
+    }
+
+    const blockResult = removeReviewerCommentBlockAfterSelectionAt(
+      content,
+      index,
+      selectionText,
+    );
+    if (blockResult) {
+      return blockResult;
+    }
+  }
+
+  let wrapperCursor = 0;
+  while (wrapperCursor < content.length) {
+    const commandIndex = content.indexOf("\\reviewercomment", wrapperCursor);
+    if (commandIndex === -1) {
+      break;
+    }
+
+    const result = removeReviewerCommentWrapperAt(content, commandIndex, selectionText);
+    if (result) {
+      return result;
+    }
+    wrapperCursor = commandIndex + "\\reviewercomment".length;
+  }
+
+  let selectionCursor = 0;
+  while (selectionCursor < content.length) {
+    const selectionStart = content.indexOf(selectionText, selectionCursor);
+    if (selectionStart === -1) {
+      break;
+    }
+
+    const result = removeReviewerCommentBlockAfterSelectionAt(
+      content,
+      selectionStart,
+      selectionText,
+    );
+    if (result) {
+      return result;
+    }
+    selectionCursor = selectionStart + Math.max(1, selectionText.length);
+  }
+
+  return { content, removed: false };
 }

@@ -164,6 +164,7 @@ import { generateRebuttalLetter } from "./rebuttalGenerator";
 import {
   escapeLatexText,
   normalizeLatexDoReviewMarkup,
+  removeInsertedReviewMarkup,
   usesLatexDoReviewMacros,
 } from "./reviewMarkup";
 import type { RebuttalGeneratorSettings } from "./types";
@@ -416,6 +417,28 @@ type MonacoProviderDisposableStore = typeof globalThis & {
   __latexdoMonacoProviderDisposables?: Monaco.IDisposable[];
   __latexdoMonacoProviderGeneration?: string;
 };
+
+function offsetFromLineColumn(
+  content: string,
+  lineNumber: number,
+  column: number,
+): number | null {
+  if (lineNumber < 1 || column < 1) {
+    return null;
+  }
+
+  const lines = content.split("\n");
+  if (lineNumber > lines.length) {
+    return null;
+  }
+
+  let offset = 0;
+  for (let line = 1; line < lineNumber; line += 1) {
+    offset += lines[line - 1].length + 1;
+  }
+
+  return offset + Math.min(column - 1, lines[lineNumber - 1].length);
+}
 
 function prepareMonacoProviderDisposables(): Monaco.IDisposable[] | null {
   const store = globalThis as MonacoProviderDisposableStore;
@@ -4027,7 +4050,7 @@ ${macroEnd}
         );
       }
     },
-    [compile],
+    [compile, setDocuments],
   );
   forwardSyncRef.current = handleForwardSync;
 
@@ -4777,24 +4800,46 @@ ${macroEnd}
     const relevantChats = reviewChats.filter(
       (chat) => chat.filePath === activeDocument.relativePath,
     );
-    const decorations = relevantChats.map((chat) => ({
-      range: new monaco.Range(
-        chat.selection.startLine,
-        chat.selection.startColumn,
-        chat.selection.endLine,
-        chat.selection.endColumn,
-      ),
-      options: {
-        isWholeLine: false,
-        className: "review-comment-decoration",
-        beforeContentClassName: "review-comment-inline-marker",
-        glyphMarginClassName: "review-comment-glyph",
-        glyphMargin: { position: monaco.editor.GlyphMarginLane.Center },
-        stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
-        hoverMessage: { value: "Review comment: " + chat.comments[0]?.text },
-        glyphMarginHoverMessage: { value: "Review comment: " + chat.comments[0]?.text },
-      },
-    }));
+    const decorations = relevantChats.flatMap((chat) => {
+      const firstComment = chat.comments[0]?.text.trim();
+      const hoverMessage = {
+        value: firstComment ? `Review thread: ${firstComment}` : "Review thread",
+      };
+
+      return [
+        {
+          range: new monaco.Range(
+            chat.selection.startLine,
+            chat.selection.startColumn,
+            chat.selection.endLine,
+            chat.selection.endColumn,
+          ),
+          options: {
+            isWholeLine: false,
+            inlineClassName: "review-comment-decoration",
+            stickiness:
+              monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+            hoverMessage,
+          },
+        },
+        {
+          range: new monaco.Range(
+            chat.selection.startLine,
+            1,
+            chat.selection.startLine,
+            1,
+          ),
+          options: {
+            isWholeLine: true,
+            glyphMarginClassName: "review-comment-glyph",
+            glyphMargin: { position: monaco.editor.GlyphMarginLane.Center },
+            stickiness:
+              monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+            glyphMarginHoverMessage: hoverMessage,
+          },
+        },
+      ];
+    });
 
     reviewDecorationsRef.current = editor.deltaDecorations(
       reviewDecorationsRef.current,
@@ -9200,16 +9245,101 @@ ${macroEnd}
     [mode, rebuttalItems, saveReviewData],
   );
 
+  const removeReviewChatFromTex = useCallback(
+    async (chat: ReviewChat): Promise<boolean> => {
+      if (!chat.insertedInTex) {
+        return true;
+      }
+
+      const currentProject = projectIdRef.current;
+      if (!currentProject) {
+        setStatusMessage("No project open. Could not remove review markup.");
+        return false;
+      }
+
+      const normalizedPath = normalizeRelativePath(chat.filePath);
+      const openDoc = documentsRef.current.find(
+        (document) => normalizeRelativePath(document.relativePath) === normalizedPath,
+      );
+
+      let content: string;
+      try {
+        content =
+          openDoc?.content ??
+          (await window.latexdo.readFile(currentProject, chat.filePath));
+      } catch {
+        setStatusMessage("Could not read the file for this review thread.");
+        return false;
+      }
+
+      const preferredStartIndex =
+        offsetFromLineColumn(
+          content,
+          chat.selection.startLine,
+          chat.selection.startColumn,
+        ) ?? undefined;
+      const removal = removeInsertedReviewMarkup(
+        content,
+        chat.selection.text,
+        preferredStartIndex,
+      );
+
+      if (!removal.removed) {
+        setStatusMessage(
+          "Could not find the inserted review markup in the TeX source.",
+        );
+        return false;
+      }
+
+      if (openDoc) {
+        setDocuments((current) => {
+          const nextDocuments = current.map((document) =>
+            document.path === openDoc.path
+              ? { ...document, content: removal.content }
+              : document,
+          );
+          documentsRef.current = nextDocuments;
+          return nextDocuments;
+        });
+      } else {
+        try {
+          await window.latexdo.writeFile(
+            currentProject,
+            chat.filePath,
+            removal.content,
+          );
+          void compile();
+        } catch {
+          setStatusMessage("Could not update the file for this review thread.");
+          return false;
+        }
+      }
+
+      return true;
+    },
+    [compile, setDocuments],
+  );
+
   const handleDeleteReviewChat = useCallback(
-    (chatId: string) => {
+    async (chatId: string) => {
       if (!window.confirm("Delete this review chat?")) return;
+      const chat = reviewChats.find((candidate) => candidate.id === chatId);
+      if (!chat) return;
+      const removedFromTex = await removeReviewChatFromTex(chat);
+      if (!removedFromTex) return;
+
       setReviewChats((prev) => {
         const next = prev.filter((c) => c.id !== chatId);
         void saveReviewData(next, rebuttalItems);
         return next;
       });
+      setStatusMessage(
+        chat.insertedInTex
+          ? "Deleted review thread and removed it from the TeX source."
+          : "Deleted review thread.",
+      );
     },
-    [rebuttalItems, saveReviewData],
+    [rebuttalItems, removeReviewChatFromTex, reviewChats, saveReviewData],
   );
 
   const handleInsertReviewChatIntoTex = useCallback(
@@ -9247,14 +9377,13 @@ ${macroEnd}
 
       const selectionText = chat.selection.text;
       // Prefer the recorded selection range; fall back to searching for the text.
-      const lines = content.split("\n");
       let start = -1;
-      if (chat.selection.startLine >= 1 && chat.selection.startLine <= lines.length) {
-        let offset = 0;
-        for (let line = 1; line < chat.selection.startLine; line += 1) {
-          offset += lines[line - 1].length + 1;
-        }
-        const candidate = offset + chat.selection.startColumn - 1;
+      const candidate = offsetFromLineColumn(
+        content,
+        chat.selection.startLine,
+        chat.selection.startColumn,
+      );
+      if (candidate !== null) {
         if (
           content.slice(candidate, candidate + selectionText.length) === selectionText
         ) {
@@ -9277,10 +9406,13 @@ ${macroEnd}
             `\\textbf{${escapeLatexText(comment.author)}:} ${escapeLatexText(comment.text)}`,
         )
         .join(" \\par ");
+      const afterSelection = content.slice(start + selectionText.length);
+      const commentPrefix = selectionText.endsWith("\n") ? "" : "\n";
+      const commentSuffix = afterSelection.startsWith("\n") ? "" : "\n";
       const nextContent =
         content.slice(0, start) +
-        `\\reviewercomment{${selectionText}}{${commentLatex}}` +
-        content.slice(start + selectionText.length);
+        `${selectionText}${commentPrefix}\\latexdoreviewercomment{${commentLatex}}${commentSuffix}` +
+        afterSelection;
 
       if (openDoc) {
         setDocuments((current) => {
@@ -10653,7 +10785,7 @@ ${macroEnd}
                         chats={reviewChats}
                         onAddChat={handleAddReviewChat}
                         onAddComment={handleAddReviewComment}
-                        onDeleteChat={handleDeleteReviewChat}
+                        onDeleteChat={(chatId) => void handleDeleteReviewChat(chatId)}
                         onJumpToSelection={handleJumpToReviewSelection}
                         onInsertIntoTex={(chat) =>
                           void handleInsertReviewChatIntoTex(chat)

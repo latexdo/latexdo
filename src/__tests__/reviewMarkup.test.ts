@@ -4,6 +4,7 @@ import {
   escapeLatexText,
   normalizeLatexDoReviewMarkup,
   rejectLatexDoTrackedChanges,
+  removeInsertedReviewMarkup,
   summarizeLatexDoTrackedChanges,
   usesLatexDoReviewMacros,
   usesLatexDoTrackedChanges,
@@ -79,5 +80,39 @@ describe("review markup", () => {
     // itself re-escaped.
     expect(escapeLatexText("&")).toBe("\\&");
     expect(escapeLatexText("\\&")).toBe("\\textbackslash{}\\&");
+  });
+
+  it("removes inserted review wrappers while keeping the reviewed text", () => {
+    const source =
+      "Before \\reviewercomment{Important \\cite{Li21b}}{\\textbf{Reviewer:} Clarify.} after.";
+
+    expect(removeInsertedReviewMarkup(source, "Important \\cite{Li21b}")).toEqual({
+      content: "Before Important \\cite{Li21b} after.",
+      removed: true,
+    });
+  });
+
+  it("removes normalized reviewer comment blocks after the reviewed text", () => {
+    const source =
+      "Before Important claim\n" +
+      "\\latexdoreviewercomment{\\textbf{Reviewer:} Clarify.}\n" +
+      " after.";
+
+    expect(removeInsertedReviewMarkup(source, "Important claim", 7)).toEqual({
+      content: "Before Important claim after.",
+      removed: true,
+    });
+  });
+
+  it("keeps punctuation when removing normalized reviewer comment blocks", () => {
+    const source =
+      "Before Important claim.\n" +
+      "\\latexdoreviewercomment{\\textbf{Reviewer:} Clarify.}\n" +
+      " After.";
+
+    expect(removeInsertedReviewMarkup(source, "Important claim", 7)).toEqual({
+      content: "Before Important claim. After.",
+      removed: true,
+    });
   });
 });

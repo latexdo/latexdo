@@ -980,30 +980,14 @@ jobs:
           DISPATCH_TOKEN: ${{ secrets.LATEXDO_WEBSITE_TOKEN }}
           TARGET_REPOSITORY: latexdo/latexdo.org
           TARGET_WORKFLOW: validate.yml
-          SOURCE_REPOSITORY: ${{ github.repository }}
-          SOURCE_SHA: ${{ needs.pipeline.outputs.target_sha }}
-          SOURCE_RUN_ID: ${{ github.run_id }}
-          SOURCE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           payload="$(
             jq -n \
               --arg ref "main" \
-              --arg source_repository "$SOURCE_REPOSITORY" \
-              --arg source_sha "$SOURCE_SHA" \
-              --arg source_run_id "$SOURCE_RUN_ID" \
-              --arg source_run_url "$SOURCE_RUN_URL" \
-              '{
-                ref: $ref,
-                inputs: {
-                  source_repository: $source_repository,
-                  source_sha: $source_sha,
-                  source_run_id: $source_run_id,
-                  source_run_url: $source_run_url
-                }
-              }'
+              '{ ref: $ref }'
           )"
 
-          curl -fsSL \
+          curl --fail-with-body -sSL \
             -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${DISPATCH_TOKEN}" \

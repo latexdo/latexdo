@@ -7984,33 +7984,11 @@ button {
 }
 
 .monaco-editor .review-comment-decoration {
-  border-bottom: 1px solid rgba(124, 166, 255, 0.75);
-  background: rgba(124, 166, 255, 0.14);
-}
-
-.monaco-editor .review-comment-inline-marker {
-  position: relative;
-  display: inline-block;
-  width: 13px;
-  height: 10px;
-  margin-right: 4px;
-  border: 1px solid rgba(124, 166, 255, 0.95);
   border-radius: 3px;
-  background: rgba(124, 166, 255, 0.18);
-  vertical-align: -1px;
-}
-
-.monaco-editor .review-comment-inline-marker::after {
-  content: "";
-  position: absolute;
-  width: 4px;
-  height: 4px;
-  margin-top: 7px;
-  margin-left: 1px;
-  border-bottom: 1px solid rgba(124, 166, 255, 0.95);
-  border-left: 1px solid rgba(124, 166, 255, 0.95);
-  background: #141820;
-  transform: rotate(-35deg);
+  background: rgba(124, 166, 255, 0.16);
+  box-shadow:
+    inset 0 -1px 0 rgba(124, 166, 255, 0.85),
+    0 0 0 1px rgba(124, 166, 255, 0.08);
 }
 
 .monaco-editor .review-comment-glyph {
