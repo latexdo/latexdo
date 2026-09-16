@@ -121,6 +121,7 @@ import { cloudProviders, findCloudProvider } from "./features/ai/cloudProviders"
 import { localModelCatalog, type LocalModelInfo } from "./features/ai/aiModels";
 import {
   fastTierAvailability,
+  fastTierRuntimeAvailability,
   findLatexDoAiTierByModelId,
   latexDoAiTiers,
   type LatexDoAiTier,
@@ -9521,6 +9522,29 @@ ${macroEnd}
     if (aiSystemCapabilitiesState === "loading") {
       return {
         state: "unsupported",
+        reason: "Checking this machine's memory and storage.",
+      };
+    }
+    return {
+      state: "unsupported",
+      reason: "LatexDo could not check this machine's memory and storage.",
+    };
+  };
+  const localTierRuntimeAvailability = (
+    tier: LatexDoAiTierDefinition,
+  ): TierAvailability => {
+    if (!aiIsDesktop) {
+      return {
+        state: "unsupported",
+        reason: "Local AI requires the LatexDo desktop app.",
+      };
+    }
+    if (aiSystemCapabilities) {
+      return fastTierRuntimeAvailability(tier, aiSystemCapabilities);
+    }
+    if (aiSystemCapabilitiesState === "loading") {
+      return {
+        state: "unsupported",
         reason: "Checking this machine's memory.",
       };
     }
@@ -9568,7 +9592,7 @@ ${macroEnd}
       (aiConfig.modelId === selectedLatexDoAiTier.runtime.modelId &&
         aiConfig.modelDownloaded)
     : false;
-  const selectedLatexDoAiTierAvailability = selectedLatexDoAiTier
+  const selectedLatexDoAiTierInstallAvailability = selectedLatexDoAiTier
     ? (tierAvailabilityById.get(selectedLatexDoAiTier.id) ?? {
         state: "unsupported",
         reason: "Unknown LatexDo AI tier.",
@@ -9577,6 +9601,10 @@ ${macroEnd}
         state: "unsupported",
         reason: "No LatexDo AI tier selected.",
       } satisfies TierAvailability);
+  const selectedLatexDoAiTierAvailability =
+    selectedLatexDoAiTier && selectedLatexDoAiTierDownloaded
+      ? localTierRuntimeAvailability(selectedLatexDoAiTier)
+      : selectedLatexDoAiTierInstallAvailability;
   const selectedLatexDoAiTierCanRun =
     selectedLatexDoAiTierAvailability.state === "available";
   const selectedLatexDoAiModel =
@@ -12828,9 +12856,16 @@ ${macroEnd}
                               (item) => item.id === tierFromSelectValue(selection),
                             );
                             if (!tier) return;
-                            const availability =
-                              tierAvailabilityById.get(tier.id) ??
-                              localTierAvailability(tier);
+                            const tierDownloaded =
+                              downloadedLatexDoAiModelFiles.has(
+                                tier.runtime.fileName,
+                              ) ||
+                              (aiConfig.modelId === tier.runtime.modelId &&
+                                aiConfig.modelDownloaded);
+                            const availability = tierDownloaded
+                              ? localTierRuntimeAvailability(tier)
+                              : (tierAvailabilityById.get(tier.id) ??
+                                localTierAvailability(tier));
                             if (availability.state !== "available") {
                               setLatexDoAiModelMessage(
                                 tierAvailabilityLabel(availability),
@@ -12851,9 +12886,14 @@ ${macroEnd}
                         }}
                       >
                         {latexDoAiTiers.map((tier) => {
-                          const availability =
-                            tierAvailabilityById.get(tier.id) ??
-                            localTierAvailability(tier);
+                          const tierDownloaded =
+                            downloadedLatexDoAiModelFiles.has(tier.runtime.fileName) ||
+                            (aiConfig.modelId === tier.runtime.modelId &&
+                              aiConfig.modelDownloaded);
+                          const availability = tierDownloaded
+                            ? localTierRuntimeAvailability(tier)
+                            : (tierAvailabilityById.get(tier.id) ??
+                              localTierAvailability(tier));
                           return (
                             <option
                               key={tier.id}
@@ -12891,7 +12931,9 @@ ${macroEnd}
                       </p>
                       <div className="ai-tier-actions">
                         {selectedLatexDoAiTierAvailability.state ===
-                        "memory-pressure" ? (
+                          "memory-pressure" ||
+                        selectedLatexDoAiTierAvailability.state ===
+                          "storage-pressure" ? (
                           <button
                             type="button"
                             className="ai-wizard-ghost"

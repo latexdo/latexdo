@@ -261,7 +261,7 @@ export function resolveLatexDoAiTier(tier: LatexDoAiTier): LatexDoAiTierDefiniti
   return definition;
 }
 
-export function fastTierAvailability(
+export function fastTierRuntimeAvailability(
   tier: LatexDoAiTierDefinition,
   system: AiSystemCapabilities | null,
 ): TierAvailability {
@@ -286,6 +286,16 @@ export function fastTierAvailability(
       availableBytes: system.freeRamBytes,
     };
   }
+  return { state: "available" };
+}
+
+export function fastTierAvailability(
+  tier: LatexDoAiTierDefinition,
+  system: AiSystemCapabilities | null,
+): TierAvailability {
+  const runtimeAvailability = fastTierRuntimeAvailability(tier, system);
+  if (runtimeAvailability.state !== "available") return runtimeAvailability;
+  if (!system) return runtimeAvailability;
   if (system.freeStorageBytes === null) {
     return {
       state: "unsupported",

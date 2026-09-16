@@ -22,6 +22,7 @@ import {
 } from "./importedModels.js";
 import {
   fastTierAvailability,
+  fastTierRuntimeAvailability,
   findLatexDoAiTier,
   findLatexDoAiTierByRuntime,
   type LatexDoAiTier,
@@ -88,7 +89,10 @@ async function localModelBlockReason(
   const system = getAiSystemCapabilities();
   const tier = findLatexDoAiTierByRuntime(modelId, fileName);
   if (tier) {
-    return tierAvailabilityMessage(tier.name, fastTierAvailability(tier, system));
+    return tierAvailabilityMessage(
+      tier.name,
+      fastTierRuntimeAvailability(tier, system),
+    );
   }
 
   const fullPath = modelPath(fileName);
@@ -203,6 +207,7 @@ export function registerAiIpc(): void {
       url: string,
       fileName: string,
     ) => {
+      if (await modelExists(fileName)) return { ok: true };
       const tier = findLatexDoAiTierByRuntime(modelId, fileName);
       if (tier) {
         const blocked = tierAvailabilityMessage(
@@ -211,7 +216,6 @@ export function registerAiIpc(): void {
         );
         if (blocked) return { ok: false, error: blocked };
       }
-      if (await modelExists(fileName)) return { ok: true };
       const controller = new AbortController();
       activeDownloads.set(modelId, controller);
       try {

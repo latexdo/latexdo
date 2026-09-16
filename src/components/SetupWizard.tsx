@@ -33,6 +33,7 @@ import {
 import {
   capabilityById,
   fastTierAvailability,
+  fastTierRuntimeAvailability,
   latexDoAiTiers,
   tierCapabilityCatalog,
   tierUnlockGuidance,
@@ -276,8 +277,36 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
     };
   };
 
+  const tierRunAvailability = (tier: LatexDoAiTierDefinition): TierAvailability => {
+    if (!isDesktop) {
+      return {
+        state: "unsupported",
+        reason: "Local AI requires the LatexDo desktop app.",
+      };
+    }
+    if (systemCapabilities) {
+      return fastTierRuntimeAvailability(tier, systemCapabilities);
+    }
+    if (systemCapabilitiesState === "loading") {
+      return {
+        state: "unsupported",
+        reason: "Checking this machine's memory.",
+      };
+    }
+    return {
+      state: "unsupported",
+      reason: "LatexDo could not check this machine's memory.",
+    };
+  };
+
   const selectTier = (tier: LatexDoAiTierDefinition) => {
-    const availability = tierAvailability(tier);
+    const tierInstalled =
+      config.provider === "local" &&
+      config.modelId === tier.runtime.modelId &&
+      (downloaded || config.modelDownloaded);
+    const availability = tierInstalled
+      ? tierRunAvailability(tier)
+      : tierAvailability(tier);
     if (availability.state !== "available") {
       setDownloadError(availabilityLabel(availability));
       return;
@@ -286,9 +315,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
       provider: "local",
       selection: { mode: "latexdo", tier: tier.id },
       modelId: tier.runtime.modelId,
-      modelDownloaded: false,
+      modelDownloaded: tierInstalled,
     });
-    setDownloaded(false);
+    setDownloaded(tierInstalled);
     setDownloadError("");
   };
 
@@ -416,7 +445,13 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   const selectedTier = selectedTierId
     ? (latexDoAiTiers.find((tier) => tier.id === selectedTierId) ?? latexDoAiTiers[1])
     : latexDoAiTiers[1];
-  const selectedTierAvailability = tierAvailability(selectedTier);
+  const selectedTierInstalled =
+    config.provider === "local" &&
+    config.modelId === selectedTier.runtime.modelId &&
+    (downloaded || config.modelDownloaded);
+  const selectedTierAvailability = selectedTierInstalled
+    ? tierRunAvailability(selectedTier)
+    : tierAvailability(selectedTier);
   const customSelected = !latexDoTierSelected;
   const customProvider =
     config.provider === "ollama"
@@ -653,7 +688,13 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
 
                 <div className="ai-wizard-model-list">
                   {latexDoAiTiers.map((tier) => {
-                    const availability = tierAvailability(tier);
+                    const tierInstalled =
+                      config.provider === "local" &&
+                      config.modelId === tier.runtime.modelId &&
+                      (downloaded || config.modelDownloaded);
+                    const availability = tierInstalled
+                      ? tierRunAvailability(tier)
+                      : tierAvailability(tier);
                     const available = availability.state === "available";
                     const selected =
                       config.selection.mode === "latexdo" &&

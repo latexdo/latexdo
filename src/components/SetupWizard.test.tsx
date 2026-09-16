@@ -24,10 +24,17 @@ const GB = 1024 ** 3;
 const highRamCapabilities: AiSystemCapabilities = {
   totalRamBytes: 32 * GB,
   freeRamBytes: 16 * GB,
+  totalStorageBytes: 256 * GB,
+  freeStorageBytes: 128 * GB,
+  modelStoragePath: "/Users/ada/Library/Application Support/LatexDo/models",
   platform: "darwin",
   arch: "arm64",
   cpuCount: 10,
   localAiAvailable: true,
+};
+const lowStorageCapabilities: AiSystemCapabilities = {
+  ...highRamCapabilities,
+  freeStorageBytes: 1 * GB,
 };
 
 function makeConfig(overrides: AiConfigOverrides = {}): AiConfig {
@@ -279,6 +286,55 @@ describe("SetupWizard", () => {
         .getByText("LatexDo Pro Max", { selector: ".ai-wizard-model-name" })
         .closest("button"),
     ).toBeDisabled();
+  });
+
+  it("blocks local model downloads when storage is too low", () => {
+    render(
+      <SetupWizard
+        initialConfig={makeConfig({
+          provider: "local",
+          modelDownloaded: false,
+        })}
+        isDesktop
+        systemCapabilities={lowStorageCapabilities}
+        systemCapabilitiesState="ready"
+        onApplyTheme={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    );
+    advanceToModelStep();
+
+    expect(screen.getAllByText(/Not enough storage/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("button", { name: /Download LatexDo AI Plus/i }),
+    ).toBeDisabled();
+  });
+
+  it("allows an installed local model to finish setup even when storage is low", () => {
+    const onComplete = vi.fn();
+    render(
+      <SetupWizard
+        initialConfig={makeConfig({
+          provider: "local",
+          modelDownloaded: true,
+        })}
+        isDesktop
+        systemCapabilities={lowStorageCapabilities}
+        systemCapabilitiesState="ready"
+        onApplyTheme={vi.fn()}
+        onComplete={onComplete}
+      />,
+    );
+    advanceToModelStep();
+
+    expect(screen.getByText("LatexDo AI Plus is ready.")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /Finish/i }));
+    expect(onComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "local",
+        modelDownloaded: true,
+      }),
+    );
   });
 
   it("can skip setup before choosing a model", () => {

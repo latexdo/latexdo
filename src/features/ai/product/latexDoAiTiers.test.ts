@@ -1,12 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
   capabilityById,
+  fastTierAvailability,
+  fastTierRuntimeAvailability,
   latexDoAiTiers,
   tierCapabilityCatalog,
   tierUnlockGuidance,
 } from "./latexDoAiTiers";
+import type { AiSystemCapabilities } from "../aiTypes";
 
 const GB = 1024 ** 3;
+const capableButLowStorageSystem: AiSystemCapabilities = {
+  totalRamBytes: 32 * GB,
+  freeRamBytes: 16 * GB,
+  totalStorageBytes: 256 * GB,
+  freeStorageBytes: 1 * GB,
+  modelStoragePath: "/Users/ada/Library/Application Support/LatexDo/models",
+  platform: "darwin",
+  arch: "arm64",
+  cpuCount: 10,
+  localAiAvailable: true,
+};
 
 describe("LatexDo AI tier capabilities", () => {
   it("orders tiers so each higher tier includes every capability of the one below", () => {
@@ -92,5 +106,21 @@ describe("tierUnlockGuidance", () => {
     });
     expect(guidance?.heading).toContain("Can't run this tier here");
     expect(guidance?.steps.join(" ")).toContain("desktop app");
+  });
+});
+
+describe("tier availability checks", () => {
+  it("uses storage pressure for installs but not for already-installed runtime checks", () => {
+    const tier = latexDoAiTiers.find((item) => item.id === "latexdo-ai-plus");
+    expect(tier).toBeDefined();
+
+    expect(fastTierAvailability(tier!, capableButLowStorageSystem)).toMatchObject({
+      state: "storage-pressure",
+    });
+    expect(
+      fastTierRuntimeAvailability(tier!, capableButLowStorageSystem),
+    ).toMatchObject({
+      state: "available",
+    });
   });
 });

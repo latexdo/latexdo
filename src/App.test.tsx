@@ -282,6 +282,9 @@ const GB = 1024 ** 3;
 const highRamCapabilities: AiSystemCapabilities = {
   totalRamBytes: 32 * GB,
   freeRamBytes: 16 * GB,
+  totalStorageBytes: 256 * GB,
+  freeStorageBytes: 128 * GB,
+  modelStoragePath: "/Users/ada/Library/Application Support/LatexDo/models",
   platform: "darwin",
   arch: "arm64",
   cpuCount: 10,

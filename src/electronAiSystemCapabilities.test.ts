@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   parseDarwinVmStatAvailableBytes,
   parseLinuxMemAvailableBytes,
+  type AiSystemCapabilities,
 } from "../electron/ai/systemCapabilities.js";
+import {
+  fastTierAvailability,
+  fastTierRuntimeAvailability,
+  findLatexDoAiTier,
+} from "../electron/ai/productTiers.js";
+
+const GB = 1024 ** 3;
 
 describe("AI system capability memory parsers", () => {
   it("counts reclaimable macOS pages as available memory", () => {
@@ -45,5 +53,30 @@ Buffers:          100000 kB
 Cached:          9000000 kB
 `),
     ).toBe(10_485_760 * 1024);
+  });
+});
+
+describe("Electron LatexDo AI tier availability", () => {
+  it("checks storage for model installs but not for installed model runtime", () => {
+    const tier = findLatexDoAiTier("latexdo-ai-plus");
+    const system: AiSystemCapabilities = {
+      totalRamBytes: 32 * GB,
+      freeRamBytes: 16 * GB,
+      totalStorageBytes: 256 * GB,
+      freeStorageBytes: 1 * GB,
+      modelStoragePath: "/Users/ada/Library/Application Support/LatexDo/models",
+      platform: "darwin",
+      arch: "arm64",
+      cpuCount: 10,
+      localAiAvailable: true,
+    };
+
+    expect(tier).toBeDefined();
+    expect(fastTierAvailability(tier!, system)).toMatchObject({
+      state: "storage-pressure",
+    });
+    expect(fastTierRuntimeAvailability(tier!, system)).toMatchObject({
+      state: "available",
+    });
   });
 });
