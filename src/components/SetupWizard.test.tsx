@@ -63,13 +63,14 @@ function advanceToModelStep() {
   continueSetup();
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function modelChoiceButton(name: string): HTMLButtonElement {
-  const card = screen
-    .getByText(name, { selector: ".ai-wizard-model-name" })
-    .closest(".ai-wizard-model");
-  const button = card?.querySelector<HTMLButtonElement>(".ai-wizard-model-choice");
-  expect(button).toBeTruthy();
-  return button as HTMLButtonElement;
+  return screen.getByRole("button", {
+    name: new RegExp(`^Choose ${escapeRegExp(name)}$`, "i"),
+  }) as HTMLButtonElement;
 }
 
 describe("SetupWizard", () => {
@@ -243,7 +244,7 @@ describe("SetupWizard", () => {
     fireEvent.click(screen.getByRole("button", { name: /Download LatexDo AI Plus/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("LatexDo AI Plus is ready.")).toBeVisible();
+      expect(screen.getByText("Installed")).toBeVisible();
     });
     expect(aiClientMock.downloadModel).toHaveBeenCalledWith("latexdo-ai-plus");
     expect(unsubscribe).toHaveBeenCalledTimes(1);
@@ -369,7 +370,7 @@ describe("SetupWizard", () => {
     );
     advanceToModelStep();
 
-    expect(screen.getByText("LatexDo AI Plus is ready.")).toBeVisible();
+    expect(screen.getByText("Installed")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /Finish/i }));
     expect(onComplete).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -445,13 +446,16 @@ describe("SetupWizard", () => {
     advanceToModelStep();
 
     expect(screen.getByText(/Private by design/i)).toBeVisible();
-
-    fireEvent.click(screen.getByRole("button", { name: /what can each model do/i }));
     expect(
       screen.getByRole("table", {
         name: /what each latexdo model can do/i,
       }),
     ).toBeVisible();
+    expect(modelChoiceButton("LatexDo AI Plus")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByText("Selected")).toBeVisible();
     expect(screen.getAllByText("Inline completion").length).toBeGreaterThan(0);
     expect(screen.getByText("Workspace reasoning")).toBeVisible();
     expect(

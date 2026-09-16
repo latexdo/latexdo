@@ -12,7 +12,6 @@ import {
   ArrowLeft,
   Loader2,
   RefreshCw,
-  AlertCircle,
   BookOpenCheck,
   FileText,
   ShieldCheck,
@@ -31,7 +30,6 @@ import {
   type AiProvider,
 } from "../features/ai/aiConfig";
 import {
-  capabilityById,
   fastTierAvailability,
   fastTierRuntimeAvailability,
   latexDoAiTiers,
@@ -189,7 +187,6 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   const [importing, setImporting] = React.useState(false);
   const [importedManifest, setImportedManifest] =
     React.useState<ImportedModelManifest | null>(null);
-  const [showCompare, setShowCompare] = React.useState(false);
 
   const step = steps[stepIndex];
   const patch = (p: Partial<AiConfig>) => setConfig((c) => ({ ...c, ...p }));
@@ -727,234 +724,205 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  className="ai-wizard-ghost ai-wizard-compare-toggle"
-                  aria-expanded={showCompare}
-                  onClick={() => setShowCompare((value) => !value)}
-                >
-                  <GitCompareArrows size={13} />
-                  {showCompare
-                    ? "Hide the model comparison"
-                    : "What can each model do?"}
-                </button>
+                <div className="ai-wizard-compare-heading">
+                  <GitCompareArrows size={14} />
+                  <strong>What can each model do?</strong>
+                </div>
 
-                {showCompare && (
-                  <div className="ai-wizard-compare">
-                    <table className="ai-wizard-compare-table">
-                      <caption className="sr-only">
-                        What each LatexDo model can do
-                      </caption>
-                      <thead>
-                        <tr>
-                          <th scope="col">Capability</th>
-                          {latexDoAiTiers.map((tier) => (
+                <div className="ai-wizard-compare">
+                  <table className="ai-wizard-compare-table">
+                    <caption className="sr-only">
+                      What each LatexDo model can do
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Capability</th>
+                        {latexDoAiTiers.map((tier) => {
+                          const tierInstalled =
+                            config.provider === "local" &&
+                            config.modelId === tier.runtime.modelId &&
+                            (downloaded || config.modelDownloaded);
+                          const availability = tierInstalled
+                            ? tierRunAvailability(tier)
+                            : tierAvailability(tier);
+                          const available = availability.state === "available";
+                          const selected =
+                            config.selection.mode === "latexdo" &&
+                            config.selection.tier === tier.id;
+                          const guidance = tierUnlockGuidance(availability);
+                          return (
                             <th
                               key={tier.id}
                               scope="col"
-                              className={
+                              className={[
                                 tier.id === "latexdo-ai-plus"
                                   ? "ai-wizard-compare-recommended"
-                                  : undefined
-                              }
+                                  : "",
+                                selected ? "ai-wizard-compare-selected" : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
                             >
-                              <span className="ai-wizard-compare-tier">
-                                {tier.name}
-                              </span>
-                              <span className="ai-wizard-compare-tagline">
-                                {tier.tagline}
-                              </span>
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {tierCapabilityCatalog.map((capability) => (
-                          <tr key={capability.id}>
-                            <th scope="row">
-                              <strong>{capability.label}</strong>
-                              <span className="ai-wizard-compare-detail">
-                                {capability.detail}
-                              </span>
-                            </th>
-                            {latexDoAiTiers.map((tier) => {
-                              const included = tier.capabilities.includes(
-                                capability.id,
-                              );
-                              return (
-                                <td
-                                  key={tier.id}
-                                  className={
-                                    tier.id === "latexdo-ai-plus"
-                                      ? "ai-wizard-compare-recommended"
-                                      : undefined
-                                  }
-                                >
-                                  {included ? (
-                                    <Check
-                                      size={14}
-                                      className="ai-wizard-compare-yes"
-                                      aria-label={`${tier.name}: included`}
-                                    />
-                                  ) : (
-                                    <span
-                                      className="ai-wizard-compare-no"
-                                      aria-label={`${tier.name}: not included`}
-                                    >
-                                      —
-                                    </span>
-                                  )}
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                <div className="ai-wizard-model-list">
-                  {latexDoAiTiers.map((tier) => {
-                    const tierInstalled =
-                      config.provider === "local" &&
-                      config.modelId === tier.runtime.modelId &&
-                      (downloaded || config.modelDownloaded);
-                    const availability = tierInstalled
-                      ? tierRunAvailability(tier)
-                      : tierAvailability(tier);
-                    const available = availability.state === "available";
-                    const selected =
-                      config.selection.mode === "latexdo" &&
-                      config.selection.tier === tier.id;
-                    return (
-                      <div
-                        key={tier.id}
-                        className={`ai-wizard-model ${
-                          selected ? "selected" : ""
-                        } ${available ? "" : "unavailable"}`}
-                      >
-                        <button
-                          type="button"
-                          className="ai-wizard-model-choice"
-                          onClick={() => selectTier(tier)}
-                          disabled={!available}
-                        >
-                          <div className="ai-wizard-model-head">
-                            <span className="ai-wizard-model-name">{tier.name}</span>
-                            <span
-                              className={`ai-wizard-tier ${
-                                available ? "tier-recommended" : "tier-unavailable"
-                              }`}
-                            >
-                              {available ? "Available" : "Unavailable"}
-                            </span>
-                          </div>
-                          <div className="ai-wizard-model-desc">{tier.description}</div>
-                          <div className="ai-wizard-model-capabilities">
-                            {tier.capabilities.slice(0, 3).map((capabilityId) => {
-                              const capability = capabilityById(capabilityId);
-                              if (!capability) return null;
-                              return (
+                              <button
+                                type="button"
+                                className="ai-wizard-compare-model-button"
+                                onClick={() => selectTier(tier)}
+                                disabled={!available}
+                                aria-label={`Choose ${tier.name}`}
+                                aria-pressed={selected}
+                              >
+                                <span className="ai-wizard-compare-tier">
+                                  {tier.name}
+                                </span>
+                                <span className="ai-wizard-compare-description">
+                                  {tier.description}
+                                </span>
+                              </button>
+                              <div className="ai-wizard-compare-model-meta">
                                 <span
-                                  key={capabilityId}
-                                  className="ai-wizard-capability"
+                                  className={`ai-wizard-compare-status ${
+                                    tierInstalled || selected
+                                      ? "is-checked"
+                                      : available
+                                        ? "is-available"
+                                        : "is-unavailable"
+                                  }`}
                                 >
-                                  {capability.label}
+                                  {tierInstalled || selected ? (
+                                    <Check size={12} aria-hidden="true" />
+                                  ) : null}
+                                  {tierInstalled
+                                    ? "Installed"
+                                    : selected
+                                      ? "Selected"
+                                      : available
+                                        ? "Available"
+                                        : "Unavailable"}
                                 </span>
-                              );
-                            })}
-                          </div>
-                          {tier.capabilities.length > 3 ? (
-                            <div className="ai-wizard-capability-more">
-                              +{tier.capabilities.length - 3} more — see the comparison
-                              below
-                            </div>
-                          ) : null}
-                          <div className="ai-wizard-model-meta">
-                            <span>{availabilityLabel(availability)}</span>
-                          </div>
-                          {(() => {
-                            const guidance = tierUnlockGuidance(availability);
-                            if (!guidance) return null;
-                            return (
-                              <div className="ai-wizard-unlock">
-                                <div className="ai-wizard-unlock-heading">
-                                  {guidance.heading}
-                                </div>
-                                <ol className="ai-wizard-unlock-steps">
-                                  {guidance.steps.map((stepText, index) => (
-                                    <li key={`${guidance.heading}-${index}`}>
-                                      {stepText}
-                                    </li>
-                                  ))}
-                                </ol>
-                              </div>
-                            );
-                          })()}
-                        </button>
-                        {selected && (
-                          <div className="ai-wizard-model-action">
-                            {availability.state === "memory-pressure" ||
-                            availability.state === "storage-pressure" ? (
-                              <button
-                                type="button"
-                                className="ai-wizard-ghost"
-                                onClick={() => void onRefreshSystemCapabilities?.()}
-                              >
-                                <RefreshCw size={13} /> Check again
-                              </button>
-                            ) : null}
-                            {availability.state === "unsupported" ? (
-                              <div className="ai-wizard-error">
-                                <AlertCircle size={13} />{" "}
-                                {availabilityLabel(availability)}
-                              </div>
-                            ) : tierInstalled ? (
-                              <div className="ai-wizard-download-done">
-                                <Check size={16} /> {tier.name} is ready.
-                              </div>
-                            ) : downloading ? (
-                              <div className="ai-wizard-download-progress">
-                                <Loader2 size={16} className="spin" />
-                                <div className="ai-wizard-progress-bar">
-                                  <div
-                                    className="ai-wizard-progress-fill"
-                                    style={{
-                                      width: progress.total
-                                        ? `${Math.round(
-                                            (progress.received / progress.total) * 100,
-                                          )}%`
-                                        : "40%",
-                                    }}
-                                  />
-                                </div>
-                                <span>
-                                  {formatBytes(progress.received)}
-                                  {progress.total
-                                    ? ` / ${formatBytes(progress.total)}`
-                                    : ""}
-                                </span>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                className="ai-wizard-primary ai-wizard-model-download"
-                                onClick={() => startDownload(tier)}
-                                disabled={availability.state !== "available"}
-                              >
-                                <Download size={15} /> Download {tier.name}
-                              </button>
-                            )}
-                            {downloadError && (
-                              <div className="ai-wizard-error">{downloadError}</div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
 
+                                {selected &&
+                                (availability.state === "memory-pressure" ||
+                                  availability.state === "storage-pressure") ? (
+                                  <button
+                                    type="button"
+                                    className="ai-wizard-mini-action"
+                                    onClick={() => void onRefreshSystemCapabilities?.()}
+                                  >
+                                    <RefreshCw size={12} /> Check again
+                                  </button>
+                                ) : null}
+
+                                {selected &&
+                                !tierInstalled &&
+                                availability.state !== "unsupported" ? (
+                                  downloading ? (
+                                    <div className="ai-wizard-download-progress compact">
+                                      <Loader2 size={13} className="spin" />
+                                      <div className="ai-wizard-progress-bar">
+                                        <div
+                                          className="ai-wizard-progress-fill"
+                                          style={{
+                                            width: progress.total
+                                              ? `${Math.round(
+                                                  (progress.received / progress.total) *
+                                                    100,
+                                                )}%`
+                                              : "40%",
+                                          }}
+                                        />
+                                      </div>
+                                      <span>
+                                        {formatBytes(progress.received)}
+                                        {progress.total
+                                          ? ` / ${formatBytes(progress.total)}`
+                                          : ""}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="ai-wizard-primary ai-wizard-model-download compact"
+                                      onClick={() => startDownload(tier)}
+                                      disabled={availability.state !== "available"}
+                                      aria-label={`Download ${tier.name}`}
+                                    >
+                                      <Download size={13} /> Download
+                                    </button>
+                                  )
+                                ) : null}
+
+                                {!available ? (
+                                  <span className="ai-wizard-compare-warning">
+                                    {availabilityLabel(availability)}
+                                  </span>
+                                ) : null}
+                                {selected && downloadError ? (
+                                  <span className="ai-wizard-compare-warning">
+                                    {downloadError}
+                                  </span>
+                                ) : null}
+                                {guidance ? (
+                                  <span className="ai-wizard-compare-guidance">
+                                    <strong>{guidance.heading}</strong>{" "}
+                                    {guidance.steps.join(" ")}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </th>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tierCapabilityCatalog.map((capability) => (
+                        <tr key={capability.id}>
+                          <th scope="row">
+                            <strong>{capability.label}</strong>
+                            <span className="ai-wizard-compare-detail">
+                              {capability.detail}
+                            </span>
+                          </th>
+                          {latexDoAiTiers.map((tier) => {
+                            const included = tier.capabilities.includes(capability.id);
+                            const selected =
+                              config.selection.mode === "latexdo" &&
+                              config.selection.tier === tier.id;
+                            return (
+                              <td
+                                key={tier.id}
+                                className={[
+                                  tier.id === "latexdo-ai-plus"
+                                    ? "ai-wizard-compare-recommended"
+                                    : "",
+                                  selected ? "ai-wizard-compare-selected" : "",
+                                ]
+                                  .filter(Boolean)
+                                  .join(" ")}
+                              >
+                                {included ? (
+                                  <Check
+                                    size={14}
+                                    className="ai-wizard-compare-yes"
+                                    aria-label={`${tier.name}: included`}
+                                  />
+                                ) : (
+                                  <span
+                                    className="ai-wizard-compare-no"
+                                    aria-label={`${tier.name}: not included`}
+                                  >
+                                    —
+                                  </span>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="ai-wizard-custom-choice">
                   <button
                     className={`ai-wizard-model ai-wizard-cloud ${
                       customSelected ? "selected" : ""
