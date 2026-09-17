@@ -332,6 +332,7 @@ function installLatexDoMock(options?: {
       opened: false,
     } satisfies UpdateInstallResult);
   const api = {
+    runtime: "desktop",
     openProject: vi.fn().mockResolvedValue(project),
     createProject: vi.fn().mockResolvedValue(project),
     createResearchSpace: vi.fn().mockResolvedValue(researchSpaceProject),
@@ -471,6 +472,26 @@ async function openProjectFromWelcome() {
   await waitFor(() => {
     expect(screen.getByText("Ready", { selector: ".status-message" })).toBeVisible();
   });
+}
+
+function createReviewPdfFile(name = "attention.pdf") {
+  const bytes = new Uint8Array([37, 80, 68, 70]);
+  const file = new File([bytes], name, {
+    type: "application/pdf",
+  });
+  Object.defineProperty(file, "arrayBuffer", {
+    configurable: true,
+    value: async () => bytes.buffer,
+  });
+  return file;
+}
+
+function choosePdfForReview(file = createReviewPdfFile()) {
+  const input = document.querySelector(
+    'input[aria-label="Choose a PDF to review"]',
+  ) as HTMLInputElement | null;
+  expect(input).not.toBeNull();
+  fireEvent.change(input as HTMLInputElement, { target: { files: [file] } });
 }
 
 async function installExtensionByName(name: string) {
@@ -819,7 +840,7 @@ describe("App critical UI controls", () => {
 
     render(<App />);
 
-    const welcomeImport = screen.getByText("Import PDF").closest("button");
+    const welcomeImport = screen.getByText("Convert PDF to LaTeX").closest("button");
     expect(welcomeImport).not.toBeNull();
     fireEvent.click(welcomeImport as HTMLButtonElement);
 
@@ -1497,7 +1518,7 @@ describe("App critical UI controls", () => {
 
     render(<App />);
 
-    fireEvent.click(screen.getByText("Import PDF").closest("button")!);
+    fireEvent.click(screen.getByText("Convert PDF to LaTeX").closest("button")!);
 
     await waitFor(() => {
       expect(api.readFile).toHaveBeenCalledWith(importedProject.id, "paper.tex");
@@ -1506,6 +1527,75 @@ describe("App critical UI controls", () => {
       ((await screen.findByLabelText("mock editor")) as HTMLTextAreaElement).value,
     ).toContain("Rebuilt");
     expect(screen.getByText(/Reconstructed paper\.pdf to paper\.tex/i)).toBeVisible();
+  });
+
+  it("reviews a paper from the welcome screen as a standalone PDF", async () => {
+    const api = installLatexDoMock();
+
+    render(<App />);
+
+    const reviewPaper = screen
+      .getByText("Read, annotate, highlight, and ask AI about a PDF")
+      .closest("button");
+    expect(reviewPaper).not.toBeNull();
+    fireEvent.click(reviewPaper as HTMLButtonElement);
+
+    expect(api.createResearchSpace).not.toHaveBeenCalled();
+    expect(api.createFolder).not.toHaveBeenCalled();
+    expect(api.chooseImportExternalFiles).not.toHaveBeenCalled();
+    expect(api.importPdf).not.toHaveBeenCalled();
+
+    choosePdfForReview(createReviewPdfFile("attention.pdf"));
+
+    await expect(screen.findByTestId("mock-pdf-preview")).resolves.toBeInTheDocument();
+    expect(screen.getByText(/Reviewing attention\.pdf in Reader Mode/i)).toBeVisible();
+    expect(api.readAsset).not.toHaveBeenCalled();
+  });
+
+  it("reviews a paper from the toolbar without importing it into the current project", async () => {
+    const api = installLatexDoMock();
+
+    render(<App />);
+    await openProjectFromWelcome();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Review an external PDF paper in Reader Mode",
+      }),
+    );
+
+    choosePdfForReview(createReviewPdfFile("standalone-paper.pdf"));
+
+    expect(api.createResearchSpace).not.toHaveBeenCalled();
+    expect(api.createFolder).not.toHaveBeenCalled();
+    expect(api.chooseImportExternalFiles).not.toHaveBeenCalled();
+    expect(api.importPdf).not.toHaveBeenCalled();
+    expect(api.readAsset).not.toHaveBeenCalled();
+    await expect(screen.findByTestId("mock-pdf-preview")).resolves.toBeInTheDocument();
+    expect(
+      screen.getByText(/Reviewing standalone-paper\.pdf in Reader Mode/i),
+    ).toBeVisible();
+  });
+
+  it("opens a standalone PDF for review in the browser runtime without a project", async () => {
+    const api = installLatexDoMock();
+    api.runtime = "browser";
+
+    render(<App />);
+
+    fireEvent.click(
+      screen
+        .getByText("Read, annotate, highlight, and ask AI about a PDF")
+        .closest("button")!,
+    );
+
+    expect(api.createResearchSpace).not.toHaveBeenCalled();
+    expect(api.chooseImportExternalFiles).not.toHaveBeenCalled();
+
+    choosePdfForReview(createReviewPdfFile("attention.pdf"));
+
+    await expect(screen.findByTestId("mock-pdf-preview")).resolves.toBeInTheDocument();
+    expect(screen.getByText(/Reviewing attention\.pdf in Reader Mode/i)).toBeVisible();
   });
 
   it("starts the updater from the available update banner", async () => {

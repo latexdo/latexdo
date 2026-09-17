@@ -109,6 +109,11 @@ import {
   editorActivationTutorialDocument,
   editorActivationTutorialPath,
 } from "./features/onboarding/tours/editorActivation/tutorialDocument";
+import { ResearchPdfReader } from "./features/pdfResearch/reader/ResearchPdfReader";
+import {
+  researchDocumentId,
+  type ResearchDocument,
+} from "./features/pdfResearch/domain/ResearchDocument";
 import {
   loadAiConfig,
   saveAiConfig,
@@ -1206,6 +1211,7 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState(
     () => `Welcome to ${productConfig.shortName}`,
   );
+  const [paperReviewImporting, setPaperReviewImporting] = useState(false);
   const [projectDisplayName, setProjectDisplayName] = useState("");
   const [activeResearchSpace, setActiveResearchSpace] = useState<
     OpenProject["researchSpace"] | null
@@ -1999,6 +2005,7 @@ export default function App() {
   const rootFileRef = useRef(rootFile);
   const engineRef = useRef(engine);
   const pdfPathRef = useRef("");
+  const pdfReviewInputRef = useRef<HTMLInputElement | null>(null);
   const forwardSyncRef = useRef<((position: Monaco.Position) => Promise<void>) | null>(
     null,
   );
@@ -2055,6 +2062,7 @@ export default function App() {
   const historyAutoCaptureTimerRef = useRef<number | null>(null);
   const historyContentLoadingRef = useRef<Set<string>>(new Set());
   const browserAutoOpenRef = useRef(false);
+  const standalonePdfReviewActiveRef = useRef(false);
   const gitDiffSessionRef = useRef<GitDiffSession | null>(null);
   const gitDiffSessionIdRef = useRef("");
   const gitDiffReturnPathRef = useRef("");
@@ -2086,6 +2094,38 @@ export default function App() {
 
   const activeTextDocument = isTextDocument(activeDocument) ? activeDocument : null;
   const activeDocumentIsAssetPreview = activeDocument?.kind === "asset";
+  const activeResearchDocument = useMemo<ResearchDocument | null>(() => {
+    if (
+      !activeDocument ||
+      activeDocument.kind !== "asset" ||
+      activeDocument.assetMimeType !== "application/pdf"
+    ) {
+      return null;
+    }
+    const title = fileName(activeDocument.relativePath).replace(/\.pdf$/i, "");
+    return {
+      id: researchDocumentId(projectId || projectPath, activeDocument.path),
+      projectId: projectId || undefined,
+      name: activeDocument.name,
+      source: {
+        type: projectId ? "project-file" : "uploaded",
+        fileId: activeDocument.path,
+        relativePath: activeDocument.relativePath,
+      },
+      metadata: {
+        title,
+      },
+      processing: {
+        status: "rendering",
+        message:
+          "Rendering PDF now; text extraction and AI context resolve as you read.",
+      },
+      permissions: {
+        canAnnotate: true,
+        canExport: true,
+      },
+    };
+  }, [activeDocument, projectId, projectPath]);
   const activeDocumentIsLatex = activeTextDocument
     ? languageFor(activeTextDocument.name) === "latex"
     : false;
@@ -3310,6 +3350,9 @@ ${macroEnd}
           runtime === "desktop"
             ? await window.latexdo.restoreCloudProject()
             : await window.latexdo.openProject();
+        if (standalonePdfReviewActiveRef.current) {
+          return;
+        }
         if (project) {
           await loadProject(project, true, false);
         }
@@ -7062,6 +7105,59 @@ ${macroEnd}
     [refreshProject],
   );
 
+  const openPdfFileForReview = useCallback(
+    async (file: File) => {
+      setPaperReviewImporting(true);
+      standalonePdfReviewActiveRef.current = true;
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const document: OpenDocument = {
+          path: `local-pdf://${encodeURIComponent(file.name)}#${Date.now()}`,
+          relativePath: file.name,
+          name: file.name,
+          kind: "asset",
+          content: "",
+          savedContent: "",
+          assetMimeType: "application/pdf",
+          assetDataUrl: figureBytesToDataUrl(bytes, "application/pdf"),
+          assetBytes: bytes,
+          assetSizeBytes: bytes.byteLength,
+        };
+        setDocuments((current) => {
+          if (current.some((item) => item.path === document.path)) {
+            documentsRef.current = current;
+            return current;
+          }
+          const nextDocuments = [...current, document];
+          documentsRef.current = nextDocuments;
+          return nextDocuments;
+        });
+        setActivePath(document.path);
+        activePathRef.current = document.path;
+        setWelcomeOpen(false);
+        setPreviewVisible(false);
+        setMode("author");
+        setStatusMessage(`Reviewing ${pathForDisplay(file.name)} in Reader Mode.`);
+      } catch (error) {
+        setStatusMessage(
+          error instanceof Error ? error.message : "Could not open the selected PDF.",
+        );
+      } finally {
+        setPaperReviewImporting(false);
+      }
+    },
+    [setWelcomeOpen],
+  );
+
+  const reviewPaper = useCallback(() => {
+    if (paperReviewImporting || requireLegalAcceptance()) {
+      return;
+    }
+
+    setStatusMessage("Choose a PDF file to review in Reader Mode...");
+    pdfReviewInputRef.current?.click();
+  }, [paperReviewImporting, requireLegalAcceptance]);
+
   const insertImageReference = useCallback(
     (entry: ProjectEntry) => {
       if (!activeDocumentIsLatex) {
@@ -10422,6 +10518,20 @@ ${macroEnd}
 
   return (
     <div className="app-shell" data-theme={settings.colorTheme}>
+      <input
+        ref={pdfReviewInputRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        hidden
+        aria-label="Choose a PDF to review"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) {
+            void openPdfFileForReview(file);
+          }
+        }}
+      />
       {aiWizardOpen && (
         <SetupWizard
           initialConfig={aiConfig}
@@ -10487,6 +10597,21 @@ ${macroEnd}
           >
             <Wand size={15} />
             <span>Prettier</span>
+          </button>
+          <button
+            type="button"
+            className="title-history-button title-review-paper-button"
+            onClick={() => void reviewPaper()}
+            disabled={paperReviewImporting}
+            title="Review an external PDF paper in Reader Mode"
+            aria-label="Review an external PDF paper in Reader Mode"
+          >
+            {paperReviewImporting ? (
+              <LoaderCircle size={15} className="spin" />
+            ) : (
+              <BookOpenText size={15} />
+            )}
+            <span>{paperReviewImporting ? "Opening" : "Review Paper"}</span>
           </button>
           <button
             type="button"
@@ -10831,14 +10956,29 @@ ${macroEnd}
                       <Download size={14} />
                     </button>
                   ) : activeSidebar === "explorer" ? (
-                    <button
-                      className="small-icon"
-                      onClick={() => void refreshProject()}
-                      title="Refresh"
-                      disabled={!hasVisibleProject}
-                    >
-                      <RefreshCw size={14} />
-                    </button>
+                    <>
+                      <button
+                        className="small-icon"
+                        onClick={() => void reviewPaper()}
+                        title="Review Paper in Reader Mode"
+                        aria-label="Review Paper in Reader Mode"
+                        disabled={paperReviewImporting}
+                      >
+                        {paperReviewImporting ? (
+                          <LoaderCircle size={14} className="spin" />
+                        ) : (
+                          <BookOpenText size={14} />
+                        )}
+                      </button>
+                      <button
+                        className="small-icon"
+                        onClick={() => void refreshProject()}
+                        title="Refresh"
+                        disabled={!hasVisibleProject}
+                      >
+                        <RefreshCw size={14} />
+                      </button>
+                    </>
                   ) : activeSidebar === "search" ? (
                     <button
                       className="small-icon"
@@ -11541,10 +11681,19 @@ ${macroEnd}
                 <div className="source-toolbar asset-source-toolbar">
                   <div className="asset-toolbar-file">
                     <span className="pane-label">
-                      {assetPreviewTypeLabel(activeDocument.assetMimeType)}
+                      {activeDocument.assetMimeType === "application/pdf"
+                        ? "READER MODE"
+                        : assetPreviewTypeLabel(activeDocument.assetMimeType)}
                     </span>
-                    <FileImage size={14} />
+                    {activeDocument.assetMimeType === "application/pdf" ? (
+                      <BookOpenText size={14} />
+                    ) : (
+                      <FileImage size={14} />
+                    )}
                     <span>{pathForDisplay(activeDocument.relativePath)}</span>
+                    {activeDocument.assetMimeType === "application/pdf" ? (
+                      <small>Review paper</small>
+                    ) : null}
                     {formatAssetSize(activeDocument.assetSizeBytes) ? (
                       <small>{formatAssetSize(activeDocument.assetSizeBytes)}</small>
                     ) : null}
@@ -11900,6 +12049,19 @@ ${macroEnd}
                       <h2>Start</h2>
                       <button
                         className="welcome-action primary"
+                        onClick={() => void reviewPaper()}
+                        disabled={paperReviewImporting}
+                      >
+                        <BookOpenText size={18} />
+                        <span>
+                          <strong>Review Paper</strong>
+                          <small>
+                            Read, annotate, highlight, and ask AI about a PDF
+                          </small>
+                        </span>
+                      </button>
+                      <button
+                        className="welcome-action primary"
                         onClick={() => void createProject()}
                       >
                         <Plus size={18} />
@@ -11965,7 +12127,7 @@ ${macroEnd}
                       >
                         <FileImage size={18} />
                         <span>
-                          <strong>Import PDF</strong>
+                          <strong>Convert PDF to LaTeX</strong>
                           <small>Rebuild editable LaTeX from a searchable PDF</small>
                         </span>
                       </button>
@@ -12023,7 +12185,8 @@ ${macroEnd}
                   aria-label={`${pathForDisplay(activeDocument.relativePath)} preview`}
                 >
                   {activeDocument.assetMimeType === "application/pdf" &&
-                  activeDocument.assetBytes ? (
+                  activeDocument.assetBytes &&
+                  activeResearchDocument ? (
                     <Suspense
                       fallback={
                         <div className="preview-empty" aria-label="Loading PDF">
@@ -12031,11 +12194,15 @@ ${macroEnd}
                         </div>
                       }
                     >
-                      <PdfPreview
+                      <ResearchPdfReader
+                        document={activeResearchDocument}
                         data={activeDocument.assetBytes}
                         scale={pdfScale}
                         rotation={pdfRotation}
-                        target={null}
+                        config={aiConfig}
+                        agentContext={agentContext}
+                        isDesktop={aiIsDesktop}
+                        onOpenSettings={openAiSettings}
                       />
                     </Suspense>
                   ) : activeDocument.assetMimeType === "application/pdf" ? (

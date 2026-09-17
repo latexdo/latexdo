@@ -18,12 +18,28 @@ export interface PdfClickLocation {
   word?: string;
 }
 
+export interface PdfPreviewRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface PdfPreviewOverlay {
+  id: string;
+  pageNumber: number;
+  rects: PdfPreviewRect[];
+  className?: string;
+  title?: string;
+}
+
 interface PdfPreviewProps {
   data: Uint8Array;
   scale: number;
   rotation?: number;
   target: SyncTexPdfLocation | null;
   onNavigate?: (location: PdfClickLocation) => void;
+  overlays?: PdfPreviewOverlay[];
 }
 
 interface PdfPageProps {
@@ -33,6 +49,7 @@ interface PdfPageProps {
   rotation: number;
   target: SyncTexPdfLocation | null;
   onNavigate?: (location: PdfClickLocation) => void;
+  overlays: PdfPreviewOverlay[];
 }
 
 interface HighlightRect {
@@ -148,6 +165,7 @@ function PdfPage({
   rotation,
   target,
   onNavigate,
+  overlays,
 }: PdfPageProps) {
   const pageRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -281,6 +299,25 @@ function PdfPage({
     >
       <canvas ref={canvasRef} />
       <div ref={textLayerRef} className="textLayer" />
+      {overlays.length ? (
+        <div className="pdf-user-annotation-layer" aria-hidden="true">
+          {overlays.flatMap((overlay) =>
+            overlay.rects.map((rect, rectIndex) => (
+              <div
+                key={`${overlay.id}:${rectIndex}`}
+                className={`pdf-user-annotation ${overlay.className ?? ""}`}
+                title={overlay.title}
+                style={{
+                  left: `${rect.x * 100}%`,
+                  top: `${rect.y * 100}%`,
+                  width: `${rect.width * 100}%`,
+                  height: `${rect.height * 100}%`,
+                }}
+              />
+            )),
+          )}
+        </div>
+      ) : null}
       {highlight ? (
         <div
           className="pdf-sync-highlight"
@@ -303,6 +340,7 @@ export default function PdfPreview({
   rotation = 0,
   target,
   onNavigate,
+  overlays = [],
 }: PdfPreviewProps) {
   const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState("");
@@ -373,6 +411,7 @@ export default function PdfPreview({
           rotation={rotation}
           target={target}
           onNavigate={onNavigate}
+          overlays={overlays.filter((overlay) => overlay.pageNumber === index + 1)}
         />
       ))}
     </div>

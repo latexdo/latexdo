@@ -217,6 +217,10 @@ function buildRequest(
   };
 }
 
+interface SendOptions {
+  displayText?: string;
+}
+
 export function useAiAgent(config: AiConfig, ctx: AgentContext, storageKey?: string) {
   const persistedStateRef = useRef<PersistedAiAgentState | null>(null);
   if (persistedStateRef.current === null) {
@@ -293,9 +297,10 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext, storageKey?: str
   }, [clearPendingApproval]);
 
   const send = useCallback(
-    async (userText: string) => {
+    async (userText: string, options?: SendOptions) => {
       const text = userText.trim();
       if (!text || isRunning) return;
+      const displayText = options?.displayText?.trim() || text;
 
       const access = config.access;
       const hasProject = ctx.hasProject?.() ?? true;
@@ -368,7 +373,7 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext, storageKey?: str
       const userMsg: UiMessage = {
         id: newId(),
         role: "user",
-        text,
+        text: displayText,
         activity: [],
       };
       const assistantMsg: UiMessage = {
