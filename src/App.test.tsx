@@ -513,6 +513,17 @@ function storeAcceptedSettings(overrides: Partial<typeof defaultSettings> = {}) 
   );
 }
 
+function storeCompleteAiConfig(overrides: Partial<typeof defaultAiConfig> = {}) {
+  window.localStorage.setItem(
+    aiConfigStorageKey,
+    JSON.stringify({
+      ...defaultAiConfig,
+      setupComplete: true,
+      ...overrides,
+    }),
+  );
+}
+
 describe("App critical UI controls", () => {
   beforeEach(() => {
     editorChangeHandlers.clear();
@@ -703,7 +714,7 @@ describe("App critical UI controls", () => {
     fireEvent.click(screen.getByRole("button", { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("What should LatexDo call you?")).toBeVisible();
+      expect(screen.getByText("Choose your research identity")).toBeVisible();
     });
     const saved = JSON.parse(
       window.localStorage.getItem(settingsStorageKey) ?? "{}",
@@ -995,6 +1006,65 @@ describe("App critical UI controls", () => {
         }),
       }),
     );
+  });
+
+  it("applies the saved workspace preset when the app starts", async () => {
+    installLatexDoMock();
+    storeCompleteAiConfig({ layoutPreset: "focus" });
+
+    render(<App />);
+
+    expect(document.querySelector(".workbench")).toHaveAttribute(
+      "data-layout-preset",
+      "focus",
+    );
+    expect(document.querySelector(".sidebar")).not.toBeInTheDocument();
+
+    await openProjectFromWelcome();
+
+    expect(document.querySelector(".preview-pane")).toBeInTheDocument();
+    expect(document.querySelector(".bottom-panel")).not.toBeInTheDocument();
+  });
+
+  it("changes the live workspace layout from settings", async () => {
+    installLatexDoMock();
+    storeCompleteAiConfig({ layoutPreset: "balanced" });
+
+    render(<App />);
+    await openProjectFromWelcome();
+    await screen.findByLabelText("mock editor");
+
+    fireEvent.click(screen.getByLabelText(/open settings/i));
+    const dialog = await screen.findByRole("dialog", { name: /settings/i });
+
+    fireEvent.click(within(dialog).getByRole("radio", { name: /Power/i }));
+    await waitFor(() => {
+      expect(document.querySelector(".workbench")).toHaveAttribute(
+        "data-layout-preset",
+        "power",
+      );
+      expect(document.querySelector(".sidebar")).toBeInTheDocument();
+      expect(document.querySelector(".bottom-panel")).toBeInTheDocument();
+    });
+
+    fireEvent.click(within(dialog).getByRole("radio", { name: /Focus/i }));
+    await waitFor(() => {
+      expect(document.querySelector(".workbench")).toHaveAttribute(
+        "data-layout-preset",
+        "focus",
+      );
+      expect(document.querySelector(".sidebar")).not.toBeInTheDocument();
+      expect(document.querySelector(".bottom-panel")).not.toBeInTheDocument();
+      expect(editorOptionsByPath.get(entries[0].path)).toEqual(
+        expect.objectContaining({
+          minimap: expect.objectContaining({ enabled: false }),
+        }),
+      );
+    });
+
+    expect(
+      JSON.parse(window.localStorage.getItem(aiConfigStorageKey) ?? "{}").layoutPreset,
+    ).toBe("focus");
   });
 
   it("does not compile while typing by default", async () => {

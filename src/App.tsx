@@ -107,9 +107,11 @@ import {
   saveAiConfig,
   aiConfigStorageKey,
   layoutPresetFlags,
+  layoutPresetInfo,
   type AiAccessConfig,
   type AiConfig,
   type AiProvider,
+  type LayoutPreset,
 } from "./features/ai/aiConfig";
 import {
   abortGeneration,
@@ -806,6 +808,56 @@ function loadAiConfigForApp(): AiConfig {
   return prepareConfig(config);
 }
 
+function WorkspaceLayoutPreview({ preset }: { preset: LayoutPreset }) {
+  const hasSidebar = preset !== "focus";
+  const hasPanel = preset === "power";
+  const hasMinimap = preset !== "focus";
+
+  return (
+    <div
+      className={`workspace-preset-figure workspace-preset-${preset}`}
+      role="img"
+      aria-label={`${preset} workspace preview`}
+    >
+      <div className="workspace-preset-titlebar">
+        <span />
+        <span />
+        <span />
+      </div>
+      <div className="workspace-preset-shell">
+        {hasSidebar ? (
+          <div className="workspace-preset-sidebar">
+            <span />
+            <span />
+            <span />
+          </div>
+        ) : null}
+        <div className="workspace-preset-main">
+          <div className="workspace-preset-split">
+            <div className="workspace-preset-editor">
+              <span className="wide" />
+              <span className="medium" />
+              <span className="short" />
+              {hasMinimap ? <i aria-hidden="true" /> : null}
+            </div>
+            <div className="workspace-preset-pdf">
+              <em />
+              <span />
+              <span className="short" />
+            </div>
+          </div>
+          {hasPanel ? (
+            <div className="workspace-preset-bottom">
+              <span />
+              <span />
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type LatexToolbarCommand =
   | "bold"
   | "italic"
@@ -1225,6 +1277,10 @@ export default function App() {
   ]);
   const [activeSidebar, setActiveSidebar] = useState<SidebarView>("explorer");
   const initialAiConfig = useMemo(() => loadAiConfigForApp(), []);
+  const initialWorkspaceFlags = useMemo(
+    () => layoutPresetFlags[initialAiConfig.layoutPreset],
+    [initialAiConfig.layoutPreset],
+  );
   const [aiConfig, setAiConfig] = useState<AiConfig>(initialAiConfig);
   const nextEditConfig = useMemo(() => loadNextEditConfig(), []);
   const [localAiProviderMode, setLocalAiProviderMode] = useState<LocalAiProviderMode>(
@@ -1712,8 +1768,12 @@ export default function App() {
   const editorPreviewRef = useRef<HTMLDivElement>(null);
   const [engine, setEngine] = useState<Engine>(settings.defaultEngine);
   const [rootFile, setRootFile] = useState("main.tex");
-  const [sidebarVisible, setSidebarVisible] = useState(true);
-  const [previewVisible, setPreviewVisible] = useState(true);
+  const [sidebarVisible, setSidebarVisible] = useState(
+    () => initialWorkspaceFlags.sidebarVisible,
+  );
+  const [previewVisible, setPreviewVisible] = useState(
+    () => initialWorkspaceFlags.previewVisible,
+  );
   const [tikzCanvasOpen, setTikzCanvasOpen] = useState(false);
   const [tableCanvasOpen, setTableCanvasOpen] = useState(false);
   const [tikzConverterOpen, setTikzConverterOpen] = useState(false);
@@ -1780,7 +1840,9 @@ export default function App() {
     setCompileProgress,
     compiling,
   } = useCompile();
-  const [panelVisible, setPanelVisible] = useState(false);
+  const [panelVisible, setPanelVisible] = useState(
+    () => initialWorkspaceFlags.panelVisible,
+  );
   const [activePanel, setActivePanel] = useState<PanelKind>("problems");
   const [terminalStarted, setTerminalStarted] = useState(false);
   const [panelHeight, setPanelHeight] = useState(200);
@@ -7829,8 +7891,8 @@ ${macroEnd}
   );
 
   const applyLayoutPreset = useCallback(
-    (config: AiConfig) => {
-      const flags = layoutPresetFlags[config.layoutPreset];
+    (preset: LayoutPreset) => {
+      const flags = layoutPresetFlags[preset];
       setSidebarVisible(flags.sidebarVisible);
       setPreviewVisible(flags.previewVisible);
       setPanelVisible(flags.panelVisible);
@@ -7839,11 +7901,22 @@ ${macroEnd}
     [setSettings],
   );
 
+  const chooseWorkspacePreset = useCallback(
+    (preset: LayoutPreset) => {
+      setAiConfig((current) => ({ ...current, layoutPreset: preset }));
+      applyLayoutPreset(preset);
+      const presetName =
+        layoutPresetInfo.find((item) => item.id === preset)?.name ?? "Workspace";
+      setStatusMessage(`${presetName} workspace layout applied.`);
+    },
+    [applyLayoutPreset],
+  );
+
   const completeAiSetup = useCallback(
     (config: AiConfig) => {
       setAiConfig(config);
       setAiWizardOpen(false);
-      applyLayoutPreset(config);
+      applyLayoutPreset(config.layoutPreset);
       setStatusMessage(
         config.userName
           ? `Welcome, ${config.userName}. LatexDo setup complete.`
@@ -10378,7 +10451,10 @@ ${macroEnd}
         </div>
       </header>
 
-      <div className="workbench">
+      <div
+        className={`workbench workspace-layout-${aiConfig.layoutPreset}`}
+        data-layout-preset={aiConfig.layoutPreset}
+      >
         <nav className="activity-bar">
           <div>
             <button
@@ -14153,6 +14229,47 @@ ${macroEnd}
                           </span>
                         </button>
                       ))}
+                    </div>
+                  </div>
+
+                  <div className="settings-row settings-row-stack">
+                    <span>
+                      <strong>Workspace layout</strong>
+                      <small>
+                        Apply the same Focus, Balanced, or Power workspace from setup.
+                      </small>
+                    </span>
+                    <div
+                      className="settings-workspace-grid"
+                      role="radiogroup"
+                      aria-label="Workspace layout"
+                    >
+                      {layoutPresetInfo.map((preset) => {
+                        const selected = aiConfig.layoutPreset === preset.id;
+                        return (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            className={`settings-workspace-card ${
+                              selected ? "active" : ""
+                            }`}
+                            onClick={() => chooseWorkspacePreset(preset.id)}
+                            role="radio"
+                            aria-checked={selected}
+                          >
+                            <WorkspaceLayoutPreview preset={preset.id} />
+                            <span className="settings-workspace-card-copy">
+                              <strong>{preset.name}</strong>
+                              <small>{preset.description}</small>
+                            </span>
+                            {selected ? (
+                              <span className="settings-workspace-selected">
+                                <Check size={12} /> Active
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
