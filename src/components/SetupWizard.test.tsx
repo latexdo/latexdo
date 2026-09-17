@@ -144,6 +144,50 @@ describe("SetupWizard", () => {
     expect(continueButton).toBeEnabled();
   });
 
+  it("lets the setup rail navigate directly between steps after legal acceptance", () => {
+    render(
+      <SetupWizard
+        initialConfig={makeConfig()}
+        isDesktop
+        legalAccepted
+        onApplyTheme={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Workspace setup step/i }));
+    expect(screen.getByText("How do you want your workspace?")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: /Assistant setup step/i }));
+    expect(screen.getByText("Choose your assistant model")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: /Intro setup step/i }));
+    expect(screen.getByText("Set up your LatexDo workspace")).toBeVisible();
+  });
+
+  it("keeps later setup rail steps locked until the legal checkbox is accepted", () => {
+    render(
+      <SetupWizard
+        initialConfig={makeConfig()}
+        isDesktop
+        legalAccepted={false}
+        onApplyTheme={vi.fn()}
+        onComplete={vi.fn()}
+      />,
+    );
+
+    const workspaceStep = screen.getByRole("button", {
+      name: /Workspace setup step/i,
+    });
+    expect(workspaceStep).toBeDisabled();
+
+    fireEvent.click(screen.getByLabelText("Accept Terms of Use and Privacy Policy"));
+    expect(workspaceStep).toBeEnabled();
+
+    fireEvent.click(workspaceStep);
+    expect(screen.getByText("How do you want your workspace?")).toBeVisible();
+  });
+
   it("walks through onboarding and completes with a cloud provider", () => {
     const onApplyTheme = vi.fn();
     const onComplete = vi.fn();

@@ -343,6 +343,14 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   const goNext = () => setStepIndex((i) => Math.min(i + 1, steps.length - 1));
   const goBack = () => setStepIndex((i) => Math.max(i - 1, 0));
   const legalReady = legalConsent;
+  const canNavigateToStep = (targetIndex: number) => targetIndex === 0 || legalReady;
+  const navigateToStep = (targetIndex: number) => {
+    if (!canNavigateToStep(targetIndex)) return;
+    if (stepIndex === 0 && targetIndex > 0 && !legalAccepted) {
+      onAcceptLegal?.();
+    }
+    setStepIndex(targetIndex);
+  };
 
   React.useEffect(() => {
     if (legalAccepted) {
@@ -804,27 +812,43 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
             <span>{productSetupName}</span>
           </div>
           <ul className="ai-wizard-steps">
-            {steps.map((s, i) => (
-              <li
-                key={s}
-                className={i === stepIndex ? "active" : i < stepIndex ? "done" : ""}
-              >
-                <span className="ai-wizard-step-dot">
-                  {i < stepIndex ? <Check size={12} /> : i + 1}
-                </span>
-                <span className="ai-wizard-step-label">
-                  {s === "welcome"
-                    ? "Intro"
-                    : s === "name"
-                      ? "Profile"
-                      : s === "layout"
-                        ? "Workspace"
-                        : s === "theme"
-                          ? "Theme"
-                          : "Assistant"}
-                </span>
-              </li>
-            ))}
+            {steps.map((s, i) => {
+              const label =
+                s === "welcome"
+                  ? "Intro"
+                  : s === "name"
+                    ? "Profile"
+                    : s === "layout"
+                      ? "Workspace"
+                      : s === "theme"
+                        ? "Theme"
+                        : "Assistant";
+              return (
+                <li
+                  key={s}
+                  className={i === stepIndex ? "active" : i < stepIndex ? "done" : ""}
+                >
+                  <button
+                    type="button"
+                    className="ai-wizard-step"
+                    onClick={() => navigateToStep(i)}
+                    disabled={!canNavigateToStep(i)}
+                    aria-current={i === stepIndex ? "step" : undefined}
+                    aria-label={`${label} setup step`}
+                    title={
+                      canNavigateToStep(i)
+                        ? ""
+                        : "Accept the Terms of Use and Privacy Policy first."
+                    }
+                  >
+                    <span className="ai-wizard-step-dot">
+                      {i < stepIndex ? <Check size={12} /> : i + 1}
+                    </span>
+                    <span className="ai-wizard-step-label">{label}</span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
 
