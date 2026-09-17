@@ -21,6 +21,7 @@ import { findLocalModel } from "../features/ai/aiModels";
 import { findCloudProvider } from "../features/ai/cloudProviders";
 import { findLatexDoAiTier } from "../features/ai/product/latexDoAiTiers";
 import { useAiAgent } from "../features/ai/useAiAgent";
+import { emitProductEvent } from "../features/onboarding/core/ProductEvents";
 import {
   detectTrigger,
   filterCommandSuggestions,
@@ -203,6 +204,11 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
       const prefix = `${input.slice(0, trigger.start)}${mark}${item.value} `;
       setInput(prefix + input.slice(trigger.end));
       setSuggest(null);
+      emitProductEvent(
+        trigger.kind === "file"
+          ? { type: "ai:file-context-attached", path: item.value }
+          : { type: "ai:command-selected", command: item.value },
+      );
       requestAnimationFrame(() => {
         const ta = inputRef.current;
         if (!ta) return;
@@ -404,7 +410,7 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
             </div>
           )}
 
-          <div className="ai-sidebar-input">
+          <div className="ai-sidebar-input" data-tour-id="ai-composer">
             {composerSelection && (
               <div className="ai-selection-context">
                 <div className="ai-selection-chip">
@@ -429,7 +435,11 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
               </div>
             )}
             {suggest && (
-              <div className="ai-mention-popup" role="listbox">
+              <div
+                className="ai-mention-popup"
+                role="listbox"
+                data-tour-id="ai-context-suggestions"
+              >
                 <div className="ai-mention-popup-title">
                   {suggest.trigger.kind === "file"
                     ? "Attach a project file"

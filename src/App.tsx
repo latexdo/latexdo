@@ -102,6 +102,13 @@ import { SetupWizard } from "./components/SetupWizard";
 import { LegalAcceptanceGate } from "./components/LegalAcceptanceGate";
 import { ProfileDialog } from "./components/ProfileDialog";
 import { VisualLatexEditor } from "./components/VisualLatexEditor";
+import { TourOverlay } from "./features/onboarding/presentation/TourOverlay";
+import { emitProductEvent } from "./features/onboarding/core/ProductEvents";
+import { editorActivationTour } from "./features/onboarding/tours/editorActivation";
+import {
+  editorActivationTutorialDocument,
+  editorActivationTutorialPath,
+} from "./features/onboarding/tours/editorActivation/tutorialDocument";
 import {
   loadAiConfig,
   saveAiConfig,
@@ -471,6 +478,19 @@ type SidebarView =
   | "extensions"
   | "ai"
   | "enterprise";
+
+interface ActivationWorkspaceSnapshot {
+  documents: OpenDocument[];
+  activePath: string;
+  welcomeOpen: boolean;
+  sidebarVisible: boolean;
+  activeSidebar: SidebarView;
+  previewVisible: boolean;
+  panelVisible: boolean;
+  activePanel: PanelKind;
+  rootFile: string;
+}
+
 interface AiChatTab {
   id: string;
   title: string;
@@ -1294,6 +1314,10 @@ export default function App() {
   const [activeAiChatId, setActiveAiChatId] = useState(initialAiChatTabs.activeId);
   const nextAiChatNumberRef = useRef(initialAiChatTabs.nextNumber);
   const [aiWizardOpen, setAiWizardOpen] = useState(!initialAiConfig.setupComplete);
+  const [activationTourLaunchNonce, setActivationTourLaunchNonce] = useState(0);
+  const activationWorkspaceSnapshotRef = useRef<ActivationWorkspaceSnapshot | null>(
+    null,
+  );
   // Selection-AI: ref to the active chat's imperative handle.
   const activeAiSidebarApiRef = useRef<AiSidebarApi | null>(null);
   // Selection-AI: reformulation in-flight state for cancellation support.
@@ -3355,6 +3379,7 @@ ${macroEnd}
     const currentProject = projectIdRef.current;
     if (!currentProject || hideProjectEntriesRef.current) {
       setStatusMessage("Create or open a project before compiling.");
+      emitProductEvent({ type: "compile:failed" });
       return null;
     }
 
@@ -3422,6 +3447,9 @@ ${macroEnd}
         setCompileResult(result);
         if (result.ok) {
           setCompileProgress(100);
+          emitProductEvent({ type: "compile:succeeded" });
+        } else {
+          emitProductEvent({ type: "compile:failed" });
         }
       }
 
@@ -3460,6 +3488,7 @@ ${macroEnd}
         setPanelVisible(true);
         setActivePanel("output");
         setStatusMessage(error instanceof Error ? error.message : "Compilation failed");
+        emitProductEvent({ type: "compile:failed" });
       }
       return null;
     } finally {
@@ -4193,6 +4222,7 @@ ${macroEnd}
             ? `Opened ${pathForDisplay(entry.relativePath)}:${location.line} from PDF. Compile if the jump looks stale.`
             : `Opened ${pathForDisplay(entry.relativePath)}:${location.line} from PDF`,
         );
+        emitProductEvent({ type: "synctex:navigated" });
       } catch (error) {
         if (syncRunId !== backwardSyncRunIdRef.current) {
           return;
@@ -6015,6 +6045,11 @@ ${macroEnd}
         setEditorCursorLine(event.position.lineNumber);
         applyEditorBlameDecorations();
       }),
+      editor.onDidChangeCursorSelection((event) => {
+        if (!event.selection.isEmpty()) {
+          emitProductEvent({ type: "editor:selection-created" });
+        }
+      }),
       editor.onDidChangeModel(() => {
         setEditorCursorLine(editor.getPosition()?.lineNumber ?? null);
         inlineBlameDecorationsRef.current = [];
@@ -7507,6 +7542,7 @@ ${macroEnd}
       }
       editor.focus();
       setStatusMessage("Reformulation applied.");
+      emitProductEvent({ type: "ai:reformulation-applied" });
     },
     [setStatusMessage],
   );
@@ -7625,6 +7661,7 @@ ${macroEnd}
     // Defer one frame so the sidebar finishes mounting before we focus.
     requestAnimationFrame(() => {
       activeAiSidebarApiRef.current?.appendSelectionContext(selectionContext);
+      emitProductEvent({ type: "ai:selection-attached" });
     });
   }, [activeTextDocument, openSidebar, setStatusMessage]);
 
@@ -7680,6 +7717,7 @@ ${macroEnd}
       ]);
       editor.focus();
       setStatusMessage(`Inserted ${formatCitation(plan.command, plan.keys)}.`);
+      emitProductEvent({ type: "citation:inserted", key });
     },
     [activeTextDocument, citationAnalysis.usages, setStatusMessage],
   );
@@ -7901,6 +7939,75 @@ ${macroEnd}
     [setSettings],
   );
 
+  const prepareActivationTutorial = useCallback(() => {
+    if (!activationWorkspaceSnapshotRef.current) {
+      activationWorkspaceSnapshotRef.current = {
+        documents: documentsRef.current,
+        activePath: activePathRef.current,
+        welcomeOpen,
+        sidebarVisible,
+        activeSidebar,
+        previewVisible,
+        panelVisible,
+        activePanel,
+        rootFile: rootFileRef.current,
+      };
+    }
+
+    const tutorialDocument: OpenDocument = {
+      path: editorActivationTutorialPath,
+      relativePath: "main.tex",
+      name: "main.tex",
+      kind: "text",
+      content: editorActivationTutorialDocument,
+      savedContent: editorActivationTutorialDocument,
+    };
+
+    const nextDocuments = [tutorialDocument];
+    documentsRef.current = nextDocuments;
+    activePathRef.current = tutorialDocument.path;
+    rootFileRef.current = "main.tex";
+    setDocuments(nextDocuments);
+    setActivePath(tutorialDocument.path);
+    setRootFile("main.tex");
+    setWelcomeOpen(false);
+    setSidebarVisible(true);
+    setActiveSidebar("ai");
+    setPreviewVisible(true);
+    setPanelVisible(false);
+    setActivePanel("problems");
+    setStatusMessage("Interactive LatexDo tour started.");
+  }, [
+    activePanel,
+    activeSidebar,
+    panelVisible,
+    previewVisible,
+    setActivePath,
+    setDocuments,
+    setWelcomeOpen,
+    sidebarVisible,
+    welcomeOpen,
+  ]);
+
+  const restoreActivationWorkspace = useCallback(() => {
+    const snapshot = activationWorkspaceSnapshotRef.current;
+    if (!snapshot) return;
+    activationWorkspaceSnapshotRef.current = null;
+    documentsRef.current = snapshot.documents;
+    activePathRef.current = snapshot.activePath;
+    rootFileRef.current = snapshot.rootFile;
+    setDocuments(snapshot.documents);
+    setActivePath(snapshot.activePath);
+    setWelcomeOpen(snapshot.welcomeOpen);
+    setSidebarVisible(snapshot.sidebarVisible);
+    setActiveSidebar(snapshot.activeSidebar);
+    setPreviewVisible(snapshot.previewVisible);
+    setPanelVisible(snapshot.panelVisible);
+    setActivePanel(snapshot.activePanel);
+    setRootFile(snapshot.rootFile);
+    setStatusMessage("You are ready to work.");
+  }, [setActivePath, setDocuments, setWelcomeOpen]);
+
   const chooseWorkspacePreset = useCallback(
     (preset: LayoutPreset) => {
       setAiConfig((current) => ({ ...current, layoutPreset: preset }));
@@ -7917,6 +8024,7 @@ ${macroEnd}
       setAiConfig(config);
       setAiWizardOpen(false);
       applyLayoutPreset(config.layoutPreset);
+      setActivationTourLaunchNonce((nonce) => nonce + 1);
       setStatusMessage(
         config.userName
           ? `Welcome, ${config.userName}. LatexDo setup complete.`
@@ -8101,6 +8209,9 @@ ${macroEnd}
     }
     setPanelVisible(true);
     setActivePanel(panel);
+    if (panel === "problems") {
+      emitProductEvent({ type: "problems:opened" });
+    }
   }, []);
 
   const refreshGitStatus = useCallback(async () => {
@@ -8929,6 +9040,7 @@ ${macroEnd}
       return nextDocuments;
     });
     setStatusMessage("Prettier formatted LaTeX document layout.");
+    emitProductEvent({ type: "format:applied" });
   }, []);
 
   const applyLatexToolbarCommand = useCallback((command: LatexToolbarCommand) => {
@@ -8979,6 +9091,7 @@ ${macroEnd}
       editor.revealRangeInCenter(range, monaco.editor.ScrollType.Smooth);
       editor.focus();
       setStatusMessage("Formatted LaTeX table columns.");
+      emitProductEvent({ type: "format:applied" });
       return;
     }
 
@@ -9104,6 +9217,7 @@ ${macroEnd}
         break;
       case "cite":
         wrapInline("\\cite{", "}", "key", "Inserted citation command.");
+        emitProductEvent({ type: "citation:inserted" });
         break;
       case "ref":
         wrapInline("\\ref{", "}", "label", "Inserted reference command.");
@@ -10334,6 +10448,14 @@ ${macroEnd}
           productName={productConfig.shortName}
         />
       )}
+      {!aiWizardOpen && !showLegalAcceptanceGate ? (
+        <TourOverlay
+          tour={editorActivationTour}
+          launchNonce={activationTourLaunchNonce}
+          onPrepare={prepareActivationTutorial}
+          onRestore={restoreActivationWorkspace}
+        />
+      ) : null}
       {profileOpen && (
         <ProfileDialog
           profile={aiConfig.profile}
@@ -10418,6 +10540,7 @@ ${macroEnd}
             title="Open problems"
             aria-label="Open problems panel"
             aria-pressed={panelVisible && activePanel === "problems"}
+            data-tour-id="problems"
           >
             <CircleAlert size={16} />
             {diagnostics.length ? (
@@ -10454,6 +10577,7 @@ ${macroEnd}
       <div
         className={`workbench workspace-layout-${aiConfig.layoutPreset}`}
         data-layout-preset={aiConfig.layoutPreset}
+        data-tour-id="workspace"
       >
         <nav className="activity-bar">
           <div>
@@ -10602,6 +10726,7 @@ ${macroEnd}
             <aside
               className={`sidebar ${aiSidebarExpanded ? "ai-sidebar-expanded" : ""}`}
               data-view="ai"
+              data-tour-id="ai-sidebar"
               onClickCapture={handleAiSidebarClickCapture}
             >
               <div className="ai-chat-tabs" role="tablist" aria-label="AI chats">
@@ -11407,6 +11532,7 @@ ${macroEnd}
           >
             <section
               className={`source-pane ${showWelcome ? "welcome-only" : ""} ${showEmptyEditor ? "empty-only" : ""} ${gitDiffSession ? "git-diff-active" : ""}`}
+              data-tour-id="editor"
             >
               {activeDocument &&
               !showWelcome &&
@@ -11647,6 +11773,7 @@ ${macroEnd}
                         className="tex-format-button"
                         onClick={() => applyLatexToolbarCommand("cite")}
                         title={"Citation (\\cite{})"}
+                        data-tour-id="citation"
                       >
                         <BookOpenText size={14} />
                         <span>Cite</span>
@@ -11684,6 +11811,7 @@ ${macroEnd}
                         onClick={() => applyLatexToolbarCommand("formatTable")}
                         title="Format LaTeX table columns"
                         aria-label="Format table"
+                        data-tour-id="formatting"
                       >
                         <Table2 size={14} />
                       </button>
@@ -11714,6 +11842,7 @@ ${macroEnd}
                     className={`compile-button ${compiling ? "compiling" : ""}`}
                     onClick={() => void compile()}
                     disabled={!rootFile && !activeDocumentIsAsymptote}
+                    data-tour-id="compile"
                     title={
                       compiling
                         ? "Start another background compile"
@@ -12049,7 +12178,7 @@ ${macroEnd}
                   role="separator"
                   aria-orientation="vertical"
                 />
-                <section className="preview-pane">
+                <section className="preview-pane" data-tour-id="pdf-preview">
                   <div className="preview-header">
                     <div>
                       <span className="pane-label">PDF</span>
@@ -12067,6 +12196,7 @@ ${macroEnd}
                         disabled={!pdfData || !(pdfTarget ?? lastPdfLocation)}
                         title="Show PDF point in source"
                         aria-label="Show PDF point in source"
+                        data-tour-id="pdf-source-nav"
                       >
                         <ArrowLeftToLine size={15} />
                       </button>
@@ -12405,6 +12535,7 @@ ${macroEnd}
                 <button
                   className={activePanel === "problems" ? "active" : ""}
                   onClick={() => openPanel("problems")}
+                  data-tour-id="problems"
                 >
                   <CircleAlert size={13} />
                   PROBLEMS
