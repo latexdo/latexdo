@@ -53,7 +53,7 @@ function makeConfig(overrides: AiConfigOverrides = {}): AiConfig {
 }
 
 function continueSetup() {
-  fireEvent.click(screen.getByRole("button", { name: /Continue/i }));
+  fireEvent.click(screen.getByRole("button", { name: /Continue|Set up workspace/i }));
 }
 
 function advanceToModelStep() {
@@ -96,9 +96,11 @@ describe("SetupWizard", () => {
       />,
     );
 
-    expect(screen.getByRole("dialog", { name: /set up latexdo/i })).toBeVisible();
+    expect(
+      screen.getByRole("dialog", { name: /set up your latexdo workspace/i }),
+    ).toBeVisible();
     expect(screen.getByText("LatexDo Setup")).toBeVisible();
-    expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /set up workspace/i })).toBeDisabled();
     expect(screen.queryByRole("button", { name: /skip setup/i })).toBeNull();
 
     fireEvent.click(screen.getByRole("link", { name: /terms of use/i }));
@@ -107,7 +109,7 @@ describe("SetupWizard", () => {
     expect(onOpenExternal).toHaveBeenCalledWith(legalPrivacyUrl);
 
     fireEvent.click(screen.getByLabelText("Accept Terms of Use and Privacy Policy"));
-    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    fireEvent.click(screen.getByRole("button", { name: /set up workspace/i }));
 
     expect(onAcceptLegal).toHaveBeenCalledTimes(1);
     expect(screen.getByText("Choose your research identity")).toBeVisible();
@@ -125,7 +127,9 @@ describe("SetupWizard", () => {
     );
 
     const checkbox = screen.getByLabelText("Accept Terms of Use and Privacy Policy");
-    const continueButton = screen.getByRole("button", { name: /continue/i });
+    const continueButton = screen.getByRole("button", {
+      name: /set up workspace/i,
+    });
 
     expect(checkbox).toBeChecked();
     expect(checkbox).not.toBeDisabled();
@@ -155,7 +159,7 @@ describe("SetupWizard", () => {
       />,
     );
 
-    expect(screen.getByText("Set up LatexDo")).toBeVisible();
+    expect(screen.getByText("Set up your LatexDo workspace")).toBeVisible();
     continueSetup();
 
     fireEvent.change(screen.getByPlaceholderText("Your name"), {

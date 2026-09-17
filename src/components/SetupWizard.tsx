@@ -855,15 +855,34 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                     <BookOpenCheck size={17} />
                   </div>
                 </div>
-                <h2 id="ai-wizard-title">Set up {productName}</h2>
+                <h2 id="ai-wizard-title">Set up your {productName} workspace</h2>
                 <p className="ai-wizard-lead">
-                  {productName} is a local-first LaTeX workspace for writing, compiling,
-                  reviewing, and managing research projects in one place.
+                  Make {productName} feel right before you start writing. This setup
+                  picks the editor layout, visual theme, research identity, and optional
+                  AI model for this machine.
                 </p>
-                <div className="setup-intro-points">
-                  <span>Write structured LaTeX</span>
-                  <span>Compile and preview PDFs</span>
-                  <span>Enable project tools when you need them</span>
+                <div className="setup-intro-points" aria-label="What setup configures">
+                  <div>
+                    <strong>Writing workspace</strong>
+                    <span>
+                      Choose how {productName} arranges source, PDF preview, files, and
+                      output.
+                    </span>
+                  </div>
+                  <div>
+                    <strong>Research identity</strong>
+                    <span>
+                      Stay anonymous or save a named profile for citations and AI
+                      context.
+                    </span>
+                  </div>
+                  <div>
+                    <strong>Optional AI</strong>
+                    <span>
+                      Use {productName} with or without AI. The editor and compiler
+                      still work normally.
+                    </span>
+                  </div>
                 </div>
                 <label className="setup-legal-check">
                   <input
@@ -873,7 +892,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                     aria-label="Accept Terms of Use and Privacy Policy"
                   />
                   <span>
-                    I accept the{" "}
+                    Required once before using {productName}. I accept the{" "}
                     <a
                       href={legalTermsUrl}
                       target="_blank"
@@ -1671,7 +1690,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                       : ""
                   }
                 >
-                  Continue <ArrowRight size={15} />
+                  {step === "welcome" ? "Set up workspace" : "Continue"}{" "}
+                  <ArrowRight size={15} />
                 </button>
               )}
             </div>

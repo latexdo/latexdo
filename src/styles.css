@@ -11873,17 +11873,29 @@ button {
 .setup-intro-points {
   display: grid;
   max-width: 520px;
-  gap: 8px;
+  gap: 10px;
   margin-top: 2px;
 }
 
-.setup-intro-points span {
-  padding: 8px 10px;
+.setup-intro-points > div {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
   border: 1px solid var(--border-card);
   border-radius: 7px;
   background: var(--bg-card);
-  color: var(--text-secondary);
+}
+
+.setup-intro-points strong {
+  color: var(--text-primary);
   font-size: 12.5px;
+  font-weight: 700;
+}
+
+.setup-intro-points span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .setup-legal-check {
@@ -11895,7 +11907,7 @@ button {
   padding: 12px;
   border: 1px solid var(--border-card);
   border-radius: 8px;
-  background: var(--bg-button-secondary);
+  background: color-mix(in srgb, var(--bg-button-secondary) 82%, transparent);
   color: var(--text-secondary);
   font-size: 12.5px;
   line-height: 1.5;

@@ -698,9 +698,11 @@ describe("App critical UI controls", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("dialog", { name: /set up latexdo/i })).toBeVisible();
+    expect(
+      screen.getByRole("dialog", { name: /set up your latexdo workspace/i }),
+    ).toBeVisible();
     expect(screen.queryByRole("dialog", { name: /terms and privacy/i })).toBeNull();
-    expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /set up workspace/i })).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: /open folder/i }));
     expect(api.openProject).not.toHaveBeenCalled();
@@ -711,7 +713,7 @@ describe("App critical UI controls", () => {
     expect(api.openExternalUrl).toHaveBeenCalledWith(legalPrivacyUrl);
 
     fireEvent.click(screen.getByLabelText("Accept Terms of Use and Privacy Policy"));
-    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    fireEvent.click(screen.getByRole("button", { name: /set up workspace/i }));
 
     await waitFor(() => {
       expect(screen.getByText("Choose your research identity")).toBeVisible();
@@ -1897,14 +1899,16 @@ describe("App critical UI controls", () => {
 
     render(<App />);
 
-    expect(screen.getByText("Set up LatexDo")).toBeVisible();
+    expect(screen.getByText("Set up your LatexDo workspace")).toBeVisible();
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.getByText("Set up LatexDo")).toBeVisible();
+    expect(screen.getByText("Set up your LatexDo workspace")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    fireEvent.click(screen.getByRole("button", { name: /set up workspace/i }));
     fireEvent.click(await screen.findByRole("button", { name: /skip setup/i }));
     await waitFor(() => {
-      expect(screen.queryByText("Set up LatexDo")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("Set up your LatexDo workspace"),
+      ).not.toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByTitle("AI assistant"));
@@ -1915,7 +1919,9 @@ describe("App critical UI controls", () => {
     expect(within(dialog).getByLabelText("Custom provider")).toHaveValue(
       `cloud:${defaultAiConfig.cloud.providerId}`,
     );
-    expect(within(dialog).queryByText("Set up LatexDo")).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByText("Set up your LatexDo workspace"),
+    ).not.toBeInTheDocument();
   });
 
   it("opens API key and ORCID links through the app external URL API", async () => {
