@@ -226,6 +226,7 @@ import type {
   SpellCheckerSettings,
   SyncTexPdfLocation,
   SyncTexSourceLocation,
+  UpdateAttemptResolution,
   UpdateCheckResult,
   UpdateDownloadProgress,
 } from "./types";
@@ -414,6 +415,7 @@ import {
 import { useProofreading } from "./features/proofreading/useProofreading";
 import { wordColumn } from "./features/pdf/sync";
 import {
+  formatUpdateAttempt,
   formatUpdateDate,
   formatUpdateLocation,
   formatUpdateProgress,
@@ -1919,6 +1921,8 @@ export default function App() {
   const [updateProgress, setUpdateProgress] = useState<UpdateDownloadProgress | null>(
     null,
   );
+  const [updateAttemptStatus, setUpdateAttemptStatus] =
+    useState<UpdateAttemptResolution | null>(null);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [updatingNow, setUpdatingNow] = useState(false);
   const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(
@@ -8907,6 +8911,12 @@ ${macroEnd}
   }, []);
 
   useEffect(() => {
+    window.latexdo.lastUpdateStatus().then((status) => {
+      setUpdateAttemptStatus(status);
+    });
+  }, []);
+
+  useEffect(() => {
     return window.latexdo.onCompileProgress((payload) => {
       if (payload.projectId !== projectIdRef.current) {
         return;
@@ -10359,8 +10369,15 @@ ${macroEnd}
   const updateProgressActive = Boolean(
     updateProgress &&
     updateProgress.status !== "done" &&
+    updateProgress.status !== "confirmed" &&
+    updateProgress.status !== "restart-required" &&
     (updatingNow || updateProgress.status !== "checking"),
   );
+  const updateAttemptLabel = updateAttemptStatus
+    ? formatUpdateAttempt(updateAttemptStatus)
+    : null;
+  const updateAttemptFailed = updateAttemptStatus?.status === "failed";
+  const updateAttemptConfirmed = updateAttemptStatus?.status === "confirmed";
   const localTierAvailability = (tier: LatexDoAiTierDefinition): TierAvailability => {
     if (!aiIsDesktop) {
       return {
@@ -15963,6 +15980,20 @@ ${macroEnd}
                       <small className="settings-update-meta">
                         {updateBuildSummary}
                       </small>
+                      {updateAttemptLabel ? (
+                        <small
+                          className={`settings-update-attempt ${
+                            updateAttemptFailed
+                              ? "settings-update-attempt--failed"
+                              : updateAttemptConfirmed
+                                ? "settings-update-attempt--confirmed"
+                                : ""
+                          }`}
+                          role={updateAttemptFailed ? "alert" : "status"}
+                        >
+                          {updateAttemptLabel}
+                        </small>
+                      ) : null}
                       {updateLocationLabel ? (
                         <small className="settings-update-meta">
                           Updates at {updateLocationLabel}.

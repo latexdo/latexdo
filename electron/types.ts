@@ -387,12 +387,38 @@ export interface UpdateCheckResult {
   error?: string;
 }
 
+export type UpdatePhase =
+  | "checking"
+  | "downloading"
+  | "download-verified"
+  | "installer-launched"
+  | "installing"
+  | "installation-verified"
+  | "relaunching"
+  | "confirmed"
+  | "failed";
+
+export type UpdateAttemptStatus = "none" | "installing" | "confirmed" | "failed";
+
+export interface UpdateAttemptResolution {
+  status: UpdateAttemptStatus;
+  currentVersion: string;
+  expectedVersion: string | null;
+  fromVersion?: string | null;
+  attemptedAt?: string | null;
+  completedAt?: string | null;
+  attempts?: number;
+  installerSha256?: string | null;
+  error?: string | null;
+}
+
 export interface UpdateInstallResult extends UpdateCheckResult {
   installerPath: string | null;
   opened: boolean;
   restartScheduled?: boolean;
   quitScheduled?: boolean;
   manualDownload?: boolean;
+  phase?: UpdatePhase;
 }
 
 export interface UpdateDownloadProgress {
@@ -400,11 +426,18 @@ export interface UpdateDownloadProgress {
     | "checking"
     | "downloading"
     | "verifying"
+    | "verifying-download"
+    | "ready-to-install"
     | "opening"
+    | "installer-launched"
     | "installing"
+    | "verifying-installation"
     | "restarting"
+    | "restart-required"
+    | "confirmed"
     | "done"
-    | "error";
+    | "error"
+    | "failed";
   currentVersion: string;
   latestVersion: string | null;
   fileName: string | null;
@@ -413,6 +446,7 @@ export interface UpdateDownloadProgress {
   totalBytes: number | null;
   percent: number | null;
   message?: string;
+  phase?: UpdatePhase;
 }
 
 export interface RendererDiagnosticPayload {

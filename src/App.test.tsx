@@ -29,6 +29,7 @@ import type {
   ProjectEntry,
   ProofreadingSettings,
   SpellCheckerSettings,
+  UpdateAttemptResolution,
   UpdateCheckResult,
   UpdateDownloadProgress,
   UpdateInstallResult,
@@ -407,6 +408,11 @@ function installLatexDoMock(options?: {
     onGitChanged: vi.fn(() => vi.fn()),
     checkForUpdates: vi.fn().mockResolvedValue(updateResult),
     updateNow: vi.fn().mockResolvedValue(updateNowResult),
+    lastUpdateStatus: vi.fn().mockResolvedValue({
+      status: "none",
+      currentVersion: "0.3.0",
+      expectedVersion: null,
+    } satisfies UpdateAttemptResolution),
     onUpdateProgress: vi.fn((_callback: (progress: UpdateDownloadProgress) => void) =>
       vi.fn(),
     ),

@@ -16,7 +16,8 @@ export type DiagnosticKind =
   | "child-process-gone"
   | "renderer-error"
   | "renderer-unhandled-rejection"
-  | "renderer-react-error";
+  | "renderer-react-error"
+  | "pending-update";
 
 export interface SerializedError {
   name: string;

@@ -6241,6 +6241,18 @@ button {
   color: var(--text-subtle);
 }
 
+.settings-update-attempt {
+  color: var(--text-subtle);
+}
+
+.settings-update-attempt--confirmed {
+  color: var(--ok, #4caf82);
+}
+
+.settings-update-attempt--failed {
+  color: var(--danger, #e05661);
+}
+
 .settings-update-progress {
   margin-top: 8px;
   max-width: 360px;

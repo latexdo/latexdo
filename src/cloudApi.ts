@@ -961,6 +961,14 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
 
     onUpdateProgress: () => () => {},
 
+    async lastUpdateStatus() {
+      return {
+        status: "none",
+        currentVersion: appVersion,
+        expectedVersion: null,
+      } as const;
+    },
+
     onCompileProgress: () => () => {},
 
     async openReleasesPage(releaseUrl) {

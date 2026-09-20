@@ -721,6 +721,14 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       };
     },
 
+    async lastUpdateStatus() {
+      return {
+        status: "none",
+        currentVersion: appVersion,
+        expectedVersion: null,
+      } as const;
+    },
+
     onUpdateProgress() {
       return () => {};
     },

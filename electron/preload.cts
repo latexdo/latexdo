@@ -36,6 +36,7 @@ import type {
   UpdateCheckResult,
   UpdateDownloadProgress,
   UpdateInstallResult,
+  UpdateAttemptResolution,
 } from "./types.js" with { "resolution-mode": "import" };
 import type { GarbageCollectionStats } from "./garbageCollector.js" with {
   "resolution-mode": "import",
@@ -1003,6 +1004,8 @@ const api = {
   checkForUpdates: (): Promise<UpdateCheckResult> =>
     ipcRenderer.invoke("app:check-updates"),
   updateNow: (): Promise<UpdateInstallResult> => ipcRenderer.invoke("app:update-now"),
+  lastUpdateStatus: (): Promise<UpdateAttemptResolution> =>
+    ipcRenderer.invoke("app:last-update-status"),
   onUpdateProgress: (callback: (progress: UpdateDownloadProgress) => void) => {
     const listener = (_event: unknown, payload: UpdateDownloadProgress) =>
       callback(payload);

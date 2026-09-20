@@ -1,4 +1,4 @@
-import type { UpdateDownloadProgress } from "../../types";
+import type { UpdateAttemptResolution, UpdateDownloadProgress } from "../../types";
 
 export const updateCheckIntervalMs = 6 * 60 * 60 * 1000;
 
@@ -57,4 +57,29 @@ export function formatUpdateProgress(progress: UpdateDownloadProgress): string {
   }
 
   return parts.length ? `${fallback} (${parts.join(", ")})` : fallback;
+}
+
+export function formatUpdateAttempt(status: UpdateAttemptResolution): string | null {
+  switch (status.status) {
+    case "confirmed":
+      return `LatexDo was updated to ${
+        status.expectedVersion ?? "the latest build"
+      } from ${status.fromVersion ?? "the previous build"} and verified after restart.`;
+    case "failed":
+      return [
+        `The update to ${status.expectedVersion ?? "the latest build"} could not be verified.`,
+        `LatexDo is still running ${status.currentVersion}.`,
+        status.attempts ? `Attempt ${status.attempts} of 3.` : null,
+        status.error ? `Reason: ${status.error}` : null,
+      ]
+        .filter(Boolean)
+        .join(" ");
+    case "installing":
+      return `The update to ${
+        status.expectedVersion ?? "the latest build"
+      } is being installed and will be verified after restart.`;
+    case "none":
+    default:
+      return null;
+  }
 }
