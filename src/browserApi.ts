@@ -729,6 +729,29 @@ function createBrowserLatexDoApi(): BrowserLatexDoApi {
       } as const;
     },
 
+    async getWhatsNew() {
+      return {
+        fromVersion: null,
+        toVersion: appVersion,
+        releases: [],
+        shouldPresent: false,
+        notesAvailable: false,
+      } as const;
+    },
+
+    async markWhatsNewPresented() {
+      return { ok: true } as const;
+    },
+
+    async openReleaseNotesPage() {
+      await api.openReleasesPage("https://latexdo.org/downloads/");
+      return { opened: true } as const;
+    },
+
+    onWhatsNewOpen() {
+      return () => {};
+    },
+
     onUpdateProgress() {
       return () => {};
     },

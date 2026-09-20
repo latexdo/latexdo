@@ -37,6 +37,7 @@ import type {
   UpdateDownloadProgress,
   UpdateInstallResult,
   UpdateAttemptResolution,
+  WhatsNewResult,
 } from "./types.js" with { "resolution-mode": "import" };
 import type { GarbageCollectionStats } from "./garbageCollector.js" with {
   "resolution-mode": "import",
@@ -1006,6 +1007,18 @@ const api = {
   updateNow: (): Promise<UpdateInstallResult> => ipcRenderer.invoke("app:update-now"),
   lastUpdateStatus: (): Promise<UpdateAttemptResolution> =>
     ipcRenderer.invoke("app:last-update-status"),
+  getWhatsNew: (): Promise<WhatsNewResult> => ipcRenderer.invoke("app:whats-new"),
+  markWhatsNewPresented: (version: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke("app:whats-new-mark-presented", version),
+  openReleaseNotesPage: (): Promise<{ opened: boolean }> =>
+    ipcRenderer.invoke("app:whats-new-open-notes"),
+  onWhatsNewOpen: (callback: () => void) => {
+    const listener = (): void => callback();
+    ipcRenderer.on("app:open-whats-new", listener);
+    return () => {
+      ipcRenderer.removeListener("app:open-whats-new", listener);
+    };
+  },
   onUpdateProgress: (callback: (progress: UpdateDownloadProgress) => void) => {
     const listener = (_event: unknown, payload: UpdateDownloadProgress) =>
       callback(payload);

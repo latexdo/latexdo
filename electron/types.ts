@@ -383,8 +383,55 @@ export interface UpdateCheckResult {
   publishedAt?: string | null;
   channel?: string | null;
   manifestUrl?: string | null;
+  releaseNotesUrl?: string | null;
   checkedAt?: string | null;
   error?: string;
+}
+
+export type ReleaseHighlightCategory =
+  | "new"
+  | "ai"
+  | "editor"
+  | "compiler"
+  | "review"
+  | "updates"
+  | "performance"
+  | "security"
+  | "other";
+
+export interface ReleaseHighlight {
+  id: string;
+  category: ReleaseHighlightCategory;
+  title: string;
+  description: string;
+}
+
+export interface ReleaseSecurityNote {
+  title: string;
+  description: string;
+  advisoryUrl?: string;
+}
+
+export interface ReleaseNotesDocument {
+  schemaVersion: 1;
+  version: string;
+  title: string;
+  summary?: string;
+  publishedAt: string;
+  releaseUrl: string;
+  highlights: ReleaseHighlight[];
+  fixes?: string[];
+  breakingChanges?: string[];
+  security?: ReleaseSecurityNote[];
+  signature?: { algorithm: "ed25519"; keyId: string; value: string };
+}
+
+export interface WhatsNewResult {
+  fromVersion: string | null;
+  toVersion: string;
+  releases: ReleaseNotesDocument[];
+  shouldPresent: boolean;
+  notesAvailable: boolean;
 }
 
 export type UpdatePhase =

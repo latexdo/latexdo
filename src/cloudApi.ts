@@ -969,6 +969,27 @@ export function createCloudLatexDoApi(): CloudLatexDoApi {
       } as const;
     },
 
+    async getWhatsNew() {
+      return {
+        fromVersion: null,
+        toVersion: appVersion,
+        releases: [],
+        shouldPresent: false,
+        notesAvailable: false,
+      } as const;
+    },
+
+    async markWhatsNewPresented() {
+      return { ok: true } as const;
+    },
+
+    async openReleaseNotesPage() {
+      window.open("https://latexdo.org/downloads/", "_blank", "noopener,noreferrer");
+      return { opened: true } as const;
+    },
+
+    onWhatsNewOpen: () => () => {},
+
     onCompileProgress: () => () => {},
 
     async openReleasesPage(releaseUrl) {

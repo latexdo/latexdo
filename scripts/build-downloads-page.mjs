@@ -262,6 +262,7 @@ if (updateFeedEnabled) {
     releaseUrl: releaseDownloadsPageUrl,
     downloadsPage: manifest.downloadsPage,
     manifestUrl: `${manifest.downloadsPage}manifest.json`,
+    releaseNotesUrl: `${baseUrlRoot}/updates/release-notes/${releaseVersion}.json`,
     files,
   };
   const signedUpdateFeed = await signUpdateFeed(updateFeed);

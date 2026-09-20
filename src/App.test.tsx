@@ -33,6 +33,7 @@ import type {
   UpdateCheckResult,
   UpdateDownloadProgress,
   UpdateInstallResult,
+  WhatsNewResult,
 } from "./types";
 
 const editorChangeHandlers = vi.hoisted(
@@ -413,6 +414,16 @@ function installLatexDoMock(options?: {
       currentVersion: "0.3.0",
       expectedVersion: null,
     } satisfies UpdateAttemptResolution),
+    getWhatsNew: vi.fn().mockResolvedValue({
+      fromVersion: null,
+      toVersion: "0.3.0",
+      releases: [],
+      shouldPresent: false,
+      notesAvailable: false,
+    } satisfies WhatsNewResult),
+    markWhatsNewPresented: vi.fn().mockResolvedValue({ ok: true }),
+    openReleaseNotesPage: vi.fn().mockResolvedValue({ opened: true }),
+    onWhatsNewOpen: vi.fn((_callback: () => void) => vi.fn()),
     onUpdateProgress: vi.fn((_callback: (progress: UpdateDownloadProgress) => void) =>
       vi.fn(),
     ),
@@ -1790,6 +1801,147 @@ describe("App critical UI controls", () => {
     expect(
       screen.getByText("Available at latexdo.org/downloads/v0.3.0/."),
     ).toBeVisible();
+  });
+
+  it("shows the What's New dialog after a confirmed upgrade", async () => {
+    const api = installLatexDoMock();
+    api.getWhatsNew.mockResolvedValue({
+      fromVersion: "0.2.0",
+      toVersion: "0.3.0",
+      releases: [
+        {
+          schemaVersion: 1,
+          product: "LatexDo",
+          version: "0.3.0",
+          title: "LatexDo 0.3.0",
+          summary: "Bigger and faster.",
+          publishedAt: "2026-03-01T12:00:00.000Z",
+          releaseUrl: "https://latexdo.org/downloads/",
+          highlights: [
+            {
+              id: "latex-reengines",
+              category: "compiler",
+              title: "Reworked compilation",
+              description: "Faster recompiles.",
+            },
+          ],
+        },
+      ],
+      shouldPresent: true,
+      notesAvailable: true,
+    });
+
+    render(<App />);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: /what.s.new in latexdo 0\.3\.0/i,
+    });
+    expect(within(dialog).getByText("Reworked compilation")).toBeVisible();
+    expect(within(dialog).getByText(/updated from 0\.2\.0/i)).toBeInTheDocument();
+  });
+
+  it("dismissing the What's New dialog marks the version presented", async () => {
+    const api = installLatexDoMock();
+    api.getWhatsNew.mockResolvedValue({
+      fromVersion: "0.2.0",
+      toVersion: "0.3.0",
+      releases: [],
+      shouldPresent: true,
+      notesAvailable: false,
+    });
+
+    render(<App />);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: /what.s.new in latexdo 0\.3\.0/i,
+    });
+    expect(
+      within(dialog).getByText(/release notes aren.t available right now/i),
+    ).toBeVisible();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => {
+      expect(api.markWhatsNewPresented).toHaveBeenCalledWith("0.3.0");
+    });
+    expect(
+      screen.queryByRole("dialog", { name: /what.s.new/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not auto-show the What's New dialog on a fresh install", async () => {
+    const api = installLatexDoMock();
+    api.getWhatsNew.mockResolvedValue({
+      fromVersion: null,
+      toVersion: "0.3.0",
+      releases: [],
+      shouldPresent: false,
+      notesAvailable: false,
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(api.getWhatsNew).toHaveBeenCalledTimes(1);
+    });
+    expect(
+      screen.queryByRole("dialog", { name: /what.s.new/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens the What's New dialog from the menu event", async () => {
+    const api = installLatexDoMock();
+    api.getWhatsNew.mockResolvedValue({
+      fromVersion: "0.2.0",
+      toVersion: "0.3.0",
+      releases: [],
+      shouldPresent: false,
+      notesAvailable: false,
+    });
+
+    render(<App />);
+
+    const listener = api.onWhatsNewOpen.mock.calls[0]?.[0] as (() => void) | undefined;
+    expect(listener).toBeDefined();
+    act(() => listener?.());
+
+    expect(
+      await screen.findByRole("dialog", { name: /what.s.new in latexdo 0\.3\.0/i }),
+    ).toBeVisible();
+  });
+
+  it("opens the full release notes page from the modal", async () => {
+    const api = installLatexDoMock();
+    api.getWhatsNew.mockResolvedValue({
+      fromVersion: "0.2.0",
+      toVersion: "0.3.0",
+      releases: [
+        {
+          schemaVersion: 1,
+          product: "LatexDo",
+          version: "0.3.0",
+          title: "LatexDo 0.3.0",
+          publishedAt: "2026-03-01T12:00:00.000Z",
+          releaseUrl: "https://latexdo.org/downloads/",
+          highlights: [],
+        },
+      ],
+      shouldPresent: true,
+      notesAvailable: true,
+    });
+
+    render(<App />);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: /what.s.new in latexdo 0\.3\.0/i,
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: /view full release notes/i }),
+    );
+
+    await waitFor(() => {
+      expect(api.openReleaseNotesPage).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("keeps optional workbench tools hidden until their extensions are installed", async () => {

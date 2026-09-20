@@ -101,6 +101,7 @@ import { ExtensionsSidebar } from "./components/ExtensionsSidebar";
 import { SetupWizard } from "./components/SetupWizard";
 import { LegalAcceptanceGate } from "./components/LegalAcceptanceGate";
 import { ProfileDialog } from "./components/ProfileDialog";
+import { WhatsNewModal } from "./components/WhatsNewModal";
 import { VisualLatexEditor } from "./components/VisualLatexEditor";
 import { TourOverlay } from "./features/onboarding/presentation/TourOverlay";
 import { emitProductEvent } from "./features/onboarding/core/ProductEvents";
@@ -229,6 +230,7 @@ import type {
   UpdateAttemptResolution,
   UpdateCheckResult,
   UpdateDownloadProgress,
+  WhatsNewResult,
 } from "./types";
 import { runConferenceChecks } from "./checks/conferenceChecker";
 import { runCitationChecks } from "./checks/citationAssistant";
@@ -1923,6 +1925,8 @@ export default function App() {
   );
   const [updateAttemptStatus, setUpdateAttemptStatus] =
     useState<UpdateAttemptResolution | null>(null);
+  const [whatsNew, setWhatsNew] = useState<WhatsNewResult | null>(null);
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [updatingNow, setUpdatingNow] = useState(false);
   const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(
@@ -8635,6 +8639,27 @@ ${macroEnd}
     }
   }, [updateInfo?.currentVersion, updateInfo?.latestVersion]);
 
+  const openWhatsNewDialog = useCallback(async () => {
+    const result = await window.latexdo.getWhatsNew();
+    setWhatsNew(result);
+    setWhatsNewOpen(true);
+  }, []);
+
+  const closeWhatsNewDialog = useCallback(() => {
+    setWhatsNew((current) => {
+      if (current?.shouldPresent) {
+        void window.latexdo.markWhatsNewPresented(current.toVersion);
+        return { ...current, shouldPresent: false };
+      }
+      return current;
+    });
+    setWhatsNewOpen(false);
+  }, []);
+
+  const viewFullReleaseNotes = useCallback(() => {
+    void window.latexdo.openReleaseNotesPage();
+  }, []);
+
   const stageGitEntry = useCallback(
     async (relativePath: string) => {
       const currentProject = projectIdRef.current;
@@ -8915,6 +8940,26 @@ ${macroEnd}
       setUpdateAttemptStatus(status);
     });
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.latexdo.getWhatsNew().then((result) => {
+      if (cancelled) return;
+      setWhatsNew(result);
+      if (result.shouldPresent) {
+        setWhatsNewOpen(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    return window.latexdo.onWhatsNewOpen(() => {
+      void openWhatsNewDialog();
+    });
+  }, [openWhatsNewDialog]);
 
   useEffect(() => {
     return window.latexdo.onCompileProgress((payload) => {
@@ -16070,6 +16115,13 @@ ${macroEnd}
                         <ExternalLink size={13} />
                         Open downloads
                       </button>
+                      <button
+                        type="button"
+                        className="dialog-cancel"
+                        onClick={() => void openWhatsNewDialog()}
+                      >
+                        What&rsquo;s new
+                      </button>
                     </div>
                   </div>
                 </>
@@ -16102,6 +16154,17 @@ ${macroEnd}
             </div>
           </section>
         </div>
+      ) : null}
+
+      {whatsNewOpen && whatsNew ? (
+        <WhatsNewModal
+          fromVersion={whatsNew.fromVersion}
+          toVersion={whatsNew.toVersion}
+          releases={whatsNew.releases}
+          notesAvailable={whatsNew.notesAvailable}
+          onClose={closeWhatsNewDialog}
+          onViewFullNotes={viewFullReleaseNotes}
+        />
       ) : null}
     </div>
   );

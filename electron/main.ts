@@ -85,6 +85,7 @@ import type {
   UpdateCheckResult,
   UpdateDownloadProgress,
   UpdateInstallResult,
+  WhatsNewResult,
   CreateProjectOptions,
 } from "./types.js";
 import {
@@ -114,6 +115,7 @@ import {
   compareLatexDoVersions,
   isBuildReleaseSlugForVersion,
   isReleaseSlugForVersion,
+  versionsEquivalent,
 } from "./versions.js";
 import {
   beginPendingUpdate,
@@ -122,6 +124,18 @@ import {
   pendingUpdateAttemptLimitReached,
   resolvePendingUpdate,
 } from "./updatePending.js";
+import {
+  isApprovedReleaseNotesFetchUrl,
+  isApprovedReleaseNotesDocumentUrl,
+  resolveReleaseNotes,
+  resolveReleaseNotesRange,
+} from "./releaseNotes.js";
+import {
+  loadUpdateExperienceState,
+  markVersionPresented,
+  recordConfirmedUpdate,
+  shouldShowWhatsNew,
+} from "./updateExperience.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -463,6 +477,7 @@ interface WebsiteUpdatePayload {
   releaseUrl?: unknown;
   downloadsPage?: unknown;
   manifestUrl?: unknown;
+  releaseNotesUrl?: unknown;
   files?: unknown;
   signature?: unknown;
 }
@@ -2905,6 +2920,12 @@ function buildApplicationMenu(): void {
         },
         { type: "separator" },
         {
+          label: "What's New",
+          click: () => {
+            BrowserWindow.getFocusedWindow()?.webContents.send("app:open-whats-new");
+          },
+        },
+        {
           label: "Check for Updates",
           click: () => {
             void shell.openExternal(downloadsPageUrl);
@@ -3238,8 +3259,25 @@ function updateResultFromWebsitePayload(
     publishedAt: payloadString(payload.publishedAt),
     channel: payloadString(payload.channel),
     manifestUrl: payloadString(payload.manifestUrl) ?? downloadsManifestUrl,
+    releaseNotesUrl: releaseNotesUrlFromPayload(payload, latestVersion),
     checkedAt: new Date().toISOString(),
   };
+}
+
+function releaseNotesUrlFromPayload(
+  payload: WebsiteUpdatePayload,
+  version: string,
+): string | null {
+  const url = payloadString(payload.releaseNotesUrl) ?? null;
+  if (!url || !isApprovedReleaseNotesFetchUrl(url)) return null;
+  try {
+    const pathname = new URL(url).pathname;
+    const expectedSuffix = `/${encodeURIComponent(version)}.json`;
+    if (!pathname.endsWith(expectedSuffix)) return null;
+  } catch {
+    return null;
+  }
+  return url;
 }
 
 function updateResultFromDownloadsManifestPayload(
@@ -3265,6 +3303,7 @@ function updateResultFromDownloadsManifestPayload(
     automaticInstallAvailable: false,
     publishedAt: payloadString(payload.publishedAt),
     manifestUrl: downloadsManifestUrl,
+    releaseNotesUrl: null,
     checkedAt: new Date().toISOString(),
   };
 }
@@ -4535,6 +4574,67 @@ async function updateNow(
   }
 }
 
+function currentReleaseNotesBaseUrl(): string {
+  try {
+    const origin = new URL(downloadsPageUrl).origin;
+    return `${origin}/updates/release-notes`;
+  } catch {
+    return "https://latexdo.org/updates/release-notes";
+  }
+}
+
+function currentReleaseNotesPublicKeyPath(): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "update-public-key.pem")
+    : path.join(currentDirectory, "..", "build", "update-public-key.pem");
+}
+
+function releaseNotesResolverOptionsForCurrentApp() {
+  return {
+    dataDirectory: app.getPath("userData"),
+    publicKeyPemPath: currentReleaseNotesPublicKeyPath(),
+    baseUrl: currentReleaseNotesBaseUrl(),
+  };
+}
+
+async function buildWhatsNewResult(): Promise<WhatsNewResult> {
+  const runningVersion = app.getVersion();
+  const state = await loadUpdateExperienceState(app.getPath("userData"));
+  const shouldPresent = shouldShowWhatsNew(runningVersion, state);
+  const confirmed = state.lastConfirmedUpdate;
+  const fromVersion =
+    confirmed && versionsEquivalent(confirmed.toVersion, runningVersion)
+      ? confirmed.fromVersion
+      : null;
+  const range = await resolveReleaseNotesRange(
+    releaseNotesResolverOptionsForCurrentApp(),
+    fromVersion ?? runningVersion,
+    runningVersion,
+  );
+  return {
+    fromVersion,
+    toVersion: runningVersion,
+    releases: range.documents,
+    shouldPresent,
+    notesAvailable: range.available,
+  };
+}
+
+async function openReleaseNotesPageForCurrentVersion(): Promise<{ opened: boolean }> {
+  const runningVersion = app.getVersion();
+  const document = await resolveReleaseNotes(
+    releaseNotesResolverOptionsForCurrentApp(),
+    runningVersion,
+    null,
+  );
+  const url =
+    document && isApprovedReleaseNotesDocumentUrl(document.releaseUrl)
+      ? document.releaseUrl
+      : downloadsPageUrl;
+  await shell.openExternal(url);
+  return { opened: true };
+}
+
 async function availableImportRelativePath(
   channel: string,
   projectPath: string,
@@ -5700,6 +5800,26 @@ async function startApp(): Promise<void> {
       console.log(
         `[latexdo] update confirmed: running ${lastUpdateResolution.currentVersion} from ${lastUpdateResolution.fromVersion}`,
       );
+      if (
+        lastUpdateResolution.fromVersion &&
+        lastUpdateResolution.expectedVersion &&
+        versionsEquivalent(lastUpdateResolution.expectedVersion, app.getVersion())
+      ) {
+        try {
+          await recordConfirmedUpdate(app.getPath("userData"), {
+            fromVersion: lastUpdateResolution.fromVersion,
+            toVersion: lastUpdateResolution.expectedVersion,
+            confirmedAt: lastUpdateResolution.completedAt ?? new Date().toISOString(),
+          });
+        } catch (recordError) {
+          if (recordError instanceof Error) {
+            console.error(
+              "[latexdo] could not record confirmed update",
+              recordError.message,
+            );
+          }
+        }
+      }
     } else if (lastUpdateResolution?.status === "failed") {
       console.warn(
         `[latexdo] update failed: expected ${String(lastUpdateResolution.expectedVersion)} but running ${lastUpdateResolution.currentVersion}`,
@@ -6553,6 +6673,29 @@ async function startApp(): Promise<void> {
       lastUpdateResolution ??
       (await describePendingUpdate(app.getPath("userData"), app.getVersion()))
     );
+  });
+  ipcMain.handle("app:whats-new", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "app:whats-new";
+    expectIpcArgs(channel, rawArgs, 0);
+    return buildWhatsNewResult();
+  });
+  ipcMain.handle(
+    "app:whats-new-mark-presented",
+    async (_event, ...rawArgs: unknown[]) => {
+      const channel = "app:whats-new-mark-presented";
+      const [rawVersion] = expectIpcArgs(channel, rawArgs, 1);
+      const version = payloadString(rawVersion);
+      if (!version || !versionsEquivalent(version, app.getVersion())) {
+        throw new Error("Invalid update version.");
+      }
+      await markVersionPresented(app.getPath("userData"), version);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle("app:whats-new-open-notes", async (_event, ...rawArgs: unknown[]) => {
+    const channel = "app:whats-new-open-notes";
+    expectIpcArgs(channel, rawArgs, 0);
+    return openReleaseNotesPageForCurrentVersion();
   });
   ipcMain.handle("app:open-releases", async (_event, ...rawArgs: unknown[]) => {
     const channel = "app:open-releases";
