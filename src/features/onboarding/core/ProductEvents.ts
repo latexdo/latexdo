@@ -1,3 +1,5 @@
+import type { VoiceErrorCode } from "../../voice/types";
+
 export type ProductEvent =
   | { type: "editor:selection-created" }
   | { type: "ai:reformulation-applied" }
@@ -9,7 +11,12 @@ export type ProductEvent =
   | { type: "compile:failed" }
   | { type: "synctex:navigated" }
   | { type: "format:applied" }
-  | { type: "problems:opened" };
+  | { type: "problems:opened" }
+  | { type: "voice:started" }
+  | { type: "voice:completed" }
+  | { type: "voice:cancelled" }
+  | { type: "voice:failed"; code: VoiceErrorCode }
+  | { type: "voice:inserted" };
 
 type ProductEventListener = (event: ProductEvent) => void;
 

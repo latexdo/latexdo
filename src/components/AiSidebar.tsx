@@ -32,6 +32,20 @@ import {
   buildSelectionMessageText,
   type AiComposerSelectionContext,
 } from "../features/ai/selectionAi";
+import {
+  createTranscriptionProvider,
+} from "../features/voice/transcription";
+import { createTranscriptCleanup } from "../features/voice/transcriptCleanup";
+import type { VoiceDictationStatus } from "../features/voice/types";
+import { useVoiceDictation } from "../features/voice/useVoiceDictation";
+import {
+  loadVoiceSettings,
+  saveVoiceSettings,
+  voiceSttCredentialId,
+  type VoiceSettings,
+} from "../features/voice/voiceSettings";
+import { VoiceDictationButton } from "./VoiceDictationButton";
+import { VoiceSettingsPopover } from "./VoiceSettingsPopover";
 
 interface Suggestion {
   /** Text inserted after the trigger character. */
@@ -128,6 +142,91 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
   // Selection context for Ask AI about Selection workflow.
   const [composerSelection, setComposerSelection] =
     React.useState<AiComposerSelectionContext | null>(null);
+
+  // Voice dictation: when a dictation finishes it is held as a draft next to
+  // the composer. A small "Insert into editor" button places the (LaTeX-clean)
+  // text at the current caret of the open .tex file through the same path the
+  // AI agent uses for insert-at-cursor edits — nothing is silently typed into
+  // the chat composer.
+  const [voiceSettings, setVoiceSettingsState] = React.useState(loadVoiceSettings);
+  const [voiceSettingsOpenTick, setVoiceSettingsOpenTick] = React.useState(0);
+  const [voiceDraft, setVoiceDraft] = React.useState<string | null>(null);
+
+  const saveVoiceSettingsState = React.useCallback((next: VoiceSettings) => {
+    saveVoiceSettings(next);
+    setVoiceSettingsState(next);
+  }, []);
+
+  const sttEndpoint = voiceSettings.sttBaseUrl.trim();
+  const transcriptionProvider = React.useMemo(
+    () =>
+      createTranscriptionProvider(config, {
+        model: voiceSettings.transcriptionModel,
+        baseUrl: sttEndpoint || undefined,
+        credentialId: sttEndpoint ? voiceSttCredentialId : undefined,
+      }),
+    [config, voiceSettings, sttEndpoint],
+  );
+  const cleanupProvider = React.useMemo(() => createTranscriptCleanup(config), [
+    config,
+  ]);
+  const voiceStatusRef = React.useRef<VoiceDictationStatus>("idle");
+
+  const insertVoiceDraft = React.useCallback(() => {
+    if (!voiceDraft) return;
+    const proposal: EditProposal = {
+      kind: "insert-at-cursor",
+      path: ctx.activeFilePath() ?? "",
+      newText: voiceDraft,
+    };
+    ctx
+      .applyEdit(proposal)
+      .then(() => {
+        setVoiceDraft(null);
+        emitProductEvent({ type: "voice:inserted" });
+      })
+      .catch(() => {
+        // Keep the draft so the user can retry; the editor's caret may have
+        // moved, so re-clicking inserts at the then-current caret.
+      });
+  }, [voiceDraft, ctx]);
+
+  const voice = useVoiceDictation({
+    transcriptMode: voiceSettings.transcriptMode,
+    maxDurationMs: voiceSettings.maxDurationMs,
+    transcriptionProvider,
+    cleanup:
+      voiceSettings.transcriptMode === "clean" ? cleanupProvider : null,
+    onTranscript: (text) => {
+      setVoiceDraft(text);
+    },
+    onError: (voiceError) => {
+      emitProductEvent({ type: "voice:failed", code: voiceError.code });
+    },
+    onStatusChange: (next) => {
+      const prev = voiceStatusRef.current;
+      if (next === "recording" && prev !== "recording") {
+        emitProductEvent({ type: "voice:started" });
+      }
+      if (next === "success") {
+        emitProductEvent({ type: "voice:completed" });
+      }
+      if (
+        (prev === "recording" ||
+          prev === "processing" ||
+          prev === "transcribing" ||
+          prev === "cleaning") &&
+        next === "idle"
+      ) {
+        emitProductEvent({ type: "voice:cancelled" });
+      }
+      voiceStatusRef.current = next;
+    },
+  });
+
+  const handleVoiceStart = () => {
+    void voice.start();
+  };
 
   // Imperative handle: App calls these via apiRef.
   const appendSelectionContext = React.useCallback(
@@ -467,6 +566,32 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
                 ))}
               </div>
             )}
+            {voiceDraft && (
+              <div className="voice-draft-bar">
+                <span className="voice-draft-dot" aria-hidden="true" />
+                <span className="voice-draft-text" title={voiceDraft}>
+                  {voiceDraft}
+                </span>
+                <button
+                  type="button"
+                  className="voice-draft-insert"
+                  onClick={insertVoiceDraft}
+                  aria-label="Insert dictation into editor"
+                  title="Insert dictation into the editor at the current caret"
+                >
+                  <Check size={13} /> Insert into editor
+                </button>
+                <button
+                  type="button"
+                  className="voice-draft-discard"
+                  onClick={() => setVoiceDraft(null)}
+                  aria-label="Discard dictation"
+                  title="Discard dictation"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            )}
             <textarea
               ref={inputRef}
               value={input}
@@ -486,6 +611,20 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
               }}
               onBlur={() => setSuggest(null)}
               onKeyDown={onInputKeyDown}
+            />
+            <VoiceSettingsPopover
+              settings={voiceSettings}
+              onSave={saveVoiceSettingsState}
+              openTrigger={voiceSettingsOpenTick}
+            />
+            <VoiceDictationButton
+              status={voice.status}
+              error={voice.error}
+              durationMs={voice.durationMs}
+              onStart={handleVoiceStart}
+              onStop={() => void voice.stop()}
+              onCancel={voice.cancel}
+              onOpenSettings={() => setVoiceSettingsOpenTick((t) => t + 1)}
             />
             {isRunning ? (
               <button className="ai-send-button stop" onClick={abort} title="Stop">
