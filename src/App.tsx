@@ -336,6 +336,7 @@ import {
   boundedInteger,
   buildAutoCompileSignature,
   colorThemeOptions,
+  appearanceModeOptions,
   defaultSettings,
   getSetting,
   hasAcceptedLegalPolicies,
@@ -356,6 +357,7 @@ import {
   remapBookmarkLinesForContentChange,
   storeCollaborationDisplayName,
   type AppSettings,
+  type AppearanceMode,
   type BookmarkStore,
   type WelcomeTemplate,
 } from "./features/settings/settings";
@@ -1176,6 +1178,29 @@ function pdfImportStatsSummary(stats: {
     : recovered;
 }
 
+function useSystemPrefersDark(): boolean {
+  const [prefersDark, setPrefersDark] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia;
+    if (typeof query !== "function") {
+      return;
+    }
+    const media = query("(prefers-color-scheme: dark)");
+    setPrefersDark(media.matches);
+    const onChange = (event: MediaQueryListEvent) => setPrefersDark(event.matches);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+  return prefersDark;
+}
+
+function getResolvedAppearance(
+  mode: AppearanceMode,
+  systemPrefersDark: boolean,
+): "light" | "dark" {
+  return mode === "auto" ? (systemPrefersDark ? "dark" : "light") : mode;
+}
+
 export default function App() {
   const collaboration = useCollaborationContext();
   useEffect(() => {
@@ -1244,6 +1269,11 @@ export default function App() {
     installExtension,
     uninstallExtension,
   } = useSettings(setStatusMessage);
+  const systemPrefersDark = useSystemPrefersDark();
+  const resolvedAppearance = getResolvedAppearance(
+    settings.appearanceMode,
+    systemPrefersDark,
+  );
   const legalAcceptanceRequired = !hasAcceptedLegalPolicies(settings);
   const legalAcceptanceRequiredRef = useRef(legalAcceptanceRequired);
   useEffect(() => {
@@ -5627,6 +5657,14 @@ ${macroEnd}
       { token: "number", foreground: "E5A66E" },
       { token: "delimiter", foreground: "D5DAE3" },
     ];
+    const lightRules = [
+      { token: "comment", foreground: "667085", fontStyle: "italic" },
+      { token: "keyword", foreground: "1D5FD0" },
+      { token: "keyword.control", foreground: "7A3FB3" },
+      { token: "string", foreground: "21815F" },
+      { token: "number", foreground: "B15D22" },
+      { token: "delimiter", foreground: "374151" },
+    ];
     const themes = [
       {
         id: "latexdo-graphite",
@@ -5643,6 +5681,22 @@ ${macroEnd}
           "editor.inactiveSelectionBackground": "#283d5f88",
           "editorIndentGuide.background1": "#252a34",
           "editorIndentGuide.activeBackground1": "#3b4352",
+        },
+        light: {
+          base: "vs" as const,
+          rules: lightRules,
+          colors: {
+            "editor.background": "#f6f8fd",
+            "editor.foreground": "#1f2937",
+            "editorLineNumber.foreground": "#9aa4b2",
+            "editorLineNumber.activeForeground": "#374151",
+            "editor.lineHighlightBackground": "#eef3fa",
+            "editorCursor.foreground": "#2f6fdb",
+            "editor.selectionBackground": "#2f6fdb3d",
+            "editor.inactiveSelectionBackground": "#d9e5fa",
+            "editorIndentGuide.background1": "#dde4ef",
+            "editorIndentGuide.activeBackground1": "#9fb2d0",
+          },
         },
       },
       {
@@ -5668,6 +5722,22 @@ ${macroEnd}
           "editorIndentGuide.background1": "#1c2b40",
           "editorIndentGuide.activeBackground1": "#36516f",
         },
+        light: {
+          base: "vs" as const,
+          rules: lightRules,
+          colors: {
+            "editor.background": "#f3f8ff",
+            "editor.foreground": "#1f2937",
+            "editorLineNumber.foreground": "#8fa0b8",
+            "editorLineNumber.activeForeground": "#3a4a66",
+            "editor.lineHighlightBackground": "#e8f0fe",
+            "editorCursor.foreground": "#2458c8",
+            "editor.selectionBackground": "#2458c83d",
+            "editor.inactiveSelectionBackground": "#d9e5f5",
+            "editorIndentGuide.background1": "#dbe5f2",
+            "editorIndentGuide.activeBackground1": "#9fb0cc",
+          },
+        },
       },
       {
         id: "latexdo-forest",
@@ -5691,6 +5761,22 @@ ${macroEnd}
           "editor.inactiveSelectionBackground": "#24483688",
           "editorIndentGuide.background1": "#213029",
           "editorIndentGuide.activeBackground1": "#3a5848",
+        },
+        light: {
+          base: "vs" as const,
+          rules: lightRules,
+          colors: {
+            "editor.background": "#f4f8f5",
+            "editor.foreground": "#1f2937",
+            "editorLineNumber.foreground": "#96a8a0",
+            "editorLineNumber.activeForeground": "#3a4c45",
+            "editor.lineHighlightBackground": "#ebf3ee",
+            "editorCursor.foreground": "#2f8f6b",
+            "editor.selectionBackground": "#2f8f6b3d",
+            "editor.inactiveSelectionBackground": "#dbeade",
+            "editorIndentGuide.background1": "#dce6e0",
+            "editorIndentGuide.activeBackground1": "#a0b6ac",
+          },
         },
       },
       {
@@ -5716,6 +5802,22 @@ ${macroEnd}
           "editorIndentGuide.background1": "#31261d",
           "editorIndentGuide.activeBackground1": "#5d4633",
         },
+        light: {
+          base: "vs" as const,
+          rules: lightRules,
+          colors: {
+            "editor.background": "#faf5ec",
+            "editor.foreground": "#1f2937",
+            "editorLineNumber.foreground": "#a69888",
+            "editorLineNumber.activeForeground": "#4a3d2e",
+            "editor.lineHighlightBackground": "#f5edde",
+            "editorCursor.foreground": "#a06a26",
+            "editor.selectionBackground": "#a06a2633",
+            "editor.inactiveSelectionBackground": "#ead9c8",
+            "editorIndentGuide.background1": "#e7dbca",
+            "editorIndentGuide.activeBackground1": "#b3a28b",
+          },
+        },
       },
       {
         id: "latexdo-studio",
@@ -5739,6 +5841,22 @@ ${macroEnd}
           "editor.inactiveSelectionBackground": "#dce7fb",
           "editorIndentGuide.background1": "#dde4ef",
           "editorIndentGuide.activeBackground1": "#9fb2d0",
+        },
+        light: {
+          base: "vs" as const,
+          rules: lightRules,
+          colors: {
+            "editor.background": "#ffffff",
+            "editor.foreground": "#1f2937",
+            "editorLineNumber.foreground": "#9aa4b2",
+            "editorLineNumber.activeForeground": "#374151",
+            "editor.lineHighlightBackground": "#f3f6fb",
+            "editorCursor.foreground": "#2f6fdb",
+            "editor.selectionBackground": "#c9dcff",
+            "editor.inactiveSelectionBackground": "#dce7fb",
+            "editorIndentGuide.background1": "#dde4ef",
+            "editorIndentGuide.activeBackground1": "#9fb2d0",
+          },
         },
       },
       {
@@ -5764,6 +5882,22 @@ ${macroEnd}
           "editorIndentGuide.background1": "#dce5dd",
           "editorIndentGuide.activeBackground1": "#98b6a6",
         },
+        light: {
+          base: "vs" as const,
+          rules: lightRules,
+          colors: {
+            "editor.background": "#fffefa",
+            "editor.foreground": "#252a31",
+            "editorLineNumber.foreground": "#a0a8b2",
+            "editorLineNumber.activeForeground": "#3a414c",
+            "editor.lineHighlightBackground": "#f2f6f1",
+            "editorCursor.foreground": "#2f8f6b",
+            "editor.selectionBackground": "#cce8d9",
+            "editor.inactiveSelectionBackground": "#e1efe7",
+            "editorIndentGuide.background1": "#dce5dd",
+            "editorIndentGuide.activeBackground1": "#98b6a6",
+          },
+        },
       },
     ];
 
@@ -5773,6 +5907,13 @@ ${macroEnd}
         inherit: true,
         rules: theme.rules,
         colors: theme.colors,
+      });
+      const lightId = `latexdo-light-${theme.id.slice("latexdo-".length)}`;
+      instance.editor.defineTheme(lightId, {
+        base: theme.light.base,
+        inherit: true,
+        rules: theme.light.rules,
+        colors: theme.light.colors,
       });
     }
   };
@@ -6481,7 +6622,7 @@ ${macroEnd}
     [],
   );
 
-  const editorTheme = monacoThemeFor(settings.colorTheme);
+  const editorTheme = monacoThemeFor(settings.colorTheme, resolvedAppearance);
 
   useEffect(
     () => () => {
@@ -10579,7 +10720,11 @@ ${macroEnd}
   const showLegalAcceptanceGate = legalAcceptanceRequired && !aiWizardOpen;
 
   return (
-    <div className="app-shell" data-theme={settings.colorTheme}>
+    <div
+      className="app-shell"
+      data-theme={settings.colorTheme}
+      data-appearance={settings.appearanceMode}
+    >
       <input
         ref={pdfReviewInputRef}
         type="file"
@@ -14587,6 +14732,41 @@ ${macroEnd}
                               ))}
                             </span>
                           </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="settings-row settings-row-stack">
+                    <span>
+                      <strong>Appearance</strong>
+                      <small>
+                        Light or dark surfaces, or follow the operating system.
+                      </small>
+                    </span>
+                    <div
+                      className="ui-segmented"
+                      role="radiogroup"
+                      aria-label="Appearance"
+                    >
+                      {appearanceModeOptions.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          className={`ui-segmented__item ${
+                            settings.appearanceMode === option.id ? "active" : ""
+                          }`}
+                          onClick={() =>
+                            setSettings((current) => ({
+                              ...current,
+                              appearanceMode: option.id,
+                            }))
+                          }
+                          role="radio"
+                          aria-checked={settings.appearanceMode === option.id}
+                          title={option.description}
+                        >
+                          {option.name}
                         </button>
                       ))}
                     </div>

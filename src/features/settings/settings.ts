@@ -78,6 +78,34 @@ export const colorThemeOptions: {
   },
 ];
 
+export type AppearanceMode = "auto" | "light" | "dark";
+
+export const appearanceModeOptions: {
+  id: AppearanceMode;
+  name: string;
+  description: string;
+}[] = [
+  {
+    id: "auto",
+    name: "Auto",
+    description: "Follow the system light/dark appearance.",
+  },
+  {
+    id: "light",
+    name: "Light",
+    description: "Always use the light appearance.",
+  },
+  {
+    id: "dark",
+    name: "Dark",
+    description: "Always use the dark appearance.",
+  },
+];
+
+export function isAppearanceMode(value: unknown): value is AppearanceMode {
+  return value === "auto" || value === "light" || value === "dark";
+}
+
 const baseWelcomeTemplates: WelcomeTemplate[] = [
   {
     id: "article",
@@ -616,8 +644,11 @@ function isColorTheme(value: unknown): value is ColorTheme {
   return colorThemeOptions.some((theme) => theme.id === value);
 }
 
-export function monacoThemeFor(theme: ColorTheme): string {
-  return `latexdo-${theme}`;
+export function monacoThemeFor(
+  theme: ColorTheme,
+  appearance: AppearanceMode = "dark",
+): string {
+  return `latexdo${appearance === "light" ? "-light" : ""}-${theme}`;
 }
 
 export interface AppSettings {
@@ -625,6 +656,7 @@ export interface AppSettings {
   legalAcceptedAt: string;
   legalPolicyVersion: string;
   colorTheme: ColorTheme;
+  appearanceMode: AppearanceMode;
   defaultEngine: Engine;
   livePreview: boolean;
   editorFontSize: number;
@@ -772,6 +804,7 @@ export const defaultSettings: AppSettings = {
   legalAcceptedAt: "",
   legalPolicyVersion,
   colorTheme: "graphite",
+  appearanceMode: "auto",
   defaultEngine: "pdflatex",
   livePreview: false,
   editorFontSize: 13.5,
@@ -1149,6 +1182,9 @@ export function loadSettings(): AppSettings {
       colorTheme: isColorTheme(saved.colorTheme)
         ? saved.colorTheme
         : defaultSettings.colorTheme,
+      appearanceMode: isAppearanceMode(saved.appearanceMode)
+        ? saved.appearanceMode
+        : defaultSettings.appearanceMode,
       defaultEngine,
       livePreview:
         typeof saved.livePreview === "boolean"

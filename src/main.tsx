@@ -6,6 +6,7 @@ import { installBrowserApis } from "./browserApi";
 import { CollaborationProvider } from "./collaboration/CollaborationProvider";
 import { RendererErrorBoundary } from "./RendererErrorBoundary";
 import { installRendererDiagnostics } from "./rendererDiagnostics";
+import "./styles/tokens.css";
 import "./styles.css";
 
 const favicon =

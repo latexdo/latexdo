@@ -18,6 +18,8 @@ function alteredValue(key: keyof AppSettings, value: unknown): unknown {
   switch (key) {
     case "colorTheme":
       return defaultSettings.colorTheme === "midnight" ? "graphite" : "midnight";
+    case "appearanceMode":
+      return defaultSettings.appearanceMode === "auto" ? "dark" : "auto";
     case "defaultEngine":
       return "xelatex";
     default:
