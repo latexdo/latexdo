@@ -158,6 +158,7 @@
   --bg-drop-target: color-mix(in srgb, var(--accent) 16%, transparent);
   --bg-badge: var(--status-destructive-bg);
   --bg-badge-soft: var(--accent-soft);
+  --editor-bg: light-dark(#f6f8fd, #15181e);
 
   --text-primary: var(--color-text-primary);
   --text-secondary: var(--color-text-secondary);
@@ -252,6 +253,46 @@
 .app-shell[data-theme="paper"] {
   --accent: light-dark(#2f8f6b, #6fc795);
   --theme-tint: light-dark(#fffefa, #161a10);
+}
+
+.app-shell[data-theme="graphite"][data-resolved-appearance="light"] {
+  --editor-bg: #f6f8fd;
+}
+
+.app-shell[data-theme="graphite"][data-resolved-appearance="dark"] {
+  --editor-bg: #15181e;
+}
+
+.app-shell[data-theme="midnight"][data-resolved-appearance="light"] {
+  --editor-bg: #f3f8ff;
+}
+
+.app-shell[data-theme="midnight"][data-resolved-appearance="dark"] {
+  --editor-bg: #0b1424;
+}
+
+.app-shell[data-theme="forest"][data-resolved-appearance="light"] {
+  --editor-bg: #f4f8f5;
+}
+
+.app-shell[data-theme="forest"][data-resolved-appearance="dark"] {
+  --editor-bg: #111a16;
+}
+
+.app-shell[data-theme="sepia"][data-resolved-appearance="light"] {
+  --editor-bg: #faf5ec;
+}
+
+.app-shell[data-theme="sepia"][data-resolved-appearance="dark"] {
+  --editor-bg: #1b1510;
+}
+
+.app-shell[data-theme="studio"] {
+  --editor-bg: #ffffff;
+}
+
+.app-shell[data-theme="paper"] {
+  --editor-bg: #fffefa;
 }
 
 /* Accessibility environment overrides ------------------------------------- */

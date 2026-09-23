@@ -10724,6 +10724,7 @@ ${macroEnd}
       className="app-shell"
       data-theme={settings.colorTheme}
       data-appearance={settings.appearanceMode}
+      data-resolved-appearance={resolvedAppearance}
     >
       <input
         ref={pdfReviewInputRef}
