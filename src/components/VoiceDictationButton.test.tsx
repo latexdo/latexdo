@@ -50,12 +50,8 @@ describe("VoiceDictationButton", () => {
 
     expect(screen.getByText("Recording")).toBeVisible();
     expect(screen.getByText("00:08")).toBeVisible();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Stop voice dictation" }),
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Cancel voice dictation" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Stop voice dictation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel voice dictation" }));
     expect(onStop).toHaveBeenCalledTimes(1);
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
@@ -66,9 +62,7 @@ describe("VoiceDictationButton", () => {
     const cleanup = screen.getByRole("status");
     expect(cleanup).toBeVisible();
     expect(screen.getByRole("button", { name: "Transcribing…" })).toBeDisabled();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Cancel voice dictation" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel voice dictation" }));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
@@ -80,9 +74,7 @@ describe("VoiceDictationButton", () => {
     });
 
     expect(
-      screen.getByText(
-        /Microphone access was denied\. Enable microphone permission/i,
-      ),
+      screen.getByText(/Microphone access was denied\. Enable microphone permission/i),
     ).toBeVisible();
     const retry = screen.getByRole("button", {
       name: "Start voice dictation",
@@ -98,7 +90,9 @@ describe("VoiceDictationButton", () => {
     const dot = container.querySelector(".voice-live-dot");
     expect(dot).not.toBeNull();
     // The textual label and the aria-labels are the primary signal.
-    expect(screen.getByRole("button", { name: "Stop voice dictation" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Stop voice dictation" }),
+    ).toBeInTheDocument();
     screen.getByText("Recording");
   });
 });

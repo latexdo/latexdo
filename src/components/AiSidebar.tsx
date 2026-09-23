@@ -32,9 +32,7 @@ import {
   buildSelectionMessageText,
   type AiComposerSelectionContext,
 } from "../features/ai/selectionAi";
-import {
-  createTranscriptionProvider,
-} from "../features/voice/transcription";
+import { createTranscriptionProvider } from "../features/voice/transcription";
 import { createTranscriptCleanup } from "../features/voice/transcriptCleanup";
 import type { VoiceDictationStatus } from "../features/voice/types";
 import { useVoiceDictation } from "../features/voice/useVoiceDictation";
@@ -167,9 +165,10 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
       }),
     [config, voiceSettings, sttEndpoint],
   );
-  const cleanupProvider = React.useMemo(() => createTranscriptCleanup(config), [
-    config,
-  ]);
+  const cleanupProvider = React.useMemo(
+    () => createTranscriptCleanup(config),
+    [config],
+  );
   const voiceStatusRef = React.useRef<VoiceDictationStatus>("idle");
 
   const insertVoiceDraft = React.useCallback(() => {
@@ -195,8 +194,7 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
     transcriptMode: voiceSettings.transcriptMode,
     maxDurationMs: voiceSettings.maxDurationMs,
     transcriptionProvider,
-    cleanup:
-      voiceSettings.transcriptMode === "clean" ? cleanupProvider : null,
+    cleanup: voiceSettings.transcriptMode === "clean" ? cleanupProvider : null,
     onTranscript: (text) => {
       setVoiceDraft(text);
     },

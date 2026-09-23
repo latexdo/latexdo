@@ -8,7 +8,12 @@
 
 import type { AiConfig } from "../ai/aiConfig";
 import { loadCloudCredential } from "../ai/cloudCredentials";
-import { voiceError, type TranscriptionProvider, type TranscriptionResult, type VoiceDictationError } from "./types";
+import {
+  voiceError,
+  type TranscriptionProvider,
+  type TranscriptionResult,
+  type VoiceDictationError,
+} from "./types";
 
 /** Error carrying a structured code; used by the state machine mapping. */
 export class TranscriptionError extends Error {
@@ -64,8 +69,7 @@ function sanitizeProviderError(text: string, maxChars: number): string {
   for (let i = 0; i < text.length; i++) {
     const code = text.charCodeAt(i);
     const isControl =
-      (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) ||
-      code === 0x7f;
+      (code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) || code === 0x7f;
     if (!isControl) cleaned += text[i];
   }
   cleaned = cleaned.trim();
@@ -89,9 +93,11 @@ export class OpenAiTranscriptionProvider implements TranscriptionProvider {
     this.maxErrorChars = options.maxErrorChars ?? 160;
   }
 
-  async transcribe(
-    request: { audio: Blob; language?: string; signal?: AbortSignal },
-  ): Promise<TranscriptionResult> {
+  async transcribe(request: {
+    audio: Blob;
+    language?: string;
+    signal?: AbortSignal;
+  }): Promise<TranscriptionResult> {
     const apiKey = await loadCloudCredential(this.credentialId);
     if (!apiKey && !this.allowKeyless) {
       throw new TranscriptionError(
@@ -121,7 +127,11 @@ export class OpenAiTranscriptionProvider implements TranscriptionProvider {
       });
     } catch (err) {
       if (isAbortError(err, request.signal)) {
-        throw new TranscriptionError("cancelled", "Voice transcription cancelled.", err);
+        throw new TranscriptionError(
+          "cancelled",
+          "Voice transcription cancelled.",
+          err,
+        );
       }
       throw new TranscriptionError(
         "transcription-failed",
@@ -154,11 +164,7 @@ export class OpenAiTranscriptionProvider implements TranscriptionProvider {
         ? ((data as { text: string }).text as string).trim()
         : "";
     if (!text) {
-      throw new TranscriptionError(
-        "empty-recording",
-        "No speech was detected.",
-        data,
-      );
+      throw new TranscriptionError("empty-recording", "No speech was detected.", data);
     }
 
     const language =

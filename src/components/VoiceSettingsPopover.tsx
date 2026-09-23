@@ -8,7 +8,10 @@
 
 import React from "react";
 import { Check, KeyRound, PlugZap, Settings2, X } from "lucide-react";
-import { loadCloudCredential, saveCloudCredential } from "../features/ai/cloudCredentials";
+import {
+  loadCloudCredential,
+  saveCloudCredential,
+} from "../features/ai/cloudCredentials";
 import {
   detectLocalTranscriptionServers,
   type LocalTranscriptionServer,
@@ -116,7 +119,11 @@ export const VoiceSettingsPopover: React.FC<VoiceSettingsPopoverProps> = ({
         <Settings2 size={14} />
       </button>
       {open && (
-        <div className="voice-settings-popover" role="dialog" aria-label="Voice settings">
+        <div
+          className="voice-settings-popover"
+          role="dialog"
+          aria-label="Voice settings"
+        >
           <div className="voice-settings-head">
             <span>Voice dictation settings</span>
             <button
@@ -163,8 +170,8 @@ export const VoiceSettingsPopover: React.FC<VoiceSettingsPopoverProps> = ({
           )}
           {detected && detected.length === 0 && !detecting && (
             <p className="voice-settings-hint">
-              No local speech server found. Start one (whisper.cpp's{" "}
-              <code>server</code>, LM Studio, or faster-whisper) and try again.
+              No local speech server found. Start one (whisper.cpp's <code>server</code>
+              , LM Studio, or faster-whisper) and try again.
             </p>
           )}
 
@@ -205,9 +212,7 @@ export const VoiceSettingsPopover: React.FC<VoiceSettingsPopoverProps> = ({
             <span>Outcome</span>
             <select
               value={transcriptMode}
-              onChange={(e) =>
-                setTranscriptMode(e.target.value as TranscriptMode)
-              }
+              onChange={(e) => setTranscriptMode(e.target.value as TranscriptMode)}
             >
               <option value="clean">Clean up and format as LaTeX</option>
               <option value="verbatim">Insert exactly as spoken</option>
@@ -215,9 +220,9 @@ export const VoiceSettingsPopover: React.FC<VoiceSettingsPopoverProps> = ({
           </label>
 
           <p className="voice-settings-hint">
-            Speech-to-text runs on the server above; the LaTeX cleanup uses the
-            AI model you picked during setup (LatexDo AI works locally). Local
-            servers need no API key.
+            Speech-to-text runs on the server above; the LaTeX cleanup uses the AI model
+            you picked during setup (LatexDo AI works locally). Local servers need no
+            API key.
           </p>
 
           {keyStored && (

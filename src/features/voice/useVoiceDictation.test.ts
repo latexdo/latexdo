@@ -10,9 +10,7 @@ import { useVoiceDictation } from "./useVoiceDictation";
 type HookResult = { current: VoiceDictationController };
 
 class FakeMediaRecorder {
-  static isTypeSupported = vi.fn(
-    (type: string) => type === "audio/webm;codecs=opus",
-  );
+  static isTypeSupported = vi.fn((type: string) => type === "audio/webm;codecs=opus");
   static instances: FakeMediaRecorder[] = [];
   state: "inactive" | "recording" = "inactive";
   mimeType = "audio/webm;codecs=opus";
@@ -20,7 +18,10 @@ class FakeMediaRecorder {
   onstop: (() => void) | null = null;
   onerror: ((e: unknown) => void) | null = null;
 
-  constructor(public stream: MediaStream, _options?: MediaRecorderOptions) {
+  constructor(
+    public stream: MediaStream,
+    _options?: MediaRecorderOptions,
+  ) {
     FakeMediaRecorder.instances.push(this);
   }
 
@@ -40,7 +41,9 @@ function fakeStream(track: { stop: ReturnType<typeof vi.fn> }): MediaStream {
   return { getTracks: () => [track] } as unknown as MediaStream;
 }
 
-function installCapture(rejectWith?: Error): { track: { stop: ReturnType<typeof vi.fn> } } {
+function installCapture(rejectWith?: Error): {
+  track: { stop: ReturnType<typeof vi.fn> };
+} {
   const track = { stop: vi.fn() };
   vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
   FakeMediaRecorder.instances = [];
@@ -65,7 +68,11 @@ function deferredTranscriber() {
     settle = resolve;
   });
   const transcribe = vi.fn(() => promise);
-  return { id: "test-deferred", transcribe, settle: (text: string) => settle({ text }) };
+  return {
+    id: "test-deferred",
+    transcribe,
+    settle: (text: string) => settle({ text }),
+  };
 }
 
 function immediateProvider(text = "hello world") {
@@ -79,9 +86,10 @@ interface Hooks {
   onError: Mock<(error: VoiceDictationError) => void>;
 }
 
-function mount(
-  overrides: Partial<Parameters<typeof useVoiceDictation>[0]> = {},
-): { result: HookResult; hooks: Hooks } {
+function mount(overrides: Partial<Parameters<typeof useVoiceDictation>[0]> = {}): {
+  result: HookResult;
+  hooks: Hooks;
+} {
   const hooks: Hooks = {
     statuses: [],
     onTranscript: vi.fn<(text: string) => void>(),

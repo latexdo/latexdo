@@ -1,8 +1,14 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { loadCloudCredential, saveCloudCredential } from "../features/ai/cloudCredentials";
+import {
+  loadCloudCredential,
+  saveCloudCredential,
+} from "../features/ai/cloudCredentials";
 import { detectLocalTranscriptionServers } from "../features/voice/localTranscriptionDetection";
-import { defaultVoiceSettings, type VoiceSettings } from "../features/voice/voiceSettings";
+import {
+  defaultVoiceSettings,
+  type VoiceSettings,
+} from "../features/voice/voiceSettings";
 import { VoiceSettingsPopover } from "./VoiceSettingsPopover";
 
 vi.mock("../features/ai/cloudCredentials", () => ({
@@ -77,9 +83,7 @@ describe("VoiceSettingsPopover", () => {
     fireEvent.click(screen.getByRole("button", { name: /whisper.cpp server/i }));
 
     const endpoint = screen.getByLabelText(/Speech-to-text endpoint/i);
-    expect((endpoint as HTMLInputElement).value).toBe(
-      "http://localhost:8080/v1",
-    );
+    expect((endpoint as HTMLInputElement).value).toBe("http://localhost:8080/v1");
     const model = screen.getByLabelText(/^Model/i) as HTMLInputElement;
     expect(model.value).toBe("whisper-large-v3");
 

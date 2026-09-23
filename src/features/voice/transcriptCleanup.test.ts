@@ -78,9 +78,7 @@ describe("transcriptCleanup", () => {
   });
 
   it("returns null when AI is switched off", () => {
-    expect(
-      createTranscriptCleanup({ ...defaultAiConfig, provider: "off" }),
-    ).toBeNull();
+    expect(createTranscriptCleanup({ ...defaultAiConfig, provider: "off" })).toBeNull();
   });
 
   it("wraps provider errors so dictation can fall back to the raw transcript", async () => {

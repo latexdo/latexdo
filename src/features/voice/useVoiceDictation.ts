@@ -38,9 +38,7 @@ function isCancelledLike(err: unknown): boolean {
   return false;
 }
 
-export function useVoiceDictation(
-  options: UseVoiceDictationOptions,
-): {
+export function useVoiceDictation(options: UseVoiceDictationOptions): {
   status: VoiceDictationStatus;
   error: VoiceDictationError | null;
   durationMs: number;
@@ -131,7 +129,10 @@ export function useVoiceDictation(
         });
         if (activeRequestIdRef.current !== requestId) return;
       } catch (transcribeErr) {
-        if (activeRequestIdRef.current !== requestId || isCancelledLike(transcribeErr)) {
+        if (
+          activeRequestIdRef.current !== requestId ||
+          isCancelledLike(transcribeErr)
+        ) {
           return;
         }
         if (transcribeErr instanceof TranscriptionError) {

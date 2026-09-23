@@ -25,9 +25,12 @@ function jsonResponse(status: number, body: unknown): Response {
   } as unknown as Response;
 }
 
-const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
+const fetchMock =
+  vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
 
-function provider(opts: Partial<{ baseUrl: string; model: string; credentialId: string }> = {}) {
+function provider(
+  opts: Partial<{ baseUrl: string; model: string; credentialId: string }> = {},
+) {
   return new OpenAiTranscriptionProvider({
     baseUrl: opts.baseUrl,
     model: opts.model,
@@ -62,9 +65,7 @@ describe("transcription provider", () => {
     expect(result.text).toBe("Hello world.");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toBe(
-      "https://api.openai.com/v1/audio/transcriptions",
-    );
+    expect(String(url)).toBe("https://api.openai.com/v1/audio/transcriptions");
 
     const headers = (init?.headers ?? {}) as Record<string, string>;
     expect(headers.authorization).toBe("Bearer sk-test");
@@ -88,9 +89,7 @@ describe("transcription provider", () => {
     }).transcribe({ audio: audio() });
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toBe(
-      "https://gateway.example.com/v1/audio/transcriptions",
-    );
+    expect(String(url)).toBe("https://gateway.example.com/v1/audio/transcriptions");
     expect((init?.body as FormData).get("model")).toBe("whisper-1");
   });
 
@@ -98,9 +97,7 @@ describe("transcription provider", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { text: "ok" }));
     const result = await provider().transcribe({ audio: audio() });
     expect(result.text).toBe("ok");
-    expect(loadCloudCredential).toHaveBeenCalledWith(
-      "credential-openai-primary",
-    );
+    expect(loadCloudCredential).toHaveBeenCalledWith("credential-openai-primary");
   });
 
   it("fails with permission-denied when no credential is available", async () => {
@@ -137,7 +134,10 @@ describe("transcription provider", () => {
     );
     const err = await provider()
       .transcribe({ audio: audio() })
-      .then(() => null, (e: unknown) => e);
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
     expect(err).toBeInstanceOf(TranscriptionError);
     expect((err as TranscriptionError).code).toBe("transcription-failed");
     expect((err as TranscriptionError).message).toContain("401");

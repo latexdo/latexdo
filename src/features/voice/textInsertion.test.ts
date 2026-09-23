@@ -92,9 +92,7 @@ describe("textInsertion", () => {
       { value, selectionStart: at, selectionEnd: at },
       " parameter ",
     );
-    expect(result.value).toBe(
-      "We define $\\lambda$ parameter  as the gradient.",
-    );
+    expect(result.value).toBe("We define $\\lambda$ parameter  as the gradient.");
   });
 
   it("clamps out-of-range selection offsets", () => {

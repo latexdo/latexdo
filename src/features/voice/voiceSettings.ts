@@ -43,7 +43,12 @@ function isTranscriptMode(value: unknown): value is TranscriptMode {
   return value === "verbatim" || value === "clean";
 }
 
-function intInRange(value: unknown, fallback: number, min: number, max: number): number {
+function intInRange(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return Math.min(max, Math.max(min, Math.round(value)));
 }

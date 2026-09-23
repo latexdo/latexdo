@@ -51,10 +51,7 @@ function smartSpacing(
     isWordChar(tStart) &&
     !isWhitespace(tStart);
   const trailing =
-    after.length > 0 &&
-    isWordChar(after[0]) &&
-    isWordChar(tEnd) &&
-    !isWhitespace(tEnd);
+    after.length > 0 && isWordChar(after[0]) && isWordChar(tEnd) && !isWhitespace(tEnd);
   return { leading, trailing };
 }
 

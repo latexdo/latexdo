@@ -129,7 +129,5 @@ export async function detectLocalTranscriptionServers(
     }),
   );
 
-  return results.filter(
-    (r): r is LocalTranscriptionServer => r !== null,
-  );
+  return results.filter((r): r is LocalTranscriptionServer => r !== null);
 }

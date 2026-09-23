@@ -36,8 +36,7 @@ vi.mock("../features/voice/transcription", async (importOriginal) => {
     await importOriginal<typeof import("../features/voice/transcription")>();
   return {
     ...actual,
-    createTranscriptionProvider:
-      transcriptionFactory.createTranscriptionProvider,
+    createTranscriptionProvider: transcriptionFactory.createTranscriptionProvider,
   };
 });
 vi.mock("../features/voice/transcriptCleanup", () => cleanupFactory);
@@ -73,9 +72,7 @@ function cloudConfig(): AiConfig {
 }
 
 class FakeMediaRecorder {
-  static isTypeSupported = vi.fn(
-    (type: string) => type === "audio/webm;codecs=opus",
-  );
+  static isTypeSupported = vi.fn((type: string) => type === "audio/webm;codecs=opus");
   static instances: FakeMediaRecorder[] = [];
   state: "inactive" | "recording" = "inactive";
   mimeType = "audio/webm;codecs=opus";
@@ -83,7 +80,10 @@ class FakeMediaRecorder {
   onstop: (() => void) | null = null;
   onerror: ((e: unknown) => void) | null = null;
 
-  constructor(public stream: MediaStream, _options?: MediaRecorderOptions) {
+  constructor(
+    public stream: MediaStream,
+    _options?: MediaRecorderOptions,
+  ) {
     FakeMediaRecorder.instances.push(this);
   }
 
@@ -151,12 +151,8 @@ function deferredProvider() {
 }
 
 async function startDictation() {
-  fireEvent.click(
-    screen.getByRole("button", { name: "Start voice dictation" }),
-  );
-  await waitFor(() =>
-    expect(screen.getByText("Recording")).toBeVisible(),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Start voice dictation" }));
+  await waitFor(() => expect(screen.getByText("Recording")).toBeVisible());
 }
 
 describe("AiSidebar voice dictation integration", () => {
@@ -188,14 +184,15 @@ describe("AiSidebar voice dictation integration", () => {
   });
 
   it("drafts the transcript for insertion instead of writing into the composer", async () => {
-    const provider = { id: "test", transcribe: vi.fn().mockResolvedValue({ text: "beautiful" }) };
+    const provider = {
+      id: "test",
+      transcribe: vi.fn().mockResolvedValue({ text: "beautiful" }),
+    };
     transcriptionFactory.createTranscriptionProvider.mockReturnValue(provider);
     renderSidebar();
 
     await startDictation();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Stop voice dictation" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Stop voice dictation" }));
 
     await waitFor(() =>
       expect(
@@ -214,9 +211,7 @@ describe("AiSidebar voice dictation integration", () => {
     renderSidebar();
 
     await startDictation();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Stop voice dictation" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Stop voice dictation" }));
 
     await waitFor(() =>
       expect(
@@ -251,17 +246,15 @@ describe("AiSidebar voice dictation integration", () => {
     const ta = composer();
     fireEvent.change(ta, { target: { value: "Keep this" } });
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Start voice dictation" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Start voice dictation" }));
 
     await waitFor(() =>
-      expect(
-        screen.getByText(/Microphone access was denied/i),
-      ).toBeVisible(),
+      expect(screen.getByText(/Microphone access was denied/i)).toBeVisible(),
     );
     expect(ta.value).toBe("Keep this");
-    expect(screen.queryByRole("button", { name: "Insert dictation into editor" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Insert dictation into editor" }),
+    ).not.toBeInTheDocument();
   });
 
   it("never drafts a stale transcript when the user cancels during transcription", async () => {
@@ -270,20 +263,14 @@ describe("AiSidebar voice dictation integration", () => {
     renderSidebar();
 
     await startDictation();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Stop voice dictation" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Stop voice dictation" }));
 
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Transcribing…" }),
-      ).toBeDisabled(),
+      expect(screen.getByRole("button", { name: "Transcribing…" })).toBeDisabled(),
     );
 
     // The provider is still in flight: the user bails out.
-    fireEvent.click(
-      screen.getByRole("button", { name: "Cancel voice dictation" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel voice dictation" }));
 
     await act(async () => {
       await Promise.resolve();

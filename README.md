@@ -68,5 +68,5 @@ Optional release secrets:
 ## AI Source
 
 AI catalog/source files are kept in this repo and synced into generated code by
-`npm run ai:sync`, which also runs before build and typecheck. The public catalog 
+`npm run ai:sync`, which also runs before build and typecheck. The public catalog
 is `catalog/latexdo-ai-catalog.v1.json`.

@@ -4,7 +4,8 @@ import {
   looksLikeSpeechModel,
 } from "./localTranscriptionDetection";
 
-const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
+const fetchMock =
+  vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
 
 function modelsResponse(body: unknown): Response {
   return {
@@ -60,16 +61,13 @@ describe("localTranscriptionDetection", () => {
     const servers = await detectLocalTranscriptionServers();
 
     expect(fetchMock).toHaveBeenCalled();
-    const urls = (fetchMock.mock.calls.map((c) => String(c[0])));
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
     for (const url of urls) {
       expect(url).toMatch(/^http:\/\/localhost:\d+\/v1\/models$/);
     }
 
     expect(servers.map((s) => s.baseUrl)).toEqual(
-      expect.arrayContaining([
-        "http://localhost:1234/v1",
-        "http://localhost:8080/v1",
-      ]),
+      expect.arrayContaining(["http://localhost:1234/v1", "http://localhost:8080/v1"]),
     );
     const lm = servers.find((s) => s.baseUrl.includes(":1234"));
     expect(lm?.speechModel).toBe("whisper-large-v3");

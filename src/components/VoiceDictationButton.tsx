@@ -5,9 +5,7 @@
 
 import React from "react";
 import { AudioLines, Mic, Square, X } from "lucide-react";
-import {
-  voiceErrorMessage,
-} from "../features/voice/voiceMessages";
+import { voiceErrorMessage } from "../features/voice/voiceMessages";
 import type {
   VoiceDictationError,
   VoiceDictationStatus,

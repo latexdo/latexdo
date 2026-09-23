@@ -26,7 +26,10 @@ function installGetUserMedia(stream: MediaStream | Error): void {
       getUserMedia: vi.fn(
         (constraints: MediaStreamConstraints) =>
           new Promise<MediaStream>((resolve, reject) => {
-            if (stream instanceof Error || typeof (stream as MediaStream)?.getTracks !== "function") {
+            if (
+              stream instanceof Error ||
+              typeof (stream as MediaStream)?.getTracks !== "function"
+            ) {
               reject(stream);
             } else {
               void constraints;
@@ -38,10 +41,14 @@ function installGetUserMedia(stream: MediaStream | Error): void {
   });
 }
 
-function getLastGetUserMedia(): (constraints: MediaStreamConstraints) => Promise<MediaStream> {
-  return (navigator.mediaDevices as unknown as {
-    getUserMedia: (c: MediaStreamConstraints) => Promise<MediaStream>;
-  }).getUserMedia;
+function getLastGetUserMedia(): (
+  constraints: MediaStreamConstraints,
+) => Promise<MediaStream> {
+  return (
+    navigator.mediaDevices as unknown as {
+      getUserMedia: (c: MediaStreamConstraints) => Promise<MediaStream>;
+    }
+  ).getUserMedia;
 }
 
 class FakeMediaRecorder {
@@ -57,7 +64,10 @@ class FakeMediaRecorder {
   onstop: (() => void) | null = null;
   onerror: ((e: unknown) => void) | null = null;
 
-  constructor(public stream: MediaStream, options?: MediaRecorderOptions) {
+  constructor(
+    public stream: MediaStream,
+    options?: MediaRecorderOptions,
+  ) {
     this.options = options;
     FakeMediaRecorder.instances.push(this);
   }
@@ -82,9 +92,7 @@ class FakeMediaRecorder {
 function installMediaRecorder(useFallback = false): typeof FakeMediaRecorder {
   const Ctor = useFallback
     ? class extends FakeMediaRecorder {
-        static override isTypeSupported = vi.fn<(type: string) => boolean>(
-          () => false,
-        );
+        static override isTypeSupported = vi.fn<(type: string) => boolean>(() => false);
       }
     : FakeMediaRecorder;
   vi.stubGlobal("MediaRecorder", Ctor);
@@ -116,9 +124,9 @@ describe("audioRecorder", () => {
     it("reports unsupported when MediaRecorder is missing", () => {
       installGetUserMedia(makeFakeStream({ stop: vi.fn(), kind: "audio" }));
       vi.unstubAllGlobals();
-      expect(
-        typeof (globalThis as { MediaRecorder?: unknown }).MediaRecorder,
-      ).toBe("undefined");
+      expect(typeof (globalThis as { MediaRecorder?: unknown }).MediaRecorder).toBe(
+        "undefined",
+      );
       expect(isAudioCaptureSupported()).toBe(false);
     });
 
@@ -134,9 +142,7 @@ describe("audioRecorder", () => {
 
     it("returns undefined when nothing is supported (runtime fallback)", () => {
       const Ctor = class extends FakeMediaRecorder {
-        static override isTypeSupported = vi.fn<(type: string) => boolean>(
-          () => false,
-        );
+        static override isTypeSupported = vi.fn<(type: string) => boolean>(() => false);
       };
       vi.stubGlobal("MediaRecorder", Ctor);
       expect(pickPreferredMimeType()).toBeUndefined();
@@ -153,9 +159,7 @@ describe("audioRecorder", () => {
 
   describe("permission and device mapping", () => {
     it("maps permission denial to a structured error", async () => {
-      installGetUserMedia(
-        new DOMException("denied", "NotAllowedError"),
-      );
+      installGetUserMedia(new DOMException("denied", "NotAllowedError"));
       const recorder = new AudioRecorder();
       await expect(recorder.start()).rejects.toBeInstanceOf(AudioCaptureError);
       await expect(recorder.start()).rejects.toMatchObject({
@@ -172,9 +176,7 @@ describe("audioRecorder", () => {
     });
 
     it("maps unreadable devices to device-unavailable", async () => {
-      installGetUserMedia(
-        new DOMException("in use", "NotReadableError"),
-      );
+      installGetUserMedia(new DOMException("in use", "NotReadableError"));
       const recorder = new AudioRecorder();
       await expect(recorder.start()).rejects.toMatchObject({
         code: "device-unavailable",

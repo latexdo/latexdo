@@ -41,9 +41,9 @@ export class AudioCaptureError extends Error {
 export function isAudioCaptureSupported(): boolean {
   return Boolean(
     typeof navigator !== "undefined" &&
-      navigator.mediaDevices &&
-      typeof navigator.mediaDevices.getUserMedia === "function" &&
-      typeof MediaRecorder !== "undefined",
+    navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getUserMedia === "function" &&
+    typeof MediaRecorder !== "undefined",
   );
 }
 
@@ -278,7 +278,14 @@ export function stopAllTracks(stream: MediaStream | null): void {
 }
 
 /** Convert any thrown error from the capture pipeline to a structured error. */
-export function toVoiceDictationError(err: unknown, fallback: VoiceErrorCode = "recording-failed"): VoiceDictationError {
+export function toVoiceDictationError(
+  err: unknown,
+  fallback: VoiceErrorCode = "recording-failed",
+): VoiceDictationError {
   if (err instanceof AudioCaptureError) return err.toVoiceDictationError();
-  return voiceError(fallback, "Voice recording failed. Your existing text was not changed.", err);
+  return voiceError(
+    fallback,
+    "Voice recording failed. Your existing text was not changed.",
+    err,
+  );
 }
