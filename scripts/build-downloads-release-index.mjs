@@ -228,7 +228,6 @@ function renderReleaseList(releases) {
               <p class="eyebrow">Release tags</p>
               <h2 id="release-history-title">All desktop releases</h2>
             </div>
-            <a class="button secondary" href="releases.json">JSON index</a>
           </div>
           <div class="release-list">
 ${releases.map(renderReleaseItem).join("\n")}
