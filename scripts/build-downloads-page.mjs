@@ -184,7 +184,7 @@ async function signUpdateFeed(feed) {
   };
 }
 
-function platformIcon(platform) {
+function platformIcon(platform, assetPrefix = "") {
   if (platform === "macos") {
     return `<svg class="platform-logo" viewBox="0 0 24 24" aria-hidden="true">
       <path d="M16.64 12.08c-.03-2.32 1.9-3.45 1.99-3.5-1.09-1.6-2.79-1.82-3.37-1.84-1.42-.15-2.8.85-3.52.85-.74 0-1.86-.83-3.06-.8-1.56.02-3.02.93-3.82 2.35-1.65 2.86-.42 7.06 1.16 9.37.79 1.13 1.71 2.39 2.92 2.35 1.18-.05 1.62-.75 3.04-.75 1.41 0 1.82.75 3.06.72 1.27-.02 2.06-1.14 2.82-2.28.91-1.3 1.27-2.58 1.29-2.65-.03-.01-2.49-.96-2.52-3.82ZM14.34 5.24c.64-.79 1.07-1.86.95-2.94-.92.04-2.07.63-2.74 1.39-.59.67-1.12 1.78-.98 2.81 1.04.08 2.1-.52 2.77-1.26Z" />
@@ -198,11 +198,7 @@ function platformIcon(platform) {
       <path d="M12.15 12.62H21v8.88l-8.85-1.32v-7.56Z" />
     </svg>`;
   }
-  return `<svg class="platform-logo linux-logo" viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M4 5.5h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z" />
-    <path d="m7 10 3 2-3 2" />
-    <path d="M12.5 15h4.5" />
-  </svg>`;
+  return `<img class="platform-logo linux-logo" src="${htmlEscape(assetPrefix)}assets/linux-tux.png" alt="" width="36" height="43" />`;
 }
 
 await mkdir(outputDir, { recursive: true });
@@ -294,15 +290,39 @@ function installerKind(file) {
   return extension ? `${extension} installer` : "Installer";
 }
 
-function renderDownloadOption(file, fileHref, label = file.label) {
-  return `<a class="download-option" href="${htmlEscape(fileHref(file))}" download>
+function renderDownloadOption(file, fileHref, label = file.label, extraClass = "") {
+  const className = ["download-option", extraClass].filter(Boolean).join(" ");
+  return `<a class="${htmlEscape(className)}" href="${htmlEscape(fileHref(file))}" download>
               <strong>${htmlEscape(label)}</strong>
               <span>${htmlEscape(installerKind(file))}</span>
-              <em>${htmlEscape(file.sizeLabel)} - SHA-256</em>
+              <em>${htmlEscape(file.sizeLabel)}<span class="downloads-dev-link"> - SHA-256</span></em>
             </a>`;
 }
 
-function renderCards(fileHref) {
+function renderMacMachinePicker(macFiles, fileHref) {
+  const appleSilicon = macFiles.find((file) => file.arch === "arm64");
+  const intel = macFiles.find((file) => file.arch === "x64");
+  if (!appleSilicon || !intel) {
+    return `<div class="download-variant-row" aria-label="macOS build choices">
+${macFiles.map((file) => renderDownloadOption(file, fileHref, macBuildName(file))).join("\n")}
+            </div>`;
+  }
+
+  return `<div class="mac-machine-picker" aria-label="macOS build choices">
+              <input class="mac-machine-input" type="radio" name="mac-machine" id="mac-machine-apple-silicon" checked />
+              <input class="mac-machine-input" type="radio" name="mac-machine" id="mac-machine-intel" />
+              <div class="mac-machine-tabs" aria-label="Mac chip">
+                <label for="mac-machine-apple-silicon">Apple Silicon</label>
+                <label for="mac-machine-intel">Intel</label>
+              </div>
+              <div class="mac-machine-downloads">
+${renderDownloadOption(appleSilicon, fileHref, "Apple Silicon", "mac-machine-option arm64")}
+${renderDownloadOption(intel, fileHref, "Intel", "mac-machine-option x64")}
+              </div>
+            </div>`;
+}
+
+function renderCards(fileHref, assetPrefix) {
   const macFiles = files.filter((file) => file.platform === "macos");
   const windowsFiles = files.filter((file) => file.platform === "windows");
   const linuxFiles = files.filter((file) => file.platform === "linux");
@@ -310,39 +330,34 @@ function renderCards(fileHref) {
   return `
           <article class="platform-download-card macos">
             <div class="platform-card-top">
-              <span class="platform-logo-shell">${platformIcon("macos")}</span>
+              <span class="platform-logo-shell">${platformIcon("macos", assetPrefix)}</span>
               <div>
                 <p class="eyebrow">macOS</p>
                 <h2>Apple Mac</h2>
               </div>
             </div>
-            <p>Choose the DMG for your Mac. Apple Silicon covers M-series Macs; Intel covers older Intel-based Macs.</p>
-            <div class="download-variant-row" aria-label="macOS build choices">
-${macFiles.map((file) => renderDownloadOption(file, fileHref, macBuildName(file))).join("\n")}
-            </div>
+            ${renderMacMachinePicker(macFiles, fileHref)}
           </article>
           <article class="platform-download-card windows">
             <div class="platform-card-top">
-              <span class="platform-logo-shell">${platformIcon("windows")}</span>
+              <span class="platform-logo-shell">${platformIcon("windows", assetPrefix)}</span>
               <div>
                 <p class="eyebrow">Windows</p>
                 <h2>Windows PC</h2>
               </div>
             </div>
-            <p>Install LatexDo on a 64-bit Windows PC with the packaged desktop installer.</p>
             <div class="download-variant-row" aria-label="Windows build choices">
 ${windowsFiles.map((file) => renderDownloadOption(file, fileHref, "Windows x64")).join("\n")}
             </div>
           </article>
           <article class="platform-download-card linux">
             <div class="platform-card-top">
-              <span class="platform-logo-shell">${platformIcon("linux")}</span>
+              <span class="platform-logo-shell">${platformIcon("linux", assetPrefix)}</span>
               <div>
                 <p class="eyebrow">Linux</p>
                 <h2>Linux desktop</h2>
               </div>
             </div>
-            <p>Run LatexDo on 64-bit Linux distributions with the packaged AppImage.</p>
             <div class="download-variant-row" aria-label="Linux build choices">
 ${linuxFiles.map((file) => renderDownloadOption(file, fileHref, "Linux x64")).join("\n")}
             </div>
@@ -353,7 +368,6 @@ function renderDownloadsPage({
   pageTitle,
   description,
   assetPrefix,
-  homeHref,
   manifestHref,
   checksumsHref,
   cards,
@@ -361,12 +375,9 @@ function renderDownloadsPage({
   latestHref,
 }) {
   const releaseLink = latestHref
-    ? `<p>
-          This is a permanent release page. The current release is also available at
-          <a href="${htmlEscape(latestHref)}">latest downloads</a>.
-        </p>`
+    ? `<p>Exact release: <strong>${htmlEscape(releaseSlug)}</strong>. <a href="${htmlEscape(latestHref)}">Latest downloads</a></p>`
     : `<p>
-          Permanent downloads for this release are available at
+          Latest release:
           <a href="${htmlEscape(`${releaseSlug}/`)}">${htmlEscape(releaseSlug)}</a>.
         </p>`;
 
@@ -380,40 +391,38 @@ function renderDownloadsPage({
       content="${htmlEscape(description)}"
     />
     <title>${htmlEscape(pageTitle)}</title>
+    <meta name="author" content="LatexDo" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="theme-color" content="#f6f7f9" />
     <link rel="canonical" href="${htmlEscape(canonicalUrl)}" />
     <link rel="icon" type="image/svg+xml" href="${assetPrefix}assets/icon.svg" />
+    <link rel="manifest" href="${assetPrefix}site.webmanifest" />
+    <link rel="preload" href="${assetPrefix}style.css" as="style" />
     <link rel="stylesheet" href="${assetPrefix}style.css" />
   </head>
   <body>
-    <header class="site-header">
-      <nav class="nav-shell" aria-label="Primary navigation">
-        <a class="brand" href="${homeHref}">
-          <img src="${assetPrefix}assets/icon.svg" alt="" width="34" height="34" />
-          <span>LatexDo</span>
-        </a>
-        <div class="nav-links">
-          <a class="nav-editor-link" href="https://editor.latexdo.org">Open editor</a>
-          <a href="${homeHref}">Home</a>
-          <a href="${assetPrefix}about/">About</a>
-          <a href="${manifestHref}">Manifest</a>
-          <a href="${checksumsHref}">Checksums</a>
-        </div>
-      </nav>
-    </header>
+    <a class="skip-link" href="#content">Skip to content</a>
 
-    <main class="downloads-page">
+    <div data-header-src="/partials/header.html"></div>
+
+    <main id="content" class="downloads-page">
       <section class="downloads-hero">
-        <p class="eyebrow">Direct downloads</p>
-        <h1>${htmlEscape(pageTitle)}</h1>
-        <p>${htmlEscape(description)}</p>
+        <p class="eyebrow">Desktop app</p>
+        <h1>Download LatexDo</h1>
         ${releaseLink}
       </section>
+
+      <input class="dev-mode-input" type="checkbox" id="dev-mode-toggle" />
+      <label class="dev-mode-toggle" for="dev-mode-toggle">
+        Developer mode
+        <span class="dev-mode-switch" aria-hidden="true"></span>
+      </label>
 
       <section class="download-platform-grid" aria-label="LatexDo installers">
 ${cards}
       </section>
 
-      <section class="downloads-meta">
+      <section class="downloads-meta downloads-dev">
         <h2>Build information</h2>
         <dl>
           <div>
@@ -436,13 +445,8 @@ ${cards}
       </section>
     </main>
 
-    <footer class="site-footer">
-      <span>LatexDo</span>
-      <a href="${assetPrefix}about/">About</a>
-      <a href="https://editor.latexdo.org">Editor</a>
-      <a href="${homeHref}">Website</a>
-      <a href="${manifestHref}">Manifest</a>
-    </footer>
+    <div data-footer-src="/partials/footer.html"></div>
+    <script type="module" src="/assets/site.js"></script>
   </body>
 </html>
 `;
@@ -453,10 +457,9 @@ const latestHtml = renderDownloadsPage({
   description:
     "Download the latest LatexDo desktop release from the LatexDo website. Installer files are stored in GitHub Releases and indexed here for updates.",
   assetPrefix: "../",
-  homeHref: "../",
   manifestHref: "manifest.json",
   checksumsHref: "SHA256SUMS.txt",
-  cards: renderCards((file) => file.url),
+  cards: renderCards((file) => file.url, "../"),
   canonicalUrl: latestDownloadsPageUrl,
   latestHref: null,
 });
@@ -466,10 +469,9 @@ const releaseHtml = renderDownloadsPage({
   description:
     "Download this exact LatexDo desktop release from the LatexDo website. Installer files are stored in GitHub Releases and indexed here for updates.",
   assetPrefix: "../../",
-  homeHref: "../../",
   manifestHref: "manifest.json",
   checksumsHref: "SHA256SUMS.txt",
-  cards: renderCards((file) => file.url),
+  cards: renderCards((file) => file.url, "../../"),
   canonicalUrl: releaseDownloadsPageUrl,
   latestHref: "../",
 });
