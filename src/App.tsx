@@ -5665,13 +5665,19 @@ ${macroEnd}
       { token: "number", foreground: "B15D22" },
       { token: "delimiter", foreground: "374151" },
     ];
+    const editorSurfaceColors = (background: string) => ({
+      "editor.background": background,
+      "editorGutter.background": background,
+      "editorStickyScroll.background": background,
+      "minimap.background": background,
+    });
     const themes = [
       {
         id: "latexdo-graphite",
         base: "vs-dark" as const,
         rules: sharedRules,
         colors: {
-          "editor.background": "#15181e",
+          ...editorSurfaceColors("#15181e"),
           "editor.foreground": "#d7dce5",
           "editorLineNumber.foreground": "#4f5663",
           "editorLineNumber.activeForeground": "#aeb5c1",
@@ -5686,7 +5692,7 @@ ${macroEnd}
           base: "vs" as const,
           rules: lightRules,
           colors: {
-            "editor.background": "#f6f8fd",
+            ...editorSurfaceColors("#f6f8fd"),
             "editor.foreground": "#1f2937",
             "editorLineNumber.foreground": "#9aa4b2",
             "editorLineNumber.activeForeground": "#374151",
@@ -5711,7 +5717,7 @@ ${macroEnd}
           { token: "delimiter", foreground: "D8E4F4" },
         ],
         colors: {
-          "editor.background": "#0b1424",
+          ...editorSurfaceColors("#0b1424"),
           "editor.foreground": "#dce8f8",
           "editorLineNumber.foreground": "#536176",
           "editorLineNumber.activeForeground": "#b4c6de",
@@ -5726,7 +5732,7 @@ ${macroEnd}
           base: "vs" as const,
           rules: lightRules,
           colors: {
-            "editor.background": "#f3f8ff",
+            ...editorSurfaceColors("#f3f8ff"),
             "editor.foreground": "#1f2937",
             "editorLineNumber.foreground": "#8fa0b8",
             "editorLineNumber.activeForeground": "#3a4a66",
@@ -5751,7 +5757,7 @@ ${macroEnd}
           { token: "delimiter", foreground: "DCE7DF" },
         ],
         colors: {
-          "editor.background": "#111a16",
+          ...editorSurfaceColors("#111a16"),
           "editor.foreground": "#e1ebe5",
           "editorLineNumber.foreground": "#536159",
           "editorLineNumber.activeForeground": "#b8c8bf",
@@ -5766,7 +5772,7 @@ ${macroEnd}
           base: "vs" as const,
           rules: lightRules,
           colors: {
-            "editor.background": "#f4f8f5",
+            ...editorSurfaceColors("#f4f8f5"),
             "editor.foreground": "#1f2937",
             "editorLineNumber.foreground": "#96a8a0",
             "editorLineNumber.activeForeground": "#3a4c45",
@@ -5791,7 +5797,7 @@ ${macroEnd}
           { token: "delimiter", foreground: "E8D9C4" },
         ],
         colors: {
-          "editor.background": "#1b1510",
+          ...editorSurfaceColors("#1b1510"),
           "editor.foreground": "#eee4d4",
           "editorLineNumber.foreground": "#6d5f50",
           "editorLineNumber.activeForeground": "#cdbda8",
@@ -5806,7 +5812,7 @@ ${macroEnd}
           base: "vs" as const,
           rules: lightRules,
           colors: {
-            "editor.background": "#faf5ec",
+            ...editorSurfaceColors("#faf5ec"),
             "editor.foreground": "#1f2937",
             "editorLineNumber.foreground": "#a69888",
             "editorLineNumber.activeForeground": "#4a3d2e",
@@ -5831,7 +5837,7 @@ ${macroEnd}
           { token: "delimiter", foreground: "374151" },
         ],
         colors: {
-          "editor.background": "#ffffff",
+          ...editorSurfaceColors("#ffffff"),
           "editor.foreground": "#1f2937",
           "editorLineNumber.foreground": "#9aa4b2",
           "editorLineNumber.activeForeground": "#374151",
@@ -5846,7 +5852,7 @@ ${macroEnd}
           base: "vs" as const,
           rules: lightRules,
           colors: {
-            "editor.background": "#ffffff",
+            ...editorSurfaceColors("#ffffff"),
             "editor.foreground": "#1f2937",
             "editorLineNumber.foreground": "#9aa4b2",
             "editorLineNumber.activeForeground": "#374151",
@@ -5871,7 +5877,7 @@ ${macroEnd}
           { token: "delimiter", foreground: "3a414c" },
         ],
         colors: {
-          "editor.background": "#fffefa",
+          ...editorSurfaceColors("#fffefa"),
           "editor.foreground": "#252a31",
           "editorLineNumber.foreground": "#a0a8b2",
           "editorLineNumber.activeForeground": "#3a414c",
@@ -5886,7 +5892,7 @@ ${macroEnd}
           base: "vs" as const,
           rules: lightRules,
           colors: {
-            "editor.background": "#fffefa",
+            ...editorSurfaceColors("#fffefa"),
             "editor.foreground": "#252a31",
             "editorLineNumber.foreground": "#a0a8b2",
             "editorLineNumber.activeForeground": "#3a414c",

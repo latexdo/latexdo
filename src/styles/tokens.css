@@ -159,6 +159,22 @@
   --bg-badge: var(--status-destructive-bg);
   --bg-badge-soft: var(--accent-soft);
   --editor-bg: light-dark(#f6f8fd, #15181e);
+  --editor-chrome-bg: color-mix(
+    in srgb,
+    var(--editor-bg) 92%,
+    var(--surface-chrome)
+  );
+  --editor-control-bg: color-mix(
+    in srgb,
+    var(--editor-bg) 82%,
+    var(--surface-field)
+  );
+  --editor-control-hover: color-mix(
+    in srgb,
+    var(--editor-bg) 72%,
+    var(--surface-raised-hover)
+  );
+  --editor-border: color-mix(in srgb, var(--editor-bg) 70%, var(--border-default));
 
   --text-primary: var(--color-text-primary);
   --text-secondary: var(--color-text-secondary);

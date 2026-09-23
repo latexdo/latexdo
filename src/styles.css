@@ -2509,10 +2509,10 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  border: 1px solid var(--border-input);
+  border: 1px solid var(--editor-border);
   border-radius: 5px;
   outline: none;
-  background: var(--bg-input);
+  background: var(--editor-control-bg);
   color: var(--text-secondary);
   cursor: pointer;
   font-size: 11px;
@@ -2541,9 +2541,9 @@ button {
   align-items: center;
   gap: 2px;
   padding: 3px;
-  border: 1px solid var(--border-input);
+  border: 1px solid var(--editor-border);
   border-radius: 6px;
-  background: var(--bg-panel);
+  background: var(--editor-control-bg);
 }
 
 .latex-editor-view-toggle button {
@@ -2563,7 +2563,7 @@ button {
 }
 
 .latex-editor-view-toggle button:hover {
-  background: var(--bg-row-hover);
+  background: var(--editor-control-hover);
   color: var(--text-primary);
 }
 
@@ -2583,9 +2583,9 @@ button {
   align-items: center;
   gap: 6px;
   padding: 0 10px;
-  border: 1px solid var(--border-input);
+  border: 1px solid var(--editor-border);
   border-radius: 6px;
-  background: var(--bg-button-secondary);
+  background: var(--editor-control-bg);
   color: var(--text-secondary);
   cursor: pointer;
   font-size: 10px;
@@ -2595,7 +2595,7 @@ button {
 .collaboration-button:hover:not(:disabled),
 .collaboration-button.active {
   border-color: var(--accent);
-  background: var(--accent-panel);
+  background: color-mix(in srgb, var(--accent) 14%, var(--editor-bg));
   color: var(--accent);
 }
 
@@ -2679,9 +2679,9 @@ button {
   gap: 2px;
   overflow-x: auto;
   padding: 3px;
-  border: 1px solid var(--border-card);
+  border: 1px solid var(--editor-border);
   border-radius: 6px;
-  background: var(--bg-panel);
+  background: var(--editor-control-bg);
 }
 
 .tex-format-button {
@@ -2706,13 +2706,13 @@ button {
 }
 
 .tex-format-button:hover {
-  background: var(--bg-row-hover);
+  background: var(--editor-control-hover);
   color: var(--text-primary);
 }
 
 .tex-format-button.active,
 .tex-format-button[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--editor-bg));
   color: var(--accent);
 }
 
@@ -2726,7 +2726,7 @@ button {
   height: 18px;
   flex: 0 0 auto;
   margin: 0 3px;
-  background: var(--border-card);
+  background: var(--editor-border);
 }
 
 .engine-select select {
@@ -2778,8 +2778,8 @@ button {
   flex-shrink: 0;
   min-width: 0;
   overflow: hidden;
-  border-bottom: 1px solid var(--border-default);
-  background: var(--bg-root);
+  border-bottom: 1px solid var(--editor-border);
+  background: var(--editor-chrome-bg);
 }
 
 .document-tab {
@@ -2791,9 +2791,9 @@ button {
   gap: 7px;
   padding: 0 8px 0 11px;
   border: 0;
-  border-right: 1px solid var(--border-default);
+  border-right: 1px solid var(--editor-border);
   border-top: 1px solid transparent;
-  background: var(--bg-tab-inactive);
+  background: var(--editor-control-bg);
   color: var(--text-muted);
   cursor: pointer;
   font-size: 11px;
@@ -2808,7 +2808,7 @@ button {
 
 .document-tab.active {
   border-top-color: var(--accent);
-  background: var(--bg-canvas);
+  background: var(--editor-bg);
   color: var(--text-primary);
 }
 
@@ -2827,7 +2827,7 @@ button {
 }
 
 .tab-close:hover {
-  background: var(--bg-row-hover);
+  background: var(--editor-control-hover);
 }
 
 .dirty-dot {
@@ -2839,7 +2839,8 @@ button {
 
 .tabs-fill {
   flex: 1;
-  border-bottom: 1px solid var(--bg-button-secondary);
+  background: var(--editor-chrome-bg);
+  border-bottom: 1px solid var(--editor-border);
 }
 
 .welcome-tab-mark {
@@ -8759,8 +8760,8 @@ button {
   min-width: 0;
   overflow: hidden;
   align-items: center;
-  background: #1a1e24;
-  border: 1px solid #2d333b;
+  background: var(--editor-control-bg);
+  border: 1px solid var(--editor-border);
   border-radius: 4px;
   padding: 1px;
 }
@@ -8774,7 +8775,7 @@ button {
   border-radius: 3px;
   border: none;
   background: transparent;
-  color: #8b949e;
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
@@ -8782,13 +8783,13 @@ button {
 }
 
 .mode-button-mini:hover {
-  background: #2d333b;
-  color: #c9d1d9;
+  background: var(--editor-control-hover);
+  color: var(--text-primary);
 }
 
 .mode-button-mini.active {
-  background: var(--bg-statusbar);
-  color: white;
+  background: var(--accent);
+  color: var(--text-on-accent);
 }
 
 @media (max-width: 1000px) {
@@ -10529,8 +10530,8 @@ button {
   overflow-x: auto;
   overflow-y: hidden;
   padding: 0 8px;
-  border-bottom: 1px solid var(--border-default);
-  background: var(--bg-surface);
+  border-bottom: 1px solid var(--editor-border);
+  background: var(--editor-chrome-bg);
   white-space: nowrap;
   contain: paint;
   scrollbar-width: thin;
@@ -10592,9 +10593,9 @@ button {
   min-width: 0;
   max-width: none;
   padding: 3px;
-  border: 1px solid var(--border-card);
+  border: 1px solid var(--editor-border);
   border-radius: 6px;
-  background: var(--bg-panel);
+  background: var(--editor-control-bg);
   scrollbar-width: thin;
 }
 .tex-format-button {
