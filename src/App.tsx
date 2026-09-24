@@ -511,6 +511,8 @@ const startupUpdateCheckDelayMs = import.meta.env.MODE === "test" ? 0 : 2_000;
 const forceSetupWizardEveryDevLaunch = import.meta.env.MODE === "development";
 const aiChatTabsStorageKey = "latexdo.ai.chatTabs.v1";
 const aiChatStateStoragePrefix = "latexdo.ai.chatState.";
+const missingLatexToolchainCode = "missing-latex-toolchain";
+const missingAsymptoteToolchainCode = "missing-asymptote-toolchain";
 const legacyDefaultOllamaModel = "qwen2.5-coder:3b";
 const customLatexDoAiModelsStorageKey = "latexdo.ai.customLocalModels.v1";
 const localAiProviderModeStorageKey = "latexdo.ai.localProviderMode.v1";
@@ -526,6 +528,145 @@ type CustomAiProviderSelectValue =
   | Exclude<AiProvider, "local" | "cloud">
   | "local-model"
   | CloudProviderSelectValue;
+
+type CompilerSetupIssue = "latex" | "asymptote";
+
+const texInstallerOptions = [
+  {
+    id: "macos",
+    label: "Mac",
+    title: "Install MacTeX",
+    body: "Best choice for most macOS students.",
+    url: "https://www.tug.org/mactex/",
+  },
+  {
+    id: "windows",
+    label: "Windows",
+    title: "Install MiKTeX",
+    body: "Choose the normal installer and allow missing packages when asked.",
+    url: "https://miktex.org/download",
+  },
+  {
+    id: "linux",
+    label: "Linux",
+    title: "Install TeX Live",
+    body: "Use your system software store or package manager.",
+    url: "https://www.tug.org/texlive/",
+  },
+] as const;
+
+function preferredTexInstallerId(): (typeof texInstallerOptions)[number]["id"] {
+  const platform = `${navigator.platform} ${navigator.userAgent}`.toLowerCase();
+  if (platform.includes("win")) return "windows";
+  if (platform.includes("mac")) return "macos";
+  return "linux";
+}
+
+function compilerSetupIssue(
+  compileResult: CompileResult | null,
+): CompilerSetupIssue | null {
+  if (
+    compileResult?.diagnostics.some(
+      (diagnostic) => diagnostic.code === missingLatexToolchainCode,
+    )
+  ) {
+    return "latex";
+  }
+  if (
+    compileResult?.diagnostics.some(
+      (diagnostic) => diagnostic.code === missingAsymptoteToolchainCode,
+    )
+  ) {
+    return "asymptote";
+  }
+  return null;
+}
+
+function ToolchainSetupCard({
+  issue,
+  onOpenExternal,
+}: {
+  issue: CompilerSetupIssue;
+  onOpenExternal: (url: string) => void;
+}) {
+  const preferredId = preferredTexInstallerId();
+  const options = [...texInstallerOptions].sort((left, right) => {
+    if (left.id === preferredId) return -1;
+    if (right.id === preferredId) return 1;
+    return 0;
+  });
+  const isAsymptote = issue === "asymptote";
+
+  return (
+    <div className="toolchain-setup-card">
+      <div className="toolchain-setup-copy">
+        <span className="toolchain-setup-icon">
+          <AlertTriangle size={18} />
+        </span>
+        <div>
+          <span className="toolchain-setup-kicker">One-time setup needed</span>
+          <h3>
+            {isAsymptote ? "Install the drawing builder" : "Install the PDF builder"}
+          </h3>
+          <p>
+            {isAsymptote
+              ? "LatexDo can edit this drawing now, but this computer needs Asymptote before it can make the PDF."
+              : "Your .tex file may be fine. This computer just needs a LaTeX PDF builder before LatexDo can compile it."}
+          </p>
+        </div>
+      </div>
+
+      <div className="toolchain-setup-steps" aria-label="Setup steps">
+        <span>
+          <CircleCheck size={14} /> Pick your computer
+        </span>
+        <span>
+          <CircleCheck size={14} /> Install once
+        </span>
+        <span>
+          <CircleCheck size={14} /> Restart LatexDo
+        </span>
+        <span>
+          <CircleCheck size={14} /> Press Compile again
+        </span>
+      </div>
+
+      <div className="toolchain-install-grid">
+        {options.map((option) => (
+          <button
+            className={option.id === preferredId ? "recommended" : ""}
+            key={option.id}
+            type="button"
+            onClick={() => onOpenExternal(option.url)}
+          >
+            <span>
+              {option.label}
+              {option.id === preferredId ? <em>Recommended</em> : null}
+            </span>
+            <strong>{option.title}</strong>
+            <small>{option.body}</small>
+            <ExternalLink size={13} />
+          </button>
+        ))}
+      </div>
+
+      <details className="toolchain-setup-details">
+        <summary>Show details</summary>
+        <div>
+          <span>
+            After installing, close and reopen LatexDo. To check manually, open a
+            terminal and run:
+          </span>
+          <code>{isAsymptote ? "asy -version" : "latexmk -version"}</code>
+          <span>
+            If the terminal cannot find it, the TeX installer did not finish or is not
+            on this computer&apos;s PATH yet.
+          </span>
+        </div>
+      </details>
+    </div>
+  );
+}
 
 interface CustomLatexDoAiModelRecord {
   id: string;
@@ -2287,6 +2428,10 @@ export default function App() {
       null,
     [compileResult?.diagnostics],
   );
+  const activeCompilerSetupIssue = useMemo(
+    () => compilerSetupIssue(compileResult),
+    [compileResult],
+  );
   const cascadingErrors = useMemo(
     () =>
       compileResult?.diagnostics.filter((diagnostic) => diagnostic.isCascade).length ??
@@ -3557,6 +3702,9 @@ ${macroEnd}
           setLastPdfLocation(null);
           setPanelVisible(true);
           setActivePanel(result.diagnostics.length ? "problems" : "output");
+          if (compilerSetupIssue(result)) {
+            setPanelHeight((height) => Math.max(height, 300));
+          }
           setStatusMessage(result.error ?? "Compilation failed");
         }
       }
@@ -12980,254 +13128,273 @@ ${macroEnd}
                   className={`panel-pane ${activePanel === "problems" ? "" : "hidden"}`}
                 >
                   {diagnostics.length ? (
-                    <>
-                      <div className="panel-summary">
-                        <span>
-                          <CircleAlert size={13} />
-                          {errors} errors
-                        </span>
-                        <span>
-                          <AlertCircle size={13} />
-                          {warnings} warnings
-                        </span>
-                        {cascadingErrors ? (
-                          <span>{cascadingErrors} secondary effects</span>
-                        ) : null}
-                      </div>
-                      {primaryDiagnostic ? (
-                        <div className="diagnostic-analysis-hero">
-                          <div className="diagnostic-analysis-kicker">
-                            <Code2 size={13} />
-                            FIX THIS FIRST
-                            <span>{diagnosticAccuracyLabel(primaryDiagnostic)}</span>
-                          </div>
-                          <div className="diagnostic-analysis-body">
-                            <div>
-                              <strong>{diagnosticHeadline(primaryDiagnostic)}</strong>
-                              <p>
-                                {primaryDiagnostic.detail ?? primaryDiagnostic.message}
-                              </p>
-                              {diagnosticExplicitProblem(primaryDiagnostic) ? (
-                                <span className="diagnostic-explicit-problem">
-                                  <strong>Problem:</strong>
-                                  <code>
-                                    {diagnosticExplicitProblem(primaryDiagnostic)}
-                                  </code>
-                                </span>
-                              ) : null}
-                              {primaryDiagnostic.compilerExcerpt ? (
-                                <span className="diagnostic-compiler-excerpt">
-                                  <strong>Compiler excerpt</strong>
-                                  <code>{primaryDiagnostic.compilerExcerpt}</code>
-                                </span>
-                              ) : null}
-                              {primaryDiagnostic.reportedLine &&
-                              primaryDiagnostic.reportedLine !==
-                                primaryDiagnostic.line ? (
-                                <small>
-                                  LaTeX stopped at line {primaryDiagnostic.reportedLine}
-                                  , but source analysis traced the cause back to{" "}
-                                  {diagnosticLocationLabel(primaryDiagnostic, rootFile)}
-                                  .
-                                </small>
-                              ) : (
-                                <small>
-                                  The first actionable failure is at{" "}
-                                  {diagnosticLocationLabel(primaryDiagnostic, rootFile)}
-                                  .
-                                </small>
-                              )}
-                            </div>
-                            <div className="diagnostic-analysis-buttons">
-                              <button
-                                className="sidebar-mini-action"
-                                onClick={() => void openDiagnostic(primaryDiagnostic)}
-                              >
-                                Go to root cause
-                              </button>
-                              {primaryDiagnostic.fixes?.[0] ? (
-                                <button
-                                  className="sidebar-mini-action primary"
-                                  onClick={() =>
-                                    void applyLatexDiagnosticFix(
-                                      primaryDiagnostic,
-                                      primaryDiagnostic.fixes![0],
-                                    )
-                                  }
-                                >
-                                  Apply suggested fix
-                                </button>
-                              ) : null}
-                            </div>
-                          </div>
+                    activeCompilerSetupIssue ? (
+                      <ToolchainSetupCard
+                        issue={activeCompilerSetupIssue}
+                        onOpenExternal={openExternalLink}
+                      />
+                    ) : (
+                      <>
+                        <div className="panel-summary">
+                          <span>
+                            <CircleAlert size={13} />
+                            {errors} errors
+                          </span>
+                          <span>
+                            <AlertCircle size={13} />
+                            {warnings} warnings
+                          </span>
+                          {cascadingErrors ? (
+                            <span>{cascadingErrors} secondary effects</span>
+                          ) : null}
                         </div>
-                      ) : null}
-                      {diagnostics.map((diagnostic, index) => {
-                        const location = diagnosticLocationLabel(diagnostic, rootFile);
-                        const explicitProblem = diagnosticExplicitProblem(diagnostic);
-                        return (
-                          <article
-                            className={`diagnostic-row-card ${diagnostic.severity} ${
-                              diagnostic.isPrimary ? "primary-cause" : ""
-                            } ${diagnostic.isCascade ? "cascade" : ""}`}
-                            key={`${diagnostic.file}-${diagnostic.line}-${index}`}
-                          >
-                            <button
-                              className="diagnostic-row"
-                              onClick={() => void openDiagnostic(diagnostic)}
-                            >
-                              {diagnostic.severity === "error" ? (
-                                <CircleAlert size={16} className="error-icon" />
-                              ) : (
-                                <AlertCircle size={16} className="warning-icon" />
-                              )}
-                              <span className="diagnostic-copy">
-                                <span className="diagnostic-heading">
-                                  <span className="diagnostic-message">
-                                    {diagnosticHeadline(diagnostic)}
-                                  </span>
-                                  {diagnostic.isPrimary ? (
-                                    <span className="diagnostic-role root">
-                                      Root cause
-                                    </span>
-                                  ) : null}
-                                  {diagnostic.isCascade ? (
-                                    <span className="diagnostic-role cascade">
-                                      Secondary effect
-                                    </span>
-                                  ) : null}
-                                  <span
-                                    className={`diagnostic-accuracy ${
-                                      diagnostic.locationAccuracy ?? "line"
-                                    }`}
-                                  >
-                                    {diagnosticAccuracyLabel(diagnostic)}
-                                  </span>
-                                </span>
-                                {diagnostic.detail ? (
-                                  <span className="diagnostic-detail">
-                                    {diagnostic.detail}
-                                  </span>
-                                ) : null}
-                                {explicitProblem ? (
+                        {primaryDiagnostic ? (
+                          <div className="diagnostic-analysis-hero">
+                            <div className="diagnostic-analysis-kicker">
+                              <Code2 size={13} />
+                              FIX THIS FIRST
+                              <span>{diagnosticAccuracyLabel(primaryDiagnostic)}</span>
+                            </div>
+                            <div className="diagnostic-analysis-body">
+                              <div>
+                                <strong>{diagnosticHeadline(primaryDiagnostic)}</strong>
+                                <p>
+                                  {primaryDiagnostic.detail ??
+                                    primaryDiagnostic.message}
+                                </p>
+                                {diagnosticExplicitProblem(primaryDiagnostic) ? (
                                   <span className="diagnostic-explicit-problem">
                                     <strong>Problem:</strong>
-                                    <code>{explicitProblem}</code>
+                                    <code>
+                                      {diagnosticExplicitProblem(primaryDiagnostic)}
+                                    </code>
                                   </span>
                                 ) : null}
-                                {diagnostic.originReason ? (
-                                  <span className="diagnostic-origin-reason">
-                                    <strong>Why this location:</strong>{" "}
-                                    {diagnostic.originReason}
-                                  </span>
-                                ) : null}
-                                {diagnostic.cascadeReason ? (
-                                  <span className="diagnostic-cascade-reason">
-                                    <strong>Why this is secondary:</strong>{" "}
-                                    {diagnostic.cascadeReason}
-                                  </span>
-                                ) : null}
-                                {diagnostic.reportedLine &&
-                                diagnostic.reportedLine !== diagnostic.line ? (
-                                  <span className="diagnostic-detection-location">
-                                    <strong>Root cause:</strong> {location}
-                                    <span>
-                                      LaTeX stopped later at{" "}
-                                      {diagnostic.file || rootFile}:
-                                      {diagnostic.reportedLine}:
-                                      {diagnostic.reportedColumn ?? 1}
-                                    </span>
-                                  </span>
-                                ) : null}
-                                {diagnostic.sourceContext?.length ? (
-                                  <span className="diagnostic-context">
-                                    {diagnostic.sourceContext.map((contextLine) => (
-                                      <span
-                                        className={`diagnostic-context-line ${
-                                          contextLine.focus ? "focus" : ""
-                                        }`}
-                                        key={contextLine.line}
-                                      >
-                                        <span className="diagnostic-context-number">
-                                          {contextLine.line}
-                                        </span>
-                                        <code>
-                                          {diagnosticContextContent(
-                                            diagnostic,
-                                            contextLine.text,
-                                            contextLine.focus,
-                                          )}
-                                        </code>
-                                      </span>
-                                    ))}
-                                  </span>
-                                ) : diagnostic.sourceLine ? (
-                                  <span className="diagnostic-source-line">
-                                    {diagnostic.sourceLine}
-                                  </span>
-                                ) : null}
-                                {diagnostic.compilerExcerpt ? (
+                                {primaryDiagnostic.compilerExcerpt ? (
                                   <span className="diagnostic-compiler-excerpt">
                                     <strong>Compiler excerpt</strong>
-                                    <code>{diagnostic.compilerExcerpt}</code>
+                                    <code>{primaryDiagnostic.compilerExcerpt}</code>
                                   </span>
                                 ) : null}
-                                {diagnostic.suggestion ? (
-                                  <span className="diagnostic-suggestion">
-                                    <strong>How to fix:</strong> {diagnostic.suggestion}
-                                  </span>
-                                ) : null}
-                                <span className="diagnostic-compiler-message">
-                                  Compiler: {diagnostic.message}
-                                </span>
-                              </span>
-                              <span className="diagnostic-location">{location}</span>
-                            </button>
-                            <div className="diagnostic-actions">
-                              <span>
-                                {diagnostic.source === "proofread"
-                                  ? "Writing analysis"
-                                  : diagnostic.isPrimary
-                                    ? "Primary LaTeX cause"
-                                    : diagnostic.isCascade
-                                      ? "Compiler consequence"
-                                      : "LaTeX analysis"}
-                              </span>
-                              <div>
+                                {primaryDiagnostic.reportedLine &&
+                                primaryDiagnostic.reportedLine !==
+                                  primaryDiagnostic.line ? (
+                                  <small>
+                                    LaTeX stopped at line{" "}
+                                    {primaryDiagnostic.reportedLine}, but source
+                                    analysis traced the cause back to{" "}
+                                    {diagnosticLocationLabel(
+                                      primaryDiagnostic,
+                                      rootFile,
+                                    )}
+                                    .
+                                  </small>
+                                ) : (
+                                  <small>
+                                    The first actionable failure is at{" "}
+                                    {diagnosticLocationLabel(
+                                      primaryDiagnostic,
+                                      rootFile,
+                                    )}
+                                    .
+                                  </small>
+                                )}
+                              </div>
+                              <div className="diagnostic-analysis-buttons">
                                 <button
                                   className="sidebar-mini-action"
-                                  onClick={() => void openDiagnostic(diagnostic)}
+                                  onClick={() => void openDiagnostic(primaryDiagnostic)}
                                 >
-                                  Go to {location}
+                                  Go to root cause
                                 </button>
-                                {diagnostic.replacements?.length ? (
-                                  <button
-                                    className="sidebar-mini-action subtle"
-                                    onClick={() =>
-                                      applyDiagnosticReplacement(diagnostic)
-                                    }
-                                  >
-                                    Apply "{diagnostic.replacements[0]}"
-                                  </button>
-                                ) : null}
-                                {diagnostic.fixes?.map((fix) => (
+                                {primaryDiagnostic.fixes?.[0] ? (
                                   <button
                                     className="sidebar-mini-action primary"
-                                    key={`${fix.line}-${fix.column}-${fix.title}`}
-                                    title={`${fix.confidence}% confidence`}
                                     onClick={() =>
-                                      void applyLatexDiagnosticFix(diagnostic, fix)
+                                      void applyLatexDiagnosticFix(
+                                        primaryDiagnostic,
+                                        primaryDiagnostic.fixes![0],
+                                      )
                                     }
                                   >
-                                    {fix.title}
+                                    Apply suggested fix
                                   </button>
-                                ))}
+                                ) : null}
                               </div>
                             </div>
-                          </article>
-                        );
-                      })}
-                    </>
+                          </div>
+                        ) : null}
+                        {diagnostics.map((diagnostic, index) => {
+                          const location = diagnosticLocationLabel(
+                            diagnostic,
+                            rootFile,
+                          );
+                          const explicitProblem = diagnosticExplicitProblem(diagnostic);
+                          return (
+                            <article
+                              className={`diagnostic-row-card ${diagnostic.severity} ${
+                                diagnostic.isPrimary ? "primary-cause" : ""
+                              } ${diagnostic.isCascade ? "cascade" : ""}`}
+                              key={`${diagnostic.file}-${diagnostic.line}-${index}`}
+                            >
+                              <button
+                                className="diagnostic-row"
+                                onClick={() => void openDiagnostic(diagnostic)}
+                              >
+                                {diagnostic.severity === "error" ? (
+                                  <CircleAlert size={16} className="error-icon" />
+                                ) : (
+                                  <AlertCircle size={16} className="warning-icon" />
+                                )}
+                                <span className="diagnostic-copy">
+                                  <span className="diagnostic-heading">
+                                    <span className="diagnostic-message">
+                                      {diagnosticHeadline(diagnostic)}
+                                    </span>
+                                    {diagnostic.isPrimary ? (
+                                      <span className="diagnostic-role root">
+                                        Root cause
+                                      </span>
+                                    ) : null}
+                                    {diagnostic.isCascade ? (
+                                      <span className="diagnostic-role cascade">
+                                        Secondary effect
+                                      </span>
+                                    ) : null}
+                                    <span
+                                      className={`diagnostic-accuracy ${
+                                        diagnostic.locationAccuracy ?? "line"
+                                      }`}
+                                    >
+                                      {diagnosticAccuracyLabel(diagnostic)}
+                                    </span>
+                                  </span>
+                                  {diagnostic.detail ? (
+                                    <span className="diagnostic-detail">
+                                      {diagnostic.detail}
+                                    </span>
+                                  ) : null}
+                                  {explicitProblem ? (
+                                    <span className="diagnostic-explicit-problem">
+                                      <strong>Problem:</strong>
+                                      <code>{explicitProblem}</code>
+                                    </span>
+                                  ) : null}
+                                  {diagnostic.originReason ? (
+                                    <span className="diagnostic-origin-reason">
+                                      <strong>Why this location:</strong>{" "}
+                                      {diagnostic.originReason}
+                                    </span>
+                                  ) : null}
+                                  {diagnostic.cascadeReason ? (
+                                    <span className="diagnostic-cascade-reason">
+                                      <strong>Why this is secondary:</strong>{" "}
+                                      {diagnostic.cascadeReason}
+                                    </span>
+                                  ) : null}
+                                  {diagnostic.reportedLine &&
+                                  diagnostic.reportedLine !== diagnostic.line ? (
+                                    <span className="diagnostic-detection-location">
+                                      <strong>Root cause:</strong> {location}
+                                      <span>
+                                        LaTeX stopped later at{" "}
+                                        {diagnostic.file || rootFile}:
+                                        {diagnostic.reportedLine}:
+                                        {diagnostic.reportedColumn ?? 1}
+                                      </span>
+                                    </span>
+                                  ) : null}
+                                  {diagnostic.sourceContext?.length ? (
+                                    <span className="diagnostic-context">
+                                      {diagnostic.sourceContext.map((contextLine) => (
+                                        <span
+                                          className={`diagnostic-context-line ${
+                                            contextLine.focus ? "focus" : ""
+                                          }`}
+                                          key={contextLine.line}
+                                        >
+                                          <span className="diagnostic-context-number">
+                                            {contextLine.line}
+                                          </span>
+                                          <code>
+                                            {diagnosticContextContent(
+                                              diagnostic,
+                                              contextLine.text,
+                                              contextLine.focus,
+                                            )}
+                                          </code>
+                                        </span>
+                                      ))}
+                                    </span>
+                                  ) : diagnostic.sourceLine ? (
+                                    <span className="diagnostic-source-line">
+                                      {diagnostic.sourceLine}
+                                    </span>
+                                  ) : null}
+                                  {diagnostic.compilerExcerpt ? (
+                                    <span className="diagnostic-compiler-excerpt">
+                                      <strong>Compiler excerpt</strong>
+                                      <code>{diagnostic.compilerExcerpt}</code>
+                                    </span>
+                                  ) : null}
+                                  {diagnostic.suggestion ? (
+                                    <span className="diagnostic-suggestion">
+                                      <strong>How to fix:</strong>{" "}
+                                      {diagnostic.suggestion}
+                                    </span>
+                                  ) : null}
+                                  <span className="diagnostic-compiler-message">
+                                    Compiler: {diagnostic.message}
+                                  </span>
+                                </span>
+                                <span className="diagnostic-location">{location}</span>
+                              </button>
+                              <div className="diagnostic-actions">
+                                <span>
+                                  {diagnostic.source === "proofread"
+                                    ? "Writing analysis"
+                                    : diagnostic.isPrimary
+                                      ? "Primary LaTeX cause"
+                                      : diagnostic.isCascade
+                                        ? "Compiler consequence"
+                                        : "LaTeX analysis"}
+                                </span>
+                                <div>
+                                  <button
+                                    className="sidebar-mini-action"
+                                    onClick={() => void openDiagnostic(diagnostic)}
+                                  >
+                                    Go to {location}
+                                  </button>
+                                  {diagnostic.replacements?.length ? (
+                                    <button
+                                      className="sidebar-mini-action subtle"
+                                      onClick={() =>
+                                        applyDiagnosticReplacement(diagnostic)
+                                      }
+                                    >
+                                      Apply "{diagnostic.replacements[0]}"
+                                    </button>
+                                  ) : null}
+                                  {diagnostic.fixes?.map((fix) => (
+                                    <button
+                                      className="sidebar-mini-action primary"
+                                      key={`${fix.line}-${fix.column}-${fix.title}`}
+                                      title={`${fix.confidence}% confidence`}
+                                      onClick={() =>
+                                        void applyLatexDiagnosticFix(diagnostic, fix)
+                                      }
+                                    >
+                                      {fix.title}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </>
+                    )
                   ) : (
                     <div className="panel-empty">
                       <CircleCheck size={16} />

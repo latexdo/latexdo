@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import { access, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { analyzeLatexDiagnostic, rankLatexDiagnostics } from "./latexDiagnostics.js";
@@ -44,39 +45,118 @@ const asymptoteExecutableCandidates =
   process.platform === "darwin"
     ? ["/Library/TeX/texbin/asy", "/usr/local/bin/asy", "asy"]
     : ["asy"];
+const missingLatexToolchainCode = "missing-latex-toolchain";
+const missingAsymptoteToolchainCode = "missing-asymptote-toolchain";
 
-async function findLatexmk(): Promise<string | null> {
-  for (const candidate of executableCandidates) {
-    if (!path.isAbsolute(candidate)) {
-      return candidate;
-    }
+function hasPathSeparator(value: string): boolean {
+  return value.includes("/") || value.includes("\\");
+}
 
-    try {
-      await access(candidate);
-      return candidate;
-    } catch {
-      // Try the next known TeX installation path.
+async function isExecutable(candidate: string): Promise<boolean> {
+  try {
+    await access(candidate, fsConstants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function windowsExecutableExtensions(command: string): string[] {
+  if (process.platform !== "win32" || path.extname(command)) {
+    return [""];
+  }
+
+  const extensions = (process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD")
+    .split(";")
+    .map((extension) => extension.trim())
+    .filter(Boolean);
+  return extensions.length ? extensions : [""];
+}
+
+async function resolveCommandOnPath(command: string): Promise<string | null> {
+  const pathEntries = (process.env.PATH ?? "")
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  for (const directory of pathEntries) {
+    for (const extension of windowsExecutableExtensions(command)) {
+      const candidate = path.join(directory, `${command}${extension}`);
+      if (await isExecutable(candidate)) {
+        return candidate;
+      }
     }
   }
 
   return null;
 }
 
-async function findAsymptote(): Promise<string | null> {
-  for (const candidate of asymptoteExecutableCandidates) {
-    if (!path.isAbsolute(candidate)) {
-      return candidate;
+export async function resolveExecutable(
+  candidates: readonly string[],
+): Promise<string | null> {
+  for (const candidate of candidates) {
+    if (path.isAbsolute(candidate) || hasPathSeparator(candidate)) {
+      if (await isExecutable(candidate)) {
+        return candidate;
+      }
+      continue;
     }
 
-    try {
-      await access(candidate);
-      return candidate;
-    } catch {
-      // Try the next known TeX installation path.
+    const resolved = await resolveCommandOnPath(candidate);
+    if (resolved) {
+      return resolved;
     }
   }
 
   return null;
+}
+
+async function findLatexmk(): Promise<string | null> {
+  return resolveExecutable(executableCandidates);
+}
+
+async function findAsymptote(): Promise<string | null> {
+  return resolveExecutable(asymptoteExecutableCandidates);
+}
+
+function missingLatexToolchainDiagnostic(rootFile: string): Diagnostic {
+  return {
+    file: rootFile,
+    line: 1,
+    column: 1,
+    severity: "error",
+    message: "PDF builder is not installed on this computer.",
+    title: "Set up PDF building",
+    detail:
+      "Your document may be fine. LatexDo needs a TeX distribution installed before it can turn .tex files into PDFs.",
+    suggestion:
+      "Install MacTeX on macOS, MiKTeX or TeX Live on Windows, or TeX Live with latexmk on Linux. Then restart LatexDo and press Compile again.",
+    source: "latex",
+    code: missingLatexToolchainCode,
+    locationAccuracy: "inferred",
+    isPrimary: true,
+    priority: 100,
+  };
+}
+
+function missingAsymptoteToolchainDiagnostic(relativePath: string): Diagnostic {
+  return {
+    file: relativePath,
+    line: 1,
+    column: 1,
+    severity: "error",
+    message: "Asymptote is not installed on this computer.",
+    title: "Set up Asymptote drawing builds",
+    detail:
+      "LatexDo can edit .asy files now, but this computer needs the Asymptote compiler before it can render them to PDF.",
+    suggestion:
+      "Install Asymptote from TeX Live, MacTeX, or MiKTeX. Then restart LatexDo and compile again.",
+    source: "latex",
+    code: missingAsymptoteToolchainCode,
+    locationAccuracy: "inferred",
+    isPrimary: true,
+    priority: 100,
+  };
 }
 
 function cleanLatexMessage(message: string): string {
@@ -804,10 +884,10 @@ export async function compileLatex(
     return {
       ok: false,
       durationMs: 0,
-      output: "",
-      diagnostics: [],
-      error:
-        "latexmk was not found. Install MacTeX, TeX Live, or MiKTeX and restart LatexDo.",
+      output:
+        "LatexDo could not find latexmk, the small program that runs LaTeX builds. Install a full TeX distribution, restart LatexDo, and press Compile again.",
+      diagnostics: [missingLatexToolchainDiagnostic(request.rootFile)],
+      error: "latexmk was not found. Install a LaTeX distribution and restart LatexDo.",
     };
   }
 
@@ -1013,8 +1093,9 @@ export async function compileAsymptote(
     return {
       ok: false,
       durationMs: 0,
-      output: "",
-      diagnostics: [],
+      output:
+        "LatexDo could not find Asymptote, the program that renders .asy drawings. Install Asymptote, restart LatexDo, and compile again.",
+      diagnostics: [missingAsymptoteToolchainDiagnostic(request.relativePath)],
       error:
         "Asymptote was not found. Install Asymptote from TeX Live, MacTeX, or MiKTeX and restart LatexDo.",
     };

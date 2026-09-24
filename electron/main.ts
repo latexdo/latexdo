@@ -200,6 +200,8 @@ const externalUrlHosts = new Set([
   "latexdo.org",
   "openalex.org",
   "store.latexdo.org",
+  "miktex.org",
+  "www.tug.org",
   "www.latexdo.org",
   "www.crossref.org",
   "www.doi.org",

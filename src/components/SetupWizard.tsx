@@ -10,6 +10,7 @@ import {
   FileUp,
   ArrowRight,
   ArrowLeft,
+  ExternalLink,
   Loader2,
   RefreshCw,
   BookOpenCheck,
@@ -853,7 +854,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
         </div>
 
         <div className="ai-wizard-main">
-          <div className="ai-wizard-body">
+          <div className={`ai-wizard-body step-${step}`}>
             {step === "welcome" && (
               <div className="ai-wizard-section setup-intro-section">
                 <div className="setup-intro-visual" aria-hidden="true">
@@ -881,33 +882,54 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                 </div>
                 <h2 id="ai-wizard-title">Set up your {productName} workspace</h2>
                 <p className="ai-wizard-lead">
-                  Make {productName} feel right before you start writing. This setup
-                  picks the editor layout, visual theme, research identity, and optional
-                  AI model for this machine.
+                  A few quick choices, then you can start writing. Pick the layout,
+                  theme, profile, and optional AI for this computer.
                 </p>
                 <div className="setup-intro-points" aria-label="What setup configures">
                   <div>
                     <strong>Writing workspace</strong>
                     <span>
-                      Choose how {productName} arranges source, PDF preview, files, and
-                      output.
+                      Choose where source, PDF preview, files, and output appear.
                     </span>
                   </div>
                   <div>
-                    <strong>Research identity</strong>
+                    <strong>PDF builder</strong>
                     <span>
-                      Stay anonymous or save a named profile for citations and AI
-                      context.
+                      If this computer has no TeX install yet, {productName} will guide
+                      you.
                     </span>
                   </div>
                   <div>
                     <strong>Optional AI</strong>
                     <span>
-                      Use {productName} with or without AI. The editor and compiler
-                      still work normally.
+                      Use local or cloud AI, or skip it and keep a focused editor.
                     </span>
                   </div>
                 </div>
+                <details className="setup-toolchain-details">
+                  <summary>PDF builder details</summary>
+                  <div>
+                    <span>PDF compile needs a free TeX install once per computer.</span>
+                    <button
+                      type="button"
+                      onClick={() => onOpenExternal("https://www.tug.org/mactex/")}
+                    >
+                      MacTeX <ExternalLink size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onOpenExternal("https://miktex.org/download")}
+                    >
+                      MiKTeX <ExternalLink size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onOpenExternal("https://www.tug.org/texlive/")}
+                    >
+                      TeX Live <ExternalLink size={12} />
+                    </button>
+                  </div>
+                </details>
                 <label className="setup-legal-check">
                   <input
                     type="checkbox"

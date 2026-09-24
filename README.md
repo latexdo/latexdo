@@ -18,6 +18,19 @@ npm run web
 
 The browser editor runs at `http://127.0.0.1:5173`.
 
+## LaTeX Toolchain
+
+Desktop PDF compilation uses the TeX tools installed on the user's machine.
+Install a full TeX distribution before pressing **Compile**:
+
+- macOS: MacTeX
+- Windows: MiKTeX or TeX Live
+- Linux: TeX Live, including `latexmk`
+
+If compilation fails immediately, first check that `latexmk` is available from
+the terminal. Partial TeX installs can also fail when a document needs packages
+such as `booktabs`, `microtype`, or `hyperref`.
+
 ## Commands
 
 ```sh
