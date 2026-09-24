@@ -30,12 +30,7 @@ import {
   type LayoutPreset,
   type AiProvider,
 } from "../features/ai/aiConfig";
-import type {
-  AcademicTitle,
-  ExternalProviderConnection,
-  ExternalProviderId,
-  ResearcherProfile,
-} from "../features/ai/researcherProfile";
+import type { AcademicTitle, ResearcherProfile } from "../features/ai/researcherProfile";
 import {
   fastTierAvailability,
   fastTierRuntimeAvailability,
@@ -109,64 +104,25 @@ const steps: Step[] = ["welcome", "name", "layout", "theme", "model"];
 const defaultProductName = "LatexDo";
 const academicTitleOptions: AcademicTitle[] = ["", "Dr", "Prof", "Prof. Dr", "Mx"];
 
-type IdentityMode = "anonymous" | "known";
-type IdentityDestination = "latexdo" | "ai" | ExternalProviderId;
-type ExternalProviderDraft = {
-  username: string;
-  projectFetchUrl: string;
+type ProfileNameParts = {
+  firstName: string;
+  lastName: string;
 };
 
-const identityProviderOptions: {
-  id: ExternalProviderId;
-  label: string;
-  placeholder: string;
-  hint: string;
-}[] = [
-  {
-    id: "overleaf",
-    label: "Overleaf",
-    placeholder: "overleaf-user",
-    hint: "Save the local identity used for Overleaf project workflows.",
-  },
-  {
-    id: "zotero",
-    label: "Zotero",
-    placeholder: "zotero-user",
-    hint: "Save the local identity used for bibliography workflows.",
-  },
-  {
-    id: "mendeley",
-    label: "Mendeley",
-    placeholder: "mendeley-user",
-    hint: "Save the local identity used for reference workflows.",
-  },
-  {
-    id: "readcube",
-    label: "ReadCube",
-    placeholder: "readcube-user",
-    hint: "Save the local identity used for paper-library workflows.",
-  },
-];
-const identityProviderIds = identityProviderOptions.map((provider) => provider.id);
-
-function blankProviderDrafts(): Record<ExternalProviderId, ExternalProviderDraft> {
+function splitDisplayName(displayName: string): ProfileNameParts {
+  const parts = displayName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: "", lastName: "" };
   return {
-    overleaf: { username: "", projectFetchUrl: "" },
-    zotero: { username: "", projectFetchUrl: "" },
-    mendeley: { username: "", projectFetchUrl: "" },
-    readcube: { username: "", projectFetchUrl: "" },
+    firstName: parts[0],
+    lastName: parts.slice(1).join(" "),
   };
 }
 
-function blankIdentityDestinations(): Record<IdentityDestination, boolean> {
-  return {
-    latexdo: false,
-    ai: false,
-    overleaf: false,
-    zotero: false,
-    mendeley: false,
-    readcube: false,
-  };
+function displayNameFromParts(parts: ProfileNameParts): string {
+  return [parts.firstName, parts.lastName]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(" ");
 }
 
 function formatBytes(bytes: number): string {
@@ -310,33 +266,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   const [importing, setImporting] = React.useState(false);
   const [importedManifest, setImportedManifest] =
     React.useState<ImportedModelManifest | null>(null);
-  const initialProviderDrafts = React.useMemo(() => {
-    const drafts = blankProviderDrafts();
-    for (const connection of initialConfig.profile.externalProviders) {
-      drafts[connection.provider] = {
-        username: connection.username,
-        projectFetchUrl: connection.projectFetchUrl ?? "",
-      };
-    }
-    return drafts;
-  }, [initialConfig.profile.externalProviders]);
-  const [identityMode, setIdentityMode] = React.useState<IdentityMode>("known");
-  const [identityDestinations, setIdentityDestinations] = React.useState<
-    Record<IdentityDestination, boolean>
-  >(() => {
-    const destinations = blankIdentityDestinations();
-    destinations.latexdo = true;
-    destinations.ai =
-      initialConfig.access.researcherProfile && initialConfig.profile.includeInContext;
-    for (const connection of initialConfig.profile.externalProviders) {
-      destinations[connection.provider] = true;
-    }
-    return destinations;
-  });
-  const [externalProviderDrafts, setExternalProviderDrafts] =
-    React.useState<Record<ExternalProviderId, ExternalProviderDraft>>(
-      initialProviderDrafts,
-    );
+  const [profileNameParts, setProfileNameParts] = React.useState<ProfileNameParts>(() =>
+    splitDisplayName(initialConfig.profile.displayName || initialConfig.userName),
+  );
 
   const step = steps[stepIndex];
   const patch = (p: Partial<AiConfig>) => setConfig((c) => ({ ...c, ...p }));
@@ -364,161 +296,55 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
     onOpenExternal(url);
   };
 
-  const buildIdentityProfile = (
-    baseProfile: ResearcherProfile,
-    destinations: Record<IdentityDestination, boolean> = identityDestinations,
-    drafts: Record<ExternalProviderId, ExternalProviderDraft> = externalProviderDrafts,
-  ): ResearcherProfile => {
-    const externalProviders = baseProfile.externalProviders.filter(
-      (connection) => !identityProviderIds.includes(connection.provider),
-    );
-
-    for (const provider of identityProviderOptions) {
-      const draft = drafts[provider.id];
-      const username = draft.username.trim();
-      if (!destinations[provider.id] || !username) continue;
-      const previous = config.profile.externalProviders.find(
-        (connection) => connection.provider === provider.id,
-      );
-      const now = Date.now();
-      const connection: ExternalProviderConnection = {
-        provider: provider.id,
-        username,
-        displayName: baseProfile.displayName.trim() || username,
-        title: baseProfile.title,
-        affiliation: baseProfile.affiliation.trim() || undefined,
-        confirmed: true,
-        connectedAt: previous?.connectedAt ?? now,
-        updatedAt: now,
-        projectFetchUrl:
-          provider.id === "overleaf"
-            ? draft.projectFetchUrl.trim() || undefined
-            : undefined,
-      };
-      externalProviders.push(connection);
-    }
-
-    return {
-      ...baseProfile,
-      externalProviders,
-    };
-  };
-
   const updateKnownProfile = (part: Partial<ResearcherProfile>) => {
-    const nextProfile = buildIdentityProfile(
-      {
-        ...config.profile,
-        ...part,
-        includeInContext: identityDestinations.ai,
-      },
-      identityDestinations,
-      externalProviderDrafts,
-    );
+    const displayName = (part.displayName ?? config.profile.displayName).trim();
+    const nextProfile: ResearcherProfile = {
+      ...config.profile,
+      ...part,
+      mode: displayName ? "orcid" : "anonymous",
+      displayName,
+      includeInContext: Boolean(displayName),
+    };
     patch({
       profile: nextProfile,
-      userName: identityDestinations.latexdo ? nextProfile.displayName : "",
+      userName: nextProfile.displayName,
       access: {
         ...config.access,
-        researcherProfile: identityDestinations.ai,
+        researcherProfile: Boolean(displayName),
       },
     });
   };
 
-  const chooseIdentityMode = (mode: IdentityMode) => {
-    setIdentityMode(mode);
-    if (mode === "anonymous") {
-      const anonymousDestinations = blankIdentityDestinations();
-      setIdentityDestinations(anonymousDestinations);
-      patch({
-        userName: "",
-        access: {
-          ...config.access,
-          researcherProfile: false,
-        },
-        profile: buildIdentityProfile(
-          {
-            ...config.profile,
-            mode: "anonymous",
-            displayName: "",
-            title: "",
-            affiliation: "",
-            includeInContext: false,
-          },
-          anonymousDestinations,
-          externalProviderDrafts,
-        ),
-      });
-      return;
-    }
+  const chooseAnonymousProfile = () => {
+    setProfileNameParts({ firstName: "", lastName: "" });
+    patch({
+      userName: "",
+      access: {
+        ...config.access,
+        researcherProfile: false,
+      },
+      profile: {
+        ...config.profile,
+        mode: "anonymous",
+        displayName: "",
+        title: "",
+        affiliation: "",
+        includeInContext: false,
+      },
+    });
+  };
 
-    setIdentityDestinations((current) => {
-      const next = {
-        ...current,
-        latexdo: true,
-        ai: true,
-      };
-      patch({
-        userName: config.profile.displayName || config.userName,
-        access: {
-          ...config.access,
-          researcherProfile: true,
-        },
-        profile: buildIdentityProfile(
-          {
-            ...config.profile,
-            includeInContext: true,
-          },
-          next,
-          externalProviderDrafts,
-        ),
-      });
+  const updateProfileName = (part: Partial<ProfileNameParts>) => {
+    setProfileNameParts((current) => {
+      const next = { ...current, ...part };
+      updateKnownProfile({ displayName: displayNameFromParts(next) });
       return next;
     });
   };
 
-  const toggleIdentityDestination = (destination: IdentityDestination) => {
-    setIdentityDestinations((current) => {
-      const next = {
-        ...current,
-        [destination]: !current[destination],
-      };
-      const nextProfile = buildIdentityProfile(
-        {
-          ...config.profile,
-          includeInContext: next.ai,
-        },
-        next,
-        externalProviderDrafts,
-      );
-      patch({
-        profile: nextProfile,
-        userName: next.latexdo ? nextProfile.displayName : "",
-        access: {
-          ...config.access,
-          researcherProfile: next.ai,
-        },
-      });
-      return next;
-    });
-  };
-
-  const updateExternalProviderDraft = (
-    provider: ExternalProviderId,
-    part: Partial<ExternalProviderDraft>,
-  ) => {
-    setExternalProviderDrafts((current) => {
-      const next = {
-        ...current,
-        [provider]: {
-          ...current[provider],
-          ...part,
-        },
-      };
-      patch({
-        profile: buildIdentityProfile(config.profile, identityDestinations, next),
-      });
-      return next;
-    });
+  const stayAnonymousAndContinue = () => {
+    chooseAnonymousProfile();
+    goNext();
   };
 
   const continueFromIntro = () => {
@@ -774,7 +600,14 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   const selectedTierAvailability = selectedTierInstalled
     ? tierRunAvailability(selectedTier)
     : tierAvailability(selectedTier);
+  const selectedTierGuidance = tierUnlockGuidance(selectedTierAvailability);
   const customSelected = !latexDoTierSelected;
+  const [modelDetailsOpen, setModelDetailsOpen] = React.useState(customSelected);
+  React.useEffect(() => {
+    if (customSelected) {
+      setModelDetailsOpen(true);
+    }
+  }, [customSelected]);
   const customProvider =
     config.provider === "ollama"
       ? "ollama"
@@ -883,7 +716,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                 <h2 id="ai-wizard-title">Set up your {productName} workspace</h2>
                 <p className="ai-wizard-lead">
                   A few quick choices, then you can start writing. Pick the layout,
-                  theme, profile, and optional AI for this computer.
+                  theme, profile, and optional AI.
                 </p>
                 <div className="setup-intro-points" aria-label="What setup configures">
                   <div>
@@ -901,9 +734,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                   </div>
                   <div>
                     <strong>Optional AI</strong>
-                    <span>
-                      Use local or cloud AI, or skip it and keep a focused editor.
-                    </span>
+                    <span>Use local or cloud AI.</span>
                   </div>
                 </div>
                 <details className="setup-toolchain-details">
@@ -965,200 +796,87 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
             {step === "name" && (
               <div className="ai-wizard-section ai-wizard-identity-step">
                 <User size={28} className="ai-wizard-hero-icon" />
-                <h2 id="ai-wizard-title">Choose your research identity</h2>
+                <h2 id="ai-wizard-title">Tell {productName} what to call you</h2>
                 <p className="ai-wizard-lead">
-                  Decide whether {productName} should know you by name or keep this
-                  workspace anonymous.
+                  This is optional. You can use a simple name like John Doe, or stay
+                  anonymous and continue.
                 </p>
 
-                <div
-                  className="ai-wizard-identity-tabs"
-                  role="tablist"
-                  aria-label="Research identity"
-                >
-                  <button
-                    type="button"
-                    role="tab"
-                    className={identityMode === "anonymous" ? "active" : ""}
-                    aria-selected={identityMode === "anonymous"}
-                    onClick={() => chooseIdentityMode("anonymous")}
-                  >
-                    <ShieldCheck size={15} />
-                    <span>Anonymous reviewer</span>
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    className={identityMode === "known" ? "active" : ""}
-                    aria-selected={identityMode === "known"}
-                    onClick={() => chooseIdentityMode("known")}
-                  >
-                    <User size={15} />
-                    <span>Named researcher</span>
-                  </button>
-                </div>
-
-                {identityMode === "anonymous" ? (
-                  <div className="ai-wizard-identity-card">
-                    <div>
-                      <strong>Stay anonymous in this workspace</strong>
-                      <span>
-                        No display name is saved, and researcher profile context stays
-                        off for AI prompts.
-                      </span>
-                    </div>
-                    <span className="ai-wizard-identity-pill">
-                      <Check size={12} /> Private
-                    </span>
-                  </div>
-                ) : (
-                  <div className="ai-wizard-known-profile">
-                    <div className="ai-wizard-identity-grid">
-                      <label className="cloud-form-field">
-                        <span>Display name</span>
-                        <input
-                          className="ai-wizard-input"
-                          autoFocus
-                          placeholder="Your name"
-                          value={config.profile.displayName || config.userName}
-                          maxLength={80}
-                          onChange={(event) =>
-                            updateKnownProfile({
-                              displayName: event.target.value,
-                            })
-                          }
-                          onKeyDown={(event) => event.key === "Enter" && goNext()}
-                        />
-                      </label>
-                      <label className="cloud-form-field">
-                        <span>Title</span>
-                        <select
-                          value={config.profile.title}
-                          onChange={(event) =>
-                            updateKnownProfile({
-                              title: event.target.value as AcademicTitle,
-                            })
-                          }
-                        >
-                          {academicTitleOptions.map((title) => (
-                            <option key={title || "none"} value={title}>
-                              {title || "No title"}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
+                <div className="ai-wizard-known-profile">
+                  <div className="ai-wizard-profile-grid">
                     <label className="cloud-form-field">
-                      <span>Affiliation</span>
+                      <span>First name</span>
                       <input
                         className="ai-wizard-input"
-                        placeholder="Lab, university, or company"
-                        value={config.profile.affiliation}
-                        maxLength={120}
+                        autoFocus
+                        placeholder="John"
+                        value={profileNameParts.firstName}
+                        maxLength={60}
                         onChange={(event) =>
-                          updateKnownProfile({
-                            affiliation: event.target.value,
-                          })
+                          updateProfileName({ firstName: event.target.value })
                         }
                         onKeyDown={(event) => event.key === "Enter" && goNext()}
                       />
                     </label>
-
-                    <div className="ai-wizard-identity-destinations">
-                      <span>Use this identity in</span>
-                      <div>
-                        <button
-                          type="button"
-                          className={identityDestinations.latexdo ? "selected" : ""}
-                          onClick={() => toggleIdentityDestination("latexdo")}
-                          aria-pressed={identityDestinations.latexdo}
-                        >
-                          <Check size={12} />
-                          {productName}
-                        </button>
-                        <button
-                          type="button"
-                          className={identityDestinations.ai ? "selected" : ""}
-                          onClick={() => toggleIdentityDestination("ai")}
-                          aria-pressed={identityDestinations.ai}
-                        >
-                          <Check size={12} />
-                          AI context
-                        </button>
-                        {identityProviderOptions.map((provider) => (
-                          <button
-                            key={provider.id}
-                            type="button"
-                            className={
-                              identityDestinations[provider.id] ? "selected" : ""
-                            }
-                            onClick={() => toggleIdentityDestination(provider.id)}
-                            aria-pressed={identityDestinations[provider.id]}
-                          >
-                            <Check size={12} />
-                            {provider.label}
-                          </button>
+                    <label className="cloud-form-field">
+                      <span>Last name</span>
+                      <input
+                        className="ai-wizard-input"
+                        placeholder="Doe"
+                        value={profileNameParts.lastName}
+                        maxLength={80}
+                        onChange={(event) =>
+                          updateProfileName({ lastName: event.target.value })
+                        }
+                        onKeyDown={(event) => event.key === "Enter" && goNext()}
+                      />
+                    </label>
+                    <label className="cloud-form-field">
+                      <span>Title optional</span>
+                      <select
+                        value={config.profile.title}
+                        onChange={(event) =>
+                          updateKnownProfile({
+                            title: event.target.value as AcademicTitle,
+                          })
+                        }
+                      >
+                        {academicTitleOptions.map((title) => (
+                          <option key={title || "none"} value={title}>
+                            {title || "No title"}
+                          </option>
                         ))}
-                      </div>
-                    </div>
-
-                    <div className="ai-wizard-provider-panels">
-                      {identityProviderOptions.map((provider) => {
-                        const selected = identityDestinations[provider.id];
-                        const draft = externalProviderDrafts[provider.id];
-                        return (
-                          <div
-                            key={provider.id}
-                            className={`ai-wizard-provider-panel ${
-                              selected ? "open" : ""
-                            }`}
-                            aria-hidden={!selected}
-                          >
-                            <div className="ai-wizard-provider-panel-head">
-                              <strong>{provider.label}</strong>
-                              <span>{provider.hint}</span>
-                            </div>
-                            <label className="cloud-form-field">
-                              <span>
-                                {provider.label} username or local account name
-                              </span>
-                              <input
-                                className="ai-wizard-input"
-                                placeholder={provider.placeholder}
-                                value={draft.username}
-                                maxLength={120}
-                                disabled={!selected}
-                                onChange={(event) =>
-                                  updateExternalProviderDraft(provider.id, {
-                                    username: event.target.value,
-                                  })
-                                }
-                              />
-                            </label>
-                            {provider.id === "overleaf" ? (
-                              <label className="cloud-form-field">
-                                <span>Overleaf Git URL (optional)</span>
-                                <input
-                                  type="url"
-                                  className="ai-wizard-input"
-                                  placeholder="https://git.overleaf.com/project-id"
-                                  value={draft.projectFetchUrl}
-                                  maxLength={240}
-                                  disabled={!selected}
-                                  onChange={(event) =>
-                                    updateExternalProviderDraft(provider.id, {
-                                      projectFetchUrl: event.target.value,
-                                    })
-                                  }
-                                />
-                              </label>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
+                      </select>
+                    </label>
                   </div>
-                )}
+
+                  <label className="cloud-form-field">
+                    <span>Affiliation optional</span>
+                    <input
+                      className="ai-wizard-input"
+                      placeholder="University, lab, or company"
+                      value={config.profile.affiliation}
+                      maxLength={120}
+                      onChange={(event) =>
+                        updateKnownProfile({
+                          affiliation: event.target.value,
+                        })
+                      }
+                      onKeyDown={(event) => event.key === "Enter" && goNext()}
+                    />
+                  </label>
+
+                  <div className="ai-wizard-anonymous-choice">
+                    <button
+                      type="button"
+                      className="ai-wizard-ghost"
+                      onClick={stayAnonymousAndContinue}
+                      data-tooltip="No name, title, affiliation, or AI profile will be saved."
+                    >
+                      <ShieldCheck size={14} /> Stay anonymous
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -1281,414 +999,534 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                   </div>
                 </div>
 
-                <div className="ai-wizard-compare-heading">
-                  <GitCompareArrows size={14} />
-                  <strong>What can each model do?</strong>
+                <div className="ai-wizard-ai-optional">
+                  <strong>AI is optional.</strong>
+                  <span>
+                    {productName} works without an assistant. To use AI, install one
+                    local model or connect your own provider. To skip it, click{" "}
+                    <strong>I don't need AI</strong>.
+                  </span>
                 </div>
 
-                <div className="ai-wizard-compare">
-                  <table className="ai-wizard-compare-table">
-                    <caption className="sr-only">
-                      What each LatexDo model can do
-                    </caption>
-                    <thead>
-                      <tr>
-                        <th scope="col">Capability</th>
-                        {latexDoAiTiers.map((tier) => {
-                          const tierInstalled =
-                            config.provider === "local" &&
-                            config.modelId === tier.runtime.modelId &&
-                            (downloaded || config.modelDownloaded);
-                          const availability = tierInstalled
-                            ? tierRunAvailability(tier)
-                            : tierAvailability(tier);
-                          const available = availability.state === "available";
-                          const selected =
-                            config.selection.mode === "latexdo" &&
-                            config.selection.tier === tier.id;
-                          const guidance = tierUnlockGuidance(availability);
-                          return (
-                            <th
-                              key={tier.id}
-                              scope="col"
-                              className={[
-                                tier.id === "latexdo-ai-plus"
-                                  ? "ai-wizard-compare-recommended"
-                                  : "",
-                                selected ? "ai-wizard-compare-selected" : "",
-                              ]
-                                .filter(Boolean)
-                                .join(" ")}
-                            >
-                              <button
-                                type="button"
-                                className="ai-wizard-compare-model-button"
-                                onClick={() => selectTier(tier)}
-                                disabled={!available}
-                                aria-label={`Choose ${tier.name}`}
-                                aria-pressed={selected}
-                              >
-                                <span className="ai-wizard-compare-tier">
-                                  {tier.name}
-                                </span>
-                                <span className="ai-wizard-compare-description">
-                                  {tier.description}
-                                </span>
-                              </button>
-                              <div className="ai-wizard-compare-model-meta">
-                                <span
-                                  className={`ai-wizard-compare-status ${
-                                    tierInstalled || selected
-                                      ? "is-checked"
-                                      : available
-                                        ? "is-available"
-                                        : "is-unavailable"
-                                  }`}
-                                >
-                                  {tierInstalled || selected ? (
-                                    <Check size={12} aria-hidden="true" />
-                                  ) : null}
-                                  {tierInstalled
-                                    ? "Installed"
-                                    : selected
-                                      ? "Selected"
-                                      : available
-                                        ? "Available"
-                                        : "Unavailable"}
-                                </span>
-
-                                {selected &&
-                                (availability.state === "memory-pressure" ||
-                                  availability.state === "storage-pressure") ? (
-                                  <button
-                                    type="button"
-                                    className="ai-wizard-mini-action"
-                                    onClick={() => void onRefreshSystemCapabilities?.()}
-                                  >
-                                    <RefreshCw size={12} /> Check again
-                                  </button>
-                                ) : null}
-
-                                {selected &&
-                                !tierInstalled &&
-                                availability.state !== "unsupported" ? (
-                                  downloading ? (
-                                    <div className="ai-wizard-download-progress compact">
-                                      <Loader2 size={13} className="spin" />
-                                      <div className="ai-wizard-progress-bar">
-                                        <div
-                                          className="ai-wizard-progress-fill"
-                                          style={{
-                                            width: progress.total
-                                              ? `${Math.round(
-                                                  (progress.received / progress.total) *
-                                                    100,
-                                                )}%`
-                                              : "40%",
-                                          }}
-                                        />
-                                      </div>
-                                      <span>
-                                        {formatBytes(progress.received)}
-                                        {progress.total
-                                          ? ` / ${formatBytes(progress.total)}`
-                                          : ""}
-                                      </span>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      className="ai-wizard-primary ai-wizard-model-download compact"
-                                      onClick={() => startDownload(tier)}
-                                      disabled={availability.state !== "available"}
-                                      aria-label={`Download ${tier.name}`}
-                                    >
-                                      <Download size={13} /> Download
-                                    </button>
-                                  )
-                                ) : null}
-
-                                {!available ? (
-                                  <span className="ai-wizard-compare-warning">
-                                    {availabilityLabel(availability)}
-                                  </span>
-                                ) : null}
-                                {selected && downloadError ? (
-                                  <span className="ai-wizard-compare-warning">
-                                    {downloadError}
-                                  </span>
-                                ) : null}
-                                {guidance ? (
-                                  <span className="ai-wizard-compare-guidance">
-                                    <strong>{guidance.heading}</strong>{" "}
-                                    {guidance.steps.join(" ")}
-                                  </span>
-                                ) : null}
-                              </div>
-                            </th>
-                          );
-                        })}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tierCapabilityCatalog.map((capability) => (
-                        <tr key={capability.id}>
-                          <th scope="row">
-                            <strong>{capability.label}</strong>
-                            <span className="ai-wizard-compare-detail">
-                              {capability.detail}
-                            </span>
-                          </th>
-                          {latexDoAiTiers.map((tier) => {
-                            const included = tier.capabilities.includes(capability.id);
-                            const selected =
-                              config.selection.mode === "latexdo" &&
-                              config.selection.tier === tier.id;
-                            return (
-                              <td
-                                key={tier.id}
-                                className={[
-                                  tier.id === "latexdo-ai-plus"
-                                    ? "ai-wizard-compare-recommended"
-                                    : "",
-                                  selected ? "ai-wizard-compare-selected" : "",
-                                ]
-                                  .filter(Boolean)
-                                  .join(" ")}
-                              >
-                                {included ? (
-                                  <Check
-                                    size={14}
-                                    className="ai-wizard-compare-yes"
-                                    aria-label={`${tier.name}: included`}
-                                  />
-                                ) : (
-                                  <span
-                                    className="ai-wizard-compare-no"
-                                    aria-label={`${tier.name}: not included`}
-                                  >
-                                    —
-                                  </span>
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="ai-wizard-custom-choice">
-                  <button
-                    className={`ai-wizard-model ai-wizard-cloud ${
-                      customSelected ? "selected" : ""
-                    }`}
-                    onClick={selectCustomize}
-                  >
-                    <div className="ai-wizard-model-head">
-                      <span className="ai-wizard-model-name">
-                        <Cloud size={14} /> Customize
+                {latexDoTierSelected ? (
+                  <div className="ai-wizard-selected-model">
+                    <div>
+                      <span className="ai-wizard-selected-label">
+                        Recommended assistant
                       </span>
+                      <strong>{selectedTier.name}</strong>
+                      <p>{selectedTier.description}</p>
+                      {selectedTierGuidance ? (
+                        <small>
+                          {selectedTierGuidance.heading}{" "}
+                          {selectedTierGuidance.steps.join(" ")}
+                        </small>
+                      ) : null}
                     </div>
-                    <div className="ai-wizard-model-desc">
-                      Bring your own model or AI provider.
-                    </div>
-                  </button>
-                </div>
-
-                {customSelected && (
-                  <div className="ai-wizard-custom-form">
-                    <label className="cloud-form-field">
-                      <span>Customize AI</span>
-                      <select
-                        value={customProvider}
-                        onChange={(event) => {
-                          const provider = event.target.value;
-                          if (provider === "cloud") selectProvider("cloud");
-                          if (provider === "ollama") selectProvider("ollama");
-                          if (provider === "off") selectProvider("off");
-                          if (provider === "gguf") {
-                            const modelId = importedManifest
-                              ? importedModelId(importedManifest.fileName)
-                              : "";
-                            patch({
-                              provider: "local",
-                              selection: {
-                                mode: "custom",
-                                custom: {
-                                  kind: "gguf",
-                                  modelId,
-                                },
-                              },
-                              modelId,
-                              modelDownloaded:
-                                Boolean(importedManifest) &&
-                                importedManifest?.compatibility.state !==
-                                  "memory-pressure" &&
-                                importedManifest?.compatibility.state !== "unsupported",
-                            });
-                            setDownloaded(false);
-                          }
-                        }}
+                    <div className="ai-wizard-selected-action">
+                      <span
+                        className={`ai-wizard-compare-status ${
+                          selectedTierInstalled
+                            ? "is-checked"
+                            : selectedTierAvailability.state === "available"
+                              ? "is-available"
+                              : "is-unavailable"
+                        }`}
                       >
-                        <option value="cloud">API Provider</option>
-                        <option value="ollama" disabled={!isDesktop}>
-                          Ollama{isDesktop ? "" : " (desktop only)"}
-                        </option>
-                        <option value="gguf" disabled={!isDesktop}>
-                          Local GGUF Model{isDesktop ? "" : " (desktop only)"}
-                        </option>
-                        <option value="off">Off</option>
-                      </select>
-                    </label>
-
-                    {config.provider === "cloud" && (
-                      <CloudProviderForm
-                        cloud={config.cloud}
-                        onChange={(cloud) =>
-                          patch({
-                            cloud,
-                            provider: "cloud",
-                            selection: {
-                              mode: "custom",
-                              custom: {
-                                kind: "cloud",
-                                providerId: cloud.providerId,
-                                model: cloud.model,
-                                baseUrl: cloud.baseUrl,
-                                credentialId: `credential-${cloud.providerId}-primary`,
-                              },
-                            },
-                          })
-                        }
-                        onOpenExternal={onOpenExternal}
-                      />
-                    )}
-
-                    {config.provider === "ollama" && (
-                      <div className="ai-wizard-custom-group">
-                        <label className="cloud-form-field">
-                          <span>Server URL</span>
-                          <input
-                            type="url"
-                            value={config.ollamaBaseUrl}
-                            onChange={(event) =>
-                              patch({
-                                ollamaBaseUrl: event.target.value,
-                                selection: {
-                                  mode: "custom",
-                                  custom: {
-                                    kind: "ollama",
-                                    baseUrl: event.target.value,
-                                    model: config.ollamaModel,
-                                  },
-                                },
-                              })
-                            }
-                          />
-                        </label>
-                        <label className="cloud-form-field">
-                          <span>Model</span>
-                          <select
-                            value={config.ollamaModel}
-                            onChange={(event) =>
-                              patch({
-                                ollamaModel: event.target.value,
-                                selection: {
-                                  mode: "custom",
-                                  custom: {
-                                    kind: "ollama",
-                                    baseUrl: config.ollamaBaseUrl,
-                                    model: event.target.value,
-                                  },
-                                },
-                              })
-                            }
-                          >
-                            <option value="">Select model</option>
-                            {config.ollamaModel &&
-                            !ollamaModels.includes(config.ollamaModel) ? (
-                              <option value={config.ollamaModel}>
-                                {config.ollamaModel}
-                              </option>
-                            ) : null}
-                            {ollamaModels.map((model) => (
-                              <option key={model} value={model}>
-                                {model}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <button
-                          type="button"
-                          className="ai-wizard-ghost"
-                          onClick={() => void refreshOllamaModels()}
-                          disabled={ollamaLoading}
-                        >
-                          {ollamaLoading ? (
-                            <>
-                              <Loader2 size={13} className="spin" /> Refreshing
-                            </>
-                          ) : (
-                            <>
-                              <RefreshCw size={13} /> Refresh models
-                            </>
-                          )}
-                        </button>
-                        {ollamaMessage && (
-                          <span className="cloud-form-ok">{ollamaMessage}</span>
-                        )}
-                      </div>
-                    )}
-
-                    {config.provider === "local" &&
-                    config.selection.mode === "custom" &&
-                    config.selection.custom.kind === "gguf" ? (
-                      <div className="ai-wizard-custom-group">
-                        <button
-                          type="button"
-                          className="ai-wizard-ghost"
-                          onClick={() => void importGguf()}
-                          disabled={importing}
-                        >
-                          {importing ? (
-                            <>
-                              <Loader2 size={13} className="spin" /> Importing
-                            </>
-                          ) : (
-                            <>
-                              <FileUp size={13} /> Import .gguf
-                            </>
-                          )}
-                        </button>
-                        {importedManifest ? (
-                          <div className="ai-wizard-imported-model">
-                            <strong>
-                              {labelForGgufFile(importedManifest.fileName)}
-                            </strong>
-                            <span>{formatBytes(importedManifest.fileSizeBytes)}</span>
+                        {selectedTierInstalled ? <Check size={12} /> : null}
+                        {selectedTierInstalled
+                          ? "Installed"
+                          : selectedTierAvailability.state === "available"
+                            ? "Download needed"
+                            : availabilityLabel(selectedTierAvailability)}
+                      </span>
+                      {!selectedTierInstalled &&
+                      selectedTierAvailability.state === "available" ? (
+                        downloading ? (
+                          <div className="ai-wizard-download-progress compact">
+                            <Loader2 size={13} className="spin" />
+                            <div className="ai-wizard-progress-bar">
+                              <div
+                                className="ai-wizard-progress-fill"
+                                style={{
+                                  width: progress.total
+                                    ? `${Math.round(
+                                        (progress.received / progress.total) * 100,
+                                      )}%`
+                                    : "40%",
+                                }}
+                              />
+                            </div>
                             <span>
-                              {importedManifest.compatibility.state === "compatible"
-                                ? "Compatible with this machine"
-                                : importedManifest.compatibility.state ===
-                                    "memory-pressure"
-                                  ? "Temporarily unavailable because of memory pressure"
-                                  : importedManifest.compatibility.state ===
-                                      "unsupported"
-                                    ? "Not supported on this machine"
-                                    : "Compatibility unknown"}
+                              {formatBytes(progress.received)}
+                              {progress.total
+                                ? ` / ${formatBytes(progress.total)}`
+                                : ""}
                             </span>
                           </div>
-                        ) : null}
-                      </div>
-                    ) : null}
+                        ) : (
+                          <button
+                            type="button"
+                            className="ai-wizard-primary ai-wizard-model-download"
+                            onClick={() => startDownload(selectedTier)}
+                          >
+                            <Download size={13} /> Download model
+                          </button>
+                        )
+                      ) : null}
+                      {downloadError && !customSelected ? (
+                        <span className="ai-wizard-compare-warning">
+                          {downloadError}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="ai-wizard-selected-model">
+                    <div>
+                      <span className="ai-wizard-selected-label">Custom assistant</span>
+                      <strong>Bring your own AI</strong>
+                      <p>
+                        Use an API provider, Ollama, or an imported local model. You can
+                        also skip AI entirely.
+                      </p>
+                    </div>
                   </div>
                 )}
 
-                {customSelected && downloadError ? (
-                  <div className="ai-wizard-error">{downloadError}</div>
-                ) : null}
+                <details
+                  className="ai-wizard-model-details"
+                  open={modelDetailsOpen}
+                >
+                  <summary
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setModelDetailsOpen((open) => !open);
+                    }}
+                  >
+                    <GitCompareArrows size={14} />
+                    <span>Show model choices and advanced AI setup</span>
+                  </summary>
+
+                  {modelDetailsOpen ? (
+                    <>
+                      <div className="ai-wizard-compare">
+                        <table className="ai-wizard-compare-table">
+                          <caption className="sr-only">
+                            What each LatexDo model can do
+                          </caption>
+                          <thead>
+                            <tr>
+                              <th scope="col">Capability</th>
+                              {latexDoAiTiers.map((tier) => {
+                                const tierInstalled =
+                                  config.provider === "local" &&
+                                  config.modelId === tier.runtime.modelId &&
+                                  (downloaded || config.modelDownloaded);
+                                const availability = tierInstalled
+                                  ? tierRunAvailability(tier)
+                                  : tierAvailability(tier);
+                                const available = availability.state === "available";
+                                const selected =
+                                  config.selection.mode === "latexdo" &&
+                                  config.selection.tier === tier.id;
+                                const guidance = tierUnlockGuidance(availability);
+                                return (
+                                  <th
+                                    key={tier.id}
+                                    scope="col"
+                                    className={[
+                                      tier.id === "latexdo-ai-plus"
+                                        ? "ai-wizard-compare-recommended"
+                                        : "",
+                                      selected ? "ai-wizard-compare-selected" : "",
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" ")}
+                                  >
+                                    <button
+                                      type="button"
+                                      className="ai-wizard-compare-model-button"
+                                      onClick={() => selectTier(tier)}
+                                      disabled={!available}
+                                      aria-label={`Choose ${tier.name}`}
+                                      aria-pressed={selected}
+                                    >
+                                      <span className="ai-wizard-compare-tier">
+                                        {tier.name}
+                                      </span>
+                                      <span className="ai-wizard-compare-description">
+                                        {tier.description}
+                                      </span>
+                                    </button>
+                                    <div className="ai-wizard-compare-model-meta">
+                                      <span
+                                        className={`ai-wizard-compare-status ${
+                                          tierInstalled || selected
+                                            ? "is-checked"
+                                            : available
+                                              ? "is-available"
+                                              : "is-unavailable"
+                                        }`}
+                                      >
+                                        {tierInstalled || selected ? (
+                                          <Check size={12} aria-hidden="true" />
+                                        ) : null}
+                                        {tierInstalled
+                                          ? "Installed"
+                                          : selected
+                                            ? "Selected"
+                                            : available
+                                              ? "Available"
+                                              : "Unavailable"}
+                                      </span>
+
+                                      {selected &&
+                                      (availability.state === "memory-pressure" ||
+                                        availability.state === "storage-pressure") ? (
+                                        <button
+                                          type="button"
+                                          className="ai-wizard-mini-action"
+                                          onClick={() =>
+                                            void onRefreshSystemCapabilities?.()
+                                          }
+                                        >
+                                          <RefreshCw size={12} /> Check again
+                                        </button>
+                                      ) : null}
+
+                                      {selected &&
+                                      !tierInstalled &&
+                                      availability.state !== "unsupported" ? (
+                                        downloading ? (
+                                          <div className="ai-wizard-download-progress compact">
+                                            <Loader2 size={13} className="spin" />
+                                            <div className="ai-wizard-progress-bar">
+                                              <div
+                                                className="ai-wizard-progress-fill"
+                                                style={{
+                                                  width: progress.total
+                                                    ? `${Math.round(
+                                                        (progress.received /
+                                                          progress.total) *
+                                                          100,
+                                                      )}%`
+                                                    : "40%",
+                                                }}
+                                              />
+                                            </div>
+                                            <span>
+                                              {formatBytes(progress.received)}
+                                              {progress.total
+                                                ? ` / ${formatBytes(progress.total)}`
+                                                : ""}
+                                            </span>
+                                          </div>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            className="ai-wizard-primary ai-wizard-model-download compact"
+                                            onClick={() => startDownload(tier)}
+                                            disabled={
+                                              availability.state !== "available"
+                                            }
+                                            aria-label={`Download ${tier.name}`}
+                                          >
+                                            <Download size={13} /> Download
+                                          </button>
+                                        )
+                                      ) : null}
+
+                                      {!available ? (
+                                        <span className="ai-wizard-compare-warning">
+                                          {availabilityLabel(availability)}
+                                        </span>
+                                      ) : null}
+                                      {selected && downloadError ? (
+                                        <span className="ai-wizard-compare-warning">
+                                          {downloadError}
+                                        </span>
+                                      ) : null}
+                                      {guidance ? (
+                                        <span className="ai-wizard-compare-guidance">
+                                          <strong>{guidance.heading}</strong>{" "}
+                                          {guidance.steps.join(" ")}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  </th>
+                                );
+                              })}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {tierCapabilityCatalog.map((capability) => (
+                              <tr key={capability.id}>
+                                <th scope="row">
+                                  <strong>{capability.label}</strong>
+                                  <span className="ai-wizard-compare-detail">
+                                    {capability.detail}
+                                  </span>
+                                </th>
+                                {latexDoAiTiers.map((tier) => {
+                                  const included = tier.capabilities.includes(
+                                    capability.id,
+                                  );
+                                  const selected =
+                                    config.selection.mode === "latexdo" &&
+                                    config.selection.tier === tier.id;
+                                  return (
+                                    <td
+                                      key={tier.id}
+                                      className={[
+                                        tier.id === "latexdo-ai-plus"
+                                          ? "ai-wizard-compare-recommended"
+                                          : "",
+                                        selected ? "ai-wizard-compare-selected" : "",
+                                      ]
+                                        .filter(Boolean)
+                                        .join(" ")}
+                                    >
+                                      {included ? (
+                                        <Check
+                                          size={14}
+                                          className="ai-wizard-compare-yes"
+                                          aria-label={`${tier.name}: included`}
+                                        />
+                                      ) : (
+                                        <span
+                                          className="ai-wizard-compare-no"
+                                          aria-label={`${tier.name}: not included`}
+                                        >
+                                          —
+                                        </span>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="ai-wizard-custom-choice">
+                        <button
+                          className={`ai-wizard-model ai-wizard-cloud ${
+                            customSelected ? "selected" : ""
+                          }`}
+                          onClick={selectCustomize}
+                        >
+                          <div className="ai-wizard-model-head">
+                            <span className="ai-wizard-model-name">
+                              <Cloud size={14} /> Customize
+                            </span>
+                          </div>
+                          <div className="ai-wizard-model-desc">
+                            Bring your own model or AI provider.
+                          </div>
+                        </button>
+                      </div>
+
+                      {customSelected && (
+                        <div className="ai-wizard-custom-form">
+                          <label className="cloud-form-field">
+                            <span>Customize AI</span>
+                            <select
+                              value={customProvider}
+                              onChange={(event) => {
+                                const provider = event.target.value;
+                                if (provider === "cloud") selectProvider("cloud");
+                                if (provider === "ollama") selectProvider("ollama");
+                                if (provider === "off") selectProvider("off");
+                                if (provider === "gguf") {
+                                  const modelId = importedManifest
+                                    ? importedModelId(importedManifest.fileName)
+                                    : "";
+                                  patch({
+                                    provider: "local",
+                                    selection: {
+                                      mode: "custom",
+                                      custom: {
+                                        kind: "gguf",
+                                        modelId,
+                                      },
+                                    },
+                                    modelId,
+                                    modelDownloaded:
+                                      Boolean(importedManifest) &&
+                                      importedManifest?.compatibility.state !==
+                                        "memory-pressure" &&
+                                      importedManifest?.compatibility.state !==
+                                        "unsupported",
+                                  });
+                                  setDownloaded(false);
+                                }
+                              }}
+                            >
+                              <option value="cloud">API Provider</option>
+                              <option value="ollama" disabled={!isDesktop}>
+                                Ollama{isDesktop ? "" : " (desktop only)"}
+                              </option>
+                              <option value="gguf" disabled={!isDesktop}>
+                                Local GGUF Model{isDesktop ? "" : " (desktop only)"}
+                              </option>
+                              <option value="off">Off</option>
+                            </select>
+                          </label>
+
+                          {config.provider === "cloud" && (
+                            <CloudProviderForm
+                              cloud={config.cloud}
+                              onChange={(cloud) =>
+                                patch({
+                                  cloud,
+                                  provider: "cloud",
+                                  selection: {
+                                    mode: "custom",
+                                    custom: {
+                                      kind: "cloud",
+                                      providerId: cloud.providerId,
+                                      model: cloud.model,
+                                      baseUrl: cloud.baseUrl,
+                                      credentialId: `credential-${cloud.providerId}-primary`,
+                                    },
+                                  },
+                                })
+                              }
+                              onOpenExternal={onOpenExternal}
+                            />
+                          )}
+
+                          {config.provider === "ollama" && (
+                            <div className="ai-wizard-custom-group">
+                              <label className="cloud-form-field">
+                                <span>Server URL</span>
+                                <input
+                                  type="url"
+                                  value={config.ollamaBaseUrl}
+                                  onChange={(event) =>
+                                    patch({
+                                      ollamaBaseUrl: event.target.value,
+                                      selection: {
+                                        mode: "custom",
+                                        custom: {
+                                          kind: "ollama",
+                                          baseUrl: event.target.value,
+                                          model: config.ollamaModel,
+                                        },
+                                      },
+                                    })
+                                  }
+                                />
+                              </label>
+                              <label className="cloud-form-field">
+                                <span>Model</span>
+                                <select
+                                  value={config.ollamaModel}
+                                  onChange={(event) =>
+                                    patch({
+                                      ollamaModel: event.target.value,
+                                      selection: {
+                                        mode: "custom",
+                                        custom: {
+                                          kind: "ollama",
+                                          baseUrl: config.ollamaBaseUrl,
+                                          model: event.target.value,
+                                        },
+                                      },
+                                    })
+                                  }
+                                >
+                                  <option value="">Select model</option>
+                                  {config.ollamaModel &&
+                                  !ollamaModels.includes(config.ollamaModel) ? (
+                                    <option value={config.ollamaModel}>
+                                      {config.ollamaModel}
+                                    </option>
+                                  ) : null}
+                                  {ollamaModels.map((model) => (
+                                    <option key={model} value={model}>
+                                      {model}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <button
+                                type="button"
+                                className="ai-wizard-ghost"
+                                onClick={() => void refreshOllamaModels()}
+                                disabled={ollamaLoading}
+                              >
+                                {ollamaLoading ? (
+                                  <>
+                                    <Loader2 size={13} className="spin" /> Refreshing
+                                  </>
+                                ) : (
+                                  <>
+                                    <RefreshCw size={13} /> Refresh models
+                                  </>
+                                )}
+                              </button>
+                              {ollamaMessage && (
+                                <span className="cloud-form-ok">{ollamaMessage}</span>
+                              )}
+                            </div>
+                          )}
+
+                          {config.provider === "local" &&
+                          config.selection.mode === "custom" &&
+                          config.selection.custom.kind === "gguf" ? (
+                            <div className="ai-wizard-custom-group">
+                              <button
+                                type="button"
+                                className="ai-wizard-ghost"
+                                onClick={() => void importGguf()}
+                                disabled={importing}
+                              >
+                                {importing ? (
+                                  <>
+                                    <Loader2 size={13} className="spin" /> Importing
+                                  </>
+                                ) : (
+                                  <>
+                                    <FileUp size={13} /> Import .gguf
+                                  </>
+                                )}
+                              </button>
+                              {importedManifest ? (
+                                <div className="ai-wizard-imported-model">
+                                  <strong>
+                                    {labelForGgufFile(importedManifest.fileName)}
+                                  </strong>
+                                  <span>
+                                    {formatBytes(importedManifest.fileSizeBytes)}
+                                  </span>
+                                  <span>
+                                    {importedManifest.compatibility.state ===
+                                    "compatible"
+                                      ? "Compatible with this machine"
+                                      : importedManifest.compatibility.state ===
+                                          "memory-pressure"
+                                        ? "Temporarily unavailable because of memory pressure"
+                                        : importedManifest.compatibility.state ===
+                                            "unsupported"
+                                          ? "Not supported on this machine"
+                                          : "Compatibility unknown"}
+                                  </span>
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+
+                      {customSelected && downloadError ? (
+                        <div className="ai-wizard-error">{downloadError}</div>
+                      ) : null}
+                    </>
+                  ) : null}
+                </details>
               </div>
             )}
           </div>
@@ -1709,7 +1547,11 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
               )}
               {step === "model" ? (
                 <>
-                  <button className="ai-wizard-ghost" onClick={skipAiSetup}>
+                  <button
+                    className="ai-wizard-ghost"
+                    onClick={skipAiSetup}
+                    title="Skip AI. LatexDo will still edit and compile projects."
+                  >
                     I don't need AI
                   </button>
                   <button

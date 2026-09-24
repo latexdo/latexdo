@@ -112,7 +112,7 @@ describe("SetupWizard", () => {
     fireEvent.click(screen.getByRole("button", { name: /set up workspace/i }));
 
     expect(onAcceptLegal).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Choose your research identity")).toBeVisible();
+    expect(screen.getByText("Tell LatexDo what to call you")).toBeVisible();
   });
 
   it("allows the legal checkbox to be unchecked and rechecked", () => {
@@ -206,7 +206,7 @@ describe("SetupWizard", () => {
     expect(screen.getByText("Set up your LatexDo workspace")).toBeVisible();
     continueSetup();
 
-    fireEvent.change(screen.getByPlaceholderText("Your name"), {
+    fireEvent.change(screen.getByPlaceholderText("John"), {
       target: { value: "Ada" },
     });
     continueSetup();
@@ -257,14 +257,13 @@ describe("SetupWizard", () => {
     );
 
     continueSetup();
-    fireEvent.click(screen.getByRole("tab", { name: /anonymous reviewer/i }));
-    continueSetup();
+    fireEvent.click(screen.getByRole("button", { name: /stay anonymous/i }));
 
     expect(screen.getByText("How do you want your workspace?")).toBeVisible();
     expect(screen.queryByDisplayValue("Ada")).not.toBeInTheDocument();
   });
 
-  it("saves named identity destinations for research providers from onboarding", () => {
+  it("saves only a simple local profile from onboarding", () => {
     const onComplete = vi.fn();
     render(
       <SetupWizard
@@ -276,24 +275,24 @@ describe("SetupWizard", () => {
     );
 
     continueSetup();
-    fireEvent.change(screen.getByPlaceholderText("Your name"), {
-      target: { value: "Ada Lovelace" },
-    });
-    expect(screen.getByRole("button", { name: /^Overleaf$/i })).toBeVisible();
-    expect(screen.getByRole("button", { name: /^Mendeley$/i })).toBeVisible();
-    expect(screen.getByRole("button", { name: /^ReadCube$/i })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^Overleaf$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Zotero$/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /stay anonymous/i })).toHaveAttribute(
+      "data-tooltip",
+      "No name, title, affiliation, or AI profile will be saved.",
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: /^Overleaf$/i }));
-    fireEvent.change(screen.getByLabelText("Overleaf username or local account name"), {
-      target: { value: "ada-overleaf" },
+    fireEvent.change(screen.getByPlaceholderText("John"), {
+      target: { value: "Ada" },
     });
-    fireEvent.change(screen.getByLabelText("Overleaf Git URL (optional)"), {
-      target: { value: "https://git.overleaf.com/ada-paper" },
+    fireEvent.change(screen.getByPlaceholderText("Doe"), {
+      target: { value: "Lovelace" },
     });
-
-    fireEvent.click(screen.getByRole("button", { name: /^Zotero$/i }));
-    fireEvent.change(screen.getByLabelText("Zotero username or local account name"), {
-      target: { value: "ada-zotero" },
+    fireEvent.change(screen.getByLabelText("Title optional"), {
+      target: { value: "Dr" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("University, lab, or company"), {
+      target: { value: "Analytical Engine Lab" },
     });
     continueSetup();
     fireEvent.click(screen.getByRole("button", { name: /Skip setup/i }));
@@ -303,19 +302,9 @@ describe("SetupWizard", () => {
         userName: "Ada Lovelace",
         profile: expect.objectContaining({
           displayName: "Ada Lovelace",
-          externalProviders: expect.arrayContaining([
-            expect.objectContaining({
-              provider: "overleaf",
-              username: "ada-overleaf",
-              displayName: "Ada Lovelace",
-              projectFetchUrl: "https://git.overleaf.com/ada-paper",
-            }),
-            expect.objectContaining({
-              provider: "zotero",
-              username: "ada-zotero",
-              displayName: "Ada Lovelace",
-            }),
-          ]),
+          title: "Dr",
+          affiliation: "Analytical Engine Lab",
+          externalProviders: [],
         }),
       }),
     );
@@ -328,7 +317,7 @@ describe("SetupWizard", () => {
       progressHandler = handler;
       return unsubscribe;
     });
-    aiClientMock.downloadModel.mockImplementation(async (tierId: string) => {
+    aiClientMock.downloadModel.mockImplementation(async (_tierId: string) => {
       progressHandler?.({
         modelId: "qwen2.5-coder-3b",
         receivedBytes: 1024,
@@ -359,7 +348,7 @@ describe("SetupWizard", () => {
     );
     advanceToModelStep();
 
-    fireEvent.click(screen.getByRole("button", { name: /Download LatexDo AI Plus/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Download model/i }));
 
     await waitFor(() => {
       expect(screen.getByText("Installed")).toBeVisible();
@@ -397,7 +386,7 @@ describe("SetupWizard", () => {
     );
     advanceToModelStep();
 
-    fireEvent.click(screen.getByRole("button", { name: /Download LatexDo AI Plus/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Download model/i }));
 
     expect(await screen.findByText("Download failed")).toBeVisible();
   });
@@ -444,6 +433,7 @@ describe("SetupWizard", () => {
     );
     advanceToModelStep();
 
+    fireEvent.click(screen.getByText(/Show model choices and advanced AI setup/i));
     expect(modelChoiceButton("LatexDo AI")).not.toBeDisabled();
     expect(modelChoiceButton("LatexDo AI Plus")).toBeDisabled();
     expect(modelChoiceButton("LatexDo Pro Max")).toBeDisabled();
@@ -466,9 +456,7 @@ describe("SetupWizard", () => {
     advanceToModelStep();
 
     expect(screen.getAllByText(/Not enough storage/i).length).toBeGreaterThan(0);
-    expect(
-      screen.getByRole("button", { name: /Download LatexDo AI Plus/i }),
-    ).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /Download model/i })).toBeNull();
   });
 
   it("allows an installed local model to finish setup even when storage is low", () => {
@@ -565,6 +553,12 @@ describe("SetupWizard", () => {
 
     expect(screen.getByText(/Private by design/i)).toBeVisible();
     expect(
+      screen.queryByRole("table", {
+        name: /what each latexdo model can do/i,
+      }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText(/Show model choices and advanced AI setup/i));
+    expect(
       screen.getByRole("table", {
         name: /what each latexdo model can do/i,
       }),
@@ -604,9 +598,10 @@ describe("SetupWizard", () => {
     );
     advanceToModelStep();
 
-    expect(screen.getAllByText(/memory floor/i).length).toBeGreaterThan(0);
-    expect(
-      screen.getAllByText(/connect your own model via customize/i).length,
-    ).toBeGreaterThan(0);
+    expect(screen.getByText(/Memory is currently low/i)).toBeVisible();
+    expect(screen.getByText(/Close other applications/i)).toBeVisible();
+
+    fireEvent.click(screen.getByText(/Show model choices and advanced AI setup/i));
+    expect(screen.getAllByText(/pick a lighter tier/i).length).toBeGreaterThan(0);
   });
 });
