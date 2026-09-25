@@ -1,5 +1,9 @@
 import net from "node:net";
 import { spawn } from "node:child_process";
+import {
+  clearDevRuntimeCache,
+  devUserDataPath,
+} from "./clear-dev-runtime-cache.mjs";
 
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const preferredPort = 5173;
@@ -120,10 +124,13 @@ function shutdown(exitCode = 0) {
 }
 
 async function main() {
+  await clearDevRuntimeCache();
+
   const viteTarget = await resolveViteTarget();
   const sharedEnv = {
     ...process.env,
     VITE_DEV_SERVER_URL: viteTarget.url,
+    LATEXDO_DEV_USER_DATA: devUserDataPath,
   };
 
   console.log(

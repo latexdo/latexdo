@@ -10,6 +10,8 @@ const electronBinary = require("electron");
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const mainOutputPath = path.join(projectRoot, "dist-electron", "main.js");
 const viteUrl = process.env.VITE_DEV_SERVER_URL ?? "http://localhost:5173";
+const devUserDataPath =
+  process.env.LATEXDO_DEV_USER_DATA ?? path.join(projectRoot, ".latexdo-dev-profile");
 
 let electronProcess = null;
 let restartTimer = null;
@@ -47,6 +49,8 @@ function startElectron() {
     env: {
       ...process.env,
       VITE_DEV_SERVER_URL: viteUrl,
+      LATEXDO_DEV_CLEAR_RUNTIME_CACHE: "1",
+      LATEXDO_DEV_USER_DATA: devUserDataPath,
     },
     stdio: "inherit",
   });

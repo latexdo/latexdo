@@ -140,6 +140,11 @@ import {
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
+const devUserDataPath = isDevelopment
+  ? envString("LATEXDO_DEV_USER_DATA")
+  : undefined;
+const devClearRuntimeCache =
+  isDevelopment && envString("LATEXDO_DEV_CLEAR_RUNTIME_CACHE") === "1";
 const appIconPath = path.join(currentDirectory, "..", "build", "icon.png");
 const executableProductName = path.basename(process.execPath).replace(/\.exe$/i, "");
 const isProEdition =
@@ -1253,6 +1258,22 @@ async function atomicWriteUtf8(
 
 function userDataFilePath(fileName: string): string {
   return path.join(app.getPath("userData"), fileName);
+}
+
+async function clearDevRuntimeCache(): Promise<void> {
+  if (!devClearRuntimeCache) return;
+  const userDataPath = app.getPath("userData");
+  const targets = ["models", "speech"].map((directory) =>
+    path.join(userDataPath, directory),
+  );
+
+  for (const target of targets) {
+    await rm(target, { recursive: true, force: true });
+  }
+
+  console.log(
+    `[latexdo] dev startup cleared local AI models and speech runtime under ${userDataPath}`,
+  );
 }
 
 function envString(name: string): string | undefined {
@@ -5771,6 +5792,8 @@ if (startupAutomationTest) {
     "userData",
     path.join(app.getPath("temp"), `${profileName}-${process.pid}`),
   );
+} else if (devUserDataPath) {
+  app.setPath("userData", path.resolve(devUserDataPath));
 }
 
 installMainProcessFailureHandlers();
@@ -5795,6 +5818,7 @@ app.on("second-instance", () => {
 async function startApp(): Promise<void> {
   console.log("[latexdo] app:ready");
   try {
+    await clearDevRuntimeCache();
     lastUpdateResolution = await resolvePendingUpdate(
       app.getPath("userData"),
       app.getVersion(),
