@@ -253,6 +253,37 @@ describe("AiSidebar voice dictation integration", () => {
     expect(cleanup.cleanup).toHaveBeenCalledWith("beautiful", expect.anything());
   });
 
+  it("can transcribe the composer through explicit OpenAI speech mode", async () => {
+    window.localStorage.setItem(
+      voiceSettingsStorageKey,
+      JSON.stringify({
+        sttMode: "openai",
+        transcriptMode: "verbatim",
+        maxDurationMs: 60_000,
+        transcriptionModel: "whisper-1",
+        cloudTranscriptionModel: "gpt-transcribe",
+      }),
+    );
+    transcriptionFactory.createTranscriptionProvider.mockReturnValue({
+      id: "openai-speech",
+      transcribe: vi.fn().mockResolvedValue({ text: "from cloud" }),
+    });
+    renderSidebar();
+
+    expect(transcriptionFactory.createTranscriptionProvider).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        mode: "openai",
+        model: "gpt-transcribe",
+      }),
+    );
+
+    await startDictation();
+    fireEvent.click(screen.getByRole("button", { name: "Stop voice dictation" }));
+
+    await waitFor(() => expect(composer().value).toBe("from cloud"));
+  });
+
   it("leaves existing text untouched when microphone permission is denied", async () => {
     installCapture(new DOMException("denied", "NotAllowedError"));
     transcriptionFactory.createTranscriptionProvider.mockReturnValue({
@@ -267,13 +298,32 @@ describe("AiSidebar voice dictation integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start voice dictation" }));
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Start voice dictation" })).toHaveAttribute(
-        "title",
-        "Try voice dictation again",
-      ),
+      expect(
+        screen.getByRole("button", { name: "Start voice dictation" }),
+      ).toHaveAttribute("title", "Try voice dictation again"),
     );
     expect(ta.value).toBe("Keep this");
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /Microphone access was denied/i,
+    );
+  });
+
+  it("shows transcription failures instead of silently leaving the composer empty", async () => {
+    transcriptionFactory.createTranscriptionProvider.mockReturnValue({
+      id: "test",
+      transcribe: vi.fn().mockRejectedValue(new Error("speech server missing")),
+    });
+    renderSidebar();
+
+    await startDictation();
+    fireEvent.click(screen.getByRole("button", { name: "Stop voice dictation" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        /Voice transcription failed/i,
+      ),
+    );
+    expect(composer().value).toBe("");
   });
 
   it("never inserts a stale transcript when the user cancels during transcription", async () => {

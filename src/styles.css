@@ -6585,6 +6585,23 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .ai-wizard-ready-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-wizard-install-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .ai-wizard-install-state {
+    grid-column: 2;
+    width: fit-content;
+  }
+
+  .ai-wizard-install-progress {
+    grid-column: 1 / -1;
+  }
+
   .ai-wizard-anonymous-choice {
     align-items: flex-start;
     flex-direction: column;
@@ -13704,6 +13721,147 @@ button {
   background: var(--accent);
   transition: width 0.2s;
 }
+.ai-wizard-speech-install {
+  margin: 0 24px 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-card);
+  border-radius: 9px;
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.ai-wizard-speech-install.has-error {
+  border-color: var(--error);
+}
+.ai-wizard-speech-install-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.ai-wizard-speech-install-head strong {
+  color: var(--text-primary);
+}
+.ai-wizard-speech-install-head span {
+  min-width: 0;
+}
+.ai-wizard-speech-install-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+.ai-wizard-speech-install-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.ai-wizard-install-step,
+.ai-wizard-ready-step {
+  justify-content: center;
+}
+.ai-wizard-install-panel {
+  display: grid;
+  width: min(680px, 100%);
+  gap: 10px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--border-card);
+  border-radius: 10px;
+  background: var(--bg-card);
+}
+.ai-wizard-install-panel.has-error {
+  border-color: var(--error);
+}
+.ai-wizard-install-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.ai-wizard-install-marker {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ai-wizard-install-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.ai-wizard-install-copy strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.ai-wizard-install-copy span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ai-wizard-install-state {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--bg-button-secondary);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+.ai-wizard-install-progress {
+  grid-column: 2 / 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+.ai-wizard-install-error {
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  color: var(--error);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ai-wizard-ready-summary {
+  display: grid;
+  width: min(620px, 100%);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.ai-wizard-ready-summary div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  background: var(--bg-card);
+}
+.ai-wizard-ready-summary strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.ai-wizard-ready-summary span {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-transform: capitalize;
+}
 .ai-wizard-privacy {
   display: flex;
   align-items: flex-start;
@@ -14643,6 +14801,33 @@ button {
 .voice-settings-close:hover {
   background: var(--bg-badge);
   color: var(--text-primary);
+}
+.voice-settings-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.voice-settings-mode button {
+  min-height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.voice-settings-mode button:hover {
+  color: var(--text-primary);
+  background: var(--bg-badge);
+}
+.voice-settings-mode button.active {
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 .voice-settings-detect {
   display: flex;

@@ -32,7 +32,10 @@ import {
   buildSelectionMessageText,
   type AiComposerSelectionContext,
 } from "../features/ai/selectionAi";
-import { createTranscriptionProvider } from "../features/voice/transcription";
+import {
+  createTranscriptionProvider,
+  openAiVoiceCredentialId,
+} from "../features/voice/transcription";
 import { createTranscriptCleanup } from "../features/voice/transcriptCleanup";
 import type { VoiceDictationStatus } from "../features/voice/types";
 import { useVoiceDictation } from "../features/voice/useVoiceDictation";
@@ -107,6 +110,12 @@ function isConfigured(config: AiConfig, isDesktop: boolean): boolean {
   return true; // ollama
 }
 
+function openAiSpeechCredentialId(config: AiConfig): string {
+  return config.cloud.providerId === "openai"
+    ? config.cloud.credentialId
+    : openAiVoiceCredentialId;
+}
+
 export const AiSidebar: React.FC<AiSidebarProps> = ({
   config,
   ctx,
@@ -154,15 +163,21 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
   }, []);
 
   const sttEndpoint = voiceSettings.sttBaseUrl.trim();
-  const transcriptionProvider = React.useMemo(
-    () =>
-      createTranscriptionProvider(config, {
-        model: voiceSettings.transcriptionModel,
-        baseUrl: sttEndpoint || undefined,
-        credentialId: sttEndpoint ? voiceSttCredentialId : undefined,
-      }),
-    [config, voiceSettings, sttEndpoint],
-  );
+  const transcriptionProvider = React.useMemo(() => {
+    if (voiceSettings.sttMode === "openai") {
+      return createTranscriptionProvider(config, {
+        mode: "openai",
+        model: voiceSettings.cloudTranscriptionModel,
+        credentialId: openAiSpeechCredentialId(config),
+      });
+    }
+    return createTranscriptionProvider(config, {
+      mode: "local",
+      model: voiceSettings.transcriptionModel,
+      baseUrl: sttEndpoint || undefined,
+      credentialId: sttEndpoint ? voiceSttCredentialId : undefined,
+    });
+  }, [config, voiceSettings, sttEndpoint]);
   const cleanupProvider = React.useMemo(
     () => createTranscriptCleanup(config),
     [config],
@@ -607,7 +622,6 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
                   onStop={() => void voice.stop()}
                   onCancel={voice.cancel}
                   onOpenSettings={() => setVoiceSettingsOpenTick((t) => t + 1)}
-                  hideError
                 />
               </div>
               {isRunning ? (

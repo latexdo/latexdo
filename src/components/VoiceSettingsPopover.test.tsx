@@ -85,6 +85,28 @@ describe("VoiceSettingsPopover", () => {
     );
   });
 
+  it("saves OpenAI speech as an explicit transcription mode", async () => {
+    const onSave = vi.fn();
+    render(<VoiceSettingsPopover settings={settings} onSave={onSave} />);
+    fireEvent.click(screen.getByRole("button", { name: "Voice settings" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "OpenAI" }));
+    fireEvent.change(screen.getByLabelText(/OpenAI speech model/i), {
+      target: { value: "gpt-4o-transcribe" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Save voice settings/i }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sttMode: "openai",
+        cloudTranscriptionModel: "gpt-4o-transcribe",
+        sttBaseUrl: defaultLocalTranscriptionBaseUrl,
+      }),
+    );
+  });
+
   it("detects and applies bundled speech in one click", async () => {
     vi.mocked(detectLocalTranscriptionServers).mockResolvedValueOnce([
       {
@@ -98,9 +120,7 @@ describe("VoiceSettingsPopover", () => {
     render(<VoiceSettingsPopover settings={settings} onSave={onSave} />);
     fireEvent.click(screen.getByRole("button", { name: "Voice settings" }));
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /Check bundled speech/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /Check bundled speech/i }));
 
     await screen.findByText(/whisper.cpp server/i);
     fireEvent.click(screen.getByRole("button", { name: /whisper.cpp server/i }));
@@ -124,9 +144,7 @@ describe("VoiceSettingsPopover", () => {
     vi.mocked(detectLocalTranscriptionServers).mockResolvedValueOnce([]);
     openPopover();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /Check bundled speech/i }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /Check bundled speech/i }));
 
     await screen.findByText(/Bundled local speech was not found/i);
   });

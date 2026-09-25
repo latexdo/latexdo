@@ -30,7 +30,10 @@ import {
   type LayoutPreset,
   type AiProvider,
 } from "../features/ai/aiConfig";
-import type { AcademicTitle, ResearcherProfile } from "../features/ai/researcherProfile";
+import type {
+  AcademicTitle,
+  ResearcherProfile,
+} from "../features/ai/researcherProfile";
 import {
   fastTierAvailability,
   fastTierRuntimeAvailability,
@@ -43,11 +46,14 @@ import {
   detectOllama,
   downloadModel,
   importModel,
+  installSpeechRuntime,
   subscribeDownload,
+  subscribeSpeechInstall,
 } from "../features/ai/aiClient";
 import type {
   AiSystemCapabilities,
   ImportedModelManifest,
+  SpeechInstallProgress,
   TierAvailability,
 } from "../features/ai/aiTypes";
 import { CloudProviderForm } from "./CloudProviderForm";
@@ -99,8 +105,19 @@ interface SetupWizardProps {
   productSetupName?: string;
 }
 
-type Step = "welcome" | "name" | "layout" | "theme" | "model";
-const steps: Step[] = ["welcome", "name", "layout", "theme", "model"];
+type Step = "welcome" | "name" | "layout" | "theme" | "model" | "install" | "ready";
+type InstallStage = "idle" | "ai" | "speech" | "ready";
+const steps: Step[] = [
+  "welcome",
+  "name",
+  "layout",
+  "theme",
+  "model",
+  "install",
+  "ready",
+];
+const installStepIndex = steps.indexOf("install");
+const readyStepIndex = steps.indexOf("ready");
 const defaultProductName = "LatexDo";
 const academicTitleOptions: AcademicTitle[] = ["", "Dr", "Prof", "Prof. Dr", "Mx"];
 
@@ -135,6 +152,41 @@ function formatBytes(bytes: number): string {
     unit += 1;
   }
   return `${value.toFixed(1)} ${units[unit]}`;
+}
+
+function speechInstallMessage(progress: SpeechInstallProgress): string {
+  if (progress.error) return progress.error;
+  if (progress.message) return progress.message;
+  switch (progress.stage) {
+    case "checking":
+      return "Checking local speech support";
+    case "downloading-runtime":
+      return "Downloading local speech runtime";
+    case "downloading-model":
+      return "Downloading speech model";
+    case "verifying":
+      return "Verifying speech support";
+    case "installing":
+      return "Installing local speech support";
+    case "ready":
+      return "Local speech support is ready";
+    default:
+      return "Preparing local speech support";
+  }
+}
+
+function initialSpeechInstallProgress(): SpeechInstallProgress {
+  return {
+    stage: "checking",
+    receivedBytes: 0,
+    totalBytes: null,
+    done: false,
+    message: "Checking local speech support",
+  };
+}
+
+function messageFromError(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : String(error || fallback);
 }
 
 function formatRam(bytes: number): string {
@@ -260,6 +312,15 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   });
   const [downloadError, setDownloadError] = React.useState("");
   const [downloaded, setDownloaded] = React.useState(false);
+  const [installing, setInstalling] = React.useState(false);
+  const [installStage, setInstallStage] = React.useState<InstallStage>("idle");
+  const [installError, setInstallError] = React.useState("");
+  const [speechInstalling, setSpeechInstalling] = React.useState(false);
+  const [speechInstallProgress, setSpeechInstallProgress] =
+    React.useState<SpeechInstallProgress>(() => initialSpeechInstallProgress());
+  const [pendingCompleteConfig, setPendingCompleteConfig] =
+    React.useState<AiConfig | null>(null);
+  const [readyConfig, setReadyConfig] = React.useState<AiConfig | null>(null);
   const [ollamaModels, setOllamaModels] = React.useState<string[]>([]);
   const [ollamaMessage, setOllamaMessage] = React.useState("");
   const [ollamaLoading, setOllamaLoading] = React.useState(false);
@@ -271,12 +332,26 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   );
 
   const step = steps[stepIndex];
-  const patch = (p: Partial<AiConfig>) => setConfig((c) => ({ ...c, ...p }));
+  const setupBusy = installing || downloading || speechInstalling;
+  const patch = (p: Partial<AiConfig>) => {
+    setPendingCompleteConfig(null);
+    setReadyConfig(null);
+    setInstallError("");
+    setInstallStage("idle");
+    setConfig((c) => ({ ...c, ...p }));
+  };
 
   const goNext = () => setStepIndex((i) => Math.min(i + 1, steps.length - 1));
   const goBack = () => setStepIndex((i) => Math.max(i - 1, 0));
   const legalReady = legalConsent;
-  const canNavigateToStep = (targetIndex: number) => targetIndex === 0 || legalReady;
+  const canNavigateToStep = (targetIndex: number) => {
+    if (targetIndex === 0) return true;
+    if (!legalReady || setupBusy) return false;
+    const targetStep = steps[targetIndex];
+    if (targetStep === "install") return Boolean(pendingCompleteConfig || readyConfig);
+    if (targetStep === "ready") return Boolean(readyConfig);
+    return true;
+  };
   const navigateToStep = (targetIndex: number) => {
     if (!canNavigateToStep(targetIndex)) return;
     if (stepIndex === 0 && targetIndex > 0 && !legalAccepted) {
@@ -464,51 +539,6 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
     selectProvider("cloud");
   };
 
-  const startDownload = async (tier: LatexDoAiTierDefinition) => {
-    const capabilities =
-      systemCapabilities ?? (await onRefreshSystemCapabilities?.()) ?? null;
-    if (capabilities) {
-      const availability = fastTierAvailability(tier, capabilities);
-      if (availability.state !== "available") {
-        setDownloadError(availabilityLabel(availability));
-        return;
-      }
-    }
-    setDownloading(true);
-    setDownloadError("");
-    setProgress({ received: 0, total: null });
-    const unsub = subscribeDownload((p) => {
-      if (p.modelId !== tier.runtime.modelId) return;
-      if (p.stage === "verifying") {
-        setDownloadError("");
-        return;
-      }
-      if (p.error) {
-        setDownloadError(p.error);
-        return;
-      }
-      if (p.done) {
-        setDownloaded(true);
-      } else {
-        setProgress({ received: p.receivedBytes, total: p.totalBytes });
-      }
-    });
-    const result = await downloadModel(tier.id);
-    unsub();
-    setDownloading(false);
-    if (!result.ok) {
-      setDownloadError(result.error ?? "Download failed.");
-    } else {
-      setDownloaded(true);
-      patch({
-        provider: "local",
-        selection: { mode: "latexdo", tier: tier.id },
-        modelId: tier.runtime.modelId,
-        modelDownloaded: true,
-      });
-    }
-  };
-
   const refreshOllamaModels = async () => {
     if (!isDesktop) {
       setOllamaModels([]);
@@ -566,23 +596,177 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
     }
   };
 
+  const finalConfigForInstall = (source: AiConfig): AiConfig => ({
+    ...source,
+    setupComplete: true,
+    modelDownloaded:
+      source.provider === "local" ? downloaded || source.modelDownloaded : false,
+  });
+
+  const tierForConfig = (
+    source: AiConfig,
+  ): LatexDoAiTierDefinition | null => {
+    const selection = source.selection;
+    if (source.provider !== "local" || selection.mode !== "latexdo") {
+      return null;
+    }
+    return (
+      latexDoAiTiers.find((tier) => tier.id === selection.tier) ?? latexDoAiTiers[1]
+    );
+  };
+
+  const runFinalInstall = async (nextConfig: AiConfig) => {
+    let completedConfig = nextConfig;
+    let currentStage: InstallStage = "ai";
+    setPendingCompleteConfig(nextConfig);
+    setReadyConfig(null);
+    setInstalling(true);
+    setInstallStage(currentStage);
+    setInstallError("");
+    setDownloadError("");
+    setProgress({ received: 0, total: null });
+    setSpeechInstallProgress(initialSpeechInstallProgress());
+
+    try {
+      const tierToDownload = tierForConfig(nextConfig);
+      const aiModelReady =
+        tierToDownload &&
+        nextConfig.modelId === tierToDownload.runtime.modelId &&
+        (downloaded || nextConfig.modelDownloaded);
+
+      if (tierToDownload && !aiModelReady) {
+        const capabilities =
+          systemCapabilities ?? (await onRefreshSystemCapabilities?.()) ?? null;
+        if (capabilities) {
+          const availability = fastTierAvailability(tierToDownload, capabilities);
+          if (availability.state !== "available") {
+            throw new Error(availabilityLabel(availability));
+          }
+        }
+
+        setDownloading(true);
+        const unsub = subscribeDownload((p) => {
+          if (p.modelId !== tierToDownload.runtime.modelId) return;
+          if (p.error) {
+            setInstallError(p.error);
+            setDownloadError(p.error);
+            return;
+          }
+          setProgress({ received: p.receivedBytes, total: p.totalBytes });
+        });
+        try {
+          const result = await downloadModel(tierToDownload.id);
+          if (!result.ok) {
+            throw new Error(result.error ?? "Model download failed.");
+          }
+        } finally {
+          unsub();
+          setDownloading(false);
+        }
+
+        setDownloaded(true);
+        completedConfig = {
+          ...completedConfig,
+          provider: "local",
+          selection: { mode: "latexdo", tier: tierToDownload.id },
+          modelId: tierToDownload.runtime.modelId,
+          modelDownloaded: true,
+        };
+        setConfig(completedConfig);
+      } else if (completedConfig.provider !== "local") {
+        completedConfig = {
+          ...completedConfig,
+          modelDownloaded: false,
+        };
+      }
+
+      setPendingCompleteConfig(completedConfig);
+      currentStage = "speech";
+      setInstallStage(currentStage);
+
+      if (isDesktop) {
+        setSpeechInstalling(true);
+        const unsub = subscribeSpeechInstall((speechProgress) => {
+          setSpeechInstallProgress(speechProgress);
+          if (speechProgress.error) setInstallError(speechProgress.error);
+        });
+        try {
+          const result = await installSpeechRuntime();
+          if (!result.ok) {
+            throw new Error(result.error ?? "Speech support install failed.");
+          }
+        } finally {
+          unsub();
+          setSpeechInstalling(false);
+        }
+        setSpeechInstallProgress({
+          stage: "ready",
+          receivedBytes: 0,
+          totalBytes: null,
+          done: true,
+          message: "Local speech support is ready",
+        });
+      } else {
+        setSpeechInstallProgress({
+          stage: "ready",
+          receivedBytes: 0,
+          totalBytes: null,
+          done: true,
+          message: "Local speech support is only installed in the desktop app.",
+        });
+      }
+
+      setInstallStage("ready");
+      setInstalling(false);
+      setPendingCompleteConfig(completedConfig);
+      setReadyConfig(completedConfig);
+      setConfig(completedConfig);
+      setStepIndex(readyStepIndex);
+    } catch (error) {
+      const message = messageFromError(error, "Setup install failed.");
+      setInstallError(message);
+      if (currentStage === "speech") {
+        setSpeechInstallProgress((speechProgress) => ({
+          ...speechProgress,
+          done: true,
+          error: message,
+          message,
+        }));
+      } else {
+        setDownloadError(message);
+      }
+      setDownloading(false);
+      setSpeechInstalling(false);
+      setInstalling(false);
+      return;
+    }
+  };
+
   const finish = () => {
-    onComplete({
-      ...config,
-      setupComplete: true,
-      modelDownloaded:
-        config.provider === "local" ? downloaded || config.modelDownloaded : false,
-    });
+    const nextConfig = finalConfigForInstall(config);
+    setStepIndex(installStepIndex);
+    void runFinalInstall(nextConfig);
   };
 
   const skipAiSetup = () => {
-    onComplete({
+    const nextConfig = finalConfigForInstall({
       ...config,
       provider: "off",
       selection: { mode: "off" },
-      setupComplete: true,
       modelDownloaded: false,
     });
+    setStepIndex(installStepIndex);
+    void runFinalInstall(nextConfig);
+  };
+
+  const retryInstall = () => {
+    if (!pendingCompleteConfig) return;
+    setStepIndex(installStepIndex);
+    void runFinalInstall(pendingCompleteConfig);
+  };
+
+  const completeReady = () => {
+    onComplete(readyConfig ?? pendingCompleteConfig ?? finalConfigForInstall(config));
   };
 
   const selectedTierId =
@@ -617,9 +801,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
           ? "off"
           : "cloud";
   const importedCompatibility = importedManifest?.compatibility ?? null;
-  const canFinish = latexDoTierSelected
-    ? selectedTierAvailability.state === "available" &&
-      (downloaded || config.modelDownloaded)
+  const canContinueFromModel = latexDoTierSelected
+    ? selectedTierAvailability.state === "available"
     : config.provider === "cloud"
       ? config.cloud.credentialConfigured
       : config.provider === "ollama"
@@ -631,6 +814,67 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
               importedCompatibility.state === "compatible" ||
               importedCompatibility.state === "unknown")
           : true;
+  const installConfig = readyConfig ?? pendingCompleteConfig;
+  const installTier = installConfig ? tierForConfig(installConfig) : null;
+  const installAiReady = Boolean(
+    readyConfig ||
+      downloaded ||
+      installConfig?.modelDownloaded ||
+      (installConfig && !installTier),
+  );
+  const installAiPercent = progress.total
+    ? Math.min(100, Math.round((progress.received / progress.total) * 100))
+    : null;
+  const speechInstallPercent = speechInstallProgress.totalBytes
+    ? Math.min(
+        100,
+        Math.round(
+          (speechInstallProgress.receivedBytes / speechInstallProgress.totalBytes) *
+            100,
+        ),
+      )
+    : null;
+  const installAiTitle = installTier
+    ? installTier.name
+    : installConfig?.provider === "cloud"
+      ? "Cloud AI provider"
+      : installConfig?.provider === "ollama"
+        ? "Ollama model"
+        : installConfig?.provider === "local"
+          ? "Imported local model"
+          : "AI assistant";
+  const installAiStatus = installTier
+    ? installAiReady
+      ? "Local AI model is ready."
+      : downloading
+        ? "Downloading the selected local AI model."
+        : "Selected local AI model will download here."
+    : installConfig?.provider === "cloud"
+      ? "No local AI download needed. Your configured provider will be used."
+      : installConfig?.provider === "ollama"
+        ? "No LatexDo model download needed. LatexDo will use your Ollama model."
+        : installConfig?.provider === "local"
+          ? "No LatexDo model download needed. Your imported GGUF model is selected."
+          : "AI is turned off.";
+  const speechInstallStatus = isDesktop
+    ? speechInstallMessage(speechInstallProgress)
+    : "No local speech download is needed in the browser build.";
+  const readySummaryConfig = readyConfig ?? config;
+  const readyAssistantSummary = (() => {
+    const selection = readySummaryConfig.selection;
+    if (readySummaryConfig.provider === "local" && selection.mode === "latexdo") {
+      return (
+        latexDoAiTiers.find((tier) => tier.id === selection.tier)?.name ??
+        "LatexDo local AI"
+      );
+    }
+    if (readySummaryConfig.provider === "cloud") return "Cloud AI provider";
+    if (readySummaryConfig.provider === "ollama") {
+      return `Ollama ${readySummaryConfig.ollamaModel}`;
+    }
+    if (readySummaryConfig.provider === "local") return "Imported local model";
+    return "AI off";
+  })();
 
   return (
     <div className="ai-wizard-overlay">
@@ -654,9 +898,13 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                     ? "Profile"
                     : s === "layout"
                       ? "Workspace"
-                      : s === "theme"
-                        ? "Theme"
-                        : "Assistant";
+                    : s === "theme"
+                      ? "Theme"
+                      : s === "model"
+                        ? "Assistant"
+                        : s === "install"
+                          ? "Install"
+                          : "Ready";
               return (
                 <li
                   key={s}
@@ -672,7 +920,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                     title={
                       canNavigateToStep(i)
                         ? ""
-                        : "Accept the Terms of Use and Privacy Policy first."
+                        : legalReady
+                          ? "Finish the current setup step first."
+                          : "Accept the Terms of Use and Privacy Policy first."
                     }
                   >
                     <span className="ai-wizard-step-dot">
@@ -1037,43 +1287,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                         {selectedTierInstalled
                           ? "Installed"
                           : selectedTierAvailability.state === "available"
-                            ? "Download needed"
+                            ? "Will download during install"
                             : availabilityLabel(selectedTierAvailability)}
                       </span>
-                      {!selectedTierInstalled &&
-                      selectedTierAvailability.state === "available" ? (
-                        downloading ? (
-                          <div className="ai-wizard-download-progress compact">
-                            <Loader2 size={13} className="spin" />
-                            <div className="ai-wizard-progress-bar">
-                              <div
-                                className="ai-wizard-progress-fill"
-                                style={{
-                                  width: progress.total
-                                    ? `${Math.round(
-                                        (progress.received / progress.total) * 100,
-                                      )}%`
-                                    : "40%",
-                                }}
-                              />
-                            </div>
-                            <span>
-                              {formatBytes(progress.received)}
-                              {progress.total
-                                ? ` / ${formatBytes(progress.total)}`
-                                : ""}
-                            </span>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            className="ai-wizard-primary ai-wizard-model-download"
-                            onClick={() => startDownload(selectedTier)}
-                          >
-                            <Download size={13} /> Download model
-                          </button>
-                        )
-                      ) : null}
                       {downloadError && !customSelected ? (
                         <span className="ai-wizard-compare-warning">
                           {downloadError}
@@ -1094,10 +1310,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                   </div>
                 )}
 
-                <details
-                  className="ai-wizard-model-details"
-                  open={modelDetailsOpen}
-                >
+                <details className="ai-wizard-model-details" open={modelDetailsOpen}>
                   <summary
                     onClick={(event) => {
                       event.preventDefault();
@@ -1197,44 +1410,10 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
 
                                       {selected &&
                                       !tierInstalled &&
-                                      availability.state !== "unsupported" ? (
-                                        downloading ? (
-                                          <div className="ai-wizard-download-progress compact">
-                                            <Loader2 size={13} className="spin" />
-                                            <div className="ai-wizard-progress-bar">
-                                              <div
-                                                className="ai-wizard-progress-fill"
-                                                style={{
-                                                  width: progress.total
-                                                    ? `${Math.round(
-                                                        (progress.received /
-                                                          progress.total) *
-                                                          100,
-                                                      )}%`
-                                                    : "40%",
-                                                }}
-                                              />
-                                            </div>
-                                            <span>
-                                              {formatBytes(progress.received)}
-                                              {progress.total
-                                                ? ` / ${formatBytes(progress.total)}`
-                                                : ""}
-                                            </span>
-                                          </div>
-                                        ) : (
-                                          <button
-                                            type="button"
-                                            className="ai-wizard-primary ai-wizard-model-download compact"
-                                            onClick={() => startDownload(tier)}
-                                            disabled={
-                                              availability.state !== "available"
-                                            }
-                                            aria-label={`Download ${tier.name}`}
-                                          >
-                                            <Download size={13} /> Download
-                                          </button>
-                                        )
+                                      availability.state === "available" ? (
+                                        <span className="ai-wizard-compare-guidance">
+                                          Downloads during the install step.
+                                        </span>
                                       ) : null}
 
                                       {!available ? (
@@ -1529,19 +1708,166 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                 </details>
               </div>
             )}
+
+            {step === "install" && (
+              <div className="ai-wizard-section ai-wizard-install-step">
+                <Download size={28} className="ai-wizard-hero-icon" />
+                <h2 id="ai-wizard-title">Installing your selected setup</h2>
+                <p className="ai-wizard-lead">
+                  {productName} is downloading the pieces you chose at the end of
+                  the tour. This can take about 5 minutes.
+                </p>
+
+                <div
+                  className={`ai-wizard-install-panel ${
+                    installError ? "has-error" : ""
+                  } stage-${installStage}`}
+                  role={installError ? "alert" : "status"}
+                  aria-live="polite"
+                >
+                  <div className="ai-wizard-install-row">
+                    <div className="ai-wizard-install-marker">
+                      {downloading ? (
+                        <Loader2 size={15} className="spin" />
+                      ) : installAiReady ? (
+                        <Check size={15} />
+                      ) : (
+                        <Download size={15} />
+                      )}
+                    </div>
+                    <div className="ai-wizard-install-copy">
+                      <strong>{installAiTitle}</strong>
+                      <span>{installAiStatus}</span>
+                    </div>
+                    <span className="ai-wizard-install-state">
+                      {downloading
+                        ? "Downloading"
+                        : installAiReady
+                          ? "Ready"
+                          : installTier
+                            ? "Queued"
+                            : "No download"}
+                    </span>
+                    {downloading ? (
+                      <div className="ai-wizard-install-progress">
+                        <div className="ai-wizard-progress-bar">
+                          <div
+                            className="ai-wizard-progress-fill"
+                            style={{ width: `${installAiPercent ?? 40}%` }}
+                          />
+                        </div>
+                        <span>
+                          {progress.total
+                            ? `${formatBytes(progress.received)} / ${formatBytes(
+                                progress.total,
+                              )}`
+                            : `${formatBytes(progress.received)} received`}
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="ai-wizard-install-row">
+                    <div className="ai-wizard-install-marker">
+                      {speechInstalling ? (
+                        <Loader2 size={15} className="spin" />
+                      ) : speechInstallProgress.done ? (
+                        <Check size={15} />
+                      ) : (
+                        <Download size={15} />
+                      )}
+                    </div>
+                    <div className="ai-wizard-install-copy">
+                      <strong>Local speech-to-text</strong>
+                      <span>{speechInstallStatus}</span>
+                    </div>
+                    <span className="ai-wizard-install-state">
+                      {speechInstalling
+                        ? "Downloading"
+                        : speechInstallProgress.done
+                          ? "Ready"
+                          : isDesktop
+                            ? "Queued"
+                            : "Skipped"}
+                    </span>
+                    {speechInstalling ? (
+                      <div className="ai-wizard-install-progress">
+                        <div className="ai-wizard-progress-bar">
+                          <div
+                            className="ai-wizard-progress-fill"
+                            style={{ width: `${speechInstallPercent ?? 40}%` }}
+                          />
+                        </div>
+                        <span>
+                          {speechInstallProgress.totalBytes
+                            ? `${formatBytes(
+                                speechInstallProgress.receivedBytes,
+                              )} / ${formatBytes(speechInstallProgress.totalBytes)}`
+                            : "Preparing download"}
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {installError ? (
+                    <div className="ai-wizard-install-error">{installError}</div>
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            {step === "ready" && (
+              <div className="ai-wizard-section ai-wizard-ready-step">
+                <Check size={30} className="ai-wizard-hero-icon" />
+                <h2 id="ai-wizard-title">{productName} is ready</h2>
+                <p className="ai-wizard-lead">
+                  Your workspace, assistant choice, and speech-to-text support are
+                  prepared.
+                </p>
+                <div className="ai-wizard-ready-summary">
+                  <div>
+                    <strong>Workspace</strong>
+                    <span>{readySummaryConfig.layoutPreset}</span>
+                  </div>
+                  <div>
+                    <strong>Assistant</strong>
+                    <span>{readyAssistantSummary}</span>
+                  </div>
+                  <div>
+                    <strong>Speech</strong>
+                    <span>
+                      {isDesktop
+                        ? "Local speech-to-text installed"
+                        : "Desktop speech install skipped"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="ai-wizard-footer">
             <div>
               {stepIndex > 0 && (
-                <button className="ai-wizard-ghost" onClick={goBack}>
+                <button
+                  className="ai-wizard-ghost"
+                  onClick={goBack}
+                  disabled={setupBusy}
+                >
                   <ArrowLeft size={14} /> Back
                 </button>
               )}
             </div>
             <div className="ai-wizard-footer-right">
-              {step !== "welcome" && step !== "model" && (
-                <button className="ai-wizard-ghost" onClick={finish}>
+              {step !== "welcome" &&
+                step !== "model" &&
+                step !== "install" &&
+                step !== "ready" && (
+                <button
+                  className="ai-wizard-ghost"
+                  onClick={finish}
+                  disabled={setupBusy}
+                >
                   Skip setup
                 </button>
               )}
@@ -1550,6 +1876,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                   <button
                     className="ai-wizard-ghost"
                     onClick={skipAiSetup}
+                    disabled={setupBusy}
                     title="Skip AI. LatexDo will still edit and compile projects."
                   >
                     I don't need AI
@@ -1557,21 +1884,35 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                   <button
                     className="ai-wizard-primary"
                     onClick={finish}
-                    disabled={!canFinish}
+                    disabled={!canContinueFromModel || setupBusy}
                     title={
-                      canFinish
+                      canContinueFromModel
                         ? ""
-                        : "Download the model or pick a cloud provider first."
+                        : "Pick an available local model or configure your provider first."
                     }
                   >
-                    Finish <Check size={15} />
+                    Install selected setup <ArrowRight size={15} />
                   </button>
                 </>
+              ) : step === "install" ? (
+                installError ? (
+                  <button className="ai-wizard-primary" onClick={retryInstall}>
+                    <RefreshCw size={13} /> Retry install
+                  </button>
+                ) : (
+                  <button className="ai-wizard-primary" disabled>
+                    <Loader2 size={13} className="spin" /> Installing
+                  </button>
+                )
+              ) : step === "ready" ? (
+                <button className="ai-wizard-primary" onClick={completeReady}>
+                  Start writing <Check size={15} />
+                </button>
               ) : (
                 <button
                   className="ai-wizard-primary"
                   onClick={step === "welcome" ? continueFromIntro : goNext}
-                  disabled={step === "welcome" && !legalReady}
+                  disabled={(step === "welcome" && !legalReady) || setupBusy}
                   title={
                     step === "welcome" && !legalReady
                       ? "Accept the Terms of Use and Privacy Policy to continue."

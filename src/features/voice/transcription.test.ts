@@ -6,6 +6,7 @@ import {
   TranscriptionError,
   audioExtensionForType,
   createTranscriptionProvider,
+  openAiVoiceCredentialId,
 } from "./transcription";
 
 vi.mock("../ai/cloudCredentials", () => ({
@@ -271,9 +272,32 @@ describe("createTranscriptionProvider resolution", () => {
         baseUrl: "http://localhost:8080/v1",
         model: "x",
       }),
-    ).toBeInstanceOf(
-      OpenAiTranscriptionProvider,
-    );
+    ).toBeInstanceOf(OpenAiTranscriptionProvider);
+  });
+
+  it("creates an explicit OpenAI cloud speech provider when requested", async () => {
+    const provider = createTranscriptionProvider(defaultAiConfig, {
+      mode: "openai",
+      model: "gpt-transcribe",
+    });
+    expect(provider).toBeInstanceOf(OpenAiTranscriptionProvider);
+
+    fetchMock.mockClear();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.mocked(loadCloudCredential).mockResolvedValueOnce("sk-openai");
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { text: "from cloud" }));
+
+    try {
+      await expect(provider?.transcribe({ audio: audio() })).resolves.toMatchObject({
+        text: "from cloud",
+      });
+      expect(loadCloudCredential).toHaveBeenCalledWith(openAiVoiceCredentialId);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(String(url)).toBe("https://api.openai.com/v1/audio/transcriptions");
+      expect((init?.body as FormData).get("model")).toBe("gpt-transcribe");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("refuses non-local speech endpoints", () => {

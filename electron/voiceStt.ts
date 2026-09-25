@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
 import { access, chmod } from "node:fs/promises";
 import path from "node:path";
+import { installedSpeechRoot } from "./speechRuntime.js";
 
 export interface SpeechServerEnsureRequest {
   baseUrl?: string;
@@ -39,6 +40,12 @@ function speechRoot(): string {
   return path.join(app.getAppPath(), "resources", "speech");
 }
 
+function speechRoots(): string[] {
+  const configured = process.env.LATEXDO_SPEECH_ROOT?.trim();
+  if (configured) return [configured];
+  return [installedSpeechRoot(), speechRoot()];
+}
+
 function executableNames(): string[] {
   if (process.platform === "win32") {
     return ["whisper-server.exe", "server.exe"];
@@ -49,24 +56,24 @@ function executableNames(): string[] {
 function executableCandidates(): string[] {
   const configured = process.env.LATEXDO_SPEECH_SERVER_PATH?.trim();
   if (configured) return [configured];
-  const root = speechRoot();
-  return executableNames().flatMap((name) => [
-    path.join(root, "bin", process.platform, process.arch, name),
-    path.join(root, "bin", process.platform, name),
-    path.join(root, "bin", name),
-  ]);
+  return speechRoots().flatMap((root) =>
+    executableNames().flatMap((name) => [
+      path.join(root, "bin", process.platform, process.arch, name),
+      path.join(root, "bin", process.platform, name),
+      path.join(root, "bin", name),
+    ]),
+  );
 }
 
 function modelCandidates(): string[] {
   const configured = process.env.LATEXDO_SPEECH_MODEL_PATH?.trim();
   if (configured) return [configured];
-  const root = speechRoot();
-  return [
+  return speechRoots().flatMap((root) => [
     path.join(root, "models", "ggml-base.en.bin"),
     path.join(root, "models", "ggml-base.bin"),
     path.join(root, "models", "ggml-small.en.bin"),
     path.join(root, "models", "ggml-tiny.en.bin"),
-  ];
+  ]);
 }
 
 async function firstExecutablePath(): Promise<string | null> {
@@ -158,7 +165,7 @@ async function ensureSpeechServerInner(
       ok: false,
       code: "missing-runtime",
       error:
-        "This LatexDo build is missing the bundled local speech runtime. Reinstall LatexDo with speech support.",
+        "Local speech support is not installed. Run setup again to install speech support, or choose OpenAI speech in voice settings.",
     };
   }
 
@@ -168,7 +175,7 @@ async function ensureSpeechServerInner(
       ok: false,
       code: "missing-model",
       error:
-        "This LatexDo build is missing the bundled local speech model. Reinstall LatexDo with speech support.",
+        "Local speech support is missing its speech model. Run setup again to install speech support, or choose OpenAI speech in voice settings.",
     };
   }
 

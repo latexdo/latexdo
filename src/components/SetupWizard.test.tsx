@@ -1,18 +1,26 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultAiConfig, type AiConfig } from "../features/ai/aiConfig";
-import type { AiSystemCapabilities, DownloadProgress } from "../features/ai/aiTypes";
+import type {
+  AiSystemCapabilities,
+  DownloadProgress,
+  SpeechInstallProgress,
+} from "../features/ai/aiTypes";
 import { legalPrivacyUrl, legalTermsUrl } from "../features/settings/settings";
 import { SetupWizard } from "./SetupWizard";
 
 const aiClientMock = vi.hoisted(() => ({
   downloadModel: vi.fn(),
+  installSpeechRuntime: vi.fn(),
   subscribeDownload: vi.fn(),
+  subscribeSpeechInstall: vi.fn(),
 }));
 
 vi.mock("../features/ai/aiClient", () => ({
   downloadModel: aiClientMock.downloadModel,
+  installSpeechRuntime: aiClientMock.installSpeechRuntime,
   subscribeDownload: aiClientMock.subscribeDownload,
+  subscribeSpeechInstall: aiClientMock.subscribeSpeechInstall,
 }));
 
 type AiConfigOverrides = Omit<Partial<AiConfig>, "cloud" | "profile"> & {
@@ -63,6 +71,15 @@ function advanceToModelStep() {
   continueSetup();
 }
 
+function startSelectedInstall() {
+  fireEvent.click(screen.getByRole("button", { name: /Install selected setup/i }));
+}
+
+async function completeReadyStep() {
+  expect(await screen.findByText("LatexDo is ready")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /Start writing/i }));
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -76,9 +93,13 @@ function modelChoiceButton(name: string): HTMLButtonElement {
 describe("SetupWizard", () => {
   beforeEach(() => {
     aiClientMock.downloadModel.mockReset();
+    aiClientMock.installSpeechRuntime.mockReset();
     aiClientMock.subscribeDownload.mockReset();
+    aiClientMock.subscribeSpeechInstall.mockReset();
     aiClientMock.subscribeDownload.mockReturnValue(vi.fn());
+    aiClientMock.subscribeSpeechInstall.mockReturnValue(vi.fn());
     aiClientMock.downloadModel.mockResolvedValue({ ok: true });
+    aiClientMock.installSpeechRuntime.mockResolvedValue({ ok: true });
   });
 
   it("starts with a LatexDo intro and accepts legal policies before profile setup", () => {
@@ -188,7 +209,7 @@ describe("SetupWizard", () => {
     expect(screen.getByText("How do you want your workspace?")).toBeVisible();
   });
 
-  it("walks through onboarding and completes with a cloud provider", () => {
+  it("walks through onboarding and completes with a cloud provider", async () => {
     const onApplyTheme = vi.fn();
     const onComplete = vi.fn();
     render(
@@ -233,7 +254,8 @@ describe("SetupWizard", () => {
     expect(
       screen.getByText(/The browser build can't run local AI tiers/i),
     ).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /Finish/i }));
+    startSelectedInstall();
+    await completeReadyStep();
 
     expect(onComplete).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -263,7 +285,7 @@ describe("SetupWizard", () => {
     expect(screen.queryByDisplayValue("Ada")).not.toBeInTheDocument();
   });
 
-  it("saves only a simple local profile from onboarding", () => {
+  it("saves only a simple local profile from onboarding", async () => {
     const onComplete = vi.fn();
     render(
       <SetupWizard
@@ -296,21 +318,24 @@ describe("SetupWizard", () => {
     });
     continueSetup();
     fireEvent.click(screen.getByRole("button", { name: /Skip setup/i }));
+    await completeReadyStep();
 
-    expect(onComplete).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userName: "Ada Lovelace",
-        profile: expect.objectContaining({
-          displayName: "Ada Lovelace",
-          title: "Dr",
-          affiliation: "Analytical Engine Lab",
-          externalProviders: [],
+    await waitFor(() =>
+      expect(onComplete).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userName: "Ada Lovelace",
+          profile: expect.objectContaining({
+            displayName: "Ada Lovelace",
+            title: "Dr",
+            affiliation: "Analytical Engine Lab",
+            externalProviders: [],
+          }),
         }),
-      }),
+      ),
     );
   });
 
-  it("downloads a local model before completing desktop setup", async () => {
+  it("downloads the selected local model during the install step", async () => {
     let progressHandler: ((progress: DownloadProgress) => void) | null = null;
     const unsubscribe = vi.fn();
     aiClientMock.subscribeDownload.mockImplementation((handler) => {
@@ -348,25 +373,27 @@ describe("SetupWizard", () => {
     );
     advanceToModelStep();
 
-    fireEvent.click(screen.getByRole("button", { name: /Download model/i }));
+    expect(screen.queryByRole("button", { name: /Download model/i })).toBeNull();
+    expect(screen.getByText("Will download during install")).toBeVisible();
+    startSelectedInstall();
 
-    await waitFor(() => {
-      expect(screen.getByText("Installed")).toBeVisible();
-    });
+    expect(await screen.findByText("LatexDo is ready")).toBeVisible();
     expect(aiClientMock.downloadModel).toHaveBeenCalledWith("latexdo-ai-plus");
     expect(unsubscribe).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: /Finish/i }));
-    expect(onComplete).toHaveBeenCalledWith(
-      expect.objectContaining({
-        setupComplete: true,
-        provider: "local",
-        modelDownloaded: true,
-      }),
+    fireEvent.click(screen.getByRole("button", { name: /Start writing/i }));
+    await waitFor(() =>
+      expect(onComplete).toHaveBeenCalledWith(
+        expect.objectContaining({
+          setupComplete: true,
+          provider: "local",
+          modelDownloaded: true,
+        }),
+      ),
     );
   });
 
-  it("surfaces local model download errors", async () => {
+  it("surfaces local model download errors on the install step", async () => {
     aiClientMock.downloadModel.mockResolvedValue({
       ok: false,
       error: "Download failed",
@@ -386,9 +413,11 @@ describe("SetupWizard", () => {
     );
     advanceToModelStep();
 
-    fireEvent.click(screen.getByRole("button", { name: /Download model/i }));
+    startSelectedInstall();
 
+    expect(await screen.findByText("Installing your selected setup")).toBeVisible();
     expect(await screen.findByText("Download failed")).toBeVisible();
+    expect(screen.getByRole("button", { name: /Retry install/i })).toBeVisible();
   });
 
   it("shows a resource scanner while local AI capabilities are loading", () => {
@@ -439,7 +468,7 @@ describe("SetupWizard", () => {
     expect(modelChoiceButton("LatexDo Pro Max")).toBeDisabled();
   });
 
-  it("blocks local model downloads when storage is too low", () => {
+  it("blocks local model install when storage is too low", () => {
     render(
       <SetupWizard
         initialConfig={makeConfig({
@@ -457,9 +486,12 @@ describe("SetupWizard", () => {
 
     expect(screen.getAllByText(/Not enough storage/i).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: /Download model/i })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /Install selected setup/i }),
+    ).toBeDisabled();
   });
 
-  it("allows an installed local model to finish setup even when storage is low", () => {
+  it("allows an installed local model to finish setup even when storage is low", async () => {
     const onComplete = vi.fn();
     render(
       <SetupWizard
@@ -477,16 +509,20 @@ describe("SetupWizard", () => {
     advanceToModelStep();
 
     expect(screen.getByText("Installed")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /Finish/i }));
-    expect(onComplete).toHaveBeenCalledWith(
-      expect.objectContaining({
-        provider: "local",
-        modelDownloaded: true,
-      }),
+    startSelectedInstall();
+    await completeReadyStep();
+    await waitFor(() =>
+      expect(onComplete).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "local",
+          modelDownloaded: true,
+        }),
+      ),
     );
+    expect(aiClientMock.downloadModel).not.toHaveBeenCalled();
   });
 
-  it("can skip setup before choosing a model", () => {
+  it("can skip setup before choosing a model", async () => {
     const onComplete = vi.fn();
     render(
       <SetupWizard
@@ -499,15 +535,18 @@ describe("SetupWizard", () => {
 
     continueSetup();
     fireEvent.click(screen.getByRole("button", { name: /Skip setup/i }));
-    expect(onComplete).toHaveBeenCalledWith(
-      expect.objectContaining({
-        setupComplete: true,
-        provider: "off",
-      }),
+    await completeReadyStep();
+    await waitFor(() =>
+      expect(onComplete).toHaveBeenCalledWith(
+        expect.objectContaining({
+          setupComplete: true,
+          provider: "off",
+        }),
+      ),
     );
   });
 
-  it("can finish from the AI model step without enabling AI", () => {
+  it("can install dependencies from the AI model step without enabling AI", async () => {
     const onComplete = vi.fn();
     render(
       <SetupWizard
@@ -525,14 +564,72 @@ describe("SetupWizard", () => {
     advanceToModelStep();
 
     fireEvent.click(screen.getByRole("button", { name: /i don't need ai/i }));
-    expect(onComplete).toHaveBeenCalledWith(
-      expect.objectContaining({
-        setupComplete: true,
-        provider: "off",
-        selection: { mode: "off" },
-        modelDownloaded: false,
-      }),
+    await completeReadyStep();
+    await waitFor(() =>
+      expect(onComplete).toHaveBeenCalledWith(
+        expect.objectContaining({
+          setupComplete: true,
+          provider: "off",
+          selection: { mode: "off" },
+          modelDownloaded: false,
+        }),
+      ),
     );
+  });
+
+  it("installs local speech support with progress before completing desktop setup", async () => {
+    let speechHandler: ((progress: SpeechInstallProgress) => void) | null = null;
+    let resolveInstall!: (result: { ok: boolean; error?: string }) => void;
+    const unsubscribe = vi.fn();
+    aiClientMock.subscribeSpeechInstall.mockImplementation((handler) => {
+      speechHandler = handler;
+      return unsubscribe;
+    });
+    aiClientMock.installSpeechRuntime.mockImplementation(
+      () =>
+        new Promise<{ ok: boolean; error?: string }>((resolve) => {
+          resolveInstall = resolve;
+        }),
+    );
+    const onComplete = vi.fn();
+    render(
+      <SetupWizard
+        initialConfig={makeConfig({ provider: "off" })}
+        isDesktop
+        onApplyTheme={vi.fn()}
+        onComplete={onComplete}
+      />,
+    );
+    advanceToModelStep();
+
+    startSelectedInstall();
+
+    expect(screen.getByText("Installing your selected setup")).toBeVisible();
+    expect(screen.getByText("Local speech-to-text")).toBeVisible();
+    expect(screen.getByText(/This can take about 5 minutes/i)).toBeVisible();
+    expect(onComplete).not.toHaveBeenCalled();
+
+    act(() => {
+      speechHandler?.({
+        stage: "downloading-model",
+        receivedBytes: 50,
+        totalBytes: 100,
+        done: false,
+        message: "Downloading speech model",
+      });
+    });
+
+    expect(screen.getByText("Downloading speech model")).toBeVisible();
+    expect(screen.getByText("50 B / 100 B")).toBeVisible();
+
+    act(() => {
+      resolveInstall({ ok: true });
+    });
+    expect(await screen.findByText("LatexDo is ready")).toBeVisible();
+    expect(onComplete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /Start writing/i }));
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 
   it("shows the privacy message and a model capability comparison", () => {

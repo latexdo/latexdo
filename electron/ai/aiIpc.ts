@@ -37,6 +37,7 @@ import {
   setCredential,
 } from "./secretStorage.js";
 import { ensureBundledSpeechServer } from "../voiceStt.js";
+import { installSpeechRuntime } from "../speechRuntime.js";
 
 const credentialIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
@@ -100,6 +101,7 @@ interface GenerateRequest {
 
 const inFlight = new Map<string, AbortController>();
 const activeDownloads = new Map<string, AbortController>();
+let activeSpeechInstall: AbortController | null = null;
 
 function formatGb(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
@@ -348,6 +350,40 @@ export function registerAiIpc(): void {
       baseUrl: typeof options.baseUrl === "string" ? options.baseUrl : undefined,
       model: typeof options.model === "string" ? options.model : undefined,
     });
+  });
+
+  ipcMain.handle("ai:install-speech-runtime", async (event: IpcMainInvokeEvent) => {
+    if (activeSpeechInstall) {
+      return { ok: false, error: "Speech support is already installing." };
+    }
+    const controller = new AbortController();
+    activeSpeechInstall = controller;
+    try {
+      await installSpeechRuntime({
+        signal: controller.signal,
+        onProgress: (progress) => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send("ai:speech-install-progress", progress);
+          }
+        },
+      });
+      return { ok: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!event.sender.isDestroyed()) {
+        event.sender.send("ai:speech-install-progress", {
+          stage: "ready",
+          receivedBytes: 0,
+          totalBytes: null,
+          done: true,
+          error: message,
+          message,
+        });
+      }
+      return { ok: false, error: message };
+    } finally {
+      activeSpeechInstall = null;
+    }
   });
 
   ipcMain.handle("ai:system-capabilities", async () => {

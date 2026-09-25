@@ -12,6 +12,7 @@ import type {
   GenerationStep,
   ImportedModelManifest,
   ModelStatus,
+  SpeechInstallProgress,
   TierAvailability,
 } from "./aiTypes";
 import type { LatexDoAiTier } from "./product/latexDoAiTiers";
@@ -37,10 +38,7 @@ export interface AiBridge {
   importModel?(): Promise<ImportedModelManifest | null>;
   inspectLocalModel?(fileName: string): Promise<ImportedModelManifest>;
   detectOllama(baseUrl: string): Promise<{ available: boolean; models: string[] }>;
-  ensureSpeechServer?(request: {
-    baseUrl?: string;
-    model?: string;
-  }): Promise<
+  ensureSpeechServer?(request: { baseUrl?: string; model?: string }): Promise<
     | {
         ok: true;
         baseUrl: string;
@@ -54,6 +52,8 @@ export interface AiBridge {
         error: string;
       }
   >;
+  installSpeechRuntime?(): Promise<{ ok: boolean; error?: string }>;
+  subscribeSpeechInstall?(cb: (p: SpeechInstallProgress) => void): () => void;
   getSystemCapabilities?(): Promise<AiSystemCapabilities>;
   getTierAvailability?(tierId: LatexDoAiTier): Promise<TierAvailability>;
   /** Main-process OS credential vault. Only the desktop build exposes this. */
@@ -132,6 +132,23 @@ export async function downloadModel(
 
 export function subscribeDownload(cb: (p: DownloadProgress) => void): () => void {
   return bridge()?.subscribeDownload(cb) ?? (() => {});
+}
+
+export async function installSpeechRuntime(): Promise<{
+  ok: boolean;
+  error?: string;
+}> {
+  const ai = bridge();
+  if (!ai?.installSpeechRuntime) {
+    return { ok: false, error: "Speech support install requires the desktop app." };
+  }
+  return ai.installSpeechRuntime();
+}
+
+export function subscribeSpeechInstall(
+  cb: (p: SpeechInstallProgress) => void,
+): () => void {
+  return bridge()?.subscribeSpeechInstall?.(cb) ?? (() => {});
 }
 
 export async function detectOllama(

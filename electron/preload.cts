@@ -1328,6 +1328,15 @@ const aiApi = {
     model?: string;
   }): Promise<unknown> => ipcRenderer.invoke("ai:ensure-speech-server", request),
 
+  installSpeechRuntime: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke("ai:install-speech-runtime"),
+
+  subscribeSpeechInstall: (callback: (payload: unknown) => void) => {
+    const listener = (_event: unknown, payload: unknown) => callback(payload);
+    ipcRenderer.on("ai:speech-install-progress", listener);
+    return () => ipcRenderer.removeListener("ai:speech-install-progress", listener);
+  },
+
   getSystemCapabilities: (): Promise<unknown> =>
     ipcRenderer.invoke("ai:system-capabilities"),
 

@@ -109,6 +109,21 @@ export interface DownloadProgress {
   stage?: "downloading" | "verifying";
 }
 
+export interface SpeechInstallProgress {
+  stage:
+    | "checking"
+    | "downloading-runtime"
+    | "downloading-model"
+    | "verifying"
+    | "installing"
+    | "ready";
+  receivedBytes: number;
+  totalBytes: number | null;
+  done: boolean;
+  error?: string;
+  message?: string;
+}
+
 export interface AiSystemCapabilities {
   totalRamBytes: number;
   freeRamBytes: number;

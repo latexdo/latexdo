@@ -11,8 +11,10 @@ import {
   type LocalTranscriptionServer,
 } from "../features/voice/localTranscriptionDetection";
 import {
+  defaultCloudTranscriptionModel,
   normalizeVoiceSettings,
   type VoiceSettings,
+  type VoiceSttMode,
 } from "../features/voice/voiceSettings";
 
 interface VoiceSettingsPopoverProps {
@@ -29,8 +31,10 @@ export const VoiceSettingsPopover: React.FC<VoiceSettingsPopoverProps> = ({
   aiEnhancementAvailable = true,
 }) => {
   const [open, setOpen] = React.useState(false);
+  const [sttMode, setSttMode] = React.useState<VoiceSttMode>(settings.sttMode);
   const [endpoint, setEndpoint] = React.useState(settings.sttBaseUrl);
   const [model, setModel] = React.useState(settings.transcriptionModel);
+  const [cloudModel, setCloudModel] = React.useState(settings.cloudTranscriptionModel);
   const [aiEnhanced, setAiEnhanced] = React.useState(
     settings.transcriptMode === "clean",
   );
@@ -51,8 +55,10 @@ export const VoiceSettingsPopover: React.FC<VoiceSettingsPopoverProps> = ({
 
   React.useEffect(() => {
     if (open) return;
+    setSttMode(settings.sttMode);
     setEndpoint(settings.sttBaseUrl);
     setModel(settings.transcriptionModel);
+    setCloudModel(settings.cloudTranscriptionModel);
     setAiEnhanced(settings.transcriptMode === "clean");
   }, [open, settings]);
 
@@ -77,8 +83,13 @@ export const VoiceSettingsPopover: React.FC<VoiceSettingsPopoverProps> = ({
       onSave(
         normalizeVoiceSettings({
           ...settings,
+          sttMode,
           sttBaseUrl: endpoint.trim(),
           transcriptionModel: model.trim() || settings.transcriptionModel,
+          cloudTranscriptionModel:
+            cloudModel.trim() ||
+            settings.cloudTranscriptionModel ||
+            defaultCloudTranscriptionModel,
           transcriptMode: aiEnhanced && aiEnhancementAvailable ? "clean" : "verbatim",
         }),
       );
@@ -118,66 +129,109 @@ export const VoiceSettingsPopover: React.FC<VoiceSettingsPopoverProps> = ({
             </button>
           </div>
 
-          <div className="voice-settings-detect">
+          <div className="voice-settings-mode" role="group" aria-label="Speech engine">
             <button
               type="button"
-              className="voice-settings-detect-btn"
-              onClick={() => void runDetection()}
-              disabled={detecting}
+              className={sttMode === "local" ? "active" : ""}
+              onClick={() => setSttMode("local")}
             >
-              <PlugZap size={13} />
-              {detecting ? "Checking bundled speech…" : "Check bundled speech"}
+              Local
+            </button>
+            <button
+              type="button"
+              className={sttMode === "openai" ? "active" : ""}
+              onClick={() => setSttMode("openai")}
+            >
+              OpenAI
             </button>
           </div>
 
-          {detected && detected.length > 0 && (
-            <div className="voice-settings-detected">
-              {detected.map((server) => (
+          {sttMode === "local" && (
+            <>
+              <div className="voice-settings-detect">
                 <button
-                  key={server.baseUrl}
                   type="button"
-                  className="voice-settings-detected-row"
-                  onClick={() => applyDetected(server)}
-                  title={server.models.length ? server.models.join(", ") : undefined}
+                  className="voice-settings-detect-btn"
+                  onClick={() => void runDetection()}
+                  disabled={detecting}
                 >
-                  <Check size={12} />
-                  <span>
-                    {server.label}
-                    {server.speechModel ? ` · ${server.speechModel}` : ""}
-                  </span>
-                  <span className="voice-settings-detected-use">Use</span>
+                  <PlugZap size={13} />
+                  {detecting ? "Checking bundled speech…" : "Check bundled speech"}
                 </button>
-              ))}
-            </div>
-          )}
-          {detected && detected.length === 0 && !detecting && (
-            <p className="voice-settings-hint">
-              Bundled local speech was not found in this build. Reinstall LatexDo
-              with speech support.
-            </p>
+              </div>
+
+              {detected && detected.length > 0 && (
+                <div className="voice-settings-detected">
+                  {detected.map((server) => (
+                    <button
+                      key={server.baseUrl}
+                      type="button"
+                      className="voice-settings-detected-row"
+                      onClick={() => applyDetected(server)}
+                      title={
+                        server.models.length ? server.models.join(", ") : undefined
+                      }
+                    >
+                      <Check size={12} />
+                      <span>
+                        {server.label}
+                        {server.speechModel ? ` · ${server.speechModel}` : ""}
+                      </span>
+                      <span className="voice-settings-detected-use">Use</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {detected && detected.length === 0 && !detecting && (
+                <p className="voice-settings-hint">
+                  Bundled local speech was not found in this build. Reinstall LatexDo
+                  with speech support.
+                </p>
+              )}
+
+              <label className="voice-settings-field">
+                <span>Bundled speech endpoint</span>
+                <input
+                  type="text"
+                  value={endpoint}
+                  onChange={(e) => setEndpoint(e.target.value)}
+                  placeholder="http://localhost:8080/v1"
+                  spellCheck={false}
+                />
+              </label>
+
+              <label className="voice-settings-field">
+                <span>Model</span>
+                <input
+                  type="text"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="whisper-large-v3"
+                  spellCheck={false}
+                />
+              </label>
+            </>
           )}
 
-          <label className="voice-settings-field">
-            <span>Bundled speech endpoint</span>
-            <input
-              type="text"
-              value={endpoint}
-              onChange={(e) => setEndpoint(e.target.value)}
-              placeholder="http://localhost:8080/v1"
-              spellCheck={false}
-            />
-          </label>
-
-          <label className="voice-settings-field">
-            <span>Model</span>
-            <input
-              type="text"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="whisper-large-v3"
-              spellCheck={false}
-            />
-          </label>
+          {sttMode === "openai" && (
+            <>
+              <label className="voice-settings-field">
+                <span>OpenAI speech model</span>
+                <select
+                  value={cloudModel}
+                  onChange={(e) => setCloudModel(e.target.value)}
+                >
+                  <option value="gpt-transcribe">gpt-transcribe</option>
+                  <option value="gpt-4o-transcribe">gpt-4o-transcribe</option>
+                  <option value="gpt-4o-mini-transcribe">gpt-4o-mini-transcribe</option>
+                  <option value="whisper-1">whisper-1</option>
+                </select>
+              </label>
+              <p className="voice-settings-hint">
+                Uses your OpenAI API key from AI settings.
+              </p>
+            </>
+          )}
 
           <label
             className="voice-settings-check"
@@ -198,8 +252,9 @@ export const VoiceSettingsPopover: React.FC<VoiceSettingsPopoverProps> = ({
           </label>
 
           <p className="voice-settings-hint">
-            LatexDo starts bundled local speech automatically. AI enhanced cleanup
-            uses the selected local LatexDo AI model.
+            {sttMode === "local"
+              ? "LatexDo starts bundled local speech automatically. AI enhanced cleanup uses the selected local LatexDo AI model."
+              : "OpenAI speech sends recordings to OpenAI for transcription. AI enhanced cleanup uses the selected local LatexDo AI model."}
           </p>
 
           <div className="voice-settings-actions">

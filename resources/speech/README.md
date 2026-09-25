@@ -1,9 +1,10 @@
-Bundled Local Speech Runtime
-============================
+# Bundled Local Speech Runtime
 
-LatexDo desktop copies this directory to the packaged app as `speech/`.
-Electron starts the speech runtime automatically when the user clicks the
-microphone; users should not have to configure or launch a server manually.
+LatexDo desktop can copy this directory to the packaged app as `speech/`.
+The setup wizard can also download the same runtime layout into the user's app
+data directory. Electron starts the speech runtime automatically when the user
+clicks the microphone; users should not have to configure or launch a server
+manually.
 
 Expected packaged layout:
 
