@@ -102,6 +102,7 @@ import {
 } from "./git.js";
 import { registerTerminalIpc } from "./terminal.js";
 import { registerAiIpc } from "./ai/aiIpc.js";
+import { stopBundledSpeechServer } from "./voiceStt.js";
 import { fetchOrcidProfile } from "./orcid.js";
 import { listProject } from "./projectTree.js";
 import {
@@ -7068,5 +7069,6 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   appIsQuitting = true;
   for (const projectId of gitWatchStates.keys()) closeGitWatchers(projectId);
+  stopBundledSpeechServer();
   projectGarbageCollector.dispose();
 });

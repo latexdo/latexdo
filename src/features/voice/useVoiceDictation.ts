@@ -111,7 +111,7 @@ export function useVoiceDictation(options: UseVoiceDictationOptions): {
         fail(
           voiceError(
             "unsupported",
-            "Your microphone works. Pick a speech-to-text engine in the mic gear to start dictating.",
+            "Bundled local speech is not available in this build. Reinstall LatexDo with speech support.",
           ),
         );
         return;
@@ -258,7 +258,7 @@ export function useVoiceDictation(options: UseVoiceDictationOptions): {
         fail(
           voiceError(
             "unsupported",
-            "Your microphone works. Pick a speech-to-text engine in the mic gear to start dictating.",
+            "Bundled local speech is not available in this build. Reinstall LatexDo with speech support.",
           ),
         );
         return;

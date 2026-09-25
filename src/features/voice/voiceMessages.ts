@@ -17,9 +17,12 @@ export function voiceErrorMessage(error: VoiceDictationError | null): string | n
     case "empty-recording":
       return "No speech was detected.";
     case "transcription-failed":
-      return "Voice transcription failed. Your existing text was not changed.";
+      return (
+        error.message ||
+        "Voice transcription failed. Your existing text was not changed."
+      );
     case "unsupported":
-      return "Your microphone works — pick a speech-to-text engine in the mic gear icon (Detect local speech server), or use an OpenAI cloud provider.";
+      return "Bundled local speech is not available in this build. Reinstall LatexDo with speech support.";
     case "cancelled":
       return null;
     case "cleanup-failed":

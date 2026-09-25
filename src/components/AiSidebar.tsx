@@ -38,6 +38,7 @@ import type { VoiceDictationStatus } from "../features/voice/types";
 import { useVoiceDictation } from "../features/voice/useVoiceDictation";
 import {
   loadVoiceSettings,
+  normalizeVoiceSettings,
   saveVoiceSettings,
   voiceSttCredentialId,
   type VoiceSettings,
@@ -141,18 +142,15 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
   const [composerSelection, setComposerSelection] =
     React.useState<AiComposerSelectionContext | null>(null);
 
-  // Voice dictation: when a dictation finishes it is held as a draft next to
-  // the composer. A small "Insert into editor" button places the (LaTeX-clean)
-  // text at the current caret of the open .tex file through the same path the
-  // AI agent uses for insert-at-cursor edits — nothing is silently typed into
-  // the chat composer.
+  // Voice dictation: when a dictation finishes, place the transcript straight
+  // into the AI composer so the user can review and send it as a chat prompt.
   const [voiceSettings, setVoiceSettingsState] = React.useState(loadVoiceSettings);
   const [voiceSettingsOpenTick, setVoiceSettingsOpenTick] = React.useState(0);
-  const [voiceDraft, setVoiceDraft] = React.useState<string | null>(null);
 
   const saveVoiceSettingsState = React.useCallback((next: VoiceSettings) => {
-    saveVoiceSettings(next);
-    setVoiceSettingsState(next);
+    const normalized = normalizeVoiceSettings(next);
+    saveVoiceSettings(normalized);
+    setVoiceSettingsState(normalized);
   }, []);
 
   const sttEndpoint = voiceSettings.sttBaseUrl.trim();
@@ -170,25 +168,37 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
     [config],
   );
   const voiceStatusRef = React.useRef<VoiceDictationStatus>("idle");
+  const aiEnhancementAvailable = Boolean(cleanupProvider);
+  const [suggest, setSuggest] = React.useState<SuggestState | null>(null);
+  const [highlight, setHighlight] = React.useState(0);
 
-  const insertVoiceDraft = React.useCallback(() => {
-    if (!voiceDraft) return;
-    const proposal: EditProposal = {
-      kind: "insert-at-cursor",
-      path: ctx.activeFilePath() ?? "",
-      newText: voiceDraft,
-    };
-    ctx
-      .applyEdit(proposal)
-      .then(() => {
-        setVoiceDraft(null);
-        emitProductEvent({ type: "voice:inserted" });
-      })
-      .catch(() => {
-        // Keep the draft so the user can retry; the editor's caret may have
-        // moved, so re-clicking inserts at the then-current caret.
-      });
-  }, [voiceDraft, ctx]);
+  const insertVoiceTranscriptIntoComposer = React.useCallback((text: string) => {
+    const transcript = text.trim();
+    if (!transcript) return;
+    let nextCaret = 0;
+    setInput((prev) => {
+      const ta = inputRef.current;
+      const rawStart = ta?.selectionStart ?? prev.length;
+      const rawEnd = ta?.selectionEnd ?? rawStart;
+      const start = Math.max(0, Math.min(prev.length, rawStart));
+      const end = Math.max(start, Math.min(prev.length, rawEnd));
+      const before = prev.slice(0, start);
+      const after = prev.slice(end);
+      const leading = before && !/\s$/.test(before) ? " " : "";
+      const trailing = after && !/^\s/.test(after) ? " " : "";
+      const insertion = `${leading}${transcript}${trailing}`;
+      nextCaret = before.length + insertion.length;
+      return `${before}${insertion}${after}`;
+    });
+    setSuggest(null);
+    emitProductEvent({ type: "voice:inserted" });
+    requestAnimationFrame(() => {
+      const ta = inputRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(nextCaret, nextCaret);
+    });
+  }, []);
 
   const voice = useVoiceDictation({
     transcriptMode: voiceSettings.transcriptMode,
@@ -196,7 +206,7 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
     transcriptionProvider,
     cleanup: voiceSettings.transcriptMode === "clean" ? cleanupProvider : null,
     onTranscript: (text) => {
-      setVoiceDraft(text);
+      insertVoiceTranscriptIntoComposer(text);
     },
     onError: (voiceError) => {
       emitProductEvent({ type: "voice:failed", code: voiceError.code });
@@ -221,7 +231,6 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
       voiceStatusRef.current = next;
     },
   });
-
   const handleVoiceStart = () => {
     void voice.start();
   };
@@ -249,8 +258,6 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
 
   // `@` file mentions and `\` quick commands: an autocomplete popup driven by
   // the caret position. Project files are (re)fetched when a file popup opens.
-  const [suggest, setSuggest] = React.useState<SuggestState | null>(null);
-  const [highlight, setHighlight] = React.useState(0);
   const filesRef = React.useRef<string[]>([]);
   const filesLoading = React.useRef(false);
 
@@ -564,32 +571,6 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
                 ))}
               </div>
             )}
-            {voiceDraft && (
-              <div className="voice-draft-bar">
-                <span className="voice-draft-dot" aria-hidden="true" />
-                <span className="voice-draft-text" title={voiceDraft}>
-                  {voiceDraft}
-                </span>
-                <button
-                  type="button"
-                  className="voice-draft-insert"
-                  onClick={insertVoiceDraft}
-                  aria-label="Insert dictation into editor"
-                  title="Insert dictation into the editor at the current caret"
-                >
-                  <Check size={13} /> Insert into editor
-                </button>
-                <button
-                  type="button"
-                  className="voice-draft-discard"
-                  onClick={() => setVoiceDraft(null)}
-                  aria-label="Discard dictation"
-                  title="Discard dictation"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            )}
             <textarea
               ref={inputRef}
               value={input}
@@ -610,34 +591,40 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
               onBlur={() => setSuggest(null)}
               onKeyDown={onInputKeyDown}
             />
-            <VoiceSettingsPopover
-              settings={voiceSettings}
-              onSave={saveVoiceSettingsState}
-              openTrigger={voiceSettingsOpenTick}
-            />
-            <VoiceDictationButton
-              status={voice.status}
-              error={voice.error}
-              durationMs={voice.durationMs}
-              onStart={handleVoiceStart}
-              onStop={() => void voice.stop()}
-              onCancel={voice.cancel}
-              onOpenSettings={() => setVoiceSettingsOpenTick((t) => t + 1)}
-            />
-            {isRunning ? (
-              <button className="ai-send-button stop" onClick={abort} title="Stop">
-                <Square size={15} />
-              </button>
-            ) : (
-              <button
-                className="ai-send-button"
-                onClick={submit}
-                disabled={!input.trim() && !composerSelection}
-                title="Send"
-              >
-                <Send size={15} />
-              </button>
-            )}
+            <div className="ai-composer-toolbar">
+              <div className="ai-composer-voice-controls">
+                <VoiceSettingsPopover
+                  settings={voiceSettings}
+                  onSave={saveVoiceSettingsState}
+                  openTrigger={voiceSettingsOpenTick}
+                  aiEnhancementAvailable={aiEnhancementAvailable}
+                />
+                <VoiceDictationButton
+                  status={voice.status}
+                  error={voice.error}
+                  durationMs={voice.durationMs}
+                  onStart={handleVoiceStart}
+                  onStop={() => void voice.stop()}
+                  onCancel={voice.cancel}
+                  onOpenSettings={() => setVoiceSettingsOpenTick((t) => t + 1)}
+                  hideError
+                />
+              </div>
+              {isRunning ? (
+                <button className="ai-send-button stop" onClick={abort} title="Stop">
+                  <Square size={15} />
+                </button>
+              ) : (
+                <button
+                  className="ai-send-button"
+                  onClick={submit}
+                  disabled={!input.trim() && !composerSelection}
+                  title="Send"
+                >
+                  <Send size={15} />
+                </button>
+              )}
+            </div>
           </div>
         </>
       )}

@@ -36,6 +36,7 @@ import {
   isCredentialStorageAvailable,
   setCredential,
 } from "./secretStorage.js";
+import { ensureBundledSpeechServer } from "../voiceStt.js";
 
 const credentialIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
@@ -336,6 +337,17 @@ export function registerAiIpc(): void {
 
   ipcMain.handle("ai:detect-ollama", async (_event, baseUrl: string) => {
     return detectOllama(baseUrl);
+  });
+
+  ipcMain.handle("ai:ensure-speech-server", async (_event, request: unknown) => {
+    const options =
+      request && typeof request === "object" && !Array.isArray(request)
+        ? (request as { baseUrl?: unknown; model?: unknown })
+        : {};
+    return ensureBundledSpeechServer({
+      baseUrl: typeof options.baseUrl === "string" ? options.baseUrl : undefined,
+      model: typeof options.model === "string" ? options.model : undefined,
+    });
   });
 
   ipcMain.handle("ai:system-capabilities", async () => {

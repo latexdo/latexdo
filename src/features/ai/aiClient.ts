@@ -37,6 +37,23 @@ export interface AiBridge {
   importModel?(): Promise<ImportedModelManifest | null>;
   inspectLocalModel?(fileName: string): Promise<ImportedModelManifest>;
   detectOllama(baseUrl: string): Promise<{ available: boolean; models: string[] }>;
+  ensureSpeechServer?(request: {
+    baseUrl?: string;
+    model?: string;
+  }): Promise<
+    | {
+        ok: true;
+        baseUrl: string;
+        model: string;
+        alreadyRunning: boolean;
+        bundled: boolean;
+      }
+    | {
+        ok: false;
+        code: string;
+        error: string;
+      }
+  >;
   getSystemCapabilities?(): Promise<AiSystemCapabilities>;
   getTierAvailability?(tierId: LatexDoAiTier): Promise<TierAvailability>;
   /** Main-process OS credential vault. Only the desktop build exposes this. */

@@ -1323,6 +1323,11 @@ const aiApi = {
   detectOllama: (baseUrl: string): Promise<{ available: boolean; models: string[] }> =>
     ipcRenderer.invoke("ai:detect-ollama", baseUrl),
 
+  ensureSpeechServer: (request: {
+    baseUrl?: string;
+    model?: string;
+  }): Promise<unknown> => ipcRenderer.invoke("ai:ensure-speech-server", request),
+
   getSystemCapabilities: (): Promise<unknown> =>
     ipcRenderer.invoke("ai:system-capabilities"),
 

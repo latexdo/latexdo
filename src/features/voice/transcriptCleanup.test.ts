@@ -43,12 +43,12 @@ describe("transcriptCleanup", () => {
     expect(user).toContain("lambda");
   });
 
-  it("runs cleanup through the existing provider stack at temperature 0", async () => {
+  it("runs cleanup through the selected LatexDo AI workspace model at temperature 0", async () => {
     vi.mocked(generateStep).mockResolvedValueOnce({
       type: "text",
       content: "So the result is basically the same, but we need to change lambda.",
     });
-    const cleanup = new LlmTranscriptCleanup(cloudConfig());
+    const cleanup = new LlmTranscriptCleanup(defaultAiConfig);
     const cleaned = await cleanup.cleanup(
       "so the result is basically the same but we need to change lambda",
     );
@@ -58,9 +58,10 @@ describe("transcriptCleanup", () => {
     expect(generateStep).toHaveBeenCalledTimes(1);
     const req = vi.mocked(generateStep).mock.calls[0][0] as {
       provider: string;
-      options: { temperature?: number };
+      options: { modelId?: string; temperature?: number };
     };
-    expect(req.provider).toBe("cloud");
+    expect(req.provider).toBe("local");
+    expect(req.options.modelId).toBe("qwen2.5-coder-3b");
     expect(req.options.temperature).toBe(0);
   });
 
@@ -77,8 +78,12 @@ describe("transcriptCleanup", () => {
     expect(user).toBe("Transcript:\nwe need to change the introduction");
   });
 
-  it("returns null when AI is switched off", () => {
+  it("creates enhancement only for local workspace AI", () => {
+    expect(createTranscriptCleanup(defaultAiConfig)).toBeInstanceOf(
+      LlmTranscriptCleanup,
+    );
     expect(createTranscriptCleanup({ ...defaultAiConfig, provider: "off" })).toBeNull();
+    expect(createTranscriptCleanup(cloudConfig())).toBeNull();
   });
 
   it("wraps provider errors so dictation can fall back to the raw transcript", async () => {

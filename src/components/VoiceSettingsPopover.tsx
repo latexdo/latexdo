@@ -1,24 +1,17 @@
 // Voice dictation settings popover.
 //
-// Lets the user point speech-to-text at ANY OpenAI-compatible endpoint (a
-// local whisper server, Groq, OpenAI, …) independent of the chat provider.
-// The API key is stored through the existing OS-vault credential model — never
-// a persisted renderer secret. When no endpoint is set, dictation falls back
-// to the configured cloud provider if it is OpenAI.
+// Lets the user point speech-to-text at a local OpenAI-compatible endpoint
+// (whisper.cpp, LM Studio, faster-whisper, …) independent of the chat provider.
+// Voice dictation defaults to local speech-to-text.
 
 import React from "react";
-import { Check, KeyRound, PlugZap, Settings2, X } from "lucide-react";
-import {
-  loadCloudCredential,
-  saveCloudCredential,
-} from "../features/ai/cloudCredentials";
+import { Check, PlugZap, Settings2, X } from "lucide-react";
 import {
   detectLocalTranscriptionServers,
   type LocalTranscriptionServer,
 } from "../features/voice/localTranscriptionDetection";
-import type { TranscriptMode } from "../features/voice/types";
 import {
-  voiceSttCredentialId,
+  normalizeVoiceSettings,
   type VoiceSettings,
 } from "../features/voice/voiceSettings";
 
@@ -26,21 +19,21 @@ interface VoiceSettingsPopoverProps {
   settings: VoiceSettings;
   onSave(next: VoiceSettings): void;
   openTrigger?: number;
+  aiEnhancementAvailable?: boolean;
 }
 
 export const VoiceSettingsPopover: React.FC<VoiceSettingsPopoverProps> = ({
   settings,
   onSave,
   openTrigger = 0,
+  aiEnhancementAvailable = true,
 }) => {
   const [open, setOpen] = React.useState(false);
-  const [transcriptMode, setTranscriptMode] = React.useState<TranscriptMode>(
-    settings.transcriptMode,
-  );
   const [endpoint, setEndpoint] = React.useState(settings.sttBaseUrl);
   const [model, setModel] = React.useState(settings.transcriptionModel);
-  const [apiKey, setApiKey] = React.useState("");
-  const [keyStored, setKeyStored] = React.useState(false);
+  const [aiEnhanced, setAiEnhanced] = React.useState(
+    settings.transcriptMode === "clean",
+  );
   const [saving, setSaving] = React.useState(false);
   const [detecting, setDetecting] = React.useState(false);
   const [detected, setDetected] = React.useState<LocalTranscriptionServer[] | null>(
@@ -53,24 +46,14 @@ export const VoiceSettingsPopover: React.FC<VoiceSettingsPopoverProps> = ({
 
   React.useEffect(() => {
     if (!open) return;
-    let active = true;
-    setApiKey("");
-    setKeyStored(false);
     setDetected(null);
-    void loadCloudCredential(voiceSttCredentialId).then((existing) => {
-      if (!active) return;
-      setKeyStored(Boolean(existing));
-    });
-    return () => {
-      active = false;
-    };
   }, [open]);
 
   React.useEffect(() => {
     if (open) return;
-    setTranscriptMode(settings.transcriptMode);
     setEndpoint(settings.sttBaseUrl);
     setModel(settings.transcriptionModel);
+    setAiEnhanced(settings.transcriptMode === "clean");
   }, [open, settings]);
 
   const runDetection = async () => {
@@ -91,15 +74,14 @@ export const VoiceSettingsPopover: React.FC<VoiceSettingsPopoverProps> = ({
   const save = async () => {
     setSaving(true);
     try {
-      if (apiKey.trim()) {
-        await saveCloudCredential(voiceSttCredentialId, apiKey.trim());
-      }
-      onSave({
-        ...settings,
-        transcriptMode,
-        sttBaseUrl: endpoint.trim(),
-        transcriptionModel: model.trim() || settings.transcriptionModel,
-      });
+      onSave(
+        normalizeVoiceSettings({
+          ...settings,
+          sttBaseUrl: endpoint.trim(),
+          transcriptionModel: model.trim() || settings.transcriptionModel,
+          transcriptMode: aiEnhanced && aiEnhancementAvailable ? "clean" : "verbatim",
+        }),
+      );
       setOpen(false);
     } finally {
       setSaving(false);
@@ -144,7 +126,7 @@ export const VoiceSettingsPopover: React.FC<VoiceSettingsPopoverProps> = ({
               disabled={detecting}
             >
               <PlugZap size={13} />
-              {detecting ? "Scanning local servers…" : "Detect local speech server"}
+              {detecting ? "Checking bundled speech…" : "Check bundled speech"}
             </button>
           </div>
 
@@ -170,13 +152,13 @@ export const VoiceSettingsPopover: React.FC<VoiceSettingsPopoverProps> = ({
           )}
           {detected && detected.length === 0 && !detecting && (
             <p className="voice-settings-hint">
-              No local speech server found. Start one (whisper.cpp's <code>server</code>
-              , LM Studio, or faster-whisper) and try again.
+              Bundled local speech was not found in this build. Reinstall LatexDo
+              with speech support.
             </p>
           )}
 
           <label className="voice-settings-field">
-            <span>Speech-to-text endpoint</span>
+            <span>Bundled speech endpoint</span>
             <input
               type="text"
               value={endpoint}
@@ -197,39 +179,28 @@ export const VoiceSettingsPopover: React.FC<VoiceSettingsPopoverProps> = ({
             />
           </label>
 
-          <label className="voice-settings-field">
-            <span>API key</span>
+          <label
+            className="voice-settings-check"
+            title={
+              aiEnhancementAvailable
+                ? "Enhance the transcription with your AI"
+                : "Select a local LatexDo AI model to enable enhancement"
+            }
+          >
             <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={keyStored ? "Key stored in the OS vault" : "Optional"}
-              autoComplete="off"
+              type="checkbox"
+              aria-label="AI enhanced"
+              checked={aiEnhanced && aiEnhancementAvailable}
+              disabled={!aiEnhancementAvailable}
+              onChange={(e) => setAiEnhanced(e.target.checked)}
             />
-          </label>
-
-          <label className="voice-settings-field">
-            <span>Outcome</span>
-            <select
-              value={transcriptMode}
-              onChange={(e) => setTranscriptMode(e.target.value as TranscriptMode)}
-            >
-              <option value="clean">Clean up and format as LaTeX</option>
-              <option value="verbatim">Insert exactly as spoken</option>
-            </select>
+            <span>AI enhanced</span>
           </label>
 
           <p className="voice-settings-hint">
-            Speech-to-text runs on the server above; the LaTeX cleanup uses the AI model
-            you picked during setup (LatexDo AI works locally). Local servers need no
-            API key.
+            LatexDo starts bundled local speech automatically. AI enhanced cleanup
+            uses the selected local LatexDo AI model.
           </p>
-
-          {keyStored && (
-            <p className="voice-settings-key-ok">
-              <KeyRound size={12} /> Speech-to-text key is stored.
-            </p>
-          )}
 
           <div className="voice-settings-actions">
             <button

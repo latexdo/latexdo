@@ -1,10 +1,8 @@
 // Speech-to-text providers. This module turns an audio Blob into a literal
 // transcript. It knows nothing about React, the editor, or the state machine.
 //
-// Cloud transcription is implemented in the renderer through the existing
-// cloud-credential model (never a persisted renderer key) and the OpenAI
-// `audio/transcriptions` endpoint, which is served by OpenAI-compatible
-// gateways. Audio is NEVER routed through the app's chat-completion pipeline.
+// The app-level factory only creates providers for loopback speech endpoints;
+// audio is never routed through the app's chat-completion pipeline.
 
 import type { AiConfig } from "../ai/aiConfig";
 import { loadCloudCredential } from "../ai/cloudCredentials";
@@ -14,6 +12,50 @@ import {
   type TranscriptionResult,
   type VoiceDictationError,
 } from "./types";
+import { voiceSttCredentialId } from "./voiceSettings";
+
+type EnsureSpeechServerResult =
+  | {
+      ok: true;
+      baseUrl: string;
+      model: string;
+      alreadyRunning: boolean;
+      bundled: boolean;
+    }
+  | {
+      ok: false;
+      code: string;
+      error: string;
+    };
+
+function speechBridge():
+  | {
+      ensureSpeechServer?(request: {
+        baseUrl?: string;
+        model?: string;
+      }): Promise<EnsureSpeechServerResult>;
+    }
+  | null {
+  return (
+    (globalThis as {
+      aiApi?: {
+        ensureSpeechServer?(request: {
+          baseUrl?: string;
+          model?: string;
+        }): Promise<EnsureSpeechServerResult>;
+      };
+    }).aiApi ?? null
+  );
+}
+
+async function ensureLocalSpeechServer(
+  baseUrl: string,
+  model: string,
+): Promise<void> {
+  const result = await speechBridge()?.ensureSpeechServer?.({ baseUrl, model });
+  if (!result || result.ok) return;
+  throw new TranscriptionError("transcription-failed", result.error, result.code);
+}
 
 /** Error carrying a structured code; used by the state machine mapping. */
 export class TranscriptionError extends Error {
@@ -53,7 +95,7 @@ export interface OpenAiTranscriptionProviderOptions {
   maxErrorChars?: number;
 }
 
-export const defaultTranscriptionModel = "gpt-4o-mini-transcribe";
+export const defaultTranscriptionModel = "whisper-1";
 
 export function audioExtensionForType(mimeType: string | undefined): string {
   const type = mimeType ?? "";
@@ -84,6 +126,7 @@ export class OpenAiTranscriptionProvider implements TranscriptionProvider {
   private readonly credentialId: string;
   private readonly allowKeyless: boolean;
   private readonly maxErrorChars: number;
+  private readonly localEndpoint: boolean;
 
   constructor(options: OpenAiTranscriptionProviderOptions) {
     this.baseUrl = options.baseUrl?.trim() || "https://api.openai.com/v1";
@@ -91,6 +134,7 @@ export class OpenAiTranscriptionProvider implements TranscriptionProvider {
     this.credentialId = options.credentialId;
     this.allowKeyless = options.allowKeyless ?? false;
     this.maxErrorChars = options.maxErrorChars ?? 160;
+    this.localEndpoint = isLoopbackBaseUrl(this.baseUrl);
   }
 
   async transcribe(request: {
@@ -98,6 +142,13 @@ export class OpenAiTranscriptionProvider implements TranscriptionProvider {
     language?: string;
     signal?: AbortSignal;
   }): Promise<TranscriptionResult> {
+    if (this.localEndpoint) {
+      await ensureLocalSpeechServer(this.baseUrl, this.model);
+      if (isAbortError(null, request.signal)) {
+        throw new TranscriptionError("cancelled", "Voice transcription cancelled.");
+      }
+    }
+
     const apiKey = await loadCloudCredential(this.credentialId);
     if (!apiKey && !this.allowKeyless) {
       throw new TranscriptionError(
@@ -133,9 +184,15 @@ export class OpenAiTranscriptionProvider implements TranscriptionProvider {
           err,
         );
       }
+      const message = this.localEndpoint
+        ? [
+            "LatexDo could not reach the bundled local speech service.",
+            "Restart LatexDo and try again.",
+          ].join(" ")
+        : "Voice transcription failed. Your existing text was not changed.";
       throw new TranscriptionError(
         "transcription-failed",
-        "Voice transcription failed. Your existing text was not changed.",
+        message,
         err,
       );
     }
@@ -175,6 +232,22 @@ export class OpenAiTranscriptionProvider implements TranscriptionProvider {
   }
 }
 
+function isLoopbackBaseUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    const host = parsed.hostname;
+    return (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "::1" ||
+      host === "[::1]"
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function safeText(response: Response): Promise<string> {
   try {
     return (await response.text()).trim();
@@ -193,40 +266,26 @@ export function isAbortError(err: unknown, signal?: AbortSignal): boolean {
 /**
  * Build the transcription provider for voice dictation.
  *
- * Resolution order:
- *   1. A standalone speech-to-text endpoint (`options.baseUrl` + its own vault
- *      `options.credentialId`). This lets ANY AI setup dictate — local models,
- *      Ollama, Anthropic — by pointing at an OpenAI-compatible audio endpoint
- *      (local whisper server, Groq, etc.). The chat provider is irrelevant.
- *   2. The app's configured cloud provider, but ONLY when it is OpenAI
- *      (Anthropic-only cloud setups return null and dictation reports
- *      "unsupported" rather than silently routing audio through chat).
+ * Voice dictation uses an explicit speech-to-text endpoint. The app defaults
+ * that endpoint to localhost in voiceSettings.ts, and this factory refuses
+ * non-loopback URLs so audio stays local.
  *
  * Audio is never routed through the chat-completion pipeline.
  */
 export function createTranscriptionProvider(
-  config: AiConfig,
+  _config: AiConfig,
   options?: { model?: string; baseUrl?: string; credentialId?: string },
 ): TranscriptionProvider | null {
   const explicitBaseUrl = (options?.baseUrl ?? "").trim();
-  const explicitCredentialId = (options?.credentialId ?? "").trim();
-  if (explicitBaseUrl && explicitCredentialId) {
+  if (explicitBaseUrl) {
+    if (!isLoopbackBaseUrl(explicitBaseUrl)) return null;
     return new OpenAiTranscriptionProvider({
       baseUrl: explicitBaseUrl,
       model: options?.model,
-      credentialId: explicitCredentialId,
-      // An explicitly configured endpoint is the user pointing at a local
-      // (or proxy) speech server; those generally don't require an API key.
+      credentialId: (options?.credentialId ?? "").trim() || voiceSttCredentialId,
       allowKeyless: true,
     });
   }
 
-  if (config.provider !== "cloud") return null;
-  if (config.cloud.vendor !== "openai") return null;
-  if (!config.cloud.credentialId) return null;
-  return new OpenAiTranscriptionProvider({
-    baseUrl: config.cloud.baseUrl,
-    model: options?.model,
-    credentialId: config.cloud.credentialId,
-  });
+  return null;
 }

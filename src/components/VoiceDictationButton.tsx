@@ -35,6 +35,7 @@ interface VoiceDictationButtonProps {
   onStop(): void;
   onCancel(): void;
   onOpenSettings?(): void;
+  hideError?: boolean;
 }
 
 export const VoiceDictationButton: React.FC<VoiceDictationButtonProps> = ({
@@ -46,9 +47,11 @@ export const VoiceDictationButton: React.FC<VoiceDictationButtonProps> = ({
   onStop,
   onCancel,
   onOpenSettings,
+  hideError = false,
 }) => {
   const idle = status === "idle" || status === "success";
   const startable = idle || status === "error";
+  const message = voiceErrorMessage(error ?? null);
 
   if (status === "recording") {
     return (
@@ -60,13 +63,14 @@ export const VoiceDictationButton: React.FC<VoiceDictationButtonProps> = ({
         </span>
         <button
           type="button"
-          className="voice-button voice-stop"
+          className="voice-button voice-stop voice-stop-transcribe"
           onClick={onStop}
           title="Stop and transcribe"
           aria-label="Stop voice dictation"
           disabled={disabled}
         >
           <Square size={14} />
+          <span>Transcribe</span>
         </button>
         <button
           type="button"
@@ -129,12 +133,12 @@ export const VoiceDictationButton: React.FC<VoiceDictationButtonProps> = ({
       >
         <Mic size={15} />
       </button>
-      {voiceErrorMessage(error ?? null) && (
+      {!hideError && message && (
         <span className="voice-error" role="alert">
-          {voiceErrorMessage(error ?? null)}
+          {message}
         </span>
       )}
-      {error?.code === "unsupported" && onOpenSettings && (
+      {!hideError && error?.code === "unsupported" && onOpenSettings && (
         <button
           type="button"
           className="voice-error-setup"

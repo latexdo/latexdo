@@ -129,6 +129,10 @@
       {
         "from": "examples/welcome",
         "to": "examples/welcome"
+      },
+      {
+        "from": "resources/speech",
+        "to": "speech"
       }
     ],
     "mac": {

@@ -50,6 +50,7 @@ describe("VoiceDictationButton", () => {
 
     expect(screen.getByText("Recording")).toBeVisible();
     expect(screen.getByText("00:08")).toBeVisible();
+    expect(screen.getByText("Transcribe")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Stop voice dictation" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel voice dictation" }));
     expect(onStop).toHaveBeenCalledTimes(1);

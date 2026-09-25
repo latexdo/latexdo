@@ -99,9 +99,9 @@ export class LlmTranscriptCleanup implements TranscriptCleanup {
   }
 }
 
-/** Build cleanup against the provider the user already configured. */
+/** Build cleanup against the selected local workspace AI model. */
 export function createTranscriptCleanup(config: AiConfig): TranscriptCleanup | null {
-  if (config.provider === "off") return null;
+  if (config.provider !== "local") return null;
   return new LlmTranscriptCleanup(config);
 }
 

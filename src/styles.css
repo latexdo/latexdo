@@ -14304,11 +14304,11 @@ button {
 .ai-sidebar-input {
   position: relative;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
   padding: 10px 12px;
   border-top: 1px solid var(--border-subtle);
-  align-items: flex-end;
+  align-items: stretch;
 }
 .ai-selection-context {
   flex: 1 1 100%;
@@ -14421,7 +14421,9 @@ button {
   flex-shrink: 0;
 }
 .ai-sidebar-input textarea {
-  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
+  flex: none;
   resize: none;
   background: var(--bg-input);
   border: 1px solid var(--border-input);
@@ -14434,6 +14436,20 @@ button {
 .ai-sidebar-input textarea:focus {
   outline: none;
   border-color: var(--border-focus);
+}
+.ai-composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+.ai-composer-voice-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 .ai-send-button {
   width: 34px;
@@ -14491,6 +14507,14 @@ button {
 .voice-button.voice-stop {
   background: var(--bg-badge);
   color: var(--text-primary);
+}
+.voice-button.voice-stop-transcribe {
+  width: auto;
+  min-width: 112px;
+  padding: 0 10px;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
 }
 .voice-button.voice-stop:hover:not(:disabled) {
   background: var(--error);
@@ -14564,69 +14588,7 @@ button {
   color: var(--error);
   max-width: 220px;
 }
-
-/* ----- Voice dictation draft + settings ----- */
-.voice-draft-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0 12px 6px;
-  padding: 5px 8px;
-  border: 1px solid var(--border-default);
-  border-radius: 8px;
-  background: var(--accent-soft);
-  max-width: 460px;
-}
-.voice-draft-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex-shrink: 0;
-}
-.voice-draft-text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--text-primary);
-  font-style: italic;
-}
-.voice-draft-insert {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
-  border-radius: 6px;
-  border: 1px solid var(--accent);
-  background: var(--accent-bg);
-  color: var(--text-on-accent);
-  font-size: 11.5px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.voice-draft-insert:hover {
-  filter: brightness(1.08);
-}
-.voice-draft-discard {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.voice-draft-discard:hover {
-  background: var(--bg-badge);
-  color: var(--text-primary);
-}
+/* ----- Voice dictation settings ----- */
 .voice-settings-wrap {
   position: relative;
   display: inline-flex;
@@ -14641,11 +14603,14 @@ button {
   color: var(--text-primary);
 }
 .voice-settings-popover {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  right: 0;
-  z-index: 30;
-  width: 280px;
+  position: fixed;
+  right: 18px;
+  bottom: 72px;
+  z-index: 80;
+  width: min(300px, calc(100vw - 24px));
+  max-height: min(520px, calc(100vh - 96px));
+  overflow: auto;
+  box-sizing: border-box;
   padding: 10px;
   border: 1px solid var(--border-card);
   border-radius: 10px;
@@ -14758,6 +14723,29 @@ button {
   outline: none;
   border-color: var(--accent);
 }
+.voice-settings-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 7px;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.voice-settings-check input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.voice-settings-check:has(input:disabled) {
+  opacity: 0.55;
+  cursor: default;
+}
 .voice-settings-hint {
   font-size: 11px;
   line-height: 1.4;
@@ -14766,14 +14754,6 @@ button {
 }
 .voice-settings-hint code {
   font-size: 10.5px;
-}
-.voice-settings-key-ok {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--success, #22a06b);
-  margin: 0;
 }
 .voice-settings-actions {
   display: flex;

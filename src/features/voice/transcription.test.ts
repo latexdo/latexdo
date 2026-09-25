@@ -52,6 +52,7 @@ describe("transcription provider", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    delete (globalThis as { aiApi?: unknown }).aiApi;
   });
 
   it("sends a multipart request to the transcription endpoint with the vaulted key", async () => {
@@ -72,7 +73,7 @@ describe("transcription provider", () => {
     expect(headers["content-type"]).toBeUndefined(); // multipart managed by FormData
 
     const body = init?.body as FormData;
-    expect(body.get("model")).toBe("gpt-4o-mini-transcribe");
+    expect(body.get("model")).toBe("whisper-1");
     expect(body.get("response_format")).toBe("json");
     expect(body.get("language")).toBe("en");
     expect(body.get("temperature")).toBe("0");
@@ -125,6 +126,56 @@ describe("transcription provider", () => {
     expect(String(url)).toBe("http://localhost:8080/v1/audio/transcriptions");
     const headers = (init?.headers ?? {}) as Record<string, string>;
     expect(headers.authorization).toBeUndefined();
+  });
+
+  it("asks the desktop bridge to start bundled local speech before transcription", async () => {
+    vi.mocked(loadCloudCredential).mockResolvedValue(null);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { text: "local" }));
+    const ensureSpeechServer = vi.fn().mockResolvedValue({
+      ok: true,
+      baseUrl: "http://localhost:8080/v1",
+      model: "whisper-1",
+      alreadyRunning: false,
+      bundled: true,
+    });
+    (globalThis as { aiApi?: unknown }).aiApi = { ensureSpeechServer };
+
+    await new OpenAiTranscriptionProvider({
+      credentialId: "credential-voice-stt-primary",
+      baseUrl: "http://localhost:8080/v1",
+      model: "whisper-1",
+      allowKeyless: true,
+    }).transcribe({ audio: audio() });
+
+    expect(ensureSpeechServer).toHaveBeenCalledWith({
+      baseUrl: "http://localhost:8080/v1",
+      model: "whisper-1",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces bundled speech startup failures without posting audio", async () => {
+    vi.mocked(loadCloudCredential).mockResolvedValue(null);
+    (globalThis as { aiApi?: unknown }).aiApi = {
+      ensureSpeechServer: vi.fn().mockResolvedValue({
+        ok: false,
+        code: "missing-runtime",
+        error: "This LatexDo build is missing the bundled local speech runtime.",
+      }),
+    };
+
+    await expect(
+      new OpenAiTranscriptionProvider({
+        credentialId: "credential-voice-stt-primary",
+        baseUrl: "http://localhost:8080/v1",
+        model: "whisper-1",
+        allowKeyless: true,
+      }).transcribe({ audio: audio() }),
+    ).rejects.toMatchObject({
+      code: "transcription-failed",
+      message: "This LatexDo build is missing the bundled local speech runtime.",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("maps provider HTTP errors to transcription-failed", async () => {
@@ -193,8 +244,8 @@ describe("createTranscriptionProvider resolution", () => {
     };
     expect(createTranscriptionProvider(anthropic)).toBeNull();
 
-    // Add a standalone OpenAI-compatible speech endpoint (local whisper /
-    // Groq): now dictation works while the chat provider stays Anthropic.
+    // Add a standalone local OpenAI-compatible speech endpoint: now dictation
+    // works while the chat provider stays Anthropic.
     const provider = createTranscriptionProvider(anthropic, {
       baseUrl: "http://localhost:8080/v1",
       credentialId: "credential-voice-stt-primary",
@@ -203,7 +254,7 @@ describe("createTranscriptionProvider resolution", () => {
     expect(provider).toBeInstanceOf(OpenAiTranscriptionProvider);
   });
 
-  it("falls back to the configured OpenAI cloud provider when no endpoint is set", () => {
+  it("does not fall back to the configured OpenAI cloud provider", () => {
     const openai: AiConfig = {
       ...defaultAiConfig,
       provider: "cloud",
@@ -214,9 +265,24 @@ describe("createTranscriptionProvider resolution", () => {
         credentialId: "credential-openai-primary",
       },
     };
-    expect(createTranscriptionProvider(openai, { model: "x" })).toBeInstanceOf(
+    expect(createTranscriptionProvider(openai, { model: "x" })).toBeNull();
+    expect(
+      createTranscriptionProvider(openai, {
+        baseUrl: "http://localhost:8080/v1",
+        model: "x",
+      }),
+    ).toBeInstanceOf(
       OpenAiTranscriptionProvider,
     );
+  });
+
+  it("refuses non-local speech endpoints", () => {
+    expect(
+      createTranscriptionProvider(defaultAiConfig, {
+        baseUrl: "https://api.openai.com/v1",
+        model: "whisper-1",
+      }),
+    ).toBeNull();
   });
 
   it("does not fall back through Anthropic or no-credential cloud configs", () => {

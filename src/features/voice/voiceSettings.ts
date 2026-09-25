@@ -11,32 +11,61 @@ export interface VoiceSettings {
   transcriptMode: TranscriptMode;
   /** Hard cap for a single dictation. See spec §38 (default 3 minutes). */
   maxDurationMs: number;
-  /** Speech model used by the cloud transcription provider. */
+  /** Speech model used by the local transcription server. */
   transcriptionModel: string;
   /**
-   * OpenAI-compatible speech-to-text endpoint (e.g. a local whisper server
-   * at http://localhost:8080/v1, or Groq). Blank falls back to the AI
-   * provider's own cloud key when it is OpenAI. The endpoint does NOT have
-   * to match the chat provider, so local AI setups can still dictate.
+   * Local OpenAI-compatible speech-to-text endpoint, e.g. a local whisper
+   * server at http://localhost:8080/v1. Voice dictation defaults to local
+   * speech-to-text and does not use the chat provider for audio.
    */
   sttBaseUrl: string;
 }
 
 export const voiceSettingsStorageKey = "latexdo.voice.config.v1";
 export const defaultMaxVoiceDurationMs = 180_000;
+export const defaultLocalTranscriptionBaseUrl = "http://localhost:8080/v1";
 
-/** Credential vault id for the standalone speech-to-text API key. */
+/** Internal credential id retained for local endpoints that opt into auth. */
 export const voiceSttCredentialId = "credential-voice-stt-primary";
 
 export const defaultVoiceSettings: VoiceSettings = {
   transcriptMode: "clean",
   maxDurationMs: defaultMaxVoiceDurationMs,
-  transcriptionModel: "gpt-4o-mini-transcribe",
-  sttBaseUrl: "",
+  transcriptionModel: "whisper-1",
+  sttBaseUrl: defaultLocalTranscriptionBaseUrl,
 };
+
+const legacyCloudTranscriptionModel = "gpt-4o-mini-transcribe";
 
 function str(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function isLoopbackBaseUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    return (
+      parsed.hostname === "localhost" ||
+      parsed.hostname === "127.0.0.1" ||
+      parsed.hostname === "::1" ||
+      parsed.hostname === "[::1]"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function localBaseUrl(value: unknown): string {
+  const baseUrl = str(value, defaultVoiceSettings.sttBaseUrl);
+  return isLoopbackBaseUrl(baseUrl) ? baseUrl : defaultVoiceSettings.sttBaseUrl;
+}
+
+function transcriptionModel(value: unknown): string {
+  const model = str(value, defaultVoiceSettings.transcriptionModel);
+  return model === legacyCloudTranscriptionModel
+    ? defaultVoiceSettings.transcriptionModel
+    : model;
 }
 
 function isTranscriptMode(value: unknown): value is TranscriptMode {
@@ -65,11 +94,8 @@ export function normalizeVoiceSettings(raw: unknown): VoiceSettings {
       5_000, // never below a few seconds
       10 * 60_000,
     ),
-    transcriptionModel: str(
-      saved.transcriptionModel,
-      defaultVoiceSettings.transcriptionModel,
-    ),
-    sttBaseUrl: str(saved.sttBaseUrl, defaultVoiceSettings.sttBaseUrl),
+    transcriptionModel: transcriptionModel(saved.transcriptionModel),
+    sttBaseUrl: localBaseUrl(saved.sttBaseUrl),
   };
 }
 

@@ -160,6 +160,7 @@ describe("AiSidebar voice dictation integration", () => {
     agentMock.state.messages = [];
     agentMock.state.isRunning = false;
     agentMock.state.status = "";
+    agentMock.state.send.mockReset();
     ctx.applyEdit.mockReset();
     ctx.applyEdit.mockResolvedValue(undefined);
     window.localStorage.clear();
@@ -183,7 +184,7 @@ describe("AiSidebar voice dictation integration", () => {
     });
   });
 
-  it("drafts the transcript for insertion instead of writing into the composer", async () => {
+  it("puts the transcript into the composer when recording stops", async () => {
     const provider = {
       id: "test",
       transcribe: vi.fn().mockResolvedValue({ text: "beautiful" }),
@@ -194,45 +195,62 @@ describe("AiSidebar voice dictation integration", () => {
     await startDictation();
     fireEvent.click(screen.getByRole("button", { name: "Stop voice dictation" }));
 
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Insert dictation into editor" }),
-      ).toBeVisible(),
-    );
-    // Composer text is untouched.
-    expect(composer().value).toBe("");
+    await waitFor(() => expect(composer().value).toBe("beautiful"));
+    expect(
+      screen.queryByRole("button", { name: "Insert dictation into editor" }),
+    ).not.toBeInTheDocument();
+    expect(ctx.applyEdit).not.toHaveBeenCalled();
   });
 
-  it("places the draft in the editor exactly when the insert button is clicked", async () => {
+  it("keeps existing composer text and sends the dictated prompt to chat", async () => {
     transcriptionFactory.createTranscriptionProvider.mockReturnValue({
       id: "test",
       transcribe: vi.fn().mockResolvedValue({ text: "beautiful" }),
     });
     renderSidebar();
 
+    const ta = composer();
+    fireEvent.change(ta, { target: { value: "Please summarize" } });
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+
     await startDictation();
     fireEvent.click(screen.getByRole("button", { name: "Stop voice dictation" }));
 
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Insert dictation into editor" }),
-      ).toBeVisible(),
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Insert dictation into editor" }),
-    );
+    await waitFor(() => expect(ta.value).toBe("Please summarize beautiful"));
+    fireEvent.keyDown(ta, { key: "Enter" });
 
-    await waitFor(() => {
-      expect(ctx.applyEdit).toHaveBeenCalledTimes(1);
+    expect(agentMock.state.send).toHaveBeenCalledWith("Please summarize beautiful");
+    expect(ta.value).toBe("");
+    expect(ctx.applyEdit).not.toHaveBeenCalled();
+  });
+
+  it("uses the settings AI enhanced checkbox to clean the composer transcript", async () => {
+    const cleanup = {
+      id: "cleanup",
+      cleanup: vi.fn().mockResolvedValue("Beautiful."),
+    };
+    cleanupFactory.createTranscriptCleanup.mockReturnValue(cleanup);
+    transcriptionFactory.createTranscriptionProvider.mockReturnValue({
+      id: "test",
+      transcribe: vi.fn().mockResolvedValue({ text: "beautiful" }),
     });
-    const proposal = ctx.applyEdit.mock.calls[0][0] as EditProposal;
-    expect(proposal.kind).toBe("insert-at-cursor");
-    expect(proposal.path).toBe("main.tex");
-    expect(proposal.newText).toBe("beautiful");
-    // Draft clears after insert.
+    renderSidebar();
+
+    expect(screen.queryByLabelText(/AI enhanced/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Voice settings" }));
+    const enhanced = screen.getByLabelText(/AI enhanced/i) as HTMLInputElement;
+    expect(enhanced.checked).toBe(false);
+    fireEvent.click(enhanced);
+    fireEvent.click(screen.getByRole("button", { name: /Save voice settings/i }));
     expect(
-      screen.queryByRole("button", { name: "Insert dictation into editor" }),
-    ).not.toBeInTheDocument();
+      JSON.parse(window.localStorage.getItem(voiceSettingsStorageKey) ?? "{}"),
+    ).toMatchObject({ transcriptMode: "clean" });
+
+    await startDictation();
+    fireEvent.click(screen.getByRole("button", { name: "Stop voice dictation" }));
+
+    await waitFor(() => expect(composer().value).toBe("Beautiful."));
+    expect(cleanup.cleanup).toHaveBeenCalledWith("beautiful", expect.anything());
   });
 
   it("leaves existing text untouched when microphone permission is denied", async () => {
@@ -249,15 +267,16 @@ describe("AiSidebar voice dictation integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start voice dictation" }));
 
     await waitFor(() =>
-      expect(screen.getByText(/Microphone access was denied/i)).toBeVisible(),
+      expect(screen.getByRole("button", { name: "Start voice dictation" })).toHaveAttribute(
+        "title",
+        "Try voice dictation again",
+      ),
     );
     expect(ta.value).toBe("Keep this");
-    expect(
-      screen.queryByRole("button", { name: "Insert dictation into editor" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("never drafts a stale transcript when the user cancels during transcription", async () => {
+  it("never inserts a stale transcript when the user cancels during transcription", async () => {
     const provider = deferredProvider();
     transcriptionFactory.createTranscriptionProvider.mockReturnValue(provider);
     renderSidebar();
@@ -279,8 +298,6 @@ describe("AiSidebar voice dictation integration", () => {
       await Promise.resolve();
     });
 
-    expect(
-      screen.queryByRole("button", { name: "Insert dictation into editor" }),
-    ).not.toBeInTheDocument();
+    expect(composer().value).toBe("");
   });
 });
