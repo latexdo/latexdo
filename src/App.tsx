@@ -417,7 +417,12 @@ import {
   uniqueWords,
 } from "./features/proofreading/proofreading";
 import { useProofreading } from "./features/proofreading/useProofreading";
-import { wordColumn } from "./features/pdf/sync";
+import {
+  type VisiblePdfPageRect,
+  visibleEditorLineForSync,
+  visiblePdfPointForSync,
+  wordColumn,
+} from "./features/pdf/sync";
 import {
   formatUpdateAttempt,
   formatUpdateDate,
@@ -1052,6 +1057,16 @@ type PendingSourceLocation = {
   endLine?: number;
   endColumn?: number;
   word?: string;
+};
+
+type SourceRevealOptions = {
+  focus?: boolean;
+  highlight?: boolean;
+  select?: boolean;
+};
+
+type OpenDocumentOptions = {
+  announce?: boolean;
 };
 
 type TextOpenDocument = OpenDocument & { kind?: "text" };
@@ -2170,7 +2185,9 @@ export default function App() {
   const reviewSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const editorMouseDisposableRef = useRef<Monaco.IDisposable | null>(null);
+  const editorScrollSyncDisposableRef = useRef<Monaco.IDisposable | null>(null);
   const editorActionDisposablesRef = useRef<Monaco.IDisposable[]>([]);
+  const pdfSurfaceRef = useRef<HTMLDivElement | null>(null);
   const documentsRef = useRef<OpenDocument[]>([]);
   const documentHistoryRef = useRef<DocumentHistorySnapshot[]>([]);
   const projectEntriesRef = useRef<ProjectEntry[]>([]);
@@ -2184,10 +2201,20 @@ export default function App() {
   const rootFileRef = useRef(rootFile);
   const engineRef = useRef(engine);
   const pdfPathRef = useRef("");
+  const pdfDataRef = useRef<Uint8Array | null>(null);
+  const pdfScaleRef = useRef(pdfScale);
   const pdfReviewInputRef = useRef<HTMLInputElement | null>(null);
   const forwardSyncRef = useRef<((position: Monaco.Position) => Promise<void>) | null>(
     null,
   );
+  const editorScrollSyncTimerRef = useRef<number | null>(null);
+  const pdfScrollSyncTimerRef = useRef<number | null>(null);
+  const editorScrollSyncRunIdRef = useRef(0);
+  const pdfScrollSyncRunIdRef = useRef(0);
+  const suppressEditorScrollSyncUntilRef = useRef(0);
+  const suppressPdfScrollSyncUntilRef = useRef(0);
+  const lastEditorScrollSyncKeyRef = useRef("");
+  const lastPdfScrollSyncKeyRef = useRef("");
   const latexDoCommandService = useMemo(() => {
     const context: LatexDoCommandContext = {
       getSettings: () => settingsRef.current,
@@ -2507,6 +2534,16 @@ export default function App() {
   }, [projectEntries]);
 
   useEffect(() => {
+    pdfDataRef.current = pdfData;
+    lastEditorScrollSyncKeyRef.current = "";
+    lastPdfScrollSyncKeyRef.current = "";
+  }, [pdfData]);
+
+  useEffect(() => {
+    pdfScaleRef.current = pdfScale;
+  }, [pdfScale]);
+
+  useEffect(() => {
     projectIdRef.current = projectId;
     figurePreviewCacheRef.current.clear();
   }, [projectId]);
@@ -2730,7 +2767,11 @@ export default function App() {
   ]);
 
   const openDocument = useCallback(
-    async (entry: ProjectEntry, targetProject = projectIdRef.current) => {
+    async (
+      entry: ProjectEntry,
+      targetProject = projectIdRef.current,
+      options: OpenDocumentOptions = {},
+    ) => {
       if (entry.type !== "file") {
         return;
       }
@@ -2775,13 +2816,17 @@ export default function App() {
           });
           setActivePath(entry.path);
           activePathRef.current = entry.path;
-          setStatusMessage(`Opened ${pathForDisplay(entry.relativePath)}`);
+          if (options.announce !== false) {
+            setStatusMessage(`Opened ${pathForDisplay(entry.relativePath)}`);
+          }
         } catch (error) {
-          setStatusMessage(
-            error instanceof Error
-              ? error.message
-              : `Could not open ${pathForDisplay(entry.relativePath)}`,
-          );
+          if (options.announce !== false) {
+            setStatusMessage(
+              error instanceof Error
+                ? error.message
+                : `Could not open ${pathForDisplay(entry.relativePath)}`,
+            );
+          }
         }
         return;
       }
@@ -2790,11 +2835,13 @@ export default function App() {
       try {
         content = await window.latexdo.readFile(targetProject, entry.relativePath);
       } catch (error) {
-        setStatusMessage(
-          error instanceof Error
-            ? error.message
-            : `Could not open ${pathForDisplay(entry.relativePath)}`,
-        );
+        if (options.announce !== false) {
+          setStatusMessage(
+            error instanceof Error
+              ? error.message
+              : `Could not open ${pathForDisplay(entry.relativePath)}`,
+          );
+        }
         return;
       }
       const document: OpenDocument = {
@@ -2816,7 +2863,9 @@ export default function App() {
       });
       setActivePath(entry.path);
       activePathRef.current = entry.path;
-      setStatusMessage(`Opened ${pathForDisplay(entry.relativePath)}`);
+      if (options.announce !== false) {
+        setStatusMessage(`Opened ${pathForDisplay(entry.relativePath)}`);
+      }
     },
     [],
   );
@@ -4258,7 +4307,7 @@ ${macroEnd}
     [refreshProject, saveDocument],
   );
 
-  const revealPendingSource = useCallback(() => {
+  const revealPendingSource = useCallback((options: SourceRevealOptions = {}) => {
     const pending = pendingSourceRef.current;
     const editor = editorRef.current;
     const model = editor?.getModel();
@@ -4273,40 +4322,46 @@ ${macroEnd}
     }
 
     const range = sourceSelectionRange(model, pending);
-    editor.setSelection(range);
-    editor.revealRangeInCenter(range, monaco.editor.ScrollType.Smooth);
-    editor.focus();
-
-    if (sourceSyncClearTimerRef.current !== null) {
-      window.clearTimeout(sourceSyncClearTimerRef.current);
-      sourceSyncClearTimerRef.current = null;
+    if (options.select !== false) {
+      editor.setSelection(range);
     }
-    sourceSyncDecorationsRef.current = editor.deltaDecorations(
-      sourceSyncDecorationsRef.current,
-      [
-        {
-          range,
-          options: {
-            className: "source-sync-highlight",
-            stickiness:
-              monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
-            hoverMessage: { value: "PDF inverse search target" },
-          },
-        },
-      ],
-    );
-    sourceSyncClearTimerRef.current = window.setTimeout(() => {
-      const currentEditor = editorRef.current;
-      if (currentEditor) {
-        sourceSyncDecorationsRef.current = currentEditor.deltaDecorations(
-          sourceSyncDecorationsRef.current,
-          [],
-        );
-      } else {
-        sourceSyncDecorationsRef.current = [];
+    editor.revealRangeInCenter(range, monaco.editor.ScrollType.Smooth);
+    if (options.focus !== false) {
+      editor.focus();
+    }
+
+    if (options.highlight !== false) {
+      if (sourceSyncClearTimerRef.current !== null) {
+        window.clearTimeout(sourceSyncClearTimerRef.current);
+        sourceSyncClearTimerRef.current = null;
       }
-      sourceSyncClearTimerRef.current = null;
-    }, 1800);
+      sourceSyncDecorationsRef.current = editor.deltaDecorations(
+        sourceSyncDecorationsRef.current,
+        [
+          {
+            range,
+            options: {
+              className: "source-sync-highlight",
+              stickiness:
+                monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+              hoverMessage: { value: "PDF inverse search target" },
+            },
+          },
+        ],
+      );
+      sourceSyncClearTimerRef.current = window.setTimeout(() => {
+        const currentEditor = editorRef.current;
+        if (currentEditor) {
+          sourceSyncDecorationsRef.current = currentEditor.deltaDecorations(
+            sourceSyncDecorationsRef.current,
+            [],
+          );
+        } else {
+          sourceSyncDecorationsRef.current = [];
+        }
+        sourceSyncClearTimerRef.current = null;
+      }, 1800);
+    }
 
     pendingSourceRef.current = null;
     return true;
@@ -4354,6 +4409,7 @@ ${macroEnd}
         }
 
         setPreviewVisible(true);
+        suppressPdfScrollSyncUntilRef.current = Date.now() + 900;
         setPdfTarget({ ...location, word });
         setStatusMessage(
           `Showing ${pathForDisplay(document.name)}:${position.lineNumber} in PDF`,
@@ -4443,7 +4499,9 @@ ${macroEnd}
         };
         await openDocument(entry);
         setWelcomeOpen(false);
+        suppressEditorScrollSyncUntilRef.current = Date.now() + 900;
         requestAnimationFrame(() => {
+          suppressEditorScrollSyncUntilRef.current = Date.now() + 900;
           revealPendingSource();
         });
         setStatusMessage(
@@ -4475,6 +4533,200 @@ ${macroEnd}
 
     await handleBackwardSync(location);
   }, [handleBackwardSync, lastPdfLocation, pdfTarget]);
+
+  const revealSourceFromScrollSync = useCallback(
+    async (location: SyncTexSourceLocation, syncRunId: number) => {
+      const normalizedFile = normalizeRelativePath(location.file);
+      const entry = flattenEntries(projectEntriesRef.current).find(
+        (item) =>
+          item.type === "file" &&
+          normalizeRelativePath(item.relativePath) === normalizedFile,
+      );
+      if (!entry) {
+        return;
+      }
+
+      pendingSourceRef.current = {
+        path: entry.path,
+        line: location.line,
+        column: location.column,
+      };
+      await openDocument(entry, projectIdRef.current, { announce: false });
+      if (syncRunId !== pdfScrollSyncRunIdRef.current) {
+        return;
+      }
+
+      setWelcomeOpen(false);
+      suppressEditorScrollSyncUntilRef.current = Date.now() + 900;
+      requestAnimationFrame(() => {
+        if (syncRunId !== pdfScrollSyncRunIdRef.current) {
+          return;
+        }
+        suppressEditorScrollSyncUntilRef.current = Date.now() + 900;
+        revealPendingSource({
+          focus: false,
+          highlight: false,
+          select: false,
+        });
+      });
+    },
+    [openDocument, revealPendingSource],
+  );
+
+  const performEditorScrollSync = useCallback(async () => {
+    if (Date.now() < suppressEditorScrollSyncUntilRef.current) {
+      return;
+    }
+
+    const currentProject = projectIdRef.current;
+    const pdfPath = pdfPathRef.current;
+    if (!currentProject || !pdfPath || !pdfDataRef.current) {
+      return;
+    }
+
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    const document = documentsRef.current.find(
+      (item) => item.path === activePathRef.current,
+    );
+    if (
+      !editor ||
+      !model ||
+      !document ||
+      !document.name.endsWith(".tex") ||
+      !editorModelMatchesPath(editor, document.path)
+    ) {
+      return;
+    }
+
+    const lineNumber = visibleEditorLineForSync(
+      editor.getVisibleRanges(),
+      editor.getPosition()?.lineNumber,
+    );
+    if (lineNumber === null) {
+      return;
+    }
+
+    const editorPosition = editor.getPosition();
+    const column =
+      editorPosition?.lineNumber === lineNumber
+        ? editorPosition.column
+        : Math.max(1, Math.floor(model.getLineMaxColumn(lineNumber) / 2));
+    const syncKey = `${document.relativePath}:${pdfPath}:${lineNumber}:${column}`;
+    if (syncKey === lastEditorScrollSyncKeyRef.current) {
+      return;
+    }
+    lastEditorScrollSyncKeyRef.current = syncKey;
+
+    const syncRunId = editorScrollSyncRunIdRef.current + 1;
+    editorScrollSyncRunIdRef.current = syncRunId;
+
+    try {
+      const word = model.getWordAtPosition({ lineNumber, column })?.word;
+      const location = await window.latexdo.forwardSyncTex(
+        currentProject,
+        pdfPath,
+        document.relativePath,
+        lineNumber,
+        column,
+      );
+      if (syncRunId !== editorScrollSyncRunIdRef.current || !location) {
+        return;
+      }
+
+      suppressPdfScrollSyncUntilRef.current = Date.now() + 900;
+      setPdfTarget({ ...location, word });
+    } catch {
+      // Scroll sync is opportunistic: no compiled SyncTeX match means no movement.
+    }
+  }, []);
+
+  const scheduleEditorScrollSync = useCallback(() => {
+    if (editorScrollSyncTimerRef.current !== null) {
+      return;
+    }
+
+    editorScrollSyncTimerRef.current = window.setTimeout(() => {
+      editorScrollSyncTimerRef.current = null;
+      void performEditorScrollSync();
+    }, 160);
+  }, [performEditorScrollSync]);
+
+  const performPdfScrollSync = useCallback(async () => {
+    if (Date.now() < suppressPdfScrollSyncUntilRef.current) {
+      return;
+    }
+
+    const currentProject = projectIdRef.current;
+    const pdfPath = pdfPathRef.current;
+    const surface = pdfSurfaceRef.current;
+    if (!currentProject || !pdfPath || !pdfDataRef.current || !surface) {
+      return;
+    }
+
+    const pages = Array.from(surface.querySelectorAll<HTMLElement>(".pdf-page"))
+      .map((pageElement) => {
+        const page = Number(pageElement.dataset.pageNumber);
+        const rect = pageElement.getBoundingClientRect();
+        return Number.isFinite(page) && page > 0
+          ? {
+              page,
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height,
+            }
+          : null;
+      })
+      .filter((page): page is VisiblePdfPageRect => page !== null);
+    const point = visiblePdfPointForSync(
+      surface.getBoundingClientRect(),
+      pages,
+      pdfScaleRef.current / 100,
+    );
+    if (!point) {
+      return;
+    }
+
+    const syncKey = `${pdfPath}:${point.page}:${Math.round(point.x)}:${Math.round(
+      point.y,
+    )}`;
+    if (syncKey === lastPdfScrollSyncKeyRef.current) {
+      return;
+    }
+    lastPdfScrollSyncKeyRef.current = syncKey;
+
+    const syncRunId = pdfScrollSyncRunIdRef.current + 1;
+    pdfScrollSyncRunIdRef.current = syncRunId;
+
+    try {
+      const location = await window.latexdo.backwardSyncTex(
+        currentProject,
+        pdfPath,
+        point.page,
+        point.x,
+        point.y,
+      );
+      if (syncRunId !== pdfScrollSyncRunIdRef.current || !location) {
+        return;
+      }
+
+      await revealSourceFromScrollSync(location, syncRunId);
+    } catch {
+      // Keep manual scrolling normal when SyncTeX cannot resolve this point.
+    }
+  }, [revealSourceFromScrollSync]);
+
+  const schedulePdfScrollSync = useCallback(() => {
+    if (pdfScrollSyncTimerRef.current !== null) {
+      return;
+    }
+
+    pdfScrollSyncTimerRef.current = window.setTimeout(() => {
+      pdfScrollSyncTimerRef.current = null;
+      void performPdfScrollSync();
+    }, 160);
+  }, [performPdfScrollSync]);
 
   const handleOpenProjectSearchMatch = useCallback(
     async (match: ProjectSearchMatch) => {
@@ -6380,6 +6632,7 @@ ${macroEnd}
     nextEditAdapterRef.current?.dispose();
     nextEditAdapterRef.current = null;
     editorMouseDisposableRef.current?.dispose();
+    editorScrollSyncDisposableRef.current?.dispose();
     for (const disposable of editorActionDisposablesRef.current) {
       disposable.dispose();
     }
@@ -6592,6 +6845,11 @@ ${macroEnd}
         void forwardSyncRef.current?.(event.target.position);
       }
     });
+    editorScrollSyncDisposableRef.current = editor.onDidScrollChange((event) => {
+      if (event.scrollTopChanged) {
+        scheduleEditorScrollSync();
+      }
+    });
     requestAnimationFrame(() => {
       revealPendingSource();
     });
@@ -6781,10 +7039,20 @@ ${macroEnd}
   useEffect(
     () => () => {
       editorMouseDisposableRef.current?.dispose();
+      editorScrollSyncDisposableRef.current?.dispose();
+      editorScrollSyncDisposableRef.current = null;
       for (const disposable of editorActionDisposablesRef.current) {
         disposable.dispose();
       }
       editorActionDisposablesRef.current = [];
+      if (editorScrollSyncTimerRef.current !== null) {
+        window.clearTimeout(editorScrollSyncTimerRef.current);
+        editorScrollSyncTimerRef.current = null;
+      }
+      if (pdfScrollSyncTimerRef.current !== null) {
+        window.clearTimeout(pdfScrollSyncTimerRef.current);
+        pdfScrollSyncTimerRef.current = null;
+      }
       if (sourceSyncClearTimerRef.current !== null) {
         window.clearTimeout(sourceSyncClearTimerRef.current);
         sourceSyncClearTimerRef.current = null;
@@ -12767,7 +13035,9 @@ ${macroEnd}
                     </div>
                   </div>
                   <div
+                    ref={pdfSurfaceRef}
                     className="pdf-surface"
+                    onScroll={schedulePdfScrollSync}
                     onWheel={(e) => {
                       if (e.ctrlKey || e.metaKey) {
                         e.preventDefault();
