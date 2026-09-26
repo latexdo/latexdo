@@ -15,6 +15,7 @@ export function latexCompletionSource(getIndex: () => LatexIndex) {
     if (!latexContext) return null;
     const index = getIndex();
     if (latexContext.type === "citation") {
+      const citedKeys = new Set(index.citedKeys ?? []);
       return {
         from: line.from + latexContext.rangeStartColumn - 1,
         options: rankedCitationCompletions(
@@ -24,8 +25,8 @@ export function latexCompletionSource(getIndex: () => LatexIndex) {
           label: entry.key,
           apply: entry.key,
           type: "reference",
-          detail: citationCompletionDetail(entry),
-          info: citationCompletionInfo(entry),
+          detail: citationCompletionDetail(entry, { citedKeys }),
+          info: citationCompletionInfo(entry, { citedKeys }),
         })),
         filter: false,
       };

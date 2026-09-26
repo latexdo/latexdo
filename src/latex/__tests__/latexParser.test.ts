@@ -415,7 +415,7 @@ describe("BuildLatexIndex — large inputs", () => {
 
   it("handles mixed file order", () => {
     const index = buildLatexIndex([
-      { path: "paper.tex", content: "\\label{eq:one}" },
+      { path: "paper.tex", content: "\\label{eq:one}\\cite{k}" },
       {
         path: "refs.bib",
         content: "@article{k,title={T},author={A},year={2020},journal={J},}",
@@ -427,6 +427,7 @@ describe("BuildLatexIndex — large inputs", () => {
       },
     ]);
     expect(index.citations.length).toBe(2);
+    expect(index.citedKeys).toEqual(["k"]);
     expect(index.labels.length).toBe(2);
   });
 });

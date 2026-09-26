@@ -38,5 +38,6 @@ export type LabelEntry = {
 };
 export type LatexIndex = {
   citations: CitationEntry[];
+  citedKeys: string[];
   labels: LabelEntry[];
 };

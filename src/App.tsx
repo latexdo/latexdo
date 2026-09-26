@@ -284,9 +284,11 @@ import {
 import {
   citationCompletionDetail,
   citationCompletionFilterText,
+  citationCompletionLabelDetail,
   citationCompletionMarkdown,
   citationCompletionSortText,
   citationCompletionTriggerCharacters,
+  citationCompletionUsageDescription,
   rankedCitationCompletions,
 } from "./latex/citationCompletion";
 import { parseBibFile } from "./latex/parseBib";
@@ -1204,6 +1206,15 @@ function completionRangeAtPosition(
     position.lineNumber,
     completion.rangeEndColumn,
   );
+}
+
+function completionReplacementRangeAtPosition(
+  model: Monaco.editor.ITextModel,
+  position: Monaco.Position,
+  completion: { rangeStartColumn: number; rangeEndColumn: number },
+): Monaco.languages.CompletionItemRanges {
+  const range = completionRangeAtPosition(model, position, completion);
+  return { insert: range, replace: range };
 }
 
 function isSafeIpcProjectId(value: string): boolean {
@@ -2191,7 +2202,10 @@ export default function App() {
   const documentsRef = useRef<OpenDocument[]>([]);
   const documentHistoryRef = useRef<DocumentHistorySnapshot[]>([]);
   const projectEntriesRef = useRef<ProjectEntry[]>([]);
+  const citationProjectFilesRef = useRef<CitationProjectFile[]>([]);
+  const citationEntriesRef = useRef<CitationEntry[]>([]);
   const citationEntriesByKeyRef = useRef<Map<string, CitationEntry>>(new Map());
+  const citationCitedKeysRef = useRef<Set<string>>(new Set());
   const projectIdRef = useRef("");
   const projectPathRef = useRef("");
   const hideProjectEntriesRef = useRef(true);
@@ -2207,6 +2221,7 @@ export default function App() {
   const forwardSyncRef = useRef<((position: Monaco.Position) => Promise<void>) | null>(
     null,
   );
+  const citationSuggestTimerRef = useRef<number | null>(null);
   const editorScrollSyncTimerRef = useRef<number | null>(null);
   const pdfScrollSyncTimerRef = useRef<number | null>(null);
   const editorScrollSyncRunIdRef = useRef(0);
@@ -2496,8 +2511,17 @@ export default function App() {
     [citationAnalysis],
   );
   useEffect(() => {
+    citationProjectFilesRef.current = citationProjectFiles;
+  }, [citationProjectFiles]);
+  useEffect(() => {
+    citationEntriesRef.current = citationAnalysis.entries;
+  }, [citationAnalysis.entries]);
+  useEffect(() => {
     citationEntriesByKeyRef.current = citationEntriesByKey;
   }, [citationEntriesByKey]);
+  useEffect(() => {
+    citationCitedKeysRef.current = new Set(citationAnalysis.citedKeys);
+  }, [citationAnalysis.citedKeys]);
   const [knowledgeGraphOpen, setKnowledgeGraphOpen] = useState(false);
   useEffect(() => {
     storeKnowledgeGraphParams(knowledgeGraphParams);
@@ -5517,6 +5541,49 @@ ${macroEnd}
     paper: "#252a31",
   };
 
+  const triggerCitationCompletionIfNeeded = useCallback(
+    (targetEditor = editorRef.current) => {
+      const model = targetEditor?.getModel();
+      const position = targetEditor?.getPosition();
+      if (!targetEditor || !model || !position || model.getLanguageId() !== "latex") {
+        return;
+      }
+
+      const context = getLatexCompletionContext(
+        model.getLineContent(position.lineNumber),
+        position.column,
+      );
+      if (context?.type !== "citation") {
+        return;
+      }
+
+      if (citationSuggestTimerRef.current !== null) {
+        window.clearTimeout(citationSuggestTimerRef.current);
+      }
+      citationSuggestTimerRef.current = window.setTimeout(() => {
+        citationSuggestTimerRef.current = null;
+        const currentEditor = editorRef.current;
+        const currentModel = currentEditor?.getModel();
+        const currentPosition = currentEditor?.getPosition();
+        if (
+          currentEditor !== targetEditor ||
+          currentModel !== model ||
+          !currentPosition
+        ) {
+          return;
+        }
+        const currentContext = getLatexCompletionContext(
+          model.getLineContent(currentPosition.lineNumber),
+          currentPosition.column,
+        );
+        if (currentContext?.type === "citation") {
+          targetEditor.trigger("latexdo-citation", "editor.action.triggerSuggest", {});
+        }
+      }, 80);
+    },
+    [],
+  );
+
   const configureMonaco: BeforeMount = (instance) => {
     monaco = instance;
     const providerDisposables = prepareMonacoProviderDisposables();
@@ -5713,49 +5780,93 @@ ${macroEnd}
               if (!isSafeIpcProjectId(currentProject)) {
                 return { suggestions: [] };
               }
-              const range = completionRange(argumentCompletion);
+              const range = completionReplacementRangeAtPosition(
+                model,
+                position,
+                argumentCompletion,
+              );
               const suggestions: Monaco.languages.CompletionItem[] = [];
               const allEntries = flattenEntries(projectEntriesRef.current);
+              const citedKeys = new Set(citationCitedKeysRef.current);
+              const openDocuments = new Map(
+                documentsRef.current.map((document) => [
+                  normalizeRelativePath(document.relativePath),
+                  document.content,
+                ]),
+              );
+              for (const document of documentsRef.current) {
+                if (isTextDocument(document) && document.name.endsWith(".tex")) {
+                  for (const key of citationKeysInText(document.content)) {
+                    citedKeys.add(key);
+                  }
+                }
+              }
               const bibFiles = allEntries.filter(
                 (entry) =>
                   entry.type === "file" &&
                   entry.name.endsWith(".bib") &&
                   isSafeIpcRelativePath(entry.relativePath, [".bib"]),
               );
-              for (const bib of bibFiles) {
-                if (!requestIsCurrent()) {
-                  return { suggestions: [] };
-                }
-                try {
-                  const content = await readCompletionFile(bib.relativePath);
-                  const entries = rankedCitationCompletions(
-                    parseBibFile(content, bib.relativePath),
-                    argumentCompletion.currentText,
-                  );
-                  for (const entry of entries) {
-                    suggestions.push({
-                      label: entry.key,
-                      kind: instance.languages.CompletionItemKind.Reference,
-                      insertText: entry.key,
-                      detail: citationCompletionDetail(entry),
-                      documentation: {
-                        value: citationCompletionMarkdown(entry),
-                        isTrusted: true,
-                      },
-                      filterText: citationCompletionFilterText(entry),
-                      sortText: citationCompletionSortText(
-                        entry,
-                        argumentCompletion.currentText,
-                      ),
-                      range,
-                    });
+              const scannedBibFiles = citationProjectFilesRef.current.filter((file) =>
+                file.path.endsWith(".bib"),
+              );
+              const bibliographyEntries = scannedBibFiles.length
+                ? scannedBibFiles.flatMap((file) => {
+                    const normalizedPath = normalizeRelativePath(file.path);
+                    const content = openDocuments.get(normalizedPath) ?? file.content;
+                    return parseBibFile(content, normalizedPath);
+                  })
+                : [...citationEntriesRef.current];
+
+              if (!bibliographyEntries.length) {
+                for (const bib of bibFiles) {
+                  if (!requestIsCurrent()) {
+                    return { suggestions: [] };
                   }
-                } catch (e) {
-                  // Ignore missing/unreadable bib files
+                  try {
+                    const content =
+                      openDocuments.get(normalizeRelativePath(bib.relativePath)) ??
+                      (await readCompletionFile(bib.relativePath));
+                    bibliographyEntries.push(
+                      ...parseBibFile(content, bib.relativePath),
+                    );
+                  } catch {
+                    // Ignore missing/unreadable bib files
+                  }
                 }
               }
               if (!requestIsCurrent()) {
                 return { suggestions: [] };
+              }
+              for (const entry of rankedCitationCompletions(
+                bibliographyEntries,
+                argumentCompletion.currentText,
+              )) {
+                suggestions.push({
+                  label: {
+                    label: entry.key,
+                    detail: citationCompletionLabelDetail(entry),
+                    description: citationCompletionUsageDescription(entry, {
+                      citedKeys,
+                    }),
+                  },
+                  kind: instance.languages.CompletionItemKind.Reference,
+                  insertText: entry.key,
+                  detail: citationCompletionDetail(entry, { citedKeys }),
+                  documentation: {
+                    value: citationCompletionMarkdown(entry, { citedKeys }),
+                    isTrusted: true,
+                  },
+                  filterText: citationCompletionFilterText(
+                    entry,
+                    argumentCompletion.currentText,
+                  ),
+                  sortText: citationCompletionSortText(
+                    entry,
+                    argumentCompletion.currentText,
+                  ),
+                  range,
+                });
               }
               return { suggestions, incomplete: true };
             }
@@ -6070,6 +6181,11 @@ ${macroEnd}
       "editorGutter.background": background,
       "editorStickyScroll.background": background,
       "minimap.background": background,
+      "editorSuggestWidget.highlightForeground": "#8fcb9b",
+      "editorSuggestWidget.focusHighlightForeground": "#d6ffe3",
+      "editorSuggestWidget.selectedBackground": "#245c3f",
+      "editorSuggestWidget.selectedForeground": "#f2fff6",
+      "editorSuggestWidget.selectedIconForeground": "#baf3c7",
     });
     const themes = [
       {
@@ -6643,17 +6759,22 @@ ${macroEnd}
       editor.onDidChangeCursorPosition((event) => {
         setEditorCursorLine(event.position.lineNumber);
         applyEditorBlameDecorations();
+        triggerCitationCompletionIfNeeded(editor);
       }),
       editor.onDidChangeCursorSelection((event) => {
         if (!event.selection.isEmpty()) {
           emitProductEvent({ type: "editor:selection-created" });
         }
       }),
+      editor.onDidChangeModelContent(() => {
+        triggerCitationCompletionIfNeeded(editor);
+      }),
       editor.onDidChangeModel(() => {
         setEditorCursorLine(editor.getPosition()?.lineNumber ?? null);
         inlineBlameDecorationsRef.current = [];
         fileBlameDecorationsRef.current = [];
         applyEditorBlameDecorations();
+        triggerCitationCompletionIfNeeded(editor);
       }),
     ];
     for (const disposable of blameHoverDisposablesRef.current) {
@@ -6852,6 +6973,7 @@ ${macroEnd}
     });
     requestAnimationFrame(() => {
       revealPendingSource();
+      triggerCitationCompletionIfNeeded(editor);
     });
     const mountedDocument = documentsRef.current.find(
       (item) => item.path === activePathRef.current,
@@ -7052,6 +7174,10 @@ ${macroEnd}
       if (pdfScrollSyncTimerRef.current !== null) {
         window.clearTimeout(pdfScrollSyncTimerRef.current);
         pdfScrollSyncTimerRef.current = null;
+      }
+      if (citationSuggestTimerRef.current !== null) {
+        window.clearTimeout(citationSuggestTimerRef.current);
+        citationSuggestTimerRef.current = null;
       }
       if (sourceSyncClearTimerRef.current !== null) {
         window.clearTimeout(sourceSyncClearTimerRef.current);

@@ -4,9 +4,11 @@ import { getLatexCompletionContext } from "./completionContext";
 import {
   citationCompletionDetail,
   citationCompletionFilterText,
+  citationCompletionLabelDetail,
   citationCompletionMarkdown,
   citationCompletionSortText,
   citationCompletionTriggerCharacters,
+  citationCompletionUsageDescription,
   rankedCitationCompletions,
 } from "./citationCompletion";
 
@@ -26,21 +28,27 @@ export function registerLatexCompletions(getIndex: () => LatexIndex) {
         position.lineNumber,
         context.rangeEndColumn,
       );
+      const replacementRange = { insert: range, replace: range };
       if (context.type === "citation") {
+        const citedKeys = new Set(index.citedKeys ?? []);
         return {
           suggestions: rankedCitationCompletions(
             index.citations,
             context.currentText,
           ).map((entry) => ({
-            label: entry.key,
+            label: {
+              label: entry.key,
+              detail: citationCompletionLabelDetail(entry),
+              description: citationCompletionUsageDescription(entry, { citedKeys }),
+            },
             kind: monaco.languages.CompletionItemKind.Reference,
             insertText: entry.key,
-            range,
-            detail: citationCompletionDetail(entry),
-            filterText: citationCompletionFilterText(entry),
+            range: replacementRange,
+            detail: citationCompletionDetail(entry, { citedKeys }),
+            filterText: citationCompletionFilterText(entry, context.currentText),
             sortText: citationCompletionSortText(entry, context.currentText),
             documentation: {
-              value: citationCompletionMarkdown(entry),
+              value: citationCompletionMarkdown(entry, { citedKeys }),
             },
           })),
           incomplete: true,
