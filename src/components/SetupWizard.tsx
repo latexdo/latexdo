@@ -603,9 +603,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
       source.provider === "local" ? downloaded || source.modelDownloaded : false,
   });
 
-  const tierForConfig = (
-    source: AiConfig,
-  ): LatexDoAiTierDefinition | null => {
+  const tierForConfig = (source: AiConfig): LatexDoAiTierDefinition | null => {
     const selection = source.selection;
     if (source.provider !== "local" || selection.mode !== "latexdo") {
       return null;
@@ -818,9 +816,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
   const installTier = installConfig ? tierForConfig(installConfig) : null;
   const installAiReady = Boolean(
     readyConfig ||
-      downloaded ||
-      installConfig?.modelDownloaded ||
-      (installConfig && !installTier),
+    downloaded ||
+    installConfig?.modelDownloaded ||
+    (installConfig && !installTier),
   );
   const installAiPercent = progress.total
     ? Math.min(100, Math.round((progress.received / progress.total) * 100))
@@ -898,13 +896,13 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                     ? "Profile"
                     : s === "layout"
                       ? "Workspace"
-                    : s === "theme"
-                      ? "Theme"
-                      : s === "model"
-                        ? "Assistant"
-                        : s === "install"
-                          ? "Install"
-                          : "Ready";
+                      : s === "theme"
+                        ? "Theme"
+                        : s === "model"
+                          ? "Assistant"
+                          : s === "install"
+                            ? "Install"
+                            : "Ready";
               return (
                 <li
                   key={s}
@@ -1714,8 +1712,8 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                 <Download size={28} className="ai-wizard-hero-icon" />
                 <h2 id="ai-wizard-title">Installing your selected setup</h2>
                 <p className="ai-wizard-lead">
-                  {productName} is downloading the pieces you chose at the end of
-                  the tour. This can take about 5 minutes.
+                  {productName} is downloading the pieces you chose at the end of the
+                  tour. This can take about 5 minutes.
                 </p>
 
                 <div
@@ -1863,14 +1861,14 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({
                 step !== "model" &&
                 step !== "install" &&
                 step !== "ready" && (
-                <button
-                  className="ai-wizard-ghost"
-                  onClick={finish}
-                  disabled={setupBusy}
-                >
-                  Skip setup
-                </button>
-              )}
+                  <button
+                    className="ai-wizard-ghost"
+                    onClick={finish}
+                    disabled={setupBusy}
+                  >
+                    Skip setup
+                  </button>
+                )}
               {step === "model" ? (
                 <>
                   <button

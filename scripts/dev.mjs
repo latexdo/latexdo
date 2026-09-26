@@ -1,9 +1,6 @@
 import net from "node:net";
 import { spawn } from "node:child_process";
-import {
-  clearDevRuntimeCache,
-  devUserDataPath,
-} from "./clear-dev-runtime-cache.mjs";
+import { clearDevRuntimeCache, devUserDataPath } from "./clear-dev-runtime-cache.mjs";
 
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const preferredPort = 5173;

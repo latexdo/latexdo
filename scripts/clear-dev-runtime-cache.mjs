@@ -11,9 +11,7 @@ function defaultUserDataCandidates() {
   const names = ["latexdo", "LatexDo"];
 
   if (process.platform === "darwin") {
-    return names.map((name) =>
-      path.join(home, "Library", "Application Support", name),
-    );
+    return names.map((name) => path.join(home, "Library", "Application Support", name));
   }
 
   if (process.platform === "win32") {

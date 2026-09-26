@@ -140,9 +140,7 @@ import {
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
-const devUserDataPath = isDevelopment
-  ? envString("LATEXDO_DEV_USER_DATA")
-  : undefined;
+const devUserDataPath = isDevelopment ? envString("LATEXDO_DEV_USER_DATA") : undefined;
 const devClearRuntimeCache =
   isDevelopment && envString("LATEXDO_DEV_CLEAR_RUNTIME_CACHE") === "1";
 const appIconPath = path.join(currentDirectory, "..", "build", "icon.png");
