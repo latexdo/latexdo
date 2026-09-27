@@ -2,7 +2,6 @@ import {
   app,
   BrowserWindow,
   dialog,
-  ipcMain,
   Menu,
   nativeTheme,
   protocol,
@@ -55,6 +54,8 @@ import {
 import { createGarbageCollector, type CollectNowOptions } from "./garbageCollector.js";
 import { importDocxIntoProject } from "./docxImport.js";
 import { assertCanonicalCompileInside } from "./compileTrust.js";
+import { assertProjectPath } from "./projectPaths.js";
+import { ipcMain, trustIpcRenderer } from "./trustedIpc.js";
 import { importMarkdown } from "./markdownImport.js";
 import { importPdfIntoProject } from "./pdfImport/index.js";
 import { backwardSyncTex, forwardSyncTex } from "./synctex.js";
@@ -903,7 +904,10 @@ function assertInside(projectPath: string, targetPath: string): void {
   }
 }
 
-function resolveProjectPath(projectPath: string, relativePath: string): string {
+async function resolveProjectPath(
+  projectPath: string,
+  relativePath: string,
+): Promise<string> {
   const cleanPath = relativePath.trim();
   if (!cleanPath || path.isAbsolute(cleanPath)) {
     throw new Error("Enter a relative path inside the project.");
@@ -911,6 +915,7 @@ function resolveProjectPath(projectPath: string, relativePath: string): string {
 
   const targetPath = path.resolve(projectPath, cleanPath);
   assertInside(projectPath, targetPath);
+  await assertProjectPath(projectPath, targetPath);
   return targetPath;
 }
 
@@ -978,13 +983,13 @@ function prefixResultDiagnostics<T extends { diagnostics: Diagnostic[] }>(
   };
 }
 
-function resolveOpenProjectPath(
+async function resolveOpenProjectPath(
   projectId: string,
   relativePath: string,
-): ResolvedProjectTarget {
+): Promise<ResolvedProjectTarget> {
   const project = getOpenProject(projectId);
   if (!isResearchSpaceProject(project)) {
-    const resolvedPath = resolveProjectPath(project.rootPath, relativePath);
+    const resolvedPath = await resolveProjectPath(project.rootPath, relativePath);
     return {
       project,
       projectPath: project.rootPath,
@@ -1003,7 +1008,7 @@ function resolveOpenProjectPath(
   }
 
   const folderRelativePath = rest.length ? rest.join("/") : ".";
-  const resolvedPath = resolveProjectPath(folder.path, folderRelativePath);
+  const resolvedPath = await resolveProjectPath(folder.path, folderRelativePath);
   return {
     project,
     projectPath: folder.path,
@@ -1026,14 +1031,14 @@ function relativeOpenProjectPath(
     : relativePath;
 }
 
-function resolveImportDestination(
+async function resolveImportDestination(
   projectId: string,
   destinationDirectory: string,
-): ResolvedProjectTarget {
+): Promise<ResolvedProjectTarget> {
   const project = getOpenProject(projectId);
   if (!isResearchSpaceProject(project)) {
     const resolvedPath = destinationDirectory
-      ? resolveProjectPath(project.rootPath, destinationDirectory)
+      ? await resolveProjectPath(project.rootPath, destinationDirectory)
       : project.rootPath;
     return {
       project,
@@ -1045,7 +1050,7 @@ function resolveImportDestination(
   }
 
   if (destinationDirectory) {
-    return resolveOpenProjectPath(projectId, destinationDirectory);
+    return await resolveOpenProjectPath(projectId, destinationDirectory);
   }
 
   const folder =
@@ -4672,7 +4677,7 @@ async function availableImportRelativePath(
       ? path.posix.join(destinationDirectory, candidateName)
       : candidateName;
     const validatedRelativePath = parseRelativePath(channel, candidateRelativePath);
-    const candidatePath = resolveProjectPath(projectPath, validatedRelativePath);
+    const candidatePath = await resolveProjectPath(projectPath, validatedRelativePath);
 
     try {
       await stat(candidatePath);
@@ -4694,7 +4699,7 @@ async function importExternalFilesIntoProject(
   sourcePaths: string[],
 ): Promise<ImportedProjectEntry[]> {
   const destinationRoot = destinationDirectory
-    ? resolveProjectPath(projectPath, destinationDirectory)
+    ? await resolveProjectPath(projectPath, destinationDirectory)
     : projectPath;
   const destinationStats = await stat(destinationRoot).catch(() => null);
   if (!destinationStats?.isDirectory()) {
@@ -4715,7 +4720,7 @@ async function importExternalFilesIntoProject(
       destinationDirectory,
       sourceName,
     );
-    const targetPath = resolveProjectPath(projectPath, relativePath);
+    const targetPath = await resolveProjectPath(projectPath, relativePath);
 
     if (sourceStats.isDirectory()) {
       if (isInside(sourcePath, targetPath)) {
@@ -4795,7 +4800,7 @@ async function createGitDiscardRecoveryPatch(
     return undefined;
   }
 
-  const recoveryDirectory = resolveProjectPath(projectPath, ".latexdo/recovery");
+  const recoveryDirectory = await resolveProjectPath(projectPath, ".latexdo/recovery");
   const patchPath = path.join(
     recoveryDirectory,
     `discard-${gitRecoveryTimestamp()}-${gitRecoveryScopeLabel(
@@ -4811,7 +4816,7 @@ async function createGitUntrackedRecoveryCopy(
   relativePath: string,
   targetPath: string,
 ): Promise<string> {
-  const recoveryDirectory = resolveProjectPath(projectPath, ".latexdo/recovery");
+  const recoveryDirectory = await resolveProjectPath(projectPath, ".latexdo/recovery");
   const extension = path.extname(relativePath);
   const recoveryPath = path.join(
     recoveryDirectory,
@@ -4857,7 +4862,7 @@ async function gitDiscard(
   projectPath: string,
   relativePath: string,
 ): Promise<GitDiscardResult> {
-  const targetPath = resolveProjectPath(projectPath, relativePath);
+  const targetPath = await resolveProjectPath(projectPath, relativePath);
   const status = await readStructuredGitStatus(projectPath);
   const entry = status.entries.find((candidate) => candidate.path === relativePath);
   const recoveryPatch = entry?.untracked
@@ -5258,6 +5263,7 @@ function createWindow(): BrowserWindow {
     },
   });
   console.log("[latexdo] createWindow:created");
+  trustIpcRenderer(window.webContents, rendererEntryUrl());
 
   window.webContents.on("will-navigate", (event) => {
     event.preventDefault();
@@ -6031,7 +6037,7 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawFilePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const filePath = parseRelativePath(channel, rawFilePath);
-    const { resolvedPath } = resolveOpenProjectPath(projectId, filePath);
+    const { resolvedPath } = await resolveOpenProjectPath(projectId, filePath);
     try {
       await access(resolvedPath);
       return true;
@@ -6044,7 +6050,7 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawFilePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const filePath = parseRelativePath(channel, rawFilePath);
-    const location = resolveOpenProjectPath(projectId, filePath);
+    const location = await resolveOpenProjectPath(projectId, filePath);
     return readSafeTextFile(
       location.projectPath,
       location.resolvedPath,
@@ -6056,7 +6062,7 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawFilePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const filePath = parseRelativePath(channel, rawFilePath);
-    const location = resolveOpenProjectPath(projectId, filePath);
+    const location = await resolveOpenProjectPath(projectId, filePath);
     const file = await stat(location.resolvedPath);
     if (!file.isFile()) {
       throw new Error(`${filePath} is not a file.`);
@@ -6127,7 +6133,7 @@ async function startApp(): Promise<void> {
     const filePath = parseRelativePath(channel, rawFilePath, {
       extensions: [".png", ".jpg", ".jpeg", ".svg", ".pdf"],
     });
-    const { resolvedPath } = resolveOpenProjectPath(projectId, filePath);
+    const { resolvedPath } = await resolveOpenProjectPath(projectId, filePath);
     return readFile(resolvedPath);
   });
   ipcMain.handle("file:write", async (_event, ...rawArgs: unknown[]) => {
@@ -6136,7 +6142,7 @@ async function startApp(): Promise<void> {
     const projectId = parseProjectId(channel, rawProjectId);
     const filePath = parseRelativePath(channel, rawFilePath);
     const content = parseTextContent(channel, rawContent);
-    const { resolvedPath } = resolveOpenProjectPath(projectId, filePath);
+    const { resolvedPath } = await resolveOpenProjectPath(projectId, filePath);
     await atomicWriteUtf8(resolvedPath, content, { backup: true });
   });
   ipcMain.handle("file:create", async (_event, ...rawArgs: unknown[]) => {
@@ -6144,7 +6150,7 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
-    const location = resolveOpenProjectPath(projectId, relativePath);
+    const location = await resolveOpenProjectPath(projectId, relativePath);
     try {
       await atomicWriteUtf8(location.resolvedPath, starterContent(relativePath), {
         exclusive: true,
@@ -6324,7 +6330,7 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
-    const location = resolveOpenProjectPath(projectId, relativePath);
+    const location = await resolveOpenProjectPath(projectId, relativePath);
     try {
       await mkdir(location.resolvedPath, { recursive: false });
     } catch (error) {
@@ -6351,7 +6357,7 @@ async function startApp(): Promise<void> {
       rawDestinationDirectory,
     );
     const sourcePaths = parseExternalSourcePaths(channel, rawSourcePaths);
-    const target = resolveImportDestination(projectId, destinationDirectory);
+    const target = await resolveImportDestination(projectId, destinationDirectory);
     const imported = await importExternalFilesIntoProject(
       channel,
       target.projectPath,
@@ -6379,7 +6385,7 @@ async function startApp(): Promise<void> {
         channel,
         rawDestinationDirectory,
       );
-      const target = resolveImportDestination(projectId, destinationDirectory);
+      const target = await resolveImportDestination(projectId, destinationDirectory);
       const destinationRoot = target.resolvedPath;
       const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
       const dialogOptions = {
@@ -6420,8 +6426,8 @@ async function startApp(): Promise<void> {
     const projectId = parseProjectId(channel, rawProjectId);
     const fromRelativePath = parseRelativePath(channel, rawFromRelativePath);
     const toRelativePath = parseRelativePath(channel, rawToRelativePath);
-    const sourceLocation = resolveOpenProjectPath(projectId, fromRelativePath);
-    const targetLocation = resolveOpenProjectPath(projectId, toRelativePath);
+    const sourceLocation = await resolveOpenProjectPath(projectId, fromRelativePath);
+    const targetLocation = await resolveOpenProjectPath(projectId, toRelativePath);
     const sourcePath = sourceLocation.resolvedPath;
     const targetPath = targetLocation.resolvedPath;
 
@@ -6475,7 +6481,7 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
-    const location = resolveOpenProjectPath(projectId, relativePath);
+    const location = await resolveOpenProjectPath(projectId, relativePath);
     await gitAdd(location.projectPath, location.relativePath);
   });
   ipcMain.handle("git:unstage", async (_event, ...rawArgs: unknown[]) => {
@@ -6483,7 +6489,7 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
-    const location = resolveOpenProjectPath(projectId, relativePath);
+    const location = await resolveOpenProjectPath(projectId, relativePath);
     await gitUnstage(location.projectPath, location.relativePath);
   });
   ipcMain.handle("git:commit", async (_event, ...rawArgs: unknown[]) => {
@@ -6504,7 +6510,7 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
-    const location = resolveOpenProjectPath(projectId, relativePath);
+    const location = await resolveOpenProjectPath(projectId, relativePath);
     return {
       path: relativePath,
       diff: await readGitDiffPreview(location.projectPath, location.relativePath),
@@ -6515,7 +6521,7 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
-    const location = resolveOpenProjectPath(projectId, relativePath);
+    const location = await resolveOpenProjectPath(projectId, relativePath);
     const confirmed = await confirmGitDiscard(
       BrowserWindow.fromWebContents(event.sender),
       `Discard changes in ${relativePath}?`,
@@ -6586,7 +6592,7 @@ async function startApp(): Promise<void> {
             pattern: /^(staged|changes)$/,
             rejectControlChars: true,
           });
-    const location = resolveOpenProjectPath(projectId, relativePath);
+    const location = await resolveOpenProjectPath(projectId, relativePath);
     const session = await readWorkingTreeDiffSession(
       location.projectPath,
       location.relativePath,
@@ -6610,7 +6616,7 @@ async function startApp(): Promise<void> {
       return { scope: "repo", target: null, commits: [] };
     }
     if (relativePath) {
-      const location = resolveOpenProjectPath(projectId, relativePath);
+      const location = await resolveOpenProjectPath(projectId, relativePath);
       const history = await readStructuredGitHistory(
         location.projectPath,
         location.relativePath,
@@ -6643,7 +6649,7 @@ async function startApp(): Promise<void> {
     const relativePath = parseRelativePath(channel, rawRelativePath);
     const hash = parseGitHash(channel, rawHash);
     const parentHash = parseOptionalGitHash(channel, rawParentHash);
-    const location = resolveOpenProjectPath(projectId, relativePath);
+    const location = await resolveOpenProjectPath(projectId, relativePath);
     const session = await readCommitDiffSession(
       location.projectPath,
       location.relativePath,
@@ -6668,7 +6674,7 @@ async function startApp(): Promise<void> {
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
     const revision = parseGitRevisionRef(channel, rawRevision);
-    const location = resolveOpenProjectPath(projectId, relativePath);
+    const location = await resolveOpenProjectPath(projectId, relativePath);
     return readGitBlame(location.projectPath, location.relativePath, revision);
   });
   ipcMain.handle("git:reveal-file", async (_event, ...rawArgs: unknown[]) => {
@@ -6676,7 +6682,7 @@ async function startApp(): Promise<void> {
     const [rawProjectId, rawRelativePath] = expectIpcArgs(channel, rawArgs, 2);
     const projectId = parseProjectId(channel, rawProjectId);
     const relativePath = parseRelativePath(channel, rawRelativePath);
-    const { resolvedPath } = resolveOpenProjectPath(projectId, relativePath);
+    const { resolvedPath } = await resolveOpenProjectPath(projectId, relativePath);
     shell.showItemInFolder(resolvedPath);
   });
   ipcMain.handle("app:check-updates", async (_event, ...rawArgs: unknown[]) => {
@@ -6805,7 +6811,7 @@ async function startApp(): Promise<void> {
     const channel = "latex:compile";
     const [rawRequest] = expectIpcArgs(channel, rawArgs, 1);
     const request = parseCompileRequestInput(channel, rawRequest);
-    const location = resolveOpenProjectPath(request.projectId, request.rootFile);
+    const location = await resolveOpenProjectPath(request.projectId, request.rootFile);
     await assertCanonicalCompileInside(location.projectPath, location.resolvedPath);
     const controller = new AbortController();
     const untrack = trackCompileController(request.projectId, controller);
@@ -6867,6 +6873,16 @@ async function startApp(): Promise<void> {
       request.projectId,
     );
     await materializeCloudCompileFiles(projectPath, files);
+    if (
+      !(await ensureWorkspaceTrust(
+        BrowserWindow.fromWebContents(event.sender),
+        projectPath,
+      ))
+    ) {
+      throw new Error(
+        "Trust the shared project's authors before running local compilers.",
+      );
+    }
     // Register the scratch copy so PDF preview, SyncTeX, and cancelation
     // resolve the cloud project id to this local mirror.
     openProjects.set(request.projectId, {
@@ -6874,7 +6890,7 @@ async function startApp(): Promise<void> {
       rootPath: projectPath,
       name: `Shared project ${request.projectId}`,
     });
-    resolveProjectPath(projectPath, request.rootFile);
+    await resolveProjectPath(projectPath, request.rootFile);
     await assertCanonicalCompileInside(
       projectPath,
       path.join(projectPath, request.rootFile),
@@ -6921,7 +6937,10 @@ async function startApp(): Promise<void> {
     const channel = "asymptote:compile";
     const [rawRequest] = expectIpcArgs(channel, rawArgs, 1);
     const request = parseAsymptoteCompileRequestInput(channel, rawRequest);
-    const location = resolveOpenProjectPath(request.projectId, request.relativePath);
+    const location = await resolveOpenProjectPath(
+      request.projectId,
+      request.relativePath,
+    );
     await assertCanonicalCompileInside(location.projectPath, location.resolvedPath);
     const controller = new AbortController();
     const untrack = trackCompileController(request.projectId, controller);
@@ -6952,7 +6971,7 @@ async function startApp(): Promise<void> {
     const pdfPath = parseRelativePath(channel, rawPdfPath, {
       extensions: [".pdf"],
     });
-    const { resolvedPath } = resolveOpenProjectPath(projectId, pdfPath);
+    const { resolvedPath } = await resolveOpenProjectPath(projectId, pdfPath);
     return readFile(resolvedPath);
   });
   ipcMain.handle("synctex:forward", async (_event, ...rawArgs: unknown[]) => {
@@ -6968,8 +6987,8 @@ async function startApp(): Promise<void> {
     });
     const line = parseInteger(channel, rawLine, 1, maxSyncTexNumber);
     const column = parseInteger(channel, rawColumn, 1, maxSyncTexNumber);
-    const pdfLocation = resolveOpenProjectPath(projectId, pdfRelativePath);
-    const inputLocation = resolveOpenProjectPath(projectId, inputRelativePath);
+    const pdfLocation = await resolveOpenProjectPath(projectId, pdfRelativePath);
+    const inputLocation = await resolveOpenProjectPath(projectId, inputRelativePath);
     if (pdfLocation.projectPath !== inputLocation.projectPath) {
       throw new Error(
         "SyncTeX source and PDF must be in the same Research Space folder.",
@@ -6997,7 +7016,7 @@ async function startApp(): Promise<void> {
     const page = parseInteger(channel, rawPage, 1, 100_000);
     const x = parseFiniteNumber(channel, rawX, 0, maxSyncTexNumber);
     const y = parseFiniteNumber(channel, rawY, 0, maxSyncTexNumber);
-    const pdfLocation = resolveOpenProjectPath(projectId, pdfRelativePath);
+    const pdfLocation = await resolveOpenProjectPath(projectId, pdfRelativePath);
     const result = await backwardSyncTex(
       pdfLocation.projectPath,
       pdfLocation.resolvedPath,

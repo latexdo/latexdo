@@ -7,13 +7,13 @@ WORKDIR /app
 COPY collaborations/package.json ./package.json
 RUN npm install --omit=dev --no-audit --no-fund
 
-COPY collaborations/server.mjs ./server.mjs
+COPY collaborations/server.mjs collaborations/security.mjs ./
 
 ENV LATEXDO_COLLAB_HOST=0.0.0.0
 ENV LATEXDO_COLLAB_PORT=8787
 ENV LATEXDO_COLLAB_DATA_DIR=/data
-# Behind a proxy by default (docker-compose publishes on 127.0.0.1).
-ENV LATEXDO_COLLAB_TRUST_PROXY=true
+# Enable explicitly only when a controlled proxy overwrites forwarded headers.
+ENV LATEXDO_COLLAB_TRUST_PROXY=false
 
 RUN mkdir -p /data && chown -R node:node /data /app
 USER node

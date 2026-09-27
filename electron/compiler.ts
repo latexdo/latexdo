@@ -4,6 +4,7 @@ import { constants as fsConstants } from "node:fs";
 import { access, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { analyzeLatexDiagnostic, rankLatexDiagnostics } from "./latexDiagnostics.js";
+import { assertProjectPath } from "./projectPaths.js";
 import type { CompileResult, Diagnostic } from "./types.js";
 
 type CompileLatexRequest = {
@@ -694,6 +695,7 @@ export async function materializeCloudCompileFiles(
     if (relative.startsWith("..") || path.isAbsolute(relative)) {
       throw new Error(`Unsafe project path: ${file.relativePath}`);
     }
+    await assertProjectPath(projectRoot, targetPath);
     await mkdir(path.dirname(targetPath), { recursive: true });
     await writeFile(targetPath, file.content, "utf8");
   }
@@ -878,6 +880,8 @@ export async function compileLatex(
   options: CompileRunOptions = {},
 ): Promise<CompileResult> {
   const startedAt = performance.now();
+  const inputPath = path.resolve(request.projectPath, request.rootFile);
+  await assertProjectPath(request.projectPath, inputPath);
   const latexmk = options.executable ?? (await findLatexmk());
 
   if (!latexmk) {
@@ -897,6 +901,7 @@ export async function compileLatex(
     "build",
     `job-${randomUUID()}`,
   );
+  await assertProjectPath(request.projectPath, buildDirectory);
   await mkdir(buildDirectory, { recursive: true });
 
   const engineFlag = {
@@ -913,7 +918,7 @@ export async function compileLatex(
     "-file-line-error",
     "-halt-on-error",
     `-outdir=${buildDirectory}`,
-    request.rootFile,
+    inputPath,
   ];
 
   return new Promise((resolve) => {
@@ -1087,6 +1092,8 @@ export async function compileAsymptote(
   options: CompileRunOptions = {},
 ): Promise<CompileResult> {
   const startedAt = performance.now();
+  const inputPath = path.resolve(request.projectPath, request.relativePath);
+  await assertProjectPath(request.projectPath, inputPath);
   const asymptote = options.executable ?? (await findAsymptote());
 
   if (!asymptote) {
@@ -1107,6 +1114,7 @@ export async function compileAsymptote(
     "build",
     `asy-${randomUUID()}`,
   );
+  await assertProjectPath(request.projectPath, buildDirectory);
   await mkdir(buildDirectory, { recursive: true });
 
   const outputBase = path.join(
@@ -1114,7 +1122,7 @@ export async function compileAsymptote(
     path.basename(request.relativePath, path.extname(request.relativePath)),
   );
   const outputPdf = `${outputBase}.pdf`;
-  const args = ["-f", "pdf", "-o", outputBase, request.relativePath];
+  const args = ["-f", "pdf", "-o", outputBase, inputPath];
 
   return new Promise((resolve) => {
     if (options.signal?.aborted) {

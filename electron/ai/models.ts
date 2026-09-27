@@ -4,11 +4,11 @@
 // into place only when every check passes.
 
 import { app } from "electron";
-import { createHash, type Hash } from "node:crypto";
+import { createHash, randomUUID, type Hash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, readdir, rename, stat, unlink } from "node:fs/promises";
 import path from "node:path";
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 
@@ -23,9 +23,17 @@ export function modelsDir(): string {
 }
 
 export function modelPath(fileName: string): string {
-  // Guard against path traversal from renderer-supplied names.
-  const safe = path.basename(fileName);
-  return path.join(modelsDir(), safe);
+  if (
+    typeof fileName !== "string" ||
+    !fileName.toLowerCase().endsWith(".gguf") ||
+    fileName === ".gguf" ||
+    /[\\/:]/.test(fileName) ||
+    [...fileName].some((character) => character.charCodeAt(0) < 32) ||
+    path.basename(fileName) !== fileName
+  ) {
+    throw new Error("Invalid model filename.");
+  }
+  return path.join(modelsDir(), fileName);
 }
 
 export async function listModelFiles(): Promise<ModelFileStatus[]> {
@@ -141,7 +149,7 @@ export async function downloadModelFile(
 ): Promise<void> {
   await mkdir(modelsDir(), { recursive: true });
   const finalPath = modelPath(fileName);
-  const partPath = `${finalPath}.part`;
+  const partPath = `${finalPath}.${randomUUID()}.part`;
 
   events.onStage?.("downloading");
   const res = await fetch(url, { redirect: "follow", signal: events.signal });
@@ -153,13 +161,21 @@ export async function downloadModelFile(
 
   let received = 0;
   const nodeBody = Readable.fromWeb(res.body as unknown as NodeReadableStream);
-  nodeBody.on("data", (chunk: Buffer) => {
-    received += chunk.length;
-    events.onProgress(received, Number.isFinite(total) ? total : null);
+  const limiter = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      received += chunk.length;
+      const maxBytes = expectations.sizeRangeBytes?.max;
+      if (maxBytes !== undefined && received > maxBytes) {
+        callback(new Error("Model download exceeds the expected size."));
+        return;
+      }
+      events.onProgress(received, Number.isFinite(total) ? total : null);
+      callback(null, chunk);
+    },
   });
 
   try {
-    await pipeline(nodeBody, createWriteStream(partPath));
+    await pipeline(nodeBody, limiter, createWriteStream(partPath, { flags: "wx" }));
   } catch (error) {
     await unlink(partPath).catch(() => {});
     throw error;
@@ -169,10 +185,10 @@ export async function downloadModelFile(
   events.onStage?.("verifying");
   try {
     await verifyDownloadedModel(partPath, expectations, events.signal);
+    throwIfAborted(events.signal);
+    await rename(partPath, finalPath);
   } catch (error) {
     await unlink(partPath).catch(() => {});
     throw error;
   }
-  throwIfAborted(events.signal);
-  await rename(partPath, finalPath);
 }

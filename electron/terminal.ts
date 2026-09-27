@@ -1,4 +1,5 @@
-import { app, ipcMain } from "electron";
+import { app } from "electron";
+import { ipcMain } from "./trustedIpc.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { access, stat } from "node:fs/promises";
 import os from "node:os";

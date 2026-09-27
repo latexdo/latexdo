@@ -18,12 +18,14 @@ import * as awarenessProtocol from "y-protocols/awareness";
 import { Awareness } from "y-protocols/awareness";
 import * as syncProtocol from "y-protocols/sync";
 import * as Y from "yjs";
+import { accessLogPath, projectRole, sessionHash, withLock } from "./security.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 
 const host = process.env.LATEXDO_COLLAB_HOST || "127.0.0.1";
-const port = numberEnv("LATEXDO_COLLAB_PORT", 8787);
+const port =
+  process.env.LATEXDO_COLLAB_PORT === "0" ? 0 : numberEnv("LATEXDO_COLLAB_PORT", 8787);
 const dataDir = path.resolve(
   process.env.LATEXDO_COLLAB_DATA_DIR || path.join(repoRoot, "collaborations-data"),
 );
@@ -49,7 +51,7 @@ const roomPersistDelayMs = numberEnv("LATEXDO_COLLAB_ROOM_PERSIST_DELAY_MS", 250
 // Per-IP request rate limiting. `trustProxyHeader` MUST stay true only when the
 // server sits behind a reverse proxy you control (nginx), otherwise a client can
 // spoof X-Forwarded-For to dodge the limit.
-const trustProxyHeader = boolEnv("LATEXDO_COLLAB_TRUST_PROXY", true);
+const trustProxyHeader = boolEnv("LATEXDO_COLLAB_TRUST_PROXY", false);
 const rateLimitWindowMs = numberEnv("LATEXDO_COLLAB_RATE_WINDOW_MS", 60_000);
 const rateLimitMax = numberEnv("LATEXDO_COLLAB_RATE_MAX", 600);
 const createRateLimitMax = numberEnv("LATEXDO_COLLAB_CREATE_RATE_MAX", 30);
@@ -72,7 +74,6 @@ const wsGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const messageSync = 0;
 const messageAwareness = 1;
 const messageProjectPresence = 4;
-const syncMessageUpdate = 2;
 
 const rooms = new Map();
 
@@ -190,16 +191,32 @@ function sharesIndexPath() {
 
 async function atomicWriteJson(filePath, value) {
   await mkdir(path.dirname(filePath), { recursive: true });
-  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  await rename(temporaryPath, filePath);
+  const temporaryPath = `${filePath}.${randomToken()}.tmp`;
+  try {
+    await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+      flag: "wx",
+    });
+    await rename(temporaryPath, filePath);
+  } finally {
+    await rm(temporaryPath, { force: true }).catch(() => {});
+  }
 }
 
 async function atomicWriteText(filePath, value) {
   await mkdir(path.dirname(filePath), { recursive: true });
-  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(temporaryPath, value, "utf8");
-  await rename(temporaryPath, filePath);
+  const temporaryPath = `${filePath}.${randomToken()}.tmp`;
+  try {
+    await writeFile(temporaryPath, value, {
+      encoding: "utf8",
+      mode: 0o600,
+      flag: "wx",
+    });
+    await rename(temporaryPath, filePath);
+  } finally {
+    await rm(temporaryPath, { force: true }).catch(() => {});
+  }
 }
 
 async function readSharesIndex() {
@@ -240,7 +257,8 @@ async function writeProjectMeta(meta) {
 }
 
 async function createProject(identity, folderName) {
-  if ((await ensureProjectCount()) >= maxProjectsGlobal) {
+  await ensureProjectCount();
+  if (knownProjectCount >= maxProjectsGlobal) {
     throw new HttpError(507, "The collaboration server has reached its project limit.");
   }
   const timestamp = now();
@@ -259,15 +277,21 @@ async function createProject(identity, folderName) {
         clientId: identity.clientId,
         name: identity.clientName,
         role: "admin",
+        sessionHash: sessionHash(identity.sessionId),
         createdAt: timestamp,
         updatedAt: timestamp,
       },
     },
     presence: {},
   };
-  await mkdir(projectFilesDir(projectId), { recursive: true });
-  await writeProjectMeta(meta);
-  if (knownProjectCount !== null) knownProjectCount += 1;
+  knownProjectCount += 1;
+  try {
+    await mkdir(projectFilesDir(projectId), { recursive: true });
+    await writeProjectMeta(meta);
+  } catch (error) {
+    knownProjectCount -= 1;
+    throw error;
+  }
   return openProject(meta);
 }
 
@@ -317,6 +341,7 @@ function sendEmpty(response, request, status = 204) {
 }
 
 async function readJsonBody(request) {
+  if (Object.hasOwn(request, "parsedJsonBody")) return request.parsedJsonBody;
   const chunks = [];
   let total = 0;
   for await (const chunk of request) {
@@ -329,7 +354,11 @@ async function readJsonBody(request) {
   if (!chunks.length) return {};
   const text = Buffer.concat(chunks).toString("utf8");
   try {
-    return JSON.parse(text);
+    const body = JSON.parse(text);
+    if (!body || typeof body !== "object" || Array.isArray(body))
+      throw new Error("Invalid body");
+    request.parsedJsonBody = body;
+    return body;
   } catch {
     throw new HttpError(400, "Request body must be JSON.");
   }
@@ -375,26 +404,35 @@ function roleRank(role) {
 }
 
 function roleForProject(meta, identity, token) {
-  const existing = meta.permissions[identity.clientId];
-  if (existing?.role) return existing.role;
-  if (meta.ownerSession === identity.sessionId) return "admin";
-  if (token && token === meta.shareToken) return "editor";
-  return null;
+  return projectRole(meta, identity, token);
 }
 
 function ensureProjectPermission(meta, identity, role) {
-  const existing = meta.permissions[identity.clientId];
+  const existing = Object.hasOwn(meta.permissions, identity.clientId)
+    ? meta.permissions[identity.clientId]
+    : undefined;
   const nextRole = meta.ownerSession === identity.sessionId ? "admin" : role;
-  if (existing && existing.name === identity.clientName && existing.role === nextRole) {
+  if (
+    existing &&
+    existing.name === identity.clientName &&
+    existing.role === nextRole &&
+    existing.sessionHash === sessionHash(identity.sessionId)
+  ) {
     return false;
   }
-  meta.permissions[identity.clientId] = {
-    clientId: identity.clientId,
-    name: identity.clientName,
-    role: nextRole,
-    createdAt: existing?.createdAt ?? now(),
-    updatedAt: now(),
-  };
+  Object.defineProperty(meta.permissions, identity.clientId, {
+    value: {
+      clientId: identity.clientId,
+      name: identity.clientName,
+      role: nextRole,
+      sessionHash: sessionHash(identity.sessionId),
+      createdAt: existing?.createdAt ?? now(),
+      updatedAt: now(),
+    },
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
   return true;
 }
 
@@ -425,9 +463,11 @@ async function ensureShare(meta) {
   if (meta.shareToken) return meta.shareToken;
   const token = randomToken();
   meta.shareToken = token;
-  const index = await readSharesIndex();
-  index[token] = meta.id;
-  await writeSharesIndex(index);
+  await withLock("shares", async () => {
+    const index = await readSharesIndex();
+    index[token] = meta.id;
+    await writeSharesIndex(index);
+  });
   await writeProjectMeta(meta);
   return token;
 }
@@ -436,10 +476,12 @@ async function rotateShare(meta) {
   const token = randomToken();
   const previousToken = meta.shareToken;
   meta.shareToken = token;
-  const index = await readSharesIndex();
-  if (previousToken) delete index[previousToken];
-  index[token] = meta.id;
-  await writeSharesIndex(index);
+  await withLock("shares", async () => {
+    const index = await readSharesIndex();
+    if (previousToken) delete index[previousToken];
+    index[token] = meta.id;
+    await writeSharesIndex(index);
+  });
   await writeProjectMeta(meta);
   return token;
 }
@@ -456,7 +498,12 @@ function shareUrl(token) {
 
 function permissionList(meta, currentClientId) {
   return Object.values(meta.permissions)
-    .filter((permission) => permission && typeof permission.clientId === "string")
+    .filter(
+      (permission) =>
+        permission &&
+        isRole(permission.role) &&
+        typeof permission.clientId === "string",
+    )
     .sort((left, right) => {
       const rankDelta = roleRank(right.role) - roleRank(left.role);
       if (rankDelta) return rankDelta;
@@ -505,12 +552,17 @@ function isRole(value) {
 }
 
 function updatePresence(meta, identity, currentFile) {
-  meta.presence[identity.clientId] = {
-    clientId: identity.clientId,
-    name: identity.clientName,
-    currentFile: currentFile || null,
-    lastSeen: now(),
-  };
+  Object.defineProperty(meta.presence, identity.clientId, {
+    value: {
+      clientId: identity.clientId,
+      name: identity.clientName,
+      currentFile: currentFile || null,
+      lastSeen: now(),
+    },
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
 }
 
 function normalizeRelativePath(value, { allowEmpty = false } = {}) {
@@ -571,6 +623,7 @@ async function writeProjectFile(projectId, relativePath, content) {
 async function assertProjectQuota(projectId, incomingPath, incomingBytes) {
   let fileCount = 0;
   let totalBytes = incomingBytes;
+  const seen = new Set([incomingPath]);
   const root = projectFilesDir(projectId);
   const incomingFullPath = filePathFor(projectId, incomingPath);
   const incomingExists = await exists(incomingFullPath);
@@ -583,12 +636,23 @@ async function assertProjectQuota(projectId, incomingPath, incomingBytes) {
       } else if (entry.isFile()) {
         fileCount += 1;
         if (entryPath !== incomingFullPath) {
-          totalBytes += (await stat(entryPath)).size;
+          const relativePath = path.relative(root, entryPath).split(path.sep).join("/");
+          seen.add(relativePath);
+          const room = rooms.get(roomKey(projectId, relativePath));
+          totalBytes += room
+            ? Buffer.byteLength(room.text.toString(), "utf8")
+            : (await stat(entryPath)).size;
         }
       }
     }
   }
   await walk(root);
+  for (const room of rooms.values()) {
+    if (room.projectId === projectId && !seen.has(room.relativePath)) {
+      fileCount += 1;
+      totalBytes += Buffer.byteLength(room.text.toString(), "utf8");
+    }
+  }
   if (fileCount + (incomingExists ? 0 : 1) > maxProjectFiles) {
     throw new HttpError(413, "Project has too many files.");
   }
@@ -676,6 +740,18 @@ async function moveEntry(projectId, fromRelativePath, toRelativePath) {
     throw new HttpError(400, "Cannot move a folder into itself.");
   }
   await mkdir(path.dirname(toPath), { recursive: true });
+  for (const room of rooms.values()) {
+    if (
+      room.projectId === projectId &&
+      (room.relativePath === fromRelativePath ||
+        room.relativePath.startsWith(`${fromRelativePath}/`))
+    ) {
+      await atomicWriteText(
+        filePathFor(projectId, room.relativePath),
+        room.text.toString(),
+      );
+    }
+  }
   await rename(fromPath, toPath);
   for (const [key, room] of rooms) {
     if (
@@ -770,12 +846,21 @@ async function handleHttp(request, response) {
   }
 
   if (parts[0] === "api" && parts[1] === "projects" && parts.length >= 3) {
-    await handleProjectRoute(request, response, url, parts);
+    if (["POST", "PUT"].includes(request.method)) await readJsonBody(request);
+    await withLock(`project:${parts[2]}`, () =>
+      handleProjectRoute(request, response, url, parts),
+    );
     return;
   }
 
   if (parts[0] === "api" && parts[1] === "shares" && parts.length >= 3) {
-    await handleShareRoute(request, response, url, parts);
+    if (["POST", "PUT"].includes(request.method)) await readJsonBody(request);
+    const index = await readSharesIndex();
+    const projectId = Object.hasOwn(index, parts[2]) ? index[parts[2]] : null;
+    if (!projectId) throw new HttpError(404, "Share token not found.");
+    await withLock(`project:${projectId}`, () =>
+      handleShareRoute(request, response, url, parts),
+    );
     return;
   }
 
@@ -968,11 +1053,14 @@ async function handleShareRoute(request, response, url, parts) {
     if (body.clientId === identity.clientId) {
       throw new HttpError(400, "You cannot change your own role.");
     }
-    const existing = meta.permissions[body.clientId];
+    const existing = Object.hasOwn(meta.permissions, body.clientId)
+      ? meta.permissions[body.clientId]
+      : undefined;
     if (!existing) throw new HttpError(404, "Collaborator not found.");
     existing.role = body.role;
     existing.updatedAt = now();
     await writeProjectMeta(meta);
+    closeClientConnections(meta.id, body.clientId, 1008, "Permissions changed");
     const updated = {
       clientId: existing.clientId,
       name: existing.name,
@@ -988,7 +1076,7 @@ async function handleShareRoute(request, response, url, parts) {
     if (!clientIdToRemove || clientIdToRemove === identity.clientId) {
       throw new HttpError(400, "Invalid collaborator removal.");
     }
-    if (!meta.permissions[clientIdToRemove]) {
+    if (!Object.hasOwn(meta.permissions, clientIdToRemove)) {
       throw new HttpError(404, "Collaborator not found.");
     }
     const remainingAdmins = Object.values(meta.permissions).filter(
@@ -998,7 +1086,9 @@ async function handleShareRoute(request, response, url, parts) {
     if (!remainingAdmins.length) {
       throw new HttpError(400, "A project must keep at least one admin.");
     }
-    delete meta.permissions[clientIdToRemove];
+    // Keep the session binding so possession of an old share link cannot
+    // silently re-enroll a removed collaborator.
+    meta.permissions[clientIdToRemove].role = null;
     delete meta.presence[clientIdToRemove];
     await writeProjectMeta(meta);
     closeClientConnections(meta.id, clientIdToRemove, 1008, "Removed from project");
@@ -1044,6 +1134,11 @@ async function getRoom(projectId, relativePath) {
       for (const conn of Array.from(conns)) {
         conn.close(code, reason);
       }
+      if (room.persistTimer) clearTimeout(room.persistTimer);
+      if (room.evictTimer) clearTimeout(room.evictTimer);
+      room.persistTimer = null;
+      room.evictTimer = null;
+      awareness.destroy();
       doc.destroy();
     },
   };
@@ -1057,6 +1152,11 @@ async function getRoom(projectId, relativePath) {
     for (const candidate of idle) {
       if (rooms.size < maxRoomsInMemory) break;
       evictRoom(candidate);
+    }
+    if (rooms.size >= maxRoomsInMemory) {
+      awareness.destroy();
+      doc.destroy();
+      throw new HttpError(503, "The collaboration server is at document capacity.");
     }
   }
 
@@ -1110,10 +1210,13 @@ function scheduleRoomPersist(room) {
       });
       return;
     }
-    void atomicWriteText(
-      filePathFor(room.projectId, room.relativePath),
-      room.text.toString(),
-    ).catch((error) => {
+    void withLock(`project:${room.projectId}`, async () => {
+      if (rooms.get(roomKey(room.projectId, room.relativePath)) !== room) return;
+      await atomicWriteText(
+        filePathFor(room.projectId, room.relativePath),
+        room.text.toString(),
+      );
+    }).catch((error) => {
       console.error("Could not persist collaboration room", {
         projectId: room.projectId,
         relativePath: room.relativePath,
@@ -1211,38 +1314,43 @@ async function handleUpgrade(request, socket, head) {
     }
     const projectId = parts[2];
     const relativePath = normalizeRelativePath(url.searchParams.get("path"));
-    const auth = await authorizeProject(request, url, projectId, "viewer");
-    const key = request.headers["sec-websocket-key"];
-    if (typeof key !== "string") throw new HttpError(400, "Missing WebSocket key.");
-    const accept = createHash("sha1").update(`${key}${wsGuid}`).digest("base64");
-    socket.write(
-      [
-        "HTTP/1.1 101 Switching Protocols",
-        "Upgrade: websocket",
-        "Connection: Upgrade",
-        `Sec-WebSocket-Accept: ${accept}`,
-        "\r\n",
-      ].join("\r\n"),
-    );
+    await withLock(`project:${projectId}`, async () => {
+      const auth = await authorizeProject(request, url, projectId, "viewer");
+      const key = request.headers["sec-websocket-key"];
+      if (typeof key !== "string") throw new HttpError(400, "Missing WebSocket key.");
+      const accept = createHash("sha1").update(`${key}${wsGuid}`).digest("base64");
+      const room = await getRoom(projectId, relativePath);
+      if (
+        room.conns.size >= maxConnectionsPerRoom ||
+        totalConnections >= maxConnectionsTotal
+      ) {
+        throw new HttpError(503, "This document has too many active collaborators.");
+      }
+      socket.write(
+        [
+          "HTTP/1.1 101 Switching Protocols",
+          "Upgrade: websocket",
+          "Connection: Upgrade",
+          `Sec-WebSocket-Accept: ${accept}`,
+          "\r\n",
+        ].join("\r\n"),
+      );
 
-    const room = await getRoom(projectId, relativePath);
-    if (room.conns.size >= maxConnectionsPerRoom) {
-      throw new HttpError(503, "This document has too many active collaborators.");
-    }
-    if (room.evictTimer) {
-      clearTimeout(room.evictTimer);
-      room.evictTimer = null;
-    }
-    const conn = new CollaborationConnection(socket, room, auth.identity, auth.role);
-    room.conns.add(conn);
-    totalConnections += 1;
-    room.lastActivityAt = now();
-    updatePresence(auth.meta, auth.identity, relativePath);
-    await writeProjectMeta(auth.meta);
-    broadcastProjectPresence(projectId, activePresence(auth.meta));
-    conn.sendSyncStep1();
-    conn.sendAwarenessStates();
-    if (head?.byteLength) conn.receive(head);
+      if (room.evictTimer) {
+        clearTimeout(room.evictTimer);
+        room.evictTimer = null;
+      }
+      const conn = new CollaborationConnection(socket, room, auth.identity, auth.role);
+      room.conns.add(conn);
+      totalConnections += 1;
+      room.lastActivityAt = now();
+      updatePresence(auth.meta, auth.identity, relativePath);
+      await writeProjectMeta(auth.meta);
+      broadcastProjectPresence(projectId, activePresence(auth.meta));
+      if (auth.role !== "viewer") conn.sendSyncStep1();
+      conn.sendAwarenessStates();
+      if (head?.byteLength) conn.receive(head);
+    });
   } catch (error) {
     socket.write(
       `HTTP/1.1 ${error.status || 500} ${http.STATUS_CODES[error.status || 500] || "Error"}\r\nConnection: close\r\n\r\n`,
@@ -1260,6 +1368,8 @@ class CollaborationConnection {
     this.buffer = Buffer.alloc(0);
     this.controlledAwarenessIds = new Set();
     this.closed = false;
+    this.pendingBytes = 0;
+    this.pendingFrames = 0;
     this.lastActivityAt = now();
 
     socket.on("data", (chunk) => this.receive(chunk));
@@ -1282,11 +1392,23 @@ class CollaborationConnection {
       }
       if (!frame) return;
       this.buffer = this.buffer.subarray(frame.bytesRead);
-      void this.handleFrame(frame);
+      this.pendingBytes += frame.payload.length;
+      this.pendingFrames += 1;
+      if (this.pendingBytes > maxWebSocketFrameBytes * 4 || this.pendingFrames > 256) {
+        this.close(1009, "Too many pending messages");
+        return;
+      }
+      void withLock(`project:${this.room.projectId}`, () => this.handleFrame(frame))
+        .catch(() => this.close(1008, "Collaboration message rejected"))
+        .finally(() => {
+          this.pendingBytes -= frame.payload.length;
+          this.pendingFrames -= 1;
+        });
     }
   }
 
   async handleFrame(frame) {
+    if (this.closed) return;
     if (frame.opcode === 8) {
       this.close(1000, "closed");
       return;
@@ -1316,7 +1438,7 @@ class CollaborationConnection {
     if (messageType === messageSync) {
       if (
         this.role === "viewer" &&
-        syncInnerMessageType(payload) === syncMessageUpdate
+        syncInnerMessageType(payload) !== syncProtocol.messageYjsSyncStep1
       ) {
         this.close(1008, "Viewer access is read-only");
         return;
@@ -1324,8 +1446,42 @@ class CollaborationConnection {
       const encoder = encoding.createEncoder();
       encoding.writeVarUint(encoder, messageSync);
       try {
-        syncProtocol.readSyncMessage(decoder, encoder, this.room.doc, this);
+        const innerType = syncInnerMessageType(payload);
+        if (
+          innerType === syncProtocol.messageYjsSyncStep2 ||
+          innerType === syncProtocol.messageYjsUpdate
+        ) {
+          decoding.readVarUint(decoder);
+          const update = decoding.readVarUint8Array(decoder);
+          // Validate in an isolated document before any broadcast or mutation.
+          const candidate = new Y.Doc();
+          try {
+            Y.applyUpdate(candidate, Y.encodeStateAsUpdate(this.room.doc));
+            Y.applyUpdate(candidate, update);
+            const text = candidate.getText("content");
+            const bytes = Buffer.byteLength(text.toString(), "utf8");
+            if (
+              text.length > maxCollabDocChars ||
+              bytes > maxFileBytes ||
+              Y.encodeStateAsUpdate(candidate).byteLength > maxFileBytes * 4
+            ) {
+              this.close(1009, "Document is too large for collaboration.");
+              return;
+            }
+            await assertProjectQuota(
+              this.room.projectId,
+              this.room.relativePath,
+              bytes,
+            );
+            if (!this.closed) Y.applyUpdate(this.room.doc, update, this);
+          } finally {
+            candidate.destroy();
+          }
+        } else {
+          syncProtocol.readSyncMessage(decoder, encoder, this.room.doc, this);
+        }
       } catch {
+        this.close(1008, "Collaboration update rejected");
         return;
       }
       // Enforce the shared document-size cap for live edits so a WebSocket
@@ -1345,8 +1501,29 @@ class CollaborationConnection {
         if (!decoding.hasContent(decoder)) return;
         const update = decoding.readVarUint8Array(decoder);
         if (!update.byteLength) return;
+        if (update.byteLength > 16 * 1024)
+          throw new Error("Awareness update too large");
+        const awarenessDecoder = decoding.createDecoder(update);
+        const count = decoding.readVarUint(awarenessDecoder);
+        if (count > 16) throw new Error("Too many awareness states");
+        const ids = new Set(this.controlledAwarenessIds);
+        for (let index = 0; index < count; index += 1) {
+          const id = decoding.readVarUint(awarenessDecoder);
+          decoding.readVarUint(awarenessDecoder);
+          const state = JSON.parse(decoding.readVarString(awarenessDecoder));
+          if (
+            this.room.awareness.getStates().has(id) &&
+            !this.controlledAwarenessIds.has(id)
+          ) {
+            throw new Error("Awareness identity belongs to another connection");
+          }
+          if (state === null) ids.delete(id);
+          else ids.add(id);
+        }
+        if (ids.size > 16) throw new Error("Too many awareness identities");
         awarenessProtocol.applyAwarenessUpdate(this.room.awareness, update, this);
       } catch {
+        this.close(1008, "Awareness update rejected");
         return;
       }
     }
@@ -1377,6 +1554,11 @@ class CollaborationConnection {
 
   sendFrame(opcode, payload = Buffer.alloc(0)) {
     if (this.closed || !this.socket.writable) return;
+    if (this.socket.writableLength > maxWebSocketFrameBytes * 4) {
+      this.socket.destroy();
+      void this.destroy();
+      return;
+    }
     this.socket.write(encodeWebSocketFrame(opcode, payload));
   }
 
@@ -1406,16 +1588,6 @@ class CollaborationConnection {
         this,
       );
     }
-    try {
-      const meta = await readProjectMeta(this.room.projectId);
-      if (meta.presence[this.identity.clientId]) {
-        meta.presence[this.identity.clientId].lastSeen = now();
-        await writeProjectMeta(meta);
-        broadcastProjectPresence(meta.id, activePresence(meta));
-      }
-    } catch {
-      // Connection teardown should not throw.
-    }
   }
 }
 
@@ -1439,6 +1611,9 @@ function parseWebSocketFrame(buffer) {
   let length = second & 0x7f;
   let offset = 2;
   if (!fin) throw new HttpError(1003, "Fragmented frames are not supported.");
+  if (!masked || (first & 0x70) !== 0 || ![2, 8, 9, 10].includes(opcode)) {
+    throw new HttpError(1002, "Invalid WebSocket frame.");
+  }
   if (length === 126) {
     if (buffer.length < offset + 2) return null;
     length = buffer.readUInt16BE(offset);
@@ -1454,6 +1629,7 @@ function parseWebSocketFrame(buffer) {
   if (length > maxWebSocketFrameBytes) {
     throw new HttpError(1009, "Frame is too large.");
   }
+  if (opcode >= 8 && length > 125) throw new HttpError(1002, "Invalid control frame.");
   let mask;
   if (masked) {
     if (buffer.length < offset + 4) return null;
@@ -1495,9 +1671,7 @@ function encodeWebSocketFrame(opcode, payload) {
 // tokens (which some clients pass as query params) never land in the logs.
 function logAccess(request, status, startedAt) {
   if (!accessLogEnabled) return;
-  let pathOnly = request.url || "/";
-  const queryIndex = pathOnly.indexOf("?");
-  if (queryIndex !== -1) pathOnly = pathOnly.slice(0, queryIndex);
+  const pathOnly = accessLogPath(request.url);
   console.log(
     JSON.stringify({
       level: status >= 500 ? "error" : status >= 400 ? "warn" : "info",
@@ -1557,7 +1731,7 @@ server.listen(port, host, () => {
       level: "info",
       msg: "listening",
       host,
-      port,
+      port: server.address().port,
       dataDir,
       projects: knownProjectCount,
       time: new Date().toISOString(),

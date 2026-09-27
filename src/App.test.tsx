@@ -754,7 +754,7 @@ describe("App critical UI controls", () => {
     fireEvent.click(screen.getByRole("button", { name: /set up workspace/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("Choose your research identity")).toBeVisible();
+      expect(screen.getByRole("textbox", { name: "First name" })).toBeVisible();
     });
     const saved = JSON.parse(
       window.localStorage.getItem(settingsStorageKey) ?? "{}",

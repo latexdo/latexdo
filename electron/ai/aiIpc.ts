@@ -2,7 +2,8 @@
 // local (node-llama-cpp) and Ollama go through here, plus model management.
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
+import { BrowserWindow, dialog, type IpcMainInvokeEvent } from "electron";
+import { ipcMain } from "../trustedIpc.js";
 import { stat } from "node:fs/promises";
 import { generateLocalStep } from "./localLlm.js";
 import { detectOllama, generateOllamaStep } from "./ollama.js";
@@ -269,7 +270,11 @@ export function registerAiIpc(): void {
       if (!tier) {
         return { ok: false, error: "This model is not part of the LatexDo catalog." };
       }
-      const { modelId, fileName, downloadUrl, expectedSizeRangeBytes } = tier.runtime;
+      const { modelId, fileName, downloadUrl, expectedSizeRangeBytes, expectedSha256 } =
+        tier.runtime;
+      if (activeDownloads.has(tierId)) {
+        return { ok: false, error: "This model is already downloading." };
+      }
       if (await modelExists(fileName)) return { ok: true };
       const blocked = tierAvailabilityMessage(
         tier.name,
@@ -290,23 +295,28 @@ export function registerAiIpc(): void {
         event.sender.send("ai:download-progress", { modelId, ...progress });
       };
       try {
-        await downloadModelFile(downloadUrl, fileName, {
-          signal: controller.signal,
-          onProgress: (received, total) =>
-            sendProgress({
-              receivedBytes: received,
-              totalBytes: total,
-              done: false,
-              stage: "downloading",
-            }),
-          onStage: (stage) =>
-            sendProgress({
-              receivedBytes: 0,
-              totalBytes: null,
-              done: false,
-              stage,
-            }),
-        });
+        await downloadModelFile(
+          downloadUrl,
+          fileName,
+          {
+            signal: controller.signal,
+            onProgress: (received, total) =>
+              sendProgress({
+                receivedBytes: received,
+                totalBytes: total,
+                done: false,
+                stage: "downloading",
+              }),
+            onStage: (stage) =>
+              sendProgress({
+                receivedBytes: 0,
+                totalBytes: null,
+                done: false,
+                stage,
+              }),
+          },
+          { sizeRangeBytes: expectedSizeRangeBytes, expectedSha256 },
+        );
         sendProgress({ receivedBytes: 0, totalBytes: null, done: true });
         return { ok: true };
       } catch (error) {

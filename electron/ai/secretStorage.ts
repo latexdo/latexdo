@@ -19,10 +19,18 @@ const credentialsFileName = "ai-credentials.json";
 const credentialsSchemaVersion = 1;
 /** Safe credential ids: provider presets and custom ids built from them. */
 const credentialIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+let credentialMutation: Promise<void> = Promise.resolve();
 
-interface StoredCredentialFile {
-  schemaVersion?: unknown;
-  entries?: unknown;
+function mutateCredentials(
+  change: (entries: Map<string, CredentialEntry>) => void,
+): Promise<void> {
+  const operation = credentialMutation.then(async () => {
+    const entries = await readCredentialEntries();
+    change(entries);
+    await writeCredentialEntries(entries);
+  });
+  credentialMutation = operation.catch(() => {});
+  return operation;
 }
 
 interface CredentialEntry {
@@ -88,7 +96,7 @@ async function writeCredentialEntries(
 }
 
 function ensureEncryptionAvailable(): void {
-  if (!safeStorage.isEncryptionAvailable()) {
+  if (!isCredentialStorageAvailable()) {
     throw new Error(
       "Secure credential storage is not available on this system. Configure an OS keyring and try again; credentials are never written to disk in plaintext.",
     );
@@ -97,7 +105,11 @@ function ensureEncryptionAvailable(): void {
 
 export function isCredentialStorageAvailable(): boolean {
   try {
-    return safeStorage.isEncryptionAvailable();
+    return (
+      safeStorage.isEncryptionAvailable() &&
+      (process.platform !== "linux" ||
+        !["basic_text", "unknown"].includes(safeStorage.getSelectedStorageBackend()))
+    );
   } catch {
     return false;
   }
@@ -114,12 +126,12 @@ export async function setCredential(
     throw new Error("The API key cannot be empty.");
   }
   ensureEncryptionAvailable();
-  const entries = await readCredentialEntries();
-  entries.set(credentialId, {
-    ciphertext: safeStorage.encryptString(secret).toString("base64"),
-    createdAt: new Date().toISOString(),
+  await mutateCredentials((entries) => {
+    entries.set(credentialId, {
+      ciphertext: safeStorage.encryptString(secret).toString("base64"),
+      createdAt: new Date().toISOString(),
+    });
   });
-  await writeCredentialEntries(entries);
 }
 
 export async function getCredential(credentialId: string): Promise<string | null> {
@@ -137,8 +149,6 @@ export async function getCredential(credentialId: string): Promise<string | null
   } catch {
     // Corrupt or undecryptable entry (e.g. moved across machines). Treat as
     // missing so the user is prompted to reconfigure.
-    entries.delete(credentialId);
-    await writeCredentialEntries(entries).catch(() => {});
     return null;
   }
 }
@@ -155,10 +165,9 @@ export async function deleteCredential(credentialId: string): Promise<void> {
   if (!credentialIdPattern.test(credentialId)) {
     return;
   }
-  const entries = await readCredentialEntries();
-  if (entries.delete(credentialId)) {
-    await writeCredentialEntries(entries);
-  }
+  await mutateCredentials((entries) => {
+    entries.delete(credentialId);
+  });
 }
 
 export async function listCredentialIds(): Promise<string[]> {
