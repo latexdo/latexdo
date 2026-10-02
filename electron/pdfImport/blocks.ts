@@ -492,6 +492,15 @@ function headingCandidate(
     return null;
   }
   const size = median(group.map((line) => line.size));
+  // Numbered footnotes resemble section numbers, but their smaller type and
+  // position at the foot of the column distinguish them from headings.
+  if (
+    size < stats.bodySize * 0.92 &&
+    group[0].baseline > layout.height * 0.72 &&
+    /^[\d*†‡§¶]/.test(text)
+  ) {
+    return null;
+  }
   const bold = boldShare(group[0]) > 0.6;
   const larger = size > stats.bodySize * 1.06;
   const numbered = sectionNumberPattern.exec(text);
@@ -1177,7 +1186,9 @@ export function analyzeStructure(
     const theorem = theoremPattern.exec(text);
     if (
       theorem &&
-      (boldShare(first) > 0.2 || first.glyphs.some((g) => g.font.smallCaps))
+      (boldShare(first) > 0.2 ||
+        first.glyphs.find((glyph) => !glyph.space && glyph.text)?.font.bold ||
+        first.glyphs.some((g) => g.font.smallCaps))
     ) {
       const environment = theorem[1].toLowerCase();
       const consumed = theorem[0].length;

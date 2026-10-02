@@ -58,7 +58,7 @@ describe("NotationManager", () => {
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith("\\beta");
     });
-    expect(screen.getByText("Copied \\beta")).toBeVisible();
+    expect(await screen.findByText("Copied \\beta")).toBeVisible();
   });
 
   it("exposes at least 1000 math symbols", () => {

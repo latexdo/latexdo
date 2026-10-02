@@ -569,7 +569,12 @@ function normalizeRelativePath(value, { allowEmpty = false } = {}) {
   const raw = typeof value === "string" ? value.trim().replaceAll("\\", "/") : "";
   if (!raw && !allowEmpty) throw new HttpError(400, "Missing file path.");
   if (raw.length > 512) throw new HttpError(400, "File path is too long.");
-  if (raw.startsWith("/") || raw.split("/").includes("..")) {
+  if (
+    raw.startsWith("/") ||
+    /^[A-Za-z]:/.test(raw) ||
+    /[\u0000-\u001f\u007f]/.test(raw) ||
+    raw.split("/").some((segment) => ["..", ".git", "node_modules"].includes(segment))
+  ) {
     throw new HttpError(400, "Invalid file path.");
   }
   const normalized = path.posix.normalize(raw);

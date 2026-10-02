@@ -2997,6 +2997,8 @@ function safeDownloadsUrl(value: unknown): string {
     if (
       url.protocol === "https:" &&
       isDownloadsHost &&
+      !url.username &&
+      !url.password &&
       url.pathname.startsWith("/downloads/")
     ) {
       return url.href;
@@ -3019,7 +3021,12 @@ function safeExternalUrl(value: unknown): string | null {
 
   try {
     const url = new URL(value.trim());
-    if (url.protocol === "https:" && externalUrlHosts.has(url.hostname)) {
+    if (
+      url.protocol === "https:" &&
+      externalUrlHosts.has(url.hostname) &&
+      !url.username &&
+      !url.password
+    ) {
       return url.href;
     }
   } catch {
@@ -3045,6 +3052,8 @@ function safeScholarlyMetadataUrl(value: unknown): string | null {
     if (
       url.protocol === "https:" &&
       allowedHost &&
+      !url.username &&
+      !url.password &&
       url.pathname === "/works" &&
       url.search.length <= 2048
     ) {

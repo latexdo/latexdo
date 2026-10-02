@@ -374,11 +374,13 @@ async function verifyOnce(attempt) {
 }
 
 let lastError = null;
+let verified = false;
 for (let attempt = 1; attempt <= retries; attempt += 1) {
   try {
     await verifyOnce(attempt);
     console.log(`Verified deployed downloads at ${deployedDownloadsUrl.href}`);
-    process.exit(0);
+    verified = true;
+    break;
   } catch (error) {
     lastError = error;
     console.log(
@@ -392,4 +394,4 @@ for (let attempt = 1; attempt <= retries; attempt += 1) {
   }
 }
 
-throw lastError ?? new Error("Deployment verification failed.");
+if (!verified) throw lastError ?? new Error("Deployment verification failed.");

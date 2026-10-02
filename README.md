@@ -1,5 +1,7 @@
 # latexdo
 
+[![JS/TS line coverage](docs/coverage.svg)](#test-coverage)
+
 LatexDo is a desktop LaTeX editor built with Electron, React, TypeScript,
 Monaco, Vite, and local LaTeX tooling.
 
@@ -45,6 +47,33 @@ npm run release:check     # Run the local release-readiness gate.
 npm run ai:check          # Validate AI catalog/source sync.
 npm run sync:downstream   # Local-only helper for CLI/editor sibling repos.
 ```
+
+## Test Coverage
+
+`npm run test:coverage` measures all JavaScript and TypeScript source under
+`src/`, `electron/`, `collaborations/`, `cli/`, `scripts/`, and `latexdo/`, including
+files that no test imports. This includes the application entry points, Monaco
+integration, every feature, Electron preload and backend, collaboration server,
+generated runtime code, and development/release tooling.
+
+Tests, test harnesses, type declarations, dependencies, and compiled build output
+are excluded. Shell scripts (including the current CLI), CSS, HTML, and other
+non-JavaScript assets cannot be instrumented by V8 and are not part of this
+percentage. Code executed only in a separate process is included as uncovered
+unless its coverage is collected; this report does not merge subprocess coverage.
+
+The badge is a snapshot of the last successful full coverage run and refreshes
+automatically when `npm run test:coverage` succeeds. Commit `docs/coverage.svg`
+alongside test changes to keep the README current. Detailed results are written to
+`coverage/lcov-report/index.html`, `coverage/lcov.info`, and
+`coverage/coverage-summary.json`.
+
+The coverage command also verifies that every eligible source file appears in the
+report, failing if a transformation error silently drops one.
+
+The full-codebase coverage gate requires 43% lines, 42% statements, 45% functions,
+and 38% branches. The previously measured subset retains its existing thresholds
+of 79% lines, 78% statements, 82% functions, and 66% branches.
 
 ## CI And Release
 

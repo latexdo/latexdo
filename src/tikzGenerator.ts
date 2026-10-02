@@ -497,7 +497,8 @@ function parseTikzOptions(optsStr: string): {
   if (!optsStr) return { stroke, fill, strokeWidth, dashed, rotation, fontSize };
   const opts = optsStr
     .replace(/^\[|\]$/g, "")
-    .split(",")
+    // RGB values contain commas inside braces; they belong to one option.
+    .split(/,(?![^{}]*\})/)
     .map((s) => s.trim());
   for (const opt of opts) {
     if (opt === "dashed") dashed = true;
@@ -536,10 +537,11 @@ function parseTikzDraw(line: string, ch: number): DrawShape | null {
     .map((m) => tikzPtToCanvas(m[0], ch))
     .filter((c): c is [number, number] => c !== null);
 
-  if (coords.length < 2) return null;
+  if (coords.length < 1) return null;
 
   // rectangle
   if (line.includes("rectangle")) {
+    if (coords.length < 2) return null;
     const p1 = coords[0];
     const p2 = coords[1];
     return {
@@ -558,8 +560,9 @@ function parseTikzDraw(line: string, ch: number): DrawShape | null {
   // circle
   if (line.includes("circle")) {
     const [cx, cy] = coords[0];
-    const r = coordMatches[coordMatches.length - 1];
-    const radius = parseFloat(r[1]) * INV_SCALE;
+    const radiusMatch = line.match(/circle\s*\(([-\d.]+)\)/);
+    if (!radiusMatch) return null;
+    const radius = parseFloat(radiusMatch[1]) * INV_SCALE;
     return {
       id: nextParseId(),
       kind: "circle",
@@ -592,6 +595,8 @@ function parseTikzDraw(line: string, ch: number): DrawShape | null {
       ...opts,
     };
   }
+
+  if (coords.length < 2) return null;
 
   // grid
   if (line.includes("grid")) {
@@ -669,11 +674,12 @@ function parseTikzDraw(line: string, ch: number): DrawShape | null {
       const topDx = coords[1][0] - coords[0][0];
       const bottomDx = coords[2][0] - coords[3][0];
       const isParallelogram =
-        Math.abs(topDx - bottomDx) > 5 && topDx > 0 && bottomDx > 0;
+        Math.abs(topDx - bottomDx) < 5 && topDx > 0 && bottomDx > 0 &&
+        Math.abs(coords[0][0] - coords[3][0]) > 5;
       // Detect trapezium: top shorter than bottom
       const topLen = Math.abs(coords[1][0] - coords[0][0]);
       const botLen = Math.abs(coords[2][0] - coords[3][0]);
-      const isTrapezium = isParallelogram && Math.abs(topLen - botLen) > 10;
+      const isTrapezium = topDx > 0 && bottomDx > 0 && Math.abs(topLen - botLen) > 10;
       // Detect diamond: all 4 points at midpoints of bounding box
       const cx = (minX + maxX) / 2;
       const cy = (minY + maxY) / 2;
@@ -797,7 +803,9 @@ function parseTikzNode(line: string, ch: number): DrawShape | null {
   if (!atMatch) return null;
   const pos = tikzPtToCanvas(`(${atMatch[1]},${atMatch[2]})`, ch);
   if (!pos) return null;
-  const labelMatch = line.match(/\{([^}]*)\}/);
+  const labelMatch = line
+    .slice((atMatch.index ?? 0) + atMatch[0].length)
+    .match(/^\s*\{([\s\S]*)\}\s*;?\s*$/);
   const label = labelMatch ? labelMatch[1] : "text";
 
   return {
@@ -827,8 +835,6 @@ export function parseTikzCode(
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith("%"));
 
-  let pendingLabel: string | null = null;
-
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
@@ -856,9 +862,9 @@ export function parseTikzCode(
         // Check if next line is a \node for label
         if (i + 1 < lines.length && lines[i + 1].startsWith("\\node")) {
           const nextLine = lines[i + 1];
-          const labelMatch = nextLine.match(/\{([^}]*)\}/);
-          if (labelMatch) {
-            shape.label = labelMatch[1];
+          const labelNode = parseTikzNode(nextLine, canvasHeight);
+          if (labelNode) {
+            shape.label = labelNode.label;
             i++; // skip the label line
           }
         }

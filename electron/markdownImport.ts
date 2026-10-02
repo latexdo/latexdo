@@ -42,8 +42,8 @@ function inlineFormatting(text: string): string {
     .replace(/\*(.+?)\*/g, "\\textit{$1}")
     .replace(/`([^`]+)`/g, "\\texttt{$1}")
     .replace(/~~(.+?)~~/g, "\\sout{$1}")
-    .replace(/^(.+?)\[(.+?)\]\((.+?)\)/gm, "$1\\href{$3}{$2}")
-    .replace(/!\[(.*?)\]\((.+?)\)/g, "\\includegraphics{$2}");
+    .replace(/!\[(.*?)\]\((.+?)\)/g, "\\includegraphics{$2}")
+    .replace(/\[(.+?)\]\((.+?)\)/g, "\\href{$2}{$1}");
 }
 
 function builtInImport(mdContent: string): string {

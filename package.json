@@ -25,6 +25,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "posttest:coverage": "node scripts/update-coverage-badge.mjs",
     "test:diagnostics": "node --experimental-strip-types scripts/test-latex-diagnostics.ts",
     "test:supply-chain": "node scripts/verify-supply-chain.mjs && node scripts/test-supply-chain-runtime.mjs",
     "test:packaged": "node scripts/run-packaged-app-tests.mjs",

@@ -1,34 +1,79 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
+
+// Preserve the original coverage gate while measuring the full codebase.
+const originalCoverageScope = `{
+electron/diagnostics.ts,
+src/RendererErrorBoundary.tsx,
+src/checks/*.ts,
+src/components/!(MonacoEditor).tsx,
+src/latex/!(registerLatexCompletions).ts,
+src/rendererDiagnostics.ts,
+src/utils/*.ts
+}`.replace(/\s/g, "");
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: "legacy-bibtex-coverage-resolution",
+      resolveId(source) {
+        // This legacy source dependency is not installed. Keep its import intact
+        // so V8 can count the unexecuted source without pretending it is tested.
+        if (source === "bibtex-parse-js") return { id: source, external: true };
+      },
+    },
+  ],
+  // Vite's default transform filter omits the Electron .cts preload.
+  esbuild: { include: /\.(?:[jt]sx?|[cm][jt]s)$/ },
+  resolve: {
+    alias: [
+      {
+        find: /^monaco-editor$/,
+        replacement: fileURLToPath(
+          new URL(
+            "./node_modules/monaco-editor/esm/vs/editor/editor.api.js",
+            import.meta.url,
+          ),
+        ),
+      },
+    ],
+  },
   test: {
     globals: true,
     environment: "jsdom",
     setupFiles: ["./src/test-setup.ts"],
-    include: ["src/**/*.test.{ts,tsx}", "electron/**/*.test.ts"],
+    include: [
+      "{src,electron,collaborations,cli,scripts,latexdo}/**/*.{test,spec}.{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
+    ],
     coverage: {
       provider: "v8",
-      reporter: ["text", "lcov"],
+      reporter: ["text", "lcov", "json-summary"],
       include: [
-        "electron/diagnostics.ts",
-        "src/RendererErrorBoundary.tsx",
-        "src/checks/*.ts",
-        "src/components/*.tsx",
-        "src/latex/*.ts",
-        "src/rendererDiagnostics.ts",
-        "src/utils/*.ts",
+        "{src,electron,collaborations,cli,scripts,latexdo}/**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
       ],
       exclude: [
-        "src/components/MonacoEditor.tsx",
-        "src/latex/registerLatexCompletions.ts",
+        "**/*.{test,spec}.{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
+        "**/__tests__/**",
+        "**/*.d.{ts,mts,cts}",
+        "**/node_modules/**",
+        "src/test-setup.ts",
+        "scripts/test-*",
+        "scripts/run-packaged-app-tests.mjs",
       ],
       thresholds: {
-        lines: 79,
-        functions: 82,
-        branches: 66,
-        statements: 78,
+        // Baseline for all source, including previously unmeasured files.
+        lines: 43,
+        functions: 45,
+        branches: 38,
+        statements: 42,
+        [originalCoverageScope]: {
+          lines: 79,
+          functions: 82,
+          branches: 66,
+          statements: 78,
+        },
       },
     },
   },
