@@ -4,16 +4,26 @@ import { EventEmitter } from "node:events";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+type TerminalCreateHandler = (
+  event: { sender: unknown },
+  options?: unknown,
+  ...extra: unknown[]
+) => Promise<{ id: number; mode: "pty" | "pipe" }>;
+type TerminalEventHandler = (
+  event: { sender: unknown },
+  payload: unknown,
+  ...extra: unknown[]
+) => void;
 const mocks = vi.hoisted(() => ({
-  handlers: new Map<string, Function>(),
-  events: new Map<string, Function>(),
+  handlers: new Map<string, TerminalCreateHandler>(),
+  events: new Map<string, TerminalEventHandler>(),
   pty: vi.fn(),
   spawn: vi.fn(),
 }));
 vi.mock("./trustedIpc.js", () => ({
   ipcMain: {
-    handle: (name: string, fn: Function) => mocks.handlers.set(name, fn),
-    on: (name: string, fn: Function) => mocks.events.set(name, fn),
+    handle: (name: string, fn: TerminalCreateHandler) => mocks.handlers.set(name, fn),
+    on: (name: string, fn: TerminalEventHandler) => mocks.events.set(name, fn),
   },
 }));
 vi.mock("electron", () => ({ app: { getPath: () => os.tmpdir() } }));

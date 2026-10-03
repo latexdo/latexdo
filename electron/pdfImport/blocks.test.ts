@@ -14,7 +14,7 @@ function analyze(lines: TextLine[], options: Partial<PageContent> = {}) {
     width: 612,
     height: 792,
     lines,
-    columns: [{ left: 50, right: 562 }],
+    columns: [{ index: 0, left: 50, right: 562 }],
     bodyLeft: 50,
     bodyRight: 562,
     bodyTop: 50,
@@ -135,9 +135,9 @@ describe("PDF logical structure reconstruction", () => {
       ],
       {
         graphics: [
-          { x: 70, y: 100, width: 150, height: 100 },
-          { x: 220, y: 110, width: 100, height: 80 },
-          { x: 500, y: 60, width: 20, height: 20 },
+          { pageIndex: 0, kind: "vector", x: 70, y: 100, width: 150, height: 100 },
+          { pageIndex: 0, kind: "vector", x: 220, y: 110, width: 100, height: 80 },
+          { pageIndex: 0, kind: "vector", x: 500, y: 60, width: 20, height: 20 },
         ],
       },
     );
@@ -158,7 +158,9 @@ describe("PDF logical structure reconstruction", () => {
   });
   it("finds artwork below captions and refuses tiny decorative graphics", () => {
     const result = analyze([line("Figure 2: Below caption", 50, 100)], {
-      graphics: [{ x: 60, y: 125, width: 180, height: 70 }],
+      graphics: [
+        { pageIndex: 0, kind: "vector", x: 60, y: 125, width: 180, height: 70 },
+      ],
     });
     expect(result.blocks[0]).toMatchObject({
       kind: "figure",
@@ -166,7 +168,7 @@ describe("PDF logical structure reconstruction", () => {
     });
     expect(
       analyze([line("Figure 1: Missing artwork", 50, 100)], {
-        graphics: [{ x: 60, y: 50, width: 4, height: 4 }],
+        graphics: [{ pageIndex: 0, kind: "vector", x: 60, y: 50, width: 4, height: 4 }],
       }).blocks[0],
     ).toMatchObject({ kind: "figure", region: null });
   });
