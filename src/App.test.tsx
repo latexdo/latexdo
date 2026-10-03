@@ -40,8 +40,13 @@ import type {
 const editorChangeHandlers = vi.hoisted(
   () => new Map<string, (value: string) => void>(),
 );
-const editorLifecycle = vi.hoisted(() => ({ beforeMount: null as null | ((instance: any) => void), onMount: null as null | ((editor: any) => void) }));
-vi.mock("./features/editor/nextEdit/monacoNextEditAdapter", () => ({ installMonacoNextEdit: () => ({ dispose: vi.fn(), updateConfig: vi.fn() }) }));
+const editorLifecycle = vi.hoisted(() => ({
+  beforeMount: null as null | ((instance: any) => void),
+  onMount: null as null | ((editor: any) => void),
+}));
+vi.mock("./features/editor/nextEdit/monacoNextEditAdapter", () => ({
+  installMonacoNextEdit: () => ({ dispose: vi.fn(), updateConfig: vi.fn() }),
+}));
 
 const editorOptionsByPath = vi.hoisted(() => new Map<string, unknown>());
 
@@ -368,13 +373,33 @@ function installLatexDoMock(options?: {
     importPdf: vi.fn().mockResolvedValue(null),
     moveEntry: vi.fn().mockResolvedValue("main.tex"),
     cancelCompile: vi.fn().mockResolvedValue(true),
-    compileAsymptote: vi.fn().mockResolvedValue({ok:true,pdfPath:"drawing.pdf",durationMs:10,output:"",diagnostics:[]}),
-    getCollaborationState: vi.fn().mockResolvedValue({enabled:false,users:[]}),
-    createCollaborationLink: vi.fn().mockResolvedValue({enabled:true,users:[],token:"share-token",shareUrl:"https://latexdo.org/#share=share-token"}),
-    rotateCollaborationLink: vi.fn().mockResolvedValue({enabled:true,users:[],token:"new-token"}),
-    updateCollaborationPresence: vi.fn().mockResolvedValue({enabled:true,users:[],token:"share-token"}),
-    joinCollaboration: vi.fn().mockResolvedValue({project,collaboration:{enabled:true,users:[],token:"joined-token"}}),
-    getCollaborationPermissions: vi.fn().mockResolvedValue({permissions:[],isAdmin:true,currentUserRole:"admin"}),
+    compileAsymptote: vi.fn().mockResolvedValue({
+      ok: true,
+      pdfPath: "drawing.pdf",
+      durationMs: 10,
+      output: "",
+      diagnostics: [],
+    }),
+    getCollaborationState: vi.fn().mockResolvedValue({ enabled: false, users: [] }),
+    createCollaborationLink: vi.fn().mockResolvedValue({
+      enabled: true,
+      users: [],
+      token: "share-token",
+      shareUrl: "https://latexdo.org/#share=share-token",
+    }),
+    rotateCollaborationLink: vi
+      .fn()
+      .mockResolvedValue({ enabled: true, users: [], token: "new-token" }),
+    updateCollaborationPresence: vi
+      .fn()
+      .mockResolvedValue({ enabled: true, users: [], token: "share-token" }),
+    joinCollaboration: vi.fn().mockResolvedValue({
+      project,
+      collaboration: { enabled: true, users: [], token: "joined-token" },
+    }),
+    getCollaborationPermissions: vi
+      .fn()
+      .mockResolvedValue({ permissions: [], isAdmin: true, currentUserRole: "admin" }),
     updateCollaborationPermission: vi.fn().mockResolvedValue(undefined),
     removeCollaborator: vi.fn().mockResolvedValue(undefined),
     getGitStatus: vi.fn().mockResolvedValue(
@@ -2860,127 +2885,708 @@ describe("App critical UI controls", () => {
     expect(screen.getByRole("region", { name: "Detected notation" })).toBeVisible();
   });
 
-  it("project workflow saves dirty content before sharing and rotates the token",async()=>{
-    const api=installLatexDoMock();const copy=vi.fn().mockResolvedValue(undefined);Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:copy}});
-    render(<App/>);await openProjectFromWelcome();fireEvent.change(await screen.findByLabelText("mock editor"),{target:{value:"Unsaved paper"}});
-    fireEvent.click(screen.getAllByTitle("Share project")[0]);await waitFor(()=>expect(api.createCollaborationLink).toHaveBeenCalledWith(project.id));
-    expect(api.writeFile).toHaveBeenCalledWith(project.id,"main.tex","Unsaved paper");expect(api.writeFile.mock.invocationCallOrder.at(-1)).toBeLessThan(api.createCollaborationLink.mock.invocationCallOrder[0]);
-    await waitFor(()=>expect(copy).toHaveBeenCalledWith("share-token"));fireEvent.change(screen.getByLabelText("Collaboration display name"),{target:{value:"Ada"}});
-    fireEvent.click(screen.getByRole("button",{name:"Regenerate"}));await waitFor(()=>expect(screen.getByLabelText("Collaboration token")).toHaveValue("new-token"));expect(copy).toHaveBeenCalledWith("new-token");
-    fireEvent.click(within(screen.getByRole("dialog",{name:"Share Project"})).getByRole("button",{name:"Close"}));expect(screen.queryByRole("dialog",{name:"Share Project"})).not.toBeInTheDocument();
+  it("project workflow saves dirty content before sharing and rotates the token", async () => {
+    const api = installLatexDoMock();
+    const copy = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: copy },
+    });
+    render(<App />);
+    await openProjectFromWelcome();
+    fireEvent.change(await screen.findByLabelText("mock editor"), {
+      target: { value: "Unsaved paper" },
+    });
+    fireEvent.click(screen.getAllByTitle("Share project")[0]);
+    await waitFor(() =>
+      expect(api.createCollaborationLink).toHaveBeenCalledWith(project.id),
+    );
+    expect(api.writeFile).toHaveBeenCalledWith(project.id, "main.tex", "Unsaved paper");
+    expect(api.writeFile.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      api.createCollaborationLink.mock.invocationCallOrder[0],
+    );
+    await waitFor(() => expect(copy).toHaveBeenCalledWith("share-token"));
+    fireEvent.change(screen.getByLabelText("Collaboration display name"), {
+      target: { value: "Ada" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Collaboration token")).toHaveValue("new-token"),
+    );
+    expect(copy).toHaveBeenCalledWith("new-token");
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Share Project" })).getByRole(
+        "button",
+        { name: "Close" },
+      ),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Share Project" }),
+    ).not.toBeInTheDocument();
   });
-  it("project workflow joins from the welcome screen and reports invalid tokens",async()=>{
-    const api=installLatexDoMock();api.joinCollaboration.mockRejectedValueOnce(new Error("Link expired"));render(<App/>);fireEvent.click(screen.getByTitle("Join shared project"));fireEvent.change(screen.getByLabelText("Join collaboration token"),{target:{value:" expired "}});fireEvent.click(screen.getByRole("button",{name:"Join"}));await screen.findByText("Link expired",{selector:".share-error"});
-    fireEvent.change(screen.getByLabelText("Join collaboration token"),{target:{value:"good-token"}});fireEvent.click(screen.getByRole("button",{name:"Join"}));await waitFor(()=>expect(api.joinCollaboration).toHaveBeenLastCalledWith("good-token"));await screen.findByText("Joined shared project",{selector:".status-message"});expect(screen.queryByRole("dialog",{name:"Share Project"})).not.toBeInTheDocument();
+  it("project workflow joins from the welcome screen and reports invalid tokens", async () => {
+    const api = installLatexDoMock();
+    api.joinCollaboration.mockRejectedValueOnce(new Error("Link expired"));
+    render(<App />);
+    fireEvent.click(screen.getByTitle("Join shared project"));
+    fireEvent.change(screen.getByLabelText("Join collaboration token"), {
+      target: { value: " expired " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Join" }));
+    await screen.findByText("Link expired", { selector: ".share-error" });
+    fireEvent.change(screen.getByLabelText("Join collaboration token"), {
+      target: { value: "good-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Join" }));
+    await waitFor(() =>
+      expect(api.joinCollaboration).toHaveBeenLastCalledWith("good-token"),
+    );
+    await screen.findByText("Joined shared project", { selector: ".status-message" });
+    expect(
+      screen.queryByRole("dialog", { name: "Share Project" }),
+    ).not.toBeInTheDocument();
   });
-  it("project workflow reports a sharing failure without losing unsaved source",async()=>{
-    const api=installLatexDoMock();api.createCollaborationLink.mockRejectedValue(new Error("Sharing unavailable"));render(<App/>);await openProjectFromWelcome();fireEvent.change(await screen.findByLabelText("mock editor"),{target:{value:"Retain me"}});fireEvent.click(screen.getAllByTitle("Share project")[0]);await screen.findByText("Sharing unavailable",{selector:".status-message"});expect(screen.getByLabelText("mock editor")).toHaveValue("Retain me");
+  it("project workflow reports a sharing failure without losing unsaved source", async () => {
+    const api = installLatexDoMock();
+    api.createCollaborationLink.mockRejectedValue(new Error("Sharing unavailable"));
+    render(<App />);
+    await openProjectFromWelcome();
+    fireEvent.change(await screen.findByLabelText("mock editor"), {
+      target: { value: "Retain me" },
+    });
+    fireEvent.click(screen.getAllByTitle("Share project")[0]);
+    await screen.findByText("Sharing unavailable", { selector: ".status-message" });
+    expect(screen.getByLabelText("mock editor")).toHaveValue("Retain me");
   });
-  it.each(["file","folder"] as const)("project workflow creates a %s inside the selected directory",async type=>{
-    const api=installLatexDoMock();const folder:ProjectEntry={name:"sections",path:"/Users/omar/project/sections",relativePath:"sections",type:"directory",children:[]};const created:ProjectEntry={name:"new.tex",path:"/Users/omar/project/sections/new.tex",relativePath:"sections/new.tex",type:"file"};api.listProject.mockResolvedValue([...entries,folder]);api.createFile.mockResolvedValue(created.relativePath);
-    render(<App/>);await openProjectFromWelcome();fireEvent.click(screen.getByTitle("Actions for sections"));fireEvent.click(screen.getByRole("button",{name:`New ${type}`}));fireEvent.change(screen.getByLabelText(type==="file"?"File path":"Folder path"),{target:{value:type==="file"?created.relativePath:"sections/nested"}});api.listProject.mockResolvedValue([...entries,{...folder,children:[created]}]);fireEvent.click(screen.getByRole("button",{name:`Create ${type}`}));
-    if(type==="file"){await waitFor(()=>expect(api.createFile).toHaveBeenCalledWith(project.id,created.relativePath));await waitFor(()=>expect(api.readFile).toHaveBeenCalledWith(project.id,created.relativePath));}else await waitFor(()=>expect(api.createFolder).toHaveBeenCalledWith(project.id,"sections/nested"));
-    await waitFor(()=>expect(screen.queryByText(`Create new ${type}`)).not.toBeInTheDocument());
+  it.each(["file", "folder"] as const)(
+    "project workflow creates a %s inside the selected directory",
+    async (type) => {
+      const api = installLatexDoMock();
+      const folder: ProjectEntry = {
+        name: "sections",
+        path: "/Users/omar/project/sections",
+        relativePath: "sections",
+        type: "directory",
+        children: [],
+      };
+      const created: ProjectEntry = {
+        name: "new.tex",
+        path: "/Users/omar/project/sections/new.tex",
+        relativePath: "sections/new.tex",
+        type: "file",
+      };
+      api.listProject.mockResolvedValue([...entries, folder]);
+      api.createFile.mockResolvedValue(created.relativePath);
+      render(<App />);
+      await openProjectFromWelcome();
+      fireEvent.click(screen.getByTitle("Actions for sections"));
+      fireEvent.click(screen.getByRole("button", { name: `New ${type}` }));
+      fireEvent.change(
+        screen.getByLabelText(type === "file" ? "File path" : "Folder path"),
+        {
+          target: { value: type === "file" ? created.relativePath : "sections/nested" },
+        },
+      );
+      api.listProject.mockResolvedValue([
+        ...entries,
+        { ...folder, children: [created] },
+      ]);
+      fireEvent.click(screen.getByRole("button", { name: `Create ${type}` }));
+      if (type === "file") {
+        await waitFor(() =>
+          expect(api.createFile).toHaveBeenCalledWith(project.id, created.relativePath),
+        );
+        await waitFor(() =>
+          expect(api.readFile).toHaveBeenCalledWith(project.id, created.relativePath),
+        );
+      } else
+        await waitFor(() =>
+          expect(api.createFolder).toHaveBeenCalledWith(project.id, "sections/nested"),
+        );
+      await waitFor(() =>
+        expect(screen.queryByText(`Create new ${type}`)).not.toBeInTheDocument(),
+      );
+    },
+  );
+  it("project workflow exposes native creation errors without closing the form", async () => {
+    const api = installLatexDoMock();
+    const folder: ProjectEntry = {
+      name: "sections",
+      path: "/Users/omar/project/sections",
+      relativePath: "sections",
+      type: "directory",
+      children: [],
+    };
+    api.listProject.mockResolvedValue([...entries, folder]);
+    api.createFolder.mockRejectedValue(
+      new Error("Error invoking remote method 'project:create-folder': Already exists"),
+    );
+    render(<App />);
+    await openProjectFromWelcome();
+    fireEvent.click(screen.getByTitle("Actions for sections"));
+    fireEvent.click(screen.getByRole("button", { name: "New folder" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create folder" }));
+    await screen.findByText("Already exists");
+    expect(screen.getByLabelText("Folder path")).toHaveValue("sections/chapters");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   });
-  it("project workflow exposes native creation errors without closing the form",async()=>{
-    const api=installLatexDoMock();const folder:ProjectEntry={name:"sections",path:"/Users/omar/project/sections",relativePath:"sections",type:"directory",children:[]};api.listProject.mockResolvedValue([...entries,folder]);api.createFolder.mockRejectedValue(new Error("Error invoking remote method 'project:create-folder': Already exists"));render(<App/>);await openProjectFromWelcome();fireEvent.click(screen.getByTitle("Actions for sections"));fireEvent.click(screen.getByRole("button",{name:"New folder"}));fireEvent.click(screen.getByRole("button",{name:"Create folder"}));await screen.findByText("Already exists");expect(screen.getByLabelText("Folder path")).toHaveValue("sections/chapters");fireEvent.click(screen.getByRole("button",{name:"Cancel"}));
+  it("project workflow imports dropped files once and preserves their destination", async () => {
+    const api = installLatexDoMock();
+    api.getDroppedFilePaths.mockReturnValue(["/tmp/a.tex", "/tmp/a.tex", ""]);
+    api.importExternalFiles.mockResolvedValue([
+      { relativePath: "a.tex", path: "/Users/omar/project/a.tex", type: "file" },
+    ]);
+    const view = render(<App />);
+    await openProjectFromWelcome();
+    fireEvent.drop(view.container.querySelector(".file-tree-drop-surface")!, {
+      dataTransfer: { files: [new File(["text"], "a.tex")], types: ["Files"] },
+    });
+    await waitFor(() =>
+      expect(api.importExternalFiles).toHaveBeenCalledWith(project.id, "", [
+        "/tmp/a.tex",
+      ]),
+    );
+    await screen.findByText("Imported a.tex", { selector: ".status-message" });
   });
-  it("project workflow imports dropped files once and preserves their destination",async()=>{
-    const api=installLatexDoMock();api.getDroppedFilePaths.mockReturnValue(["/tmp/a.tex","/tmp/a.tex",""]);api.importExternalFiles.mockResolvedValue([{relativePath:"a.tex",path:"/Users/omar/project/a.tex",type:"file"}]);const view=render(<App/>);await openProjectFromWelcome();fireEvent.drop(view.container.querySelector(".file-tree-drop-surface")!,{dataTransfer:{files:[new File(["text"],"a.tex")],types:["Files"]}});await waitFor(()=>expect(api.importExternalFiles).toHaveBeenCalledWith(project.id,"",["/tmp/a.tex"]));await screen.findByText("Imported a.tex",{selector:".status-message"});
+  it("project workflow reports compilation failures and saves modified text", async () => {
+    const api = installLatexDoMock();
+    render(<App />);
+    await openProjectFromWelcome();
+    fireEvent.change(await screen.findByLabelText("mock editor"), {
+      target: { value: "new source" },
+    });
+    api.compile.mockResolvedValue({
+      ok: false,
+      durationMs: 5,
+      output: "compiler log",
+      diagnostics: [],
+      error: "Compile failed deliberately",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Compile" }));
+    await screen.findByText("Compile failed deliberately", {
+      selector: ".status-message",
+    });
+    expect(api.writeFile).toHaveBeenCalledWith(project.id, "main.tex", "new source");
+    expect(screen.getByText("compiler log")).toBeInTheDocument();
+    api.compile.mockRejectedValue(new Error("Compiler crashed"));
+    fireEvent.click(screen.getByRole("button", { name: "Compile" }));
+    await screen.findByText("Compiler crashed", { selector: ".status-message" });
   });
-  it("project workflow reports compilation failures and saves modified text",async()=>{
-    const api=installLatexDoMock();render(<App/>);await openProjectFromWelcome();fireEvent.change(await screen.findByLabelText("mock editor"),{target:{value:"new source"}});api.compile.mockResolvedValue({ok:false,durationMs:5,output:"compiler log",diagnostics:[],error:"Compile failed deliberately"});fireEvent.click(screen.getByRole("button",{name:"Compile"}));await screen.findByText("Compile failed deliberately",{selector:".status-message"});expect(api.writeFile).toHaveBeenCalledWith(project.id,"main.tex","new source");expect(screen.getByText("compiler log")).toBeInTheDocument();api.compile.mockRejectedValue(new Error("Compiler crashed"));fireEvent.click(screen.getByRole("button",{name:"Compile"}));await screen.findByText("Compiler crashed",{selector:".status-message"});
-  });
-  it("project workflow cancels compilation and ignores its late result",async()=>{
-    const api=installLatexDoMock();render(<App/>);await openProjectFromWelcome();let finish!:(value:unknown)=>void;api.compile.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));fireEvent.click(screen.getByRole("button",{name:"Compile"}));await screen.findByRole("button",{name:"Cancel compile"});fireEvent.click(screen.getByRole("button",{name:"Cancel compile"}));await waitFor(()=>expect(api.cancelCompile).toHaveBeenCalledWith(project.id));await act(async()=>finish({ok:false,durationMs:1,output:"",diagnostics:[],error:"Late failure"}));expect(screen.queryByText("Late failure",{selector:".status-message"})).not.toBeInTheDocument();
+  it("project workflow cancels compilation and ignores its late result", async () => {
+    const api = installLatexDoMock();
+    render(<App />);
+    await openProjectFromWelcome();
+    let finish!: (value: unknown) => void;
+    api.compile.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Compile" }));
+    await screen.findByRole("button", { name: "Cancel compile" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel compile" }));
+    await waitFor(() => expect(api.cancelCompile).toHaveBeenCalledWith(project.id));
+    await act(async () =>
+      finish({
+        ok: false,
+        durationMs: 1,
+        output: "",
+        diagnostics: [],
+        error: "Late failure",
+      }),
+    );
+    expect(
+      screen.queryByText("Late failure", { selector: ".status-message" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("project workflow stages, unstages and commits source-control changes",async()=>{
-    const api=installLatexDoMock({gitStatus:{isRepo:true,branch:"main",entries:[{path:"main.tex",indexStatus:"modified",worktreeStatus:"modified",staged:true,unstaged:true,untracked:false,conflicted:false}]}});render(<App/>);await openProjectFromWelcome();fireEvent.click(screen.getByTitle("Source control"));
-    fireEvent.click(await screen.findByRole("button",{name:"Stage main.tex"}));await screen.findByText("Staged main.tex",{selector:".status-message"});expect(api.stageGitFile).toHaveBeenCalledWith(project.id,"main.tex");
-    fireEvent.click(screen.getByRole("button",{name:"Unstage main.tex"}));await screen.findByText("Unstaged main.tex",{selector:".status-message"});expect(api.unstageGitFile).toHaveBeenCalledWith(project.id,"main.tex");
-    fireEvent.click(screen.getByRole("button",{name:"Stage all changes"}));await waitFor(()=>expect(api.stageAllGit).toHaveBeenCalledWith(project.id));await waitFor(()=>expect(screen.getByRole("button",{name:"Stage all changes"})).toBeEnabled());
-    fireEvent.click(screen.getByRole("button",{name:"Unstage all changes"}));await waitFor(()=>expect(api.unstageAllGit).toHaveBeenCalledWith(project.id));
-    fireEvent.change(screen.getByPlaceholderText("Commit message"),{target:{value:"Save research"}});fireEvent.click(screen.getByRole("button",{name:"Commit"}));await screen.findByText("Created commit",{selector:".status-message"});expect(api.commitGit).toHaveBeenCalledWith(project.id,"Save research");expect(screen.getByPlaceholderText("Commit message")).toHaveValue("");
-    api.commitGit.mockRejectedValueOnce(new Error("Commit rejected"));fireEvent.change(screen.getByPlaceholderText("Commit message"),{target:{value:"Retry research"}});fireEvent.click(screen.getByRole("button",{name:"Commit"}));await screen.findByText("Commit rejected",{selector:".status-message"});expect(screen.getByPlaceholderText("Commit message")).toHaveValue("Retry research");
+  it("project workflow stages, unstages and commits source-control changes", async () => {
+    const api = installLatexDoMock({
+      gitStatus: {
+        isRepo: true,
+        branch: "main",
+        entries: [
+          {
+            path: "main.tex",
+            indexStatus: "modified",
+            worktreeStatus: "modified",
+            staged: true,
+            unstaged: true,
+            untracked: false,
+            conflicted: false,
+          },
+        ],
+      },
+    });
+    render(<App />);
+    await openProjectFromWelcome();
+    fireEvent.click(screen.getByTitle("Source control"));
+    fireEvent.click(await screen.findByRole("button", { name: "Stage main.tex" }));
+    await screen.findByText("Staged main.tex", { selector: ".status-message" });
+    expect(api.stageGitFile).toHaveBeenCalledWith(project.id, "main.tex");
+    fireEvent.click(screen.getByRole("button", { name: "Unstage main.tex" }));
+    await screen.findByText("Unstaged main.tex", { selector: ".status-message" });
+    expect(api.unstageGitFile).toHaveBeenCalledWith(project.id, "main.tex");
+    fireEvent.click(screen.getByRole("button", { name: "Stage all changes" }));
+    await waitFor(() => expect(api.stageAllGit).toHaveBeenCalledWith(project.id));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Stage all changes" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Unstage all changes" }));
+    await waitFor(() => expect(api.unstageAllGit).toHaveBeenCalledWith(project.id));
+    fireEvent.change(screen.getByPlaceholderText("Commit message"), {
+      target: { value: "Save research" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Commit" }));
+    await screen.findByText("Created commit", { selector: ".status-message" });
+    expect(api.commitGit).toHaveBeenCalledWith(project.id, "Save research");
+    expect(screen.getByPlaceholderText("Commit message")).toHaveValue("");
+    api.commitGit.mockRejectedValueOnce(new Error("Commit rejected"));
+    fireEvent.change(screen.getByPlaceholderText("Commit message"), {
+      target: { value: "Retry research" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Commit" }));
+    await screen.findByText("Commit rejected", { selector: ".status-message" });
+    expect(screen.getByPlaceholderText("Commit message")).toHaveValue("Retry research");
   });
-  it("project workflow closes an obsolete diff when its file is staged",async()=>{
-    const api=installLatexDoMock({gitStatus:{isRepo:true,branch:"main",entries:[{path:"main.tex",indexStatus:"unmodified",worktreeStatus:"modified",staged:false,unstaged:true,untracked:false,conflicted:false}]}});render(<App/>);await openProjectFromWelcome();fireEvent.click(screen.getByTitle("Source control"));fireEvent.click(await screen.findByRole("button",{name:"Open working tree diff for main.tex"}));await screen.findByTestId("mock-diff-editor");fireEvent.click(screen.getByRole("button",{name:"Stage main.tex"}));await waitFor(()=>expect(screen.queryByTestId("mock-diff-editor")).not.toBeInTheDocument());expect(api.stageGitFile).toHaveBeenCalledWith(project.id,"main.tex");
+  it("project workflow closes an obsolete diff when its file is staged", async () => {
+    const api = installLatexDoMock({
+      gitStatus: {
+        isRepo: true,
+        branch: "main",
+        entries: [
+          {
+            path: "main.tex",
+            indexStatus: "unmodified",
+            worktreeStatus: "modified",
+            staged: false,
+            unstaged: true,
+            untracked: false,
+            conflicted: false,
+          },
+        ],
+      },
+    });
+    render(<App />);
+    await openProjectFromWelcome();
+    fireEvent.click(screen.getByTitle("Source control"));
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Open working tree diff for main.tex",
+      }),
+    );
+    await screen.findByTestId("mock-diff-editor");
+    fireEvent.click(screen.getByRole("button", { name: "Stage main.tex" }));
+    await waitFor(() =>
+      expect(screen.queryByTestId("mock-diff-editor")).not.toBeInTheDocument(),
+    );
+    expect(api.stageGitFile).toHaveBeenCalledWith(project.id, "main.tex");
   });
-  it("project workflow reveals a Git file and opens its source from the context menu",async()=>{
-    const api=installLatexDoMock({gitStatus:{isRepo:true,branch:"main",entries:[{path:"main.tex",indexStatus:"unmodified",worktreeStatus:"modified",staged:false,unstaged:true,untracked:false,conflicted:false}]}});render(<App/>);await openProjectFromWelcome();fireEvent.click(screen.getByTitle("Source control"));const entry=await screen.findByRole("button",{name:"Open working tree diff for main.tex"});fireEvent.contextMenu(entry,{clientX:100,clientY:100});fireEvent.click(screen.getByRole("menuitem",{name:"Reveal in File Manager"}));await waitFor(()=>expect(api.revealGitFile).toHaveBeenCalledWith(project.id,"main.tex"));fireEvent.contextMenu(entry);fireEvent.click(screen.getByRole("menuitem",{name:"Open File History"}));await waitFor(()=>expect(api.getGitHistory).toHaveBeenCalledWith(project.id,"main.tex"));fireEvent.doubleClick(entry);expect(await screen.findByLabelText("mock editor")).toBeVisible();
+  it("project workflow reveals a Git file and opens its source from the context menu", async () => {
+    const api = installLatexDoMock({
+      gitStatus: {
+        isRepo: true,
+        branch: "main",
+        entries: [
+          {
+            path: "main.tex",
+            indexStatus: "unmodified",
+            worktreeStatus: "modified",
+            staged: false,
+            unstaged: true,
+            untracked: false,
+            conflicted: false,
+          },
+        ],
+      },
+    });
+    render(<App />);
+    await openProjectFromWelcome();
+    fireEvent.click(screen.getByTitle("Source control"));
+    const entry = await screen.findByRole("button", {
+      name: "Open working tree diff for main.tex",
+    });
+    fireEvent.contextMenu(entry, { clientX: 100, clientY: 100 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Reveal in File Manager" }));
+    await waitFor(() =>
+      expect(api.revealGitFile).toHaveBeenCalledWith(project.id, "main.tex"),
+    );
+    fireEvent.contextMenu(entry);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open File History" }));
+    await waitFor(() =>
+      expect(api.getGitHistory).toHaveBeenCalledWith(project.id, "main.tex"),
+    );
+    fireEvent.doubleClick(entry);
+    expect(await screen.findByLabelText("mock editor")).toBeVisible();
   });
 
-  async function mountEditorIntegration(content:string){
-    editorLifecycle.beforeMount=null;editorLifecycle.onMount=null;
-    const api=installLatexDoMock();api.listProject.mockResolvedValue([...entries,{name:"refs.bib",path:"/Users/omar/project/refs.bib",relativePath:"refs.bib",type:"file"}]);api.readFile.mockImplementation(async(_id:string,file:string)=>file.endsWith(".bib")?"@article{ada2026,title={Computing},author={Ada Lovelace},year={2026}}":content);
-    render(<App/>);await openProjectFromWelcome();await screen.findByLabelText("mock editor");await waitFor(()=>expect(editorLifecycle.beforeMount).toEqual(expect.any(Function)));
-    const harness=createEditorHarness(content,"/Users/omar/project/main.tex",text=>editorChangeHandlers.get("/Users/omar/project/main.tex")?.(text));
-    Reflect.deleteProperty(globalThis,"__latexdoMonacoProviderGeneration");
-    await act(async()=>{editorLifecycle.beforeMount!(harness.instance);editorLifecycle.onMount!(harness.editor);});
-    return {api,...harness};
+  async function mountEditorIntegration(content: string) {
+    editorLifecycle.beforeMount = null;
+    editorLifecycle.onMount = null;
+    const api = installLatexDoMock();
+    api.listProject.mockResolvedValue([
+      ...entries,
+      {
+        name: "refs.bib",
+        path: "/Users/omar/project/refs.bib",
+        relativePath: "refs.bib",
+        type: "file",
+      },
+    ]);
+    api.readFile.mockImplementation(async (_id: string, file: string) =>
+      file.endsWith(".bib")
+        ? "@article{ada2026,title={Computing},author={Ada Lovelace},year={2026}}"
+        : content,
+    );
+    render(<App />);
+    await openProjectFromWelcome();
+    await screen.findByLabelText("mock editor");
+    await waitFor(() =>
+      expect(editorLifecycle.beforeMount).toEqual(expect.any(Function)),
+    );
+    const harness = createEditorHarness(
+      content,
+      "/Users/omar/project/main.tex",
+      (text) => editorChangeHandlers.get("/Users/omar/project/main.tex")?.(text),
+    );
+    Reflect.deleteProperty(globalThis, "__latexdoMonacoProviderGeneration");
+    await act(async () => {
+      editorLifecycle.beforeMount!(harness.instance);
+      editorLifecycle.onMount!(harness.editor);
+    });
+    return { api, ...harness };
   }
-  it("editor integration registers real language providers, themes and command actions",async()=>{
-    const h=await mountEditorIntegration("\\section{Intro}\n\\begin{itemize}\n\\item First\n\\end{itemize}\n\\url{https://latexdo.org}\n");
-    expect(h.instance.languages.register).toHaveBeenCalledWith(expect.objectContaining({id:"latex"}));expect(h.instance.editor.defineTheme.mock.calls.length).toBeGreaterThanOrEqual(6);expect(h.actions.has("latexdo.continueLatexList")).toBe(true);
-    const folds=h.providers.get("latex:FoldingRange")![0].provideFoldingRanges(h.model);expect(folds).toEqual(expect.arrayContaining([expect.objectContaining({start:2,end:4})]));const links=h.providers.get("latex:Link")![0].provideLinks(h.model).links;expect(links[0].url).toBe("https://latexdo.org");
-    h.select(h.model.getValue().indexOf("https")+3);await act(async()=>{await h.run("latexdo.openLinkAtCursor");});expect(h.api.openExternalUrl).toHaveBeenCalledWith("https://latexdo.org");
-    await act(async()=>{h.run("latexdo.showCompletionDetails");h.run("latexdo.hideCompletionDetails");});expect(h.editor.trigger).toHaveBeenCalledWith("keyboard","toggleSuggestionDetails",null);
+  it("editor integration registers real language providers, themes and command actions", async () => {
+    const h = await mountEditorIntegration(
+      "\\section{Intro}\n\\begin{itemize}\n\\item First\n\\end{itemize}\n\\url{https://latexdo.org}\n",
+    );
+    expect(h.instance.languages.register).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "latex" }),
+    );
+    expect(h.instance.editor.defineTheme.mock.calls.length).toBeGreaterThanOrEqual(6);
+    expect(h.actions.has("latexdo.continueLatexList")).toBe(true);
+    const folds = h.providers
+      .get("latex:FoldingRange")![0]
+      .provideFoldingRanges(h.model);
+    expect(folds).toEqual(
+      expect.arrayContaining([expect.objectContaining({ start: 2, end: 4 })]),
+    );
+    const links = h.providers.get("latex:Link")![0].provideLinks(h.model).links;
+    expect(links[0].url).toBe("https://latexdo.org");
+    h.select(h.model.getValue().indexOf("https") + 3);
+    await act(async () => {
+      await h.run("latexdo.openLinkAtCursor");
+    });
+    expect(h.api.openExternalUrl).toHaveBeenCalledWith("https://latexdo.org");
+    await act(async () => {
+      h.run("latexdo.showCompletionDetails");
+      h.run("latexdo.hideCompletionDetails");
+    });
+    expect(h.editor.trigger).toHaveBeenCalledWith(
+      "keyboard",
+      "toggleSuggestionDetails",
+      null,
+    );
   });
-  it("editor integration previews inline graphics, caches bytes and handles missing or PDF figures",async()=>{
-    const h=await mountEditorIntegration("\\includegraphics{figures/plot.png}");h.api.fileExists.mockResolvedValue(true);h.api.readAsset.mockResolvedValue(new Uint8Array([137,80,78,71]));const provider=h.providers.get("latex:Hover")![1];
-    let hover=await provider.provideHover(h.model,{lineNumber:1,column:22});expect(hover.contents[0].value).toContain("data:image/png;base64,");expect(hover.contents[0].value).toContain("figures/plot.png");const count=h.api.readAsset.mock.calls.length;await provider.provideHover(h.model,{lineNumber:1,column:22});expect(h.api.readAsset).toHaveBeenCalledTimes(count);
-    h.setText("\\includegraphics{figures/chart.pdf}");hover=await provider.provideHover(h.model,{lineNumber:1,column:22});expect(hover.contents[0].value).toContain("PDF figures preview in the compiled PDF");
-    h.setText("\\includegraphics{missing}");h.api.fileExists.mockResolvedValue(false);hover=await provider.provideHover(h.model,{lineNumber:1,column:20});expect(hover.contents[0].value).toContain("Figure not found");
-    h.setText("plain prose");expect(await provider.provideHover(h.model,{lineNumber:1,column:4})).toBeNull();
+  it("editor integration previews inline graphics, caches bytes and handles missing or PDF figures", async () => {
+    const h = await mountEditorIntegration("\\includegraphics{figures/plot.png}");
+    h.api.fileExists.mockResolvedValue(true);
+    h.api.readAsset.mockResolvedValue(new Uint8Array([137, 80, 78, 71]));
+    const provider = h.providers.get("latex:Hover")![1];
+    let hover = await provider.provideHover(h.model, { lineNumber: 1, column: 22 });
+    expect(hover.contents[0].value).toContain("data:image/png;base64,");
+    expect(hover.contents[0].value).toContain("figures/plot.png");
+    const count = h.api.readAsset.mock.calls.length;
+    await provider.provideHover(h.model, { lineNumber: 1, column: 22 });
+    expect(h.api.readAsset).toHaveBeenCalledTimes(count);
+    h.setText("\\includegraphics{figures/chart.pdf}");
+    hover = await provider.provideHover(h.model, { lineNumber: 1, column: 22 });
+    expect(hover.contents[0].value).toContain(
+      "PDF figures preview in the compiled PDF",
+    );
+    h.setText("\\includegraphics{missing}");
+    h.api.fileExists.mockResolvedValue(false);
+    hover = await provider.provideHover(h.model, { lineNumber: 1, column: 20 });
+    expect(hover.contents[0].value).toContain("Figure not found");
+    h.setText("plain prose");
+    expect(
+      await provider.provideHover(h.model, { lineNumber: 1, column: 4 }),
+    ).toBeNull();
   });
-  it("editor integration renders equation hovers and never interprets ordinary prose as mathematics",async()=>{
-    const h=await mountEditorIntegration("A formula $x^2+y^2$ in prose.");const provider=h.providers.get("latex:Hover")![1];const hover=await provider.provideHover(h.model,{lineNumber:1,column:14});expect(hover.contents[0].value).toContain("![equation](data:image/svg+xml");expect(await provider.provideHover(h.model,{lineNumber:1,column:2})).toBeNull();
+  it("editor integration renders equation hovers and never interprets ordinary prose as mathematics", async () => {
+    const h = await mountEditorIntegration("A formula $x^2+y^2$ in prose.");
+    const provider = h.providers.get("latex:Hover")![1];
+    const hover = await provider.provideHover(h.model, { lineNumber: 1, column: 14 });
+    expect(hover.contents[0].value).toContain("![equation](data:image/svg+xml");
+    expect(
+      await provider.provideHover(h.model, { lineNumber: 1, column: 2 }),
+    ).toBeNull();
   });
-  it("editor integration hides complete LaTeX commands and comments when raw mode is disabled",async()=>{
-    storeAcceptedSettings({showRawLatex:false});const h=await mountEditorIntegration("Text \\section[Short [title]]{Long {title}}\n% comment\n\\textbf{multi\nline}");
+  it("editor integration hides complete LaTeX commands and comments when raw mode is disabled", async () => {
+    storeAcceptedSettings({ showRawLatex: false });
+    const h = await mountEditorIntegration(
+      "Text \\section[Short [title]]{Long {title}}\n% comment\n\\textbf{multi\nline}",
+    );
     // Trigger a document update after the editor boundary is mounted.
-    await act(async()=>editorChangeHandlers.get("/Users/omar/project/main.tex")!(h.model.getValue()+"\n"));
-    await waitFor(()=>expect(h.editor.deltaDecorations.mock.calls.some((call:any[])=>call[1].some((d:any)=>d.options.inlineClassName==="latex-command-hidden"))).toBe(true));
-    const hidden=h.editor.deltaDecorations.mock.calls.flatMap((call:any[])=>call[1]).filter((d:any)=>d.options.inlineClassName==="latex-command-hidden");expect(hidden.some((d:any)=>d.range.startLineNumber===2&&d.range.endColumn===10)).toBe(true);expect(hidden.some((d:any)=>d.range.startLineNumber===3&&d.range.endLineNumber===4)).toBe(true);
+    await act(async () =>
+      editorChangeHandlers.get("/Users/omar/project/main.tex")!(
+        h.model.getValue() + "\n",
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        h.editor.deltaDecorations.mock.calls.some((call: any[]) =>
+          call[1].some(
+            (d: any) => d.options.inlineClassName === "latex-command-hidden",
+          ),
+        ),
+      ).toBe(true),
+    );
+    const hidden = h.editor.deltaDecorations.mock.calls
+      .flatMap((call: any[]) => call[1])
+      .filter((d: any) => d.options.inlineClassName === "latex-command-hidden");
+    expect(
+      hidden.some(
+        (d: any) => d.range.startLineNumber === 2 && d.range.endColumn === 10,
+      ),
+    ).toBe(true);
+    expect(
+      hidden.some(
+        (d: any) => d.range.startLineNumber === 3 && d.range.endLineNumber === 4,
+      ),
+    ).toBe(true);
   });
-  it("editor integration handles cursor, selection and model-change events and AI prerequisites",async()=>{
-    const h=await mountEditorIntegration("ordinary text");await act(async()=>{h.listeners.get("onDidChangeCursorPosition")!({position:{lineNumber:1,column:3}});h.listeners.get("onDidChangeCursorSelection")!({selection:new h.Selection(1,1,1,4)});h.listeners.get("onDidChangeModelContent")!();h.listeners.get("onDidChangeModel")!();h.run("latexdo.ai.reformulateSelection");});expect(screen.getByText("Select text to reformulate.")).toBeVisible();h.select(0,8);await act(async()=>h.run("latexdo.ai.reformulateSelection"));expect(screen.getByText("AI is not configured. Open AI settings and choose a provider first.")).toBeVisible();await act(async()=>h.run("latexdo.ai.askAboutSelection"));expect(screen.getByText("ordinary",{exact:false})).toBeVisible();
+  it("editor integration handles cursor, selection and model-change events and AI prerequisites", async () => {
+    const h = await mountEditorIntegration("ordinary text");
+    await act(async () => {
+      h.listeners.get("onDidChangeCursorPosition")!({
+        position: { lineNumber: 1, column: 3 },
+      });
+      h.listeners.get("onDidChangeCursorSelection")!({
+        selection: new h.Selection(1, 1, 1, 4),
+      });
+      h.listeners.get("onDidChangeModelContent")!();
+      h.listeners.get("onDidChangeModel")!();
+      h.run("latexdo.ai.reformulateSelection");
+    });
+    expect(screen.getByText("Select text to reformulate.")).toBeVisible();
+    h.select(0, 8);
+    await act(async () => h.run("latexdo.ai.reformulateSelection"));
+    expect(
+      screen.getByText(
+        "AI is not configured. Open AI settings and choose a provider first.",
+      ),
+    ).toBeVisible();
+    await act(async () => h.run("latexdo.ai.askAboutSelection"));
+    expect(screen.getByText("ordinary", { exact: false })).toBeVisible();
   });
-  it("editor integration produces command, reference and citation completions and suppresses stale requests",async()=>{
-    const h=await mountEditorIntegration("\\label{sec:intro}\n\\ref{sec:\n\\cite{ada\n\\sec");
-    const provider=h.providers.get("latex:CompletionItem")![0];const token={isCancellationRequested:false};
-    h.select(h.model.getValue().length);const commands=await provider.provideCompletionItems(h.model,h.editor.getPosition(),{},token);expect(commands.suggestions).toEqual(expect.arrayContaining([expect.objectContaining({label:"\\section"})]));
-    h.select(h.model.getValue().indexOf("\\cite")-1);const refs=await provider.provideCompletionItems(h.model,h.editor.getPosition(),{},token);expect(refs.suggestions).toEqual(expect.arrayContaining([expect.objectContaining({label:"sec:intro"})]));
-    h.select(h.model.getValue().indexOf("\\sec",h.model.getValue().indexOf("\\cite"))-1);const cites=await provider.provideCompletionItems(h.model,h.editor.getPosition(),{},token);expect(cites.suggestions).toEqual(expect.arrayContaining([expect.objectContaining({insertText:"ada2026"})]));
-    expect((await provider.provideCompletionItems(h.model,h.editor.getPosition(),{},{isCancellationRequested:true})).suggestions).toEqual([]);
-    const asymptote=h.providers.get("asymptote:CompletionItem")![0].provideCompletionItems(h.model,{lineNumber:1,column:2});expect(asymptote.suggestions).toEqual(expect.arrayContaining([expect.objectContaining({label:"draw"})]));
+  it("editor integration produces command, reference and citation completions and suppresses stale requests", async () => {
+    const h = await mountEditorIntegration(
+      "\\label{sec:intro}\n\\ref{sec:\n\\cite{ada\n\\sec",
+    );
+    const provider = h.providers.get("latex:CompletionItem")![0];
+    const token = { isCancellationRequested: false };
+    h.select(h.model.getValue().length);
+    const commands = await provider.provideCompletionItems(
+      h.model,
+      h.editor.getPosition(),
+      {},
+      token,
+    );
+    expect(commands.suggestions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ label: "\\section" })]),
+    );
+    h.select(h.model.getValue().indexOf("\\cite") - 1);
+    const refs = await provider.provideCompletionItems(
+      h.model,
+      h.editor.getPosition(),
+      {},
+      token,
+    );
+    expect(refs.suggestions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ label: "sec:intro" })]),
+    );
+    h.select(
+      h.model.getValue().indexOf("\\sec", h.model.getValue().indexOf("\\cite")) - 1,
+    );
+    const cites = await provider.provideCompletionItems(
+      h.model,
+      h.editor.getPosition(),
+      {},
+      token,
+    );
+    expect(cites.suggestions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ insertText: "ada2026" })]),
+    );
+    expect(
+      (
+        await provider.provideCompletionItems(
+          h.model,
+          h.editor.getPosition(),
+          {},
+          { isCancellationRequested: true },
+        )
+      ).suggestions,
+    ).toEqual([]);
+    const asymptote = h.providers
+      .get("asymptote:CompletionItem")![0]
+      .provideCompletionItems(h.model, { lineNumber: 1, column: 2 });
+    expect(asymptote.suggestions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ label: "draw" })]),
+    );
   });
-  it("editor integration continues LaTeX lists and falls back to ordinary newline outside lists",async()=>{
-    const content="\\begin{itemize}\n\\item First\n\\end{itemize}";const h=await mountEditorIntegration(content);h.select(content.indexOf("First")+5);await act(async()=>{h.run("latexdo.continueLatexList");});expect(h.model.getValue()).toContain("\\item First\n\\item ");expect(h.editor.executeEdits).toHaveBeenCalledWith("latex-list-enter",expect.any(Array));
-    h.setText("ordinary text");h.select(3);await act(async()=>{h.run("latexdo.continueLatexList");});expect(h.editor.trigger).toHaveBeenCalledWith("keyboard","type",{text:"\n"});h.select(0,4);await act(async()=>{h.run("latexdo.continueLatexList");});expect(h.editor.trigger).toHaveBeenCalledTimes(2);
+  it("editor integration continues LaTeX lists and falls back to ordinary newline outside lists", async () => {
+    const content = "\\begin{itemize}\n\\item First\n\\end{itemize}";
+    const h = await mountEditorIntegration(content);
+    h.select(content.indexOf("First") + 5);
+    await act(async () => {
+      h.run("latexdo.continueLatexList");
+    });
+    expect(h.model.getValue()).toContain("\\item First\n\\item ");
+    expect(h.editor.executeEdits).toHaveBeenCalledWith(
+      "latex-list-enter",
+      expect.any(Array),
+    );
+    h.setText("ordinary text");
+    h.select(3);
+    await act(async () => {
+      h.run("latexdo.continueLatexList");
+    });
+    expect(h.editor.trigger).toHaveBeenCalledWith("keyboard", "type", { text: "\n" });
+    h.select(0, 4);
+    await act(async () => {
+      h.run("latexdo.continueLatexList");
+    });
+    expect(h.editor.trigger).toHaveBeenCalledTimes(2);
   });
-  it("editor integration persists bookmarks and navigates to their source lines",async()=>{
-    const h=await mountEditorIntegration("First\nSecond\nThird");h.select(6);await act(async()=>{h.run("latexdo.toggleBookmark");});expect(screen.getByText("Bookmarked line 2")).toBeVisible();const saved=JSON.parse(localStorage.getItem(bookmarksStorageKey)??"{}");expect(Object.values(saved)).toContainEqual([2]);
-    h.select(0);await act(async()=>{h.run("latexdo.nextBookmark");});expect(h.editor.setPosition).toHaveBeenCalledWith({lineNumber:2,column:1});expect(h.editor.revealLineInCenter).toHaveBeenCalledWith(2,1);
+  it("editor integration persists bookmarks and navigates to their source lines", async () => {
+    const h = await mountEditorIntegration("First\nSecond\nThird");
+    h.select(6);
+    await act(async () => {
+      h.run("latexdo.toggleBookmark");
+    });
+    expect(screen.getByText("Bookmarked line 2")).toBeVisible();
+    const saved = JSON.parse(localStorage.getItem(bookmarksStorageKey) ?? "{}");
+    expect(Object.values(saved)).toContainEqual([2]);
+    h.select(0);
+    await act(async () => {
+      h.run("latexdo.nextBookmark");
+    });
+    expect(h.editor.setPosition).toHaveBeenCalledWith({ lineNumber: 2, column: 1 });
+    expect(h.editor.revealLineInCenter).toHaveBeenCalledWith(2, 1);
   });
-  it("editor integration formats tables through the registered editor action",async()=>{
-    const content="\\begin{tabular}{ll}\na&long\\\\\nlong&b\\\\\n\\end{tabular}";const h=await mountEditorIntegration(content);h.select(content.indexOf("a&"));await act(async()=>{h.run("latexdo.formatLatexTable");});expect(h.model.getValue()).toContain("a    & long");expect(screen.getByText("Formatted LaTeX table columns.")).toBeVisible();
+  it("editor integration formats tables through the registered editor action", async () => {
+    const content = "\\begin{tabular}{ll}\na&long\\\\\nlong&b\\\\\n\\end{tabular}";
+    const h = await mountEditorIntegration(content);
+    h.select(content.indexOf("a&"));
+    await act(async () => {
+      h.run("latexdo.formatLatexTable");
+    });
+    expect(h.model.getValue()).toContain("a    & long");
+    expect(screen.getByText("Formatted LaTeX table columns.")).toBeVisible();
   });
-  it.each([["Bold","\\textbf{passage}"],["Italic","\\emph{passage}"],["Underline","\\underline{passage}"],["Inline math","$passage$"],["Section","\\section{passage}"],["Subsection","\\subsection{passage}"],["Equation","\\begin{equation}\npassage\n\\end{equation}"],["Bullet list","\\begin{itemize}"],["Numbered list","\\begin{enumerate}"],["Cite","\\cite{passage}"],["Ref","\\ref{passage}"],["Link","\\href{url}{passage}"]])("editor integration applies %s to the selected text",async(label,expected)=>{
-    const h=await mountEditorIntegration("A passage here.");h.select(2,9);fireEvent.click(within(screen.getByRole("toolbar",{name:"LaTeX formatting"})).getByRole("button",{name:label}));expect(h.model.getValue()).toContain(expected);expect(h.model.getValue()).toMatch(/^A /);expect(h.model.getValue()).toMatch(/ here\.$/);
+  it.each([
+    ["Bold", "\\textbf{passage}"],
+    ["Italic", "\\emph{passage}"],
+    ["Underline", "\\underline{passage}"],
+    ["Inline math", "$passage$"],
+    ["Section", "\\section{passage}"],
+    ["Subsection", "\\subsection{passage}"],
+    ["Equation", "\\begin{equation}\npassage\n\\end{equation}"],
+    ["Bullet list", "\\begin{itemize}"],
+    ["Numbered list", "\\begin{enumerate}"],
+    ["Cite", "\\cite{passage}"],
+    ["Ref", "\\ref{passage}"],
+    ["Link", "\\href{url}{passage}"],
+  ])("editor integration applies %s to the selected text", async (label, expected) => {
+    const h = await mountEditorIntegration("A passage here.");
+    h.select(2, 9);
+    fireEvent.click(
+      within(screen.getByRole("toolbar", { name: "LaTeX formatting" })).getByRole(
+        "button",
+        { name: label },
+      ),
+    );
+    expect(h.model.getValue()).toContain(expected);
+    expect(h.model.getValue()).toMatch(/^A /);
+    expect(h.model.getValue()).toMatch(/ here\.$/);
   });
-  it("editor integration creates a review thread, saves comments, inserts it into TeX and removes it",async()=>{
-    const h=await mountEditorIntegration("A passage to review.");h.select(2,9);fireEvent.click(screen.getByTitle("Reviewer Mode"));fireEvent.click(screen.getByRole("button",{name:/new.*thread|new.*conversation|add.*chat/i}));expect(screen.getByTitle("Click to jump to selection")).toBeVisible();
-    fireEvent.change(screen.getByPlaceholderText("Write a review message..."),{target:{value:"Please clarify this claim."}});fireEvent.click(screen.getByRole("button",{name:"Send review message"}));expect(await screen.findByText("Please clarify this claim.")).toBeVisible();await waitFor(()=>expect(h.api.writeFile).toHaveBeenCalledWith(project.id,".latexdo/review_data.json",expect.stringContaining("Please clarify this claim.")));
-    fireEvent.click(screen.getByRole("button",{name:/insert.*tex/i}));expect(h.model.getValue()).toContain("Please clarify this claim.");fireEvent.click(screen.getByTitle("Delete review chat"));await waitFor(()=>expect(screen.queryByText("Please clarify this claim.")).not.toBeInTheDocument());expect(h.model.getValue()).not.toContain("Please clarify this claim.");
+  it("editor integration creates a review thread, saves comments, inserts it into TeX and removes it", async () => {
+    const h = await mountEditorIntegration("A passage to review.");
+    h.select(2, 9);
+    fireEvent.click(screen.getByTitle("Reviewer Mode"));
+    fireEvent.click(
+      screen.getByRole("button", { name: /new.*thread|new.*conversation|add.*chat/i }),
+    );
+    expect(screen.getByTitle("Click to jump to selection")).toBeVisible();
+    fireEvent.change(screen.getByPlaceholderText("Write a review message..."), {
+      target: { value: "Please clarify this claim." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send review message" }));
+    expect(await screen.findByText("Please clarify this claim.")).toBeVisible();
+    await waitFor(() =>
+      expect(h.api.writeFile).toHaveBeenCalledWith(
+        project.id,
+        ".latexdo/review_data.json",
+        expect.stringContaining("Please clarify this claim."),
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /insert.*tex/i }));
+    expect(h.model.getValue()).toContain("Please clarify this claim.");
+    fireEvent.click(screen.getByTitle("Delete review chat"));
+    await waitFor(() =>
+      expect(screen.queryByText("Please clarify this claim.")).not.toBeInTheDocument(),
+    );
+    expect(h.model.getValue()).not.toContain("Please clarify this claim.");
   });
-  it("editor integration builds and edits rebuttal items and writes a response letter",async()=>{
-    const h=await mountEditorIntegration("A disputed passage.");h.select(2,10);fireEvent.click(screen.getByTitle("Rebuttal Mode"));fireEvent.click(screen.getByRole("button",{name:"New Rebuttal Item"}));fireEvent.change(screen.getByPlaceholderText("What did the reviewer say?"),{target:{value:"Explain the method."}});fireEvent.change(screen.getByPlaceholderText("How do you respond?"),{target:{value:"We added an explanation."}});fireEvent.change(screen.getByPlaceholderText("The manuscript text being discussed."),{target:{value:"Old method"}});fireEvent.change(screen.getByPlaceholderText("The revised manuscript text or a unified diff."),{target:{value:"Detailed method"}});
-    fireEvent.click(screen.getByRole("button",{name:"Export Response"}));await waitFor(()=>expect(h.api.writeFile).toHaveBeenCalledWith(project.id,"rebuttal-letter.tex",expect.stringContaining("We added an explanation.")));fireEvent.click(screen.getByRole("button",{name:"Delete rebuttal item"}));expect(screen.queryByDisplayValue("Explain the method.")).not.toBeInTheDocument();
+  it("editor integration builds and edits rebuttal items and writes a response letter", async () => {
+    const h = await mountEditorIntegration("A disputed passage.");
+    h.select(2, 10);
+    fireEvent.click(screen.getByTitle("Rebuttal Mode"));
+    fireEvent.click(screen.getByRole("button", { name: "New Rebuttal Item" }));
+    fireEvent.change(screen.getByPlaceholderText("What did the reviewer say?"), {
+      target: { value: "Explain the method." },
+    });
+    fireEvent.change(screen.getByPlaceholderText("How do you respond?"), {
+      target: { value: "We added an explanation." },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText("The manuscript text being discussed."),
+      { target: { value: "Old method" } },
+    );
+    fireEvent.change(
+      screen.getByPlaceholderText("The revised manuscript text or a unified diff."),
+      { target: { value: "Detailed method" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Export Response" }));
+    await waitFor(() =>
+      expect(h.api.writeFile).toHaveBeenCalledWith(
+        project.id,
+        "rebuttal-letter.tex",
+        expect.stringContaining("We added an explanation."),
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete rebuttal item" }));
+    expect(screen.queryByDisplayValue("Explain the method.")).not.toBeInTheDocument();
   });
-  it("editor integration captures local history and restores an older state without overwriting disk",async()=>{
-    const h=await mountEditorIntegration("Original passage.");fireEvent.click(screen.getByRole("button",{name:/open history/i}));fireEvent.click(screen.getByRole("button",{name:"Capture state"}));await waitFor(()=>expect(screen.queryByText(/No local history yet/i)).not.toBeInTheDocument());
-    fireEvent.change(screen.getByLabelText("mock editor"),{target:{value:"Edited passage."}});fireEvent.click(screen.getByRole("button",{name:/restore/i}));await waitFor(()=>expect(screen.getByLabelText("mock editor")).toHaveValue("Original passage."));expect(screen.getByText(/Restored main.tex from history/)).toBeVisible();expect(h.api.writeFile.mock.calls.filter(([,file])=>file==="main.tex")).toEqual([]);
+  it("editor integration captures local history and restores an older state without overwriting disk", async () => {
+    const h = await mountEditorIntegration("Original passage.");
+    fireEvent.click(screen.getByRole("button", { name: /open history/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Capture state" }));
+    await waitFor(() =>
+      expect(screen.queryByText(/No local history yet/i)).not.toBeInTheDocument(),
+    );
+    fireEvent.change(screen.getByLabelText("mock editor"), {
+      target: { value: "Edited passage." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /restore/i }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("mock editor")).toHaveValue("Original passage."),
+    );
+    expect(screen.getByText(/Restored main.tex from history/)).toBeVisible();
+    expect(
+      h.api.writeFile.mock.calls.filter(([, file]) => file === "main.tex"),
+    ).toEqual([]);
   });
 });

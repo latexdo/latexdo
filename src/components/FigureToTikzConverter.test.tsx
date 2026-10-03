@@ -95,18 +95,46 @@ describe("FigureToTikzConverter", () => {
   });
 
   it("traces actual rectangle and line pixels into editable TikZ geometry", () => {
-    class DiagramImage extends MockImage { width=400; height=400; }
-    vi.stubGlobal("Image",DiagramImage);
-    const pixels=new Uint8ClampedArray(400*400*4);pixels.fill(255);
-    const outline=(x:number,y:number,width:number,height:number,color:number[])=>{
-      for(let py=y;py<=y+height;py++)for(let px=x;px<=x+width;px++)if(py===y||py===y+height||px===x||px===x+width){const offset=(py*400+px)*4;pixels.set([...color,255],offset);}
+    class DiagramImage extends MockImage {
+      width = 400;
+      height = 400;
+    }
+    vi.stubGlobal("Image", DiagramImage);
+    const pixels = new Uint8ClampedArray(400 * 400 * 4);
+    pixels.fill(255);
+    const outline = (
+      x: number,
+      y: number,
+      width: number,
+      height: number,
+      color: number[],
+    ) => {
+      for (let py = y; py <= y + height; py++)
+        for (let px = x; px <= x + width; px++)
+          if (py === y || py === y + height || px === x || px === x + width) {
+            const offset = (py * 400 + px) * 4;
+            pixels.set([...color, 255], offset);
+          }
     };
-    outline(20,20,24,24,[0,0,0]);outline(80,20,100,12,[30,20,20]);outline(220,20,12,100,[0,0,0]);
-    Object.defineProperty(HTMLCanvasElement.prototype,"getContext",{configurable:true,value:()=>({drawImage:vi.fn(),getImageData:()=>({data:pixels})})});
-    const onInsertCode=vi.fn();const {container}=render(<FigureToTikzConverter onInsertCode={onInsertCode}/>);
-    fireEvent.change(container.querySelector("input[type=file]")!,{target:{files:[new File(["pixels"],"geometry.png",{type:"image/png"})]}});
-    act(()=>vi.advanceTimersByTime(100));fireEvent.click(screen.getByRole("button",{name:/insert/i}));
-    const code=onInsertCode.mock.calls[0][0];expect(code).toContain("(0.40,7.60) rectangle (0.88,7.12)");expect(code).toContain("(1.60,7.48) -- (3.60,7.48)");expect(code).toContain("(4.52,7.60) -- (4.52,5.60)");expect(code).toContain("rgb,255:red,30;green,20;blue,20");
+    outline(20, 20, 24, 24, [0, 0, 0]);
+    outline(80, 20, 100, 12, [30, 20, 20]);
+    outline(220, 20, 12, 100, [0, 0, 0]);
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+      configurable: true,
+      value: () => ({ drawImage: vi.fn(), getImageData: () => ({ data: pixels }) }),
+    });
+    const onInsertCode = vi.fn();
+    const { container } = render(<FigureToTikzConverter onInsertCode={onInsertCode} />);
+    fireEvent.change(container.querySelector("input[type=file]")!, {
+      target: { files: [new File(["pixels"], "geometry.png", { type: "image/png" })] },
+    });
+    act(() => vi.advanceTimersByTime(100));
+    fireEvent.click(screen.getByRole("button", { name: /insert/i }));
+    const code = onInsertCode.mock.calls[0][0];
+    expect(code).toContain("(0.40,7.60) rectangle (0.88,7.12)");
+    expect(code).toContain("(1.60,7.48) -- (3.60,7.48)");
+    expect(code).toContain("(4.52,7.60) -- (4.52,5.60)");
+    expect(code).toContain("rgb,255:red,30;green,20;blue,20");
   });
 
   it("generates TikZ code from an uploaded image and inserts it", () => {

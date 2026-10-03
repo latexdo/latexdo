@@ -674,7 +674,9 @@ function parseTikzDraw(line: string, ch: number): DrawShape | null {
       const topDx = coords[1][0] - coords[0][0];
       const bottomDx = coords[2][0] - coords[3][0];
       const isParallelogram =
-        Math.abs(topDx - bottomDx) < 5 && topDx > 0 && bottomDx > 0 &&
+        Math.abs(topDx - bottomDx) < 5 &&
+        topDx > 0 &&
+        bottomDx > 0 &&
         Math.abs(coords[0][0] - coords[3][0]) > 5;
       // Detect trapezium: top shorter than bottom
       const topLen = Math.abs(coords[1][0] - coords[0][0]);
