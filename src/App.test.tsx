@@ -3102,7 +3102,10 @@ describe("App critical UI controls", () => {
   });
 
   it("project workflow stages, unstages and commits source-control changes", async () => {
+    storeCompleteAiConfig();
     const api = installLatexDoMock({
+      // Background proofreading also writes to the shared status message.
+      proofreadingSettings: { ...defaultProofreadingSettings, enabled: false },
       gitStatus: {
         isRepo: true,
         branch: "main",
@@ -3122,32 +3125,58 @@ describe("App critical UI controls", () => {
     render(<App />);
     await openProjectFromWelcome();
     fireEvent.click(screen.getByTitle("Source control"));
-    fireEvent.click(await screen.findByRole("button", { name: "Stage main.tex" }));
-    await screen.findByText("Staged main.tex", { selector: ".status-message" });
-    expect(api.stageGitFile).toHaveBeenCalledWith(project.id, "main.tex");
-    fireEvent.click(screen.getByRole("button", { name: "Unstage main.tex" }));
-    await screen.findByText("Unstaged main.tex", { selector: ".status-message" });
-    expect(api.unstageGitFile).toHaveBeenCalledWith(project.id, "main.tex");
-    fireEvent.click(screen.getByRole("button", { name: "Stage all changes" }));
-    await waitFor(() => expect(api.stageAllGit).toHaveBeenCalledWith(project.id));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Stage all changes" })).toBeEnabled(),
+    const stageButton = await screen.findByRole("button", { name: "Stage main.tex" });
+    // Flush each mocked Git operation and its refresh before the next action.
+    await act(async () => {
+      fireEvent.click(stageButton);
+    });
+    expect(document.querySelector(".status-message")).toHaveTextContent(
+      "Staged main.tex",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Unstage all changes" }));
-    await waitFor(() => expect(api.unstageAllGit).toHaveBeenCalledWith(project.id));
+    expect(api.stageGitFile).toHaveBeenCalledWith(project.id, "main.tex");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Unstage main.tex" }));
+    });
+    expect(document.querySelector(".status-message")).toHaveTextContent(
+      "Unstaged main.tex",
+    );
+    expect(api.unstageGitFile).toHaveBeenCalledWith(project.id, "main.tex");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Stage all changes" }));
+    });
+    expect(api.stageAllGit).toHaveBeenCalledWith(project.id);
+    expect(document.querySelector(".status-message")).toHaveTextContent(
+      "Staged all changes",
+    );
+    expect(screen.getByRole("button", { name: "Stage all changes" })).toBeEnabled();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Unstage all changes" }));
+    });
+    expect(api.unstageAllGit).toHaveBeenCalledWith(project.id);
+    expect(document.querySelector(".status-message")).toHaveTextContent(
+      "Unstaged all changes",
+    );
     fireEvent.change(screen.getByPlaceholderText("Commit message"), {
       target: { value: "Save research" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Commit" }));
-    await screen.findByText("Created commit", { selector: ".status-message" });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Commit" }));
+    });
+    expect(document.querySelector(".status-message")).toHaveTextContent(
+      "Created commit",
+    );
     expect(api.commitGit).toHaveBeenCalledWith(project.id, "Save research");
     expect(screen.getByPlaceholderText("Commit message")).toHaveValue("");
     api.commitGit.mockRejectedValueOnce(new Error("Commit rejected"));
     fireEvent.change(screen.getByPlaceholderText("Commit message"), {
       target: { value: "Retry research" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Commit" }));
-    await screen.findByText("Commit rejected", { selector: ".status-message" });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Commit" }));
+    });
+    expect(document.querySelector(".status-message")).toHaveTextContent(
+      "Commit rejected",
+    );
     expect(screen.getByPlaceholderText("Commit message")).toHaveValue("Retry research");
   });
   it("project workflow closes an obsolete diff when its file is staged", async () => {

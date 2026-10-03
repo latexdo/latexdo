@@ -149,9 +149,8 @@ describe("local speech server lifecycle", () => {
     await install();
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     const pending = ensureBundledSpeechServer();
-    for (let i = 0; i < 100 && !vi.mocked(spawn).mock.calls.length; i++)
-      await new Promise((resolve) => setImmediate(resolve));
-    expect(spawn).toHaveBeenCalledOnce();
+    // Filesystem checks use real I/O even while the startup clock is faked.
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalledOnce());
     await vi.advanceTimersByTimeAsync(13000);
     expect(await pending).toMatchObject({ ok: false, code: "start-failed" });
     expect(vi.mocked(spawn).mock.results[0].value.kill).toHaveBeenCalledOnce();
