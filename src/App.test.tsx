@@ -3260,7 +3260,10 @@ describe("App critical UI controls", () => {
     await screen.findByText("Imported a.tex", { selector: ".status-message" });
   });
   it("project workflow reports compilation failures and saves modified text", async () => {
-    const api = installLatexDoMock();
+    const api = installLatexDoMock({
+      // Background proofreading can overwrite the compile status on slower runs.
+      proofreadingSettings: { ...defaultProofreadingSettings, enabled: false },
+    });
     render(<App />);
     await openProjectFromWelcome();
     fireEvent.change(await screen.findByLabelText("mock editor"), {
@@ -3273,15 +3276,28 @@ describe("App critical UI controls", () => {
       diagnostics: [],
       error: "Compile failed deliberately",
     });
-    fireEvent.click(screen.getByRole("button", { name: "Compile" }));
-    await screen.findByText("Compile failed deliberately", {
-      selector: ".status-message",
+    // Flush the save and compile promises before checking the resulting status.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Compile" }));
     });
+    expect(
+      screen.getByText("Compile failed deliberately", {
+        selector: ".status-message",
+      }),
+    ).toBeInTheDocument();
+    expect(api.compile).toHaveBeenCalledTimes(1);
     expect(api.writeFile).toHaveBeenCalledWith(project.id, "main.tex", "new source");
     expect(screen.getByText("compiler log")).toBeInTheDocument();
     api.compile.mockRejectedValue(new Error("Compiler crashed"));
-    fireEvent.click(screen.getByRole("button", { name: "Compile" }));
-    await screen.findByText("Compiler crashed", { selector: ".status-message" });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Compile" }));
+    });
+    expect(api.compile).toHaveBeenCalledTimes(2);
+    expect(
+      screen.getByText("Compiler crashed", {
+        selector: ".status-message",
+      }),
+    ).toBeInTheDocument();
   });
   it("project workflow cancels compilation and ignores its late result", async () => {
     const api = installLatexDoMock();
