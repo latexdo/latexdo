@@ -327,6 +327,8 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext, storageKey?: str
           ? { path: activePath, text: ctx.documentText() }
           : null;
       const toolCapabilities = {
+        hasKnowledgeGraph:
+          access.currentEditor && ctx.workspaceTab?.()?.kind === "knowledge-graph",
         hasProject,
         hasActiveDocument: Boolean(activePath),
         hasSelection: sel.hasSelection,
@@ -347,6 +349,7 @@ export function useAiAgent(config: AiConfig, ctx: AgentContext, storageKey?: str
           : null,
         projectFiles: access.projectFiles ? projectFiles : null,
         activeDocument,
+        workspaceTab: access.currentEditor ? ctx.workspaceTab?.() : null,
       });
 
       // `\command` expands to its full instruction; `@file` mentions get the

@@ -68,6 +68,12 @@ export interface AiSidebarApi {
 }
 
 interface AiSidebarProps {
+  workspaceTarget?: {
+    value: string;
+    tabs: { id: string; label: string }[];
+    activeLabel: string;
+    onChange: (id: string) => void;
+  };
   config: AiConfig;
   ctx: AgentContext;
   isDesktop: boolean;
@@ -118,6 +124,7 @@ function openAiSpeechCredentialId(config: AiConfig): string {
 
 export const AiSidebar: React.FC<AiSidebarProps> = ({
   config,
+  workspaceTarget,
   ctx,
   isDesktop,
   expanded,
@@ -414,6 +421,33 @@ export const AiSidebar: React.FC<AiSidebarProps> = ({
           </button>
         </div>
       </div>
+      {workspaceTarget ? (
+        <label className="ai-workspace-target">
+          <span>Work with tab</span>
+          <select
+            aria-label="AI target tab"
+            value={workspaceTarget.value}
+            disabled={isRunning}
+            onChange={(event) => {
+              setComposerSelection(null);
+              workspaceTarget.onChange(event.target.value);
+            }}
+          >
+            <option value="active">Active tab · {workspaceTarget.activeLabel}</option>
+            {workspaceTarget.tabs.map((tab) => (
+              <option key={tab.id} value={tab.id}>
+                {tab.label}
+              </option>
+            ))}
+            {workspaceTarget.value !== "active" &&
+            !workspaceTarget.tabs.some((tab) => tab.id === workspaceTarget.value) ? (
+              <option value={workspaceTarget.value}>
+                Closed tab — choose a target
+              </option>
+            ) : null}
+          </select>
+        </label>
+      ) : null}
       <div className="ai-sidebar-model">
         <span>{providerLabel(config)}</span>
         <button

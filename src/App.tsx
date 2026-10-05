@@ -251,13 +251,24 @@ import {
   type CitationProjectFile,
 } from "./latex/citationAnalysis";
 import { recommendCitations } from "./features/graph/citationRecommender";
-import { planCitationInsertion } from "./latex/citationInsertion";
+import {
+  planCitationInsertion,
+  type CitationInsertionPlan,
+} from "./latex/citationInsertion";
 import { formatCitation, resolveCitationStyle } from "./latex/citationStyle";
 import { planScholarlyDiscoveryWithAi } from "./features/graph/aiDiscoveryPlanner";
 import {
   buildKnowledgeGraph,
   type KnowledgeGraphParams,
 } from "./features/graph/knowledgeGraph";
+import { WorkspaceTabs, type WorkspaceTab } from "./components/WorkspaceTabs";
+import {
+  knowledgeGraphTabId,
+  defaultGraphViewState,
+  readPaperSources,
+  relatedBibliography,
+  type GraphViewFilter,
+} from "./features/graph/graphWorkspace";
 import { KnowledgeGraphView } from "./components/KnowledgeGraphView";
 import {
   isProjectSearchablePath,
@@ -2383,9 +2394,15 @@ export default function App() {
   const hasVisibleProject = Boolean(projectId) && !hideProjectEntries;
   const showWelcome = welcomeOpen && !activePath;
   const showBlankWorkspace = hideProjectEntries && !welcomeOpen && !activePath;
-  const showEmptyEditor = !showWelcome && !activeDocument && !gitDiffSession;
+  const knowledgeGraphActive = activePath === knowledgeGraphTabId;
+  const showEmptyEditor =
+    !showWelcome && !activeDocument && !gitDiffSession && !knowledgeGraphActive;
   const previewShown =
-    previewVisible && !showWelcome && !showBlankWorkspace && !gitDiffSession;
+    previewVisible &&
+    !showWelcome &&
+    !showBlankWorkspace &&
+    !gitDiffSession &&
+    !knowledgeGraphActive;
   const projectName = hasVisibleProject
     ? projectDisplayName || fileName(projectPath) || "Project"
     : "No Folder";
@@ -2523,6 +2540,80 @@ export default function App() {
     citationCitedKeysRef.current = new Set(citationAnalysis.citedKeys);
   }, [citationAnalysis.citedKeys]);
   const [knowledgeGraphOpen, setKnowledgeGraphOpen] = useState(false);
+  const [graphFilter, setGraphFilter] = useState<GraphViewFilter>({
+    keys: null,
+    label: "All bibliography entries",
+  });
+  const [graphViewState, setGraphViewState] = useState(defaultGraphViewState);
+  const graphViewStateRef = useRef(graphViewState);
+  useEffect(() => {
+    graphViewStateRef.current = graphViewState;
+  }, [graphViewState]);
+  const [aiTabTargets, setAiTabTargets] = useState<Record<string, string>>({});
+  const pendingGraphCitationRef = useRef<{
+    path: string;
+    content: string;
+    key: string;
+    plan: CitationInsertionPlan;
+  } | null>(null);
+  const graphReturnPathRef = useRef("");
+  const graphOpenRef = useRef(false);
+  const graphFilterRef = useRef(graphFilter);
+  useEffect(() => {
+    graphFilterRef.current = graphFilter;
+  }, [graphFilter]);
+  const graphSourceRef = useRef<{
+    path: string;
+    content: string;
+    offset: number;
+    selection: string;
+  } | null>(null);
+  const openKnowledgeGraph = () => {
+    if (activePath && activePath !== knowledgeGraphTabId)
+      graphReturnPathRef.current = activePath;
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    const position = editor?.getPosition();
+    if (
+      activeTextDocument?.name.endsWith(".tex") &&
+      model &&
+      position &&
+      editorModelMatchesPath(editor, activePath)
+    ) {
+      const selection = editor?.getSelection();
+      graphSourceRef.current = {
+        path: activePath,
+        content: model.getValue(),
+        offset: model.getOffsetAt(position),
+        selection: selection ? model.getValueInRange(selection) : "",
+      };
+    }
+    graphOpenRef.current = true;
+    setKnowledgeGraphOpen(true);
+    setActivePath(knowledgeGraphTabId);
+    activePathRef.current = knowledgeGraphTabId;
+  };
+  const closeKnowledgeGraph = () => {
+    graphOpenRef.current = false;
+    setKnowledgeGraphOpen(false);
+    if (knowledgeGraphActive) {
+      const next =
+        documents.find((doc) => doc.path === graphReturnPathRef.current)?.path ??
+        documents[0]?.path ??
+        "";
+      setActivePath(next);
+      activePathRef.current = next;
+    }
+  };
+  useEffect(() => {
+    graphOpenRef.current = false;
+    graphSourceRef.current = null;
+    pendingGraphCitationRef.current = null;
+    setGraphViewState(defaultGraphViewState);
+    setKnowledgeGraphOpen(false);
+    setGraphFilter({ keys: null, label: "All bibliography entries" });
+    setAiTabTargets({});
+  }, [projectId]);
   useEffect(() => {
     storeKnowledgeGraphParams(knowledgeGraphParams);
   }, [knowledgeGraphParams]);
@@ -5008,7 +5099,6 @@ ${macroEnd}
         const hasClosableSurface =
           createDialog !== null ||
           settingsOpen ||
-          knowledgeGraphOpen ||
           tikzCanvasOpen ||
           tableCanvasOpen ||
           tikzConverterOpen ||
@@ -5019,7 +5109,6 @@ ${macroEnd}
           event.preventDefault();
           setCreateDialog(null);
           setSettingsOpen(false);
-          setKnowledgeGraphOpen(false);
           setTikzCanvasOpen(false);
           setTableCanvasOpen(false);
           setTikzConverterOpen(false);
@@ -5044,7 +5133,6 @@ ${macroEnd}
     createDialog,
     defaultCreateRelativePath,
     gitContextMenu,
-    knowledgeGraphOpen,
     legalAcceptanceRequired,
     notationManagerOpen,
     saveActiveAndCompile,
@@ -7003,6 +7091,40 @@ ${macroEnd}
         mutationOrigin: editorMutationOriginRef.current,
       });
     }
+    const pendingCitation = pendingGraphCitationRef.current;
+    if (pendingCitation && editorModelMatchesPath(editor, pendingCitation.path)) {
+      pendingGraphCitationRef.current = null;
+      const model = editor.getModel();
+      if (
+        !model ||
+        model.getValue() !== pendingCitation.content ||
+        activeCollaborationReadOnlyMessage
+      ) {
+        setStatusMessage(
+          "The source changed or is read-only. Return to the graph and try the citation again.",
+        );
+      } else {
+        const { plan, key } = pendingCitation;
+        const start = model.getPositionAt(plan.rangeStartOffset);
+        const end = model.getPositionAt(plan.rangeEndOffset);
+        editor.pushUndoStop();
+        editor.executeEdits("knowledge-graph", [
+          {
+            range: new monaco.Range(
+              start.lineNumber,
+              start.column,
+              end.lineNumber,
+              end.column,
+            ),
+            text: plan.text,
+            forceMoveMarkers: true,
+          },
+        ]);
+        editor.pushUndoStop();
+        setStatusMessage(`Inserted ${formatCitation(plan.command, plan.keys)}.`);
+        emitProductEvent({ type: "citation:inserted", key });
+      }
+    }
     connectCollaborationBinding(editor);
     editor.focus();
   };
@@ -8458,95 +8580,59 @@ ${macroEnd}
     });
   }, [activeTextDocument, openSidebar, setStatusMessage]);
 
-  const insertCitationKey = useCallback(
-    (key: string) => {
-      const editor = editorRef.current;
-      const model = editor?.getModel();
-      const position = editor?.getPosition();
-      if (
-        !editor ||
-        !model ||
-        !position ||
-        !activeTextDocument?.name.endsWith(".tex")
-      ) {
-        setStatusMessage("Open a .tex file and place the cursor for the citation.");
-        return;
-      }
-      const selection = editor.getSelection();
-      const selectedText =
-        selection && !selection.isEmpty() ? model.getValueInRange(selection) : "";
-      const documentText = model.getValue();
-      const style = resolveCitationStyle({
-        selectedText,
-        nearbyText: getNearbyCitationContext(editor),
-        activeFilePath: activeTextDocument.relativePath,
-        activeDocumentText: documentText,
-        usages: citationAnalysis.usages,
-      });
-      const plan = planCitationInsertion(
-        documentText,
-        model.getOffsetAt(position),
-        style.command,
-        [key],
+  const insertCitationKey = (key: string) => {
+    const source = graphSourceRef.current;
+    const document = documentsRef.current.find((doc) => doc.path === source?.path);
+    if (!source || !document || document.content !== source.content) {
+      setStatusMessage(
+        "Open a .tex tab, place the cursor, then return to the graph to insert a citation.",
       );
-      const citationText = formatCitation(style.command, [key]);
-      if (!plan) {
-        setStatusMessage(`Already cited near the cursor: ${citationText}.`);
-        return;
-      }
-      const start = model.getPositionAt(plan.rangeStartOffset);
-      const end = model.getPositionAt(plan.rangeEndOffset);
-      editor.executeEdits("knowledge-graph", [
-        {
-          range: new monaco.Range(
-            start.lineNumber,
-            start.column,
-            end.lineNumber,
-            end.column,
-          ),
-          text: plan.text,
-          forceMoveMarkers: true,
-        },
-      ]);
-      editor.focus();
-      setStatusMessage(`Inserted ${formatCitation(plan.command, plan.keys)}.`);
-      emitProductEvent({ type: "citation:inserted", key });
-    },
-    [activeTextDocument, citationAnalysis.usages, setStatusMessage],
-  );
-
-  const recommendCitationsForSelection = useCallback(() => {
-    const editor = editorRef.current;
-    const model = editor?.getModel();
-    const selection = editor?.getSelection();
-    const passage =
-      selection && editor && model ? (model.getValueInRange(selection) ?? "") : "";
-    const text = passage.trim();
-    if (!text) {
-      setStatusMessage("Select a sentence or paragraph first to recommend citations.");
       return;
     }
     const style = resolveCitationStyle({
-      selectedText: text,
-      nearbyText: getNearbyCitationContext(editor),
-      activeFilePath: activeTextDocument?.relativePath ?? null,
-      activeDocumentText: model?.getValue() ?? activeTextDocument?.content ?? "",
+      selectedText: source.selection,
+      nearbyText: source.content.slice(
+        Math.max(0, source.offset - 1200),
+        source.offset + 1200,
+      ),
+      activeFilePath: document.relativePath,
+      activeDocumentText: source.content,
       usages: citationAnalysis.usages,
     });
-    const recommendations = recommendCitations(text, citationAnalysis.entries, {
-      citedKeys: citationKeysInText(text),
-      limit: 6,
-    });
-    if (recommendations.length === 0) {
-      setStatusMessage("No matching references found for the selected text.");
+    const plan = planCitationInsertion(source.content, source.offset, style.command, [
+      key,
+    ]);
+    if (!plan) {
+      setStatusMessage("This reference is already cited near the cursor.");
       return;
     }
-    setStatusMessage(
-      `Suggested citations: ${recommendations
-        .map((rec) => formatCitation(style.command, [rec.key]))
-        .join(", ")}`,
-    );
-  }, [activeTextDocument, citationAnalysis, setStatusMessage]);
+    pendingGraphCitationRef.current = {
+      path: document.path,
+      content: source.content,
+      key,
+      plan,
+    };
+    setActivePath(document.path);
+    activePathRef.current = document.path;
+  };
+
+  const recommendCitationsForSelection = () => {
+    const text = graphSourceRef.current?.selection.trim();
+    if (!text) {
+      setStatusMessage(
+        "Select a sentence or paragraph in a .tex tab, then open the graph.",
+      );
+      return;
+    }
+    const recommendations = recommendCitations(text, citationAnalysis.entries, {
+      citedKeys: citationKeysInText(text),
+      limit: 12,
+    });
+    setGraphFilter({
+      keys: recommendations.map((rec) => rec.key),
+      label: "Related to selected text (metadata matches)",
+    });
+  };
 
   const planKnowledgeGraphDiscoveryWithAi = useCallback(
     (
@@ -8720,6 +8806,195 @@ ${macroEnd}
       citationAnalysis,
     ],
   );
+
+  const contextForWorkspaceTab = (tabId: string): AgentContext => {
+    const target = documents.find((doc) => doc.path === tabId);
+    const graphTarget = tabId === knowledgeGraphTabId && knowledgeGraphOpen;
+    const textTarget = isTextDocument(target) ? target : null;
+    const currentTarget = () => documentsRef.current.find((doc) => doc.path === tabId);
+    const targetEditor = () => {
+      const editor = editorRef.current;
+      return textTarget &&
+        activePathRef.current === tabId &&
+        editorModelMatchesPath(editor, tabId)
+        ? editor
+        : null;
+    };
+    const read = async (path: string) => {
+      if (!projectId || projectIdRef.current !== projectId)
+        throw new Error(
+          "The project changed. Send a new request in the current project.",
+        );
+      const open = documentsRef.current.find(
+        (doc) =>
+          normalizeRelativePath(doc.relativePath) === normalizeRelativePath(path),
+      );
+      return open && isTextDocument(open)
+        ? open.content
+        : window.latexdo.readFile(projectId, path);
+    };
+    const requireGraph = () => {
+      if (!graphTarget || !graphOpenRef.current || projectIdRef.current !== projectId)
+        throw new Error("Choose the Knowledge Graph tab in the current project first.");
+      if (!aiConfig.access.currentEditor || !aiConfig.access.bibliography)
+        throw new Error(
+          "Current editor and Bibliography access is disabled in AI settings.",
+        );
+    };
+    return {
+      ...agentContext,
+      workspaceTab: () =>
+        graphTarget
+          ? { id: tabId, label: "Knowledge Graph", kind: "knowledge-graph" }
+          : target
+            ? {
+                id: tabId,
+                label: target.relativePath,
+                kind: textTarget ? "document" : "other",
+              }
+            : {
+                id: tabId,
+                label:
+                  tabId === "workspace:welcome"
+                    ? "Welcome"
+                    : tabId === "workspace:diff"
+                      ? "Git diff"
+                      : "Closed or unavailable tab",
+                kind: "other",
+              },
+      activeFilePath: () =>
+        textTarget && currentTarget() ? textTarget.relativePath : null,
+      documentText: () =>
+        textTarget
+          ? (targetEditor()?.getModel()?.getValue() ?? currentTarget()?.content ?? "")
+          : "",
+      selection: () => {
+        const editor = targetEditor();
+        const selection = editor?.getSelection();
+        const text = selection
+          ? (editor?.getModel()?.getValueInRange(selection) ?? "")
+          : "";
+        return { text, hasSelection: Boolean(text.trim()) };
+      },
+      readFile: read,
+      applyEdit: async (proposal) => {
+        if (
+          proposal.kind !== "replace-file" &&
+          (!targetEditor() || proposal.path !== textTarget?.relativePath)
+        ) {
+          throw new Error(
+            "The target document is no longer active. Select it and retry the edit.",
+          );
+        }
+        if (proposal.kind === "replace-selection") {
+          const editor = targetEditor();
+          const selection = editor?.getSelection();
+          if (
+            !selection ||
+            editor?.getModel()?.getValueInRange(selection) !== proposal.oldText
+          )
+            throw new Error("The selection changed. Select the text again and retry.");
+        }
+        await applyAgentEdit(proposal);
+      },
+      getKnowledgeGraph: graphTarget
+        ? async (offset) => {
+            requireGraph();
+            return JSON.stringify({
+              paperPath: rootFile,
+              filter: graphFilterRef.current,
+              view: graphViewStateRef.current,
+              totalEntries: knowledgeGraph.nodes.length,
+              entries: knowledgeGraph.nodes.slice(offset, offset + 200),
+              nextOffset:
+                offset + 200 < knowledgeGraph.nodes.length ? offset + 200 : null,
+            });
+          }
+        : undefined,
+      filterKnowledgeGraph: graphTarget
+        ? async (request) => {
+            requireGraph();
+            // Rebuild from the latest unsaved bibliography buffers as well as scanned files.
+            const files = citationProjectFilesRef.current.map((file) => ({
+              ...file,
+              content:
+                documentsRef.current.find((doc) => doc.relativePath === file.path)
+                  ?.content ?? file.content,
+            }));
+            const library = analyzeCitationLibrary(files);
+            let keys: string[] | null = null;
+            let label = "All bibliography entries";
+            let evidence: ReturnType<typeof relatedBibliography> = [];
+            if (request.mode === "related") {
+              if (!aiConfig.access.projectFiles)
+                throw new Error(
+                  "Project files access is disabled in AI settings. Enable it to match references against your paper.",
+                );
+              const path = request.paperPath || rootFile;
+              if (!path)
+                throw new Error("Choose the root paper or specify paper_path first.");
+              const paper = await readPaperSources(path, read);
+              evidence = relatedBibliography(paper, library.entries);
+              keys = evidence.map((entry) => entry.key);
+              label = `Related to ${path} (citations and metadata)`;
+            } else if (request.mode === "cited") {
+              keys = library.citedKeys;
+              label = "Cited in project";
+            } else if (request.mode === "query") {
+              const query = request.query!.trim().toLowerCase();
+              keys = library.entries
+                .filter((entry) =>
+                  [
+                    entry.key,
+                    entry.title,
+                    entry.author,
+                    entry.editor,
+                    entry.year,
+                    entry.journal,
+                    entry.booktitle,
+                    entry.abstract,
+                    entry.keywords,
+                  ]
+                    .join(" ")
+                    .toLowerCase()
+                    .includes(query),
+                )
+                .map((entry) => entry.key);
+              label = `Matching “${request.query}”`;
+            } else if (request.mode === "keys") {
+              keys = [
+                ...new Set(
+                  request
+                    .keys!.split(",")
+                    .map((key) => key.trim())
+                    .filter(Boolean),
+                ),
+              ];
+              const known = new Set(library.entries.map((entry) => entry.key));
+              const unknown = keys.filter((key) => !known.has(key));
+              if (unknown.length)
+                throw new Error(
+                  `Unknown bibliography keys: ${unknown.join(", ")}. Inspect the graph first.`,
+                );
+              label = "AI-selected entries";
+            }
+            requireGraph();
+            graphViewStateRef.current = defaultGraphViewState;
+            setGraphViewState(defaultGraphViewState);
+            graphFilterRef.current = { keys, label };
+            setGraphFilter({ keys, label });
+            // Keep other tab choices intact; the result is waiting in the graph tab.
+            return JSON.stringify({
+              applied: true,
+              label,
+              count: keys?.length ?? library.entries.length,
+              keys,
+              evidence,
+            });
+          }
+        : undefined,
+    };
+  };
 
   const applyLayoutPreset = useCallback(
     (preset: LayoutPreset) => {
@@ -9698,8 +9973,7 @@ ${macroEnd}
     }
   };
 
-  const closeWelcomePage = (event: React.MouseEvent) => {
-    event.stopPropagation();
+  const closeWelcomePage = () => {
     setWelcomeOpen(false);
     if (hideProjectEntries) {
       setActivePath("");
@@ -11267,6 +11541,62 @@ ${macroEnd}
             : false;
   const showLegalAcceptanceGate = legalAcceptanceRequired && !aiWizardOpen;
 
+  const workspaceTabs: WorkspaceTab[] = [
+    ...(welcomeOpen
+      ? [
+          {
+            id: "workspace:welcome",
+            label: "Welcome",
+            icon: <AppIcon className="welcome-tab-mark" />,
+            active: showWelcome,
+            onSelect: showWelcomePage,
+            onClose: closeWelcomePage,
+          },
+        ]
+      : []),
+    ...(gitDiffSession
+      ? [
+          {
+            id: "workspace:diff",
+            label: gitDiffTabLabel(gitDiffSession),
+            icon: <GitBranch size={14} />,
+            active: !showWelcome && !activeDocument && !knowledgeGraphActive,
+            onSelect: () => {
+              setWelcomeOpen(false);
+              setActivePath("");
+              activePathRef.current = "";
+            },
+            onClose: closeGitDiffSession,
+          },
+        ]
+      : []),
+    ...documents.map((document) => ({
+      id: document.path,
+      label: pathForDisplay(document.name),
+      icon: document.kind === "asset" ? <FileImage size={14} /> : <Code2 size={14} />,
+      active: !showWelcome && activePath === document.path,
+      dirty: isTextDocument(document) && document.content !== document.savedContent,
+      onSelect: () => {
+        setActivePath(document.path);
+        activePathRef.current = document.path;
+      },
+      onClose: () => closeDocument(document.path),
+    })),
+    ...(knowledgeGraphOpen
+      ? [
+          {
+            id: knowledgeGraphTabId,
+            label: "Knowledge Graph",
+            icon: <Waypoints size={14} />,
+            active: knowledgeGraphActive,
+            onSelect: openKnowledgeGraph,
+            onClose: closeKnowledgeGraph,
+          },
+        ]
+      : []),
+  ];
+  const activeWorkspaceTab = workspaceTabs.find((tab) => tab.active)?.id ?? "";
+
   return (
     <div
       className="app-shell"
@@ -11510,8 +11840,8 @@ ${macroEnd}
               </button>
             ) : null}
             <button
-              className={`activity-button ${knowledgeGraphOpen ? "active" : ""}`}
-              onClick={() => setKnowledgeGraphOpen((open) => !open)}
+              className={`activity-button ${knowledgeGraphActive ? "active" : ""}`}
+              onClick={openKnowledgeGraph}
               title="Knowledge graph"
             >
               <Waypoints size={21} />
@@ -11648,6 +11978,9 @@ ${macroEnd}
               <div className="ai-chat-panes">
                 {aiChats.map((chat) => {
                   const active = chat.id === activeAiChatId;
+                  const targetId = aiTabTargets[chat.id] ?? "active";
+                  const resolvedTarget =
+                    targetId === "active" ? activeWorkspaceTab : targetId;
                   return (
                     <div
                       key={chat.id}
@@ -11659,7 +11992,26 @@ ${macroEnd}
                       <AiSidebar
                         storageKey={aiChatStateStorageKey(chat.id)}
                         config={aiConfig}
-                        ctx={agentContext}
+                        ctx={contextForWorkspaceTab(resolvedTarget)}
+                        workspaceTarget={{
+                          value: targetId,
+                          tabs: workspaceTabs.map((tab) => ({
+                            id: tab.id,
+                            label:
+                              documents.find((doc) => doc.path === tab.id)
+                                ?.relativePath ?? tab.label,
+                          })),
+                          activeLabel:
+                            workspaceTabs.find((tab) => tab.id === activeWorkspaceTab)
+                              ?.label ?? "No tab",
+                          onChange: (id) => {
+                            setAiTabTargets((current) => ({
+                              ...current,
+                              [chat.id]: id,
+                            }));
+                            workspaceTabs.find((tab) => tab.id === id)?.onSelect();
+                          },
+                        }}
                         isDesktop={aiIsDesktop}
                         expanded={aiSidebarExpanded}
                         onToggleExpanded={() =>
@@ -12347,75 +12699,7 @@ ${macroEnd}
         ) : null}
 
         <main className="main-area">
-          <div className="document-tabs">
-            {welcomeOpen ? (
-              <button
-                className={`document-tab welcome-tab ${showWelcome ? "active" : ""}`}
-                onClick={showWelcomePage}
-              >
-                <AppIcon className="welcome-tab-mark" />
-                <span>Welcome</span>
-                <span className="tab-close" onClick={closeWelcomePage}>
-                  <X size={13} />
-                </span>
-              </button>
-            ) : null}
-            {gitDiffSession ? (
-              <button
-                className={`document-tab git-diff-tab ${!showWelcome && !activeDocument ? "active" : ""}`}
-                onClick={() => {
-                  setWelcomeOpen(false);
-                  setActivePath("");
-                  activePathRef.current = "";
-                }}
-              >
-                <GitBranch size={14} className="tab-file-icon" />
-                <span>{gitDiffTabLabel(gitDiffSession)}</span>
-                <span
-                  className="tab-close"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    closeGitDiffSession();
-                  }}
-                >
-                  <X size={13} />
-                </span>
-              </button>
-            ) : null}
-            {documents.map((document) => {
-              const dirty =
-                isTextDocument(document) && document.content !== document.savedContent;
-              return (
-                <button
-                  key={document.path}
-                  className={`document-tab ${
-                    !showWelcome && activePath === document.path ? "active" : ""
-                  }`}
-                  onClick={() => {
-                    setActivePath(document.path);
-                    activePathRef.current = document.path;
-                  }}
-                >
-                  {document.kind === "asset" ? (
-                    <FileImage size={14} className="tab-file-icon" />
-                  ) : (
-                    <Code2 size={14} className="tab-file-icon" />
-                  )}
-                  <span>{pathForDisplay(document.name)}</span>
-                  <span
-                    className={`tab-close ${dirty ? "dirty" : ""}`}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      closeDocument(document.path);
-                    }}
-                  >
-                    {dirty ? <span className="dirty-dot" /> : <X size={13} />}
-                  </span>
-                </button>
-              );
-            })}
-            <div className="tabs-fill" />
-          </div>
+          <WorkspaceTabs key={projectId || "no-project"} tabs={workspaceTabs} />
 
           <div
             ref={editorPreviewRef}
@@ -12769,7 +13053,32 @@ ${macroEnd}
                   </button>
                 </div>
               ) : null}
-              {showWelcome ? (
+              {knowledgeGraphActive ? (
+                <div
+                  className="knowledge-graph-tab"
+                  role="tabpanel"
+                  aria-label="Knowledge Graph"
+                >
+                  <KnowledgeGraphView
+                    graph={knowledgeGraph}
+                    params={knowledgeGraphParams}
+                    onParamsChange={setKnowledgeGraphParams}
+                    entriesByKey={citationEntriesByKey}
+                    filter={graphFilter}
+                    viewState={graphViewState}
+                    onViewStateChange={setGraphViewState}
+                    onInsertCitation={insertCitationKey}
+                    onRecommendForSelection={recommendCitationsForSelection}
+                    onClearFilter={() =>
+                      setGraphFilter({ keys: null, label: "All bibliography entries" })
+                    }
+                    bibFiles={citationAnalysis.bibFiles}
+                    onAppendBibEntry={handleAppendBibEntry}
+                    onOpenExternal={openExternalLink}
+                    onPlanDiscoveryWithAi={planKnowledgeGraphDiscoveryWithAi}
+                  />
+                </div>
+              ) : showWelcome ? (
                 <div className="welcome-page">
                   <div className="welcome-hero">
                     <AppIcon className="welcome-brand" />
@@ -13216,39 +13525,6 @@ ${macroEnd}
               </>
             ) : null}
           </div>
-
-          {knowledgeGraphOpen && (
-            <div className="tikz-modal-overlay kg-modal-overlay">
-              <div className="tikz-modal-header">
-                <span className="tikz-modal-title">Knowledge Graph</span>
-                <button
-                  className="tikz-modal-close"
-                  onClick={() => setKnowledgeGraphOpen(false)}
-                  aria-label="Close Knowledge Graph"
-                  title="Close Knowledge Graph (Esc)"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-              <div className="tikz-modal-content kg-modal-content">
-                <KnowledgeGraphView
-                  graph={knowledgeGraph}
-                  params={knowledgeGraphParams}
-                  onParamsChange={setKnowledgeGraphParams}
-                  entriesByKey={citationEntriesByKey}
-                  onInsertCitation={(key) => {
-                    insertCitationKey(key);
-                    setKnowledgeGraphOpen(false);
-                  }}
-                  onRecommendForSelection={recommendCitationsForSelection}
-                  bibFiles={citationAnalysis.bibFiles}
-                  onAppendBibEntry={handleAppendBibEntry}
-                  onOpenExternal={openExternalLink}
-                  onPlanDiscoveryWithAi={planKnowledgeGraphDiscoveryWithAi}
-                />
-              </div>
-            </div>
-          )}
 
           {tikzCanvasOpen && (
             <div className="tikz-modal-overlay">

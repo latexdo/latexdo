@@ -3,6 +3,7 @@ import type { AiAccessConfig } from "./aiConfig";
 import type { ToolSchema } from "./aiTypes";
 
 export interface PromptContext {
+  workspaceTab?: { id: string; label: string; kind: string } | null;
   userName: string;
   projectName: string;
   hasProject?: boolean;
@@ -93,11 +94,13 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   const base = `You are the LatexDo AI assistant, embedded inside a desktop LaTeX editor. ${who}You help write, edit, debug, and improve LaTeX documents.
 
 ${projectLine}
+${ctx.workspaceTab ? `AI target tab: "${ctx.workspaceTab.label}" (type: ${ctx.workspaceTab.kind}). This is the user's chosen workspace target for this turn, even if they later view another tab.` : ""}
 ${accessSummary}
 ${toolSummary}${fileListing(ctx.projectFiles)}${activeDocSection(ctx.activeDocument)}
 
 Guidelines:
 ${projectGuidelines}
+- When the AI target is a knowledge-graph tab, use get_knowledge_graph to inspect its bibliography and filter_knowledge_graph to change the visible entries. For "show entries related to my paper", call filter_knowledge_graph with mode related (or paper_path if specified). This uses the actual paper and bibliography. Do not merely describe a filter or claim it was applied without a successful tool result. For semantic subsets, inspect real entries, then filter by their keys. Explain that related results are citation/metadata matches, not verified scientific support. Reset with mode all when asked to show everything. View filtering does not edit files and needs no edit approval.
 - Never describe or summarize the project from file names alone — that produces vague guesses. When asked what the project/paper is about, first read the main .tex file (and the abstract/introduction) with read_file or get_active_document, then answer with concrete specifics: the actual topic, claims, and section contents.
 - Read files before editing them.
 - Before any edit, replacement, insertion, citation insertion, or file write, use the edit approval flow and wait for the user's approval. Never tell the user a change was applied until the tool result confirms it.

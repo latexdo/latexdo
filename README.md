@@ -20,6 +20,21 @@ npm run web
 
 The browser editor runs at `http://127.0.0.1:5173`.
 
+## Workspace tabs and AI
+
+The Knowledge button opens the bibliography graph as an editor tab. Drag tabs to
+reorder them, or focus a tab and press Alt+Shift+Left/Right. Closing the graph
+returns to your document without discarding its unsaved changes.
+
+In AI chat, use **Work with tab** to follow the active tab or pin a particular
+file or the Knowledge Graph. A request keeps its target while you browse other
+tabs. With the graph selected, ask “Show only entries related to my paper” to
+filter the visible bibliography. Matching uses citations and bibliography metadata
+against the root paper and its included sources, including unsaved text. It does
+not verify scientific support or edit `.bib` files. **Show all entries** resets
+the view. Graph tools require Current editor and Bibliography access; matching
+against the paper also requires Project files access in AI settings.
+
 ## LaTeX Toolchain
 
 Desktop PDF compilation uses the TeX tools installed on the user's machine.

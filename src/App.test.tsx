@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import * as aiClient from "./features/ai/aiClient";
 import { createEditorHarness } from "./__tests__/editorHarness";
 import { fallbackExtensionCatalog, type LatexDoExtensionCatalog } from "./extensions";
 import { aiConfigStorageKey, defaultAiConfig } from "./features/ai/aiConfig";
@@ -917,9 +918,7 @@ describe("App critical UI controls", () => {
 
     render(<App />);
 
-    const closeWelcome = document.querySelector(
-      ".welcome-tab .tab-close",
-    ) as HTMLElement | null;
+    const closeWelcome = screen.getByRole("button", { name: "Close Welcome" });
     expect(closeWelcome).not.toBeNull();
     fireEvent.click(closeWelcome as HTMLElement);
 
@@ -948,9 +947,7 @@ describe("App critical UI controls", () => {
 
     render(<App />);
 
-    const closeWelcome = document.querySelector(
-      ".welcome-tab .tab-close",
-    ) as HTMLElement | null;
+    const closeWelcome = screen.getByRole("button", { name: "Close Welcome" });
     expect(closeWelcome).not.toBeNull();
     fireEvent.click(closeWelcome as HTMLElement);
 
@@ -973,14 +970,12 @@ describe("App critical UI controls", () => {
       },
     });
 
-    const welcomeTab = document.querySelector(".welcome-tab") as HTMLElement | null;
+    const welcomeTab = screen.getByRole("tab", { name: "Welcome" });
     expect(welcomeTab).not.toBeNull();
     fireEvent.click(welcomeTab as HTMLElement);
     expect(screen.getByText("Start")).toBeVisible();
 
-    const closeWelcome = document.querySelector(
-      ".welcome-tab .tab-close",
-    ) as HTMLElement | null;
+    const closeWelcome = screen.getByRole("button", { name: "Close Welcome" });
     expect(closeWelcome).not.toBeNull();
     fireEvent.click(closeWelcome as HTMLElement);
 
@@ -1024,7 +1019,7 @@ describe("App critical UI controls", () => {
     expect(screen.getByLabelText("mock editor")).toHaveValue("Chapter original\n");
 
     const mainTab = within(document.querySelector(".document-tabs") as HTMLElement)
-      .getAllByRole("button")
+      .getAllByRole("tab")
       .find((button) => button.textContent?.includes("main.tex"));
     expect(mainTab).toBeDefined();
     fireEvent.click(mainTab as HTMLButtonElement);
@@ -2442,6 +2437,180 @@ describe("App critical UI controls", () => {
     });
   });
 
+  it("opens the knowledge graph as a reorderable tab and returns to the unsaved document", async () => {
+    installLatexDoMock();
+    Object.defineProperty(window, "requestAnimationFrame", {
+      configurable: true,
+      value: vi.fn(() => 1),
+    });
+    render(<App />);
+    await openProjectFromWelcome();
+    fireEvent.change(await screen.findByLabelText("mock editor"), {
+      target: { value: "Unsaved paper prose" },
+    });
+    fireEvent.click(screen.getByTitle("Knowledge graph"));
+    expect(screen.getByRole("tab", { name: "Knowledge Graph" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByRole("tabpanel", { name: "Knowledge Graph" })).toBeVisible();
+    expect(document.querySelector(".kg-modal-overlay")).toBeNull();
+    fireEvent.click(screen.getByTitle("Knowledge graph"));
+    expect(screen.getAllByRole("tab", { name: "Knowledge Graph" })).toHaveLength(1);
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Knowledge Graph" }), {
+      key: "ArrowLeft",
+      altKey: true,
+      shiftKey: true,
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "main.tex" }));
+    expect(screen.getByLabelText("mock editor")).toHaveValue("Unsaved paper prose");
+    fireEvent.click(screen.getByRole("tab", { name: "Knowledge Graph" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close Knowledge Graph" }));
+    expect(screen.queryByRole("tab", { name: "Knowledge Graph" })).toBeNull();
+    expect(screen.getByLabelText("mock editor")).toHaveValue("Unsaved paper prose");
+  });
+
+  it("lets chat target the graph and actually filters its entries using unsaved paper text", async () => {
+    const api = installLatexDoMock();
+    Object.defineProperty(window, "requestAnimationFrame", {
+      configurable: true,
+      value: vi.fn(() => 1),
+    });
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    storeCompleteAiConfig({
+      provider: "cloud",
+      cloud: { ...defaultAiConfig.cloud, credentialConfigured: true },
+    });
+    api.listProject.mockResolvedValue([
+      ...entries,
+      {
+        name: "refs.bib",
+        path: "/Users/omar/project/refs.bib",
+        relativePath: "refs.bib",
+        type: "file",
+      },
+    ]);
+    api.readFile.mockImplementation(async (_id: string, path: string) =>
+      path === "refs.bib"
+        ? "@article{graph, title={Graph neural networks for citation recommendation}, author={Smith, Jane}, year={2024}}\n@article{marine, title={Marine biology of coral reefs}, author={Lee, Kai}, year={2020}}"
+        : "Old unrelated paper",
+    );
+    const generate = vi
+      .spyOn(aiClient, "generateStep")
+      .mockResolvedValueOnce({
+        type: "tool_calls",
+        content: "",
+        toolCalls: [
+          { id: "filter", name: "filter_knowledge_graph", args: { mode: "related" } },
+        ],
+      })
+      .mockResolvedValueOnce({
+        type: "text",
+        content: "Showing the matching references.",
+      });
+    render(<App />);
+    await openProjectFromWelcome();
+    fireEvent.change(await screen.findByLabelText("mock editor"), {
+      target: { value: "We study graph neural networks for citation recommendation." },
+    });
+    fireEvent.click(screen.getByTitle("Knowledge graph"));
+    await screen.findByText(/2 papers/);
+    fireEvent.click(screen.getByTitle("AI assistant"));
+    fireEvent.change(await screen.findByLabelText("AI target tab"), {
+      target: { value: "workspace:knowledge-graph" },
+    });
+    const composer = screen.getByPlaceholderText(/ask|message/i);
+    fireEvent.change(composer, {
+      target: { value: "Show me only entries related to my paper" },
+    });
+    fireEvent.keyDown(composer, { key: "Enter" });
+    await screen.findByText("Showing the matching references.");
+    expect(screen.getByText(/Related to main.tex.*1 of 2 entries/)).toBeVisible();
+    expect(document.querySelectorAll(".kg-node")).toHaveLength(1);
+    expect(generate.mock.calls[0][0].messages[0].content).toContain(
+      'AI target tab: "Knowledge Graph"',
+    );
+    expect(
+      generate.mock.calls[0][0].tools.some(
+        (tool) => tool.name === "get_active_document",
+      ),
+    ).toBe(false);
+    expect(api.writeFile).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "main.tex" }));
+    expect(screen.getByLabelText("AI target tab")).toHaveValue(
+      "workspace:knowledge-graph",
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Knowledge Graph" }));
+    expect(document.querySelectorAll(".kg-node")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Show all entries" }));
+    act(() => {
+      vi.mocked(window.requestAnimationFrame).mock.calls.at(-1)?.[0](0);
+    });
+    expect(document.querySelectorAll(".kg-node")).toHaveLength(2);
+    generate.mockRestore();
+  });
+
+  it("keeps a pinned document as the AI target when the user switches to the graph during a reply", async () => {
+    installLatexDoMock();
+    Object.defineProperty(window, "requestAnimationFrame", {
+      configurable: true,
+      value: vi.fn(() => 1),
+    });
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    storeCompleteAiConfig({
+      provider: "cloud",
+      cloud: { ...defaultAiConfig.cloud, credentialConfigured: true },
+    });
+    let respond!: (step: import("./features/ai/aiTypes").GenerationStep) => void;
+    const generate = vi
+      .spyOn(aiClient, "generateStep")
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            respond = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ type: "text", content: "Read the chosen document." });
+    render(<App />);
+    await openProjectFromWelcome();
+    fireEvent.change(await screen.findByLabelText("mock editor"), {
+      target: { value: "Unsaved target document" },
+    });
+    fireEvent.click(screen.getByTitle("AI assistant"));
+    fireEvent.change(await screen.findByLabelText("AI target tab"), {
+      target: { value: entries[0].path },
+    });
+    const composer = screen.getByPlaceholderText(/Ask the AI/);
+    fireEvent.change(composer, { target: { value: "Read this tab" } });
+    fireEvent.keyDown(composer, { key: "Enter" });
+    await waitFor(() => expect(generate).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByTitle("Knowledge graph"));
+    await act(async () =>
+      respond({
+        type: "tool_calls",
+        content: "",
+        toolCalls: [{ id: "doc", name: "get_active_document", args: {} }],
+      }),
+    );
+    await screen.findByText("Read the chosen document.");
+    expect(
+      generate.mock.calls[1][0].messages.find((message) => message.role === "tool")
+        ?.content,
+    ).toBe("Unsaved target document");
+    expect(screen.getByLabelText("AI target tab")).toHaveValue(entries[0].path);
+    expect(screen.getByRole("tab", { name: "Knowledge Graph" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    generate.mockRestore();
+  });
+
   it("creates AI chat tabs from the plus button and closes them", async () => {
     installLatexDoMock();
     Object.defineProperty(HTMLElement.prototype, "scrollTo", {
@@ -2806,7 +2975,7 @@ describe("App critical UI controls", () => {
         name: /main\.tex \(index\).*main\.tex \(working tree\)/i,
       }),
     ).toBeVisible();
-    expect(screen.getByRole("button", { name: /^main\.tex$/i })).toBeVisible();
+    expect(screen.getByRole("tab", { name: /^main\.tex$/i })).toBeVisible();
 
     fireEvent.click(
       screen.getByRole("button", {
@@ -3286,6 +3455,42 @@ describe("App critical UI controls", () => {
     });
     return { api, ...harness };
   }
+  it.each([false, true])(
+    "returns graph citations to the original editor through undoable edits (stale=%s)",
+    async (stale) => {
+      const h = await mountEditorIntegration("A computing claim.");
+      h.select(18);
+      Object.defineProperty(window, "requestAnimationFrame", {
+        configurable: true,
+        value: vi.fn(() => 1),
+      });
+      fireEvent.click(screen.getByTitle("Knowledge graph"));
+      await screen.findByText(/1 papers/);
+      act(() => {
+        vi.mocked(window.requestAnimationFrame).mock.calls.at(-1)?.[0](0);
+      });
+      fireEvent.pointerDown(document.querySelector(".kg-node")!, { pointerId: 1 });
+      fireEvent.click(screen.getByRole("button", { name: "Insert citation" }));
+      await screen.findByLabelText("mock editor");
+      expect(h.editor.executeEdits).not.toHaveBeenCalled();
+      if (stale) h.setText("Newer source content");
+      h.editor.executeEdits.mockImplementationOnce(() => true);
+      await act(async () => {
+        editorLifecycle.onMount!(h.editor);
+      });
+      if (stale) {
+        expect(h.editor.executeEdits).not.toHaveBeenCalled();
+        expect(screen.getByText(/source changed or is read-only/i)).toBeVisible();
+      } else {
+        expect(h.editor.executeEdits).toHaveBeenCalledWith("knowledge-graph", [
+          expect.objectContaining({ text: expect.stringContaining("ada2026") }),
+        ]);
+        expect(h.editor.pushUndoStop).toHaveBeenCalledTimes(2);
+      }
+      expect(screen.getByRole("tab", { name: "Knowledge Graph" })).toBeInTheDocument();
+    },
+  );
+
   it("editor integration registers real language providers, themes and command actions", async () => {
     const h = await mountEditorIntegration(
       "\\section{Intro}\n\\begin{itemize}\n\\item First\n\\end{itemize}\n\\url{https://latexdo.org}\n",

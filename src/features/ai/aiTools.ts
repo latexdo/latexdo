@@ -7,6 +7,7 @@
 
 import type { AiAccessConfig } from "./aiConfig";
 import type { ToolResult, ToolSchema } from "./aiTypes";
+import type { GraphFilterRequest } from "../graph/graphWorkspace";
 
 export interface EditProposal {
   /** File the edit targets (relative path). */
@@ -25,6 +26,13 @@ export interface EditProposal {
  * real implementations; tests can pass fakes.
  */
 export interface AgentContext {
+  workspaceTab?: () => {
+    id: string;
+    label: string;
+    kind: "document" | "knowledge-graph" | "other";
+  } | null;
+  getKnowledgeGraph?: (offset: number) => Promise<string>;
+  filterKnowledgeGraph?: (request: GraphFilterRequest) => Promise<string>;
   /** True only when a real LatexDo project/workspace is open. */
   hasProject?: () => boolean;
   projectName: () => string;
@@ -48,6 +56,7 @@ export interface AgentContext {
 }
 
 export interface AgentToolCapabilities {
+  hasKnowledgeGraph?: boolean;
   hasProject: boolean;
   hasActiveDocument: boolean;
   hasSelection: boolean;
@@ -55,6 +64,38 @@ export interface AgentToolCapabilities {
 }
 
 export const agentToolSchemas: ToolSchema[] = [
+  {
+    name: "get_knowledge_graph",
+    description:
+      "Inspect the targeted Knowledge Graph tab: real bibliography entries, current visible keys and filters, and the root paper path. Returns up to 200 entries; use offset for more.",
+    params: {
+      offset: { type: "integer", description: "Entry offset, starting at 0." },
+    },
+    required: [],
+  },
+  {
+    name: "filter_knowledge_graph",
+    description:
+      "Change which bibliography entries are SHOWN in the targeted Knowledge Graph tab. Use related for entries relevant to the user's paper (reads the root paper and included sources, including unsaved edits); cited for cited entries; query for metadata search; keys for a chosen subset; all to reset. This changes only the view, never bibliography files. Results include real keys and relevance evidence.",
+    params: {
+      mode: {
+        type: "string",
+        enum: ["all", "cited", "related", "query", "keys"],
+        description: "Filter to display.",
+      },
+      query: { type: "string", description: "Metadata search text for query mode." },
+      keys: {
+        type: "string",
+        description: "Comma-separated real bibliography keys for keys mode.",
+      },
+      paper_path: {
+        type: "string",
+        description:
+          "Optional project-relative paper path for related mode; defaults to the root paper.",
+      },
+    },
+    required: ["mode"],
+  },
   {
     name: "list_files",
     description: "List the relative paths of files in the current LaTeX project.",
@@ -192,6 +233,13 @@ export function availableAgentToolSchemas(caps: AgentToolCapabilities): ToolSche
   if (!caps.hasProject) return [];
   return agentToolSchemas.filter((tool) => {
     switch (tool.name) {
+      case "get_knowledge_graph":
+      case "filter_knowledge_graph":
+        return Boolean(
+          caps.hasKnowledgeGraph &&
+          caps.access.currentEditor &&
+          caps.access.bibliography,
+        );
       case "list_files":
       case "read_file":
       case "write_file":
@@ -220,6 +268,12 @@ export function unavailableToolMessage(
 ): string {
   if (!caps.hasProject) {
     return "No LatexDo project is open, so I do not have project tools for that action. Open or create a project first, then I can inspect files or propose edits.";
+  }
+  if (toolName === "get_knowledge_graph" || toolName === "filter_knowledge_graph") {
+    if (!caps.access.currentEditor || !caps.access.bibliography) {
+      return "Knowledge graph tools need Current editor and Bibliography and citations access enabled in AI settings.";
+    }
+    return "Choose Knowledge Graph in the AI target tab selector before asking me to inspect or filter it.";
   }
   if (
     (toolName === "list_files" ||
@@ -290,6 +344,36 @@ export async function executeTool(
   void opts;
   try {
     switch (name) {
+      case "get_knowledge_graph": {
+        if (!ctx.getKnowledgeGraph)
+          return fail("Choose the Knowledge Graph tab as the AI target first.");
+        const offset =
+          typeof args.offset === "number" && Number.isFinite(args.offset)
+            ? Math.max(0, Math.floor(args.offset))
+            : 0;
+        return ok(await ctx.getKnowledgeGraph(offset));
+      }
+      case "filter_knowledge_graph": {
+        if (!ctx.filterKnowledgeGraph)
+          return fail("Choose the Knowledge Graph tab as the AI target first.");
+        const mode = argStr(args, "mode");
+        if (!["all", "cited", "related", "query", "keys"].includes(mode))
+          return fail(
+            "Choose a valid graph filter mode: all, cited, related, query, or keys.",
+          );
+        if (mode === "query" && !argStr(args, "query").trim())
+          return fail("Missing 'query'.");
+        if (mode === "keys" && !argStr(args, "keys").trim())
+          return fail("Missing 'keys'.");
+        return ok(
+          await ctx.filterKnowledgeGraph({
+            mode: mode as GraphFilterRequest["mode"],
+            query: argStr(args, "query"),
+            keys: argStr(args, "keys"),
+            paperPath: argStr(args, "paper_path"),
+          }),
+        );
+      }
       case "list_files": {
         const files = await ctx.listFiles();
         return ok(files.length ? files.join("\n") : "(no files)");

@@ -8,7 +8,11 @@ vi.mock("./aiClient", () => ({
   generateStep: vi.fn(),
   abortGeneration: vi.fn(async () => {}),
 }));
-function setup(configChanges: Partial<AiConfig> = {}, key = "chat") {
+function setup(
+  configChanges: Partial<AiConfig> = {},
+  key = "chat",
+  contextChanges: Partial<AgentContext> = {},
+) {
   const ctx: AgentContext = {
     hasProject: () => true,
     projectName: () => "Paper",
@@ -24,6 +28,7 @@ function setup(configChanges: Partial<AiConfig> = {}, key = "chat") {
     insertCitation: vi.fn(async () => "smith"),
     recommendCitations: vi.fn(async () => "smith recommendation"),
     requestApproval: vi.fn(async () => true),
+    ...contextChanges,
   };
   const config = { ...defaultAiConfig, provider: "ollama" as const, ...configChanges };
   return { ...renderHook(() => useAiAgent(config, ctx, key)), ctx, config };
@@ -38,6 +43,86 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("AI conversation lifecycle", () => {
+  it.each(["local", "cloud"] as const)(
+    "supports graph actions with the %s protocol and no text-editor target",
+    async (provider) => {
+      const filter = vi.fn(async () =>
+        JSON.stringify({ applied: true, keys: ["smith"] }),
+      );
+      vi.mocked(generateStep)
+        .mockResolvedValueOnce(
+          provider === "local"
+            ? {
+                type: "text",
+                content: '{"tool":"filter_knowledge_graph","args":{"mode":"related"}}',
+              }
+            : {
+                type: "tool_calls",
+                content: "",
+                toolCalls: [
+                  {
+                    id: "graph",
+                    name: "filter_knowledge_graph",
+                    args: { mode: "related" },
+                  },
+                ],
+              },
+        )
+        .mockResolvedValueOnce({ type: "text", content: "Filtered." });
+      const { result } = setup({ provider }, "graph-chat", {
+        activeFilePath: () => null,
+        selection: () => ({ text: "", hasSelection: false }),
+        workspaceTab: () => ({
+          id: "graph",
+          label: "Knowledge Graph",
+          kind: "knowledge-graph",
+        }),
+        filterKnowledgeGraph: filter,
+      });
+      await act(async () => result.current.send("Show related entries"));
+      expect(filter).toHaveBeenCalledWith(expect.objectContaining({ mode: "related" }));
+      expect(vi.mocked(generateStep).mock.calls[0][0].messages[0].content).toContain(
+        'AI target tab: "Knowledge Graph"',
+      );
+      const tools = vi
+        .mocked(generateStep)
+        .mock.calls[0][0].tools.map((tool) => tool.name);
+      expect(tools).not.toContain("get_active_document");
+      expect(result.current.pendingApproval).toBeNull();
+    },
+  );
+
+  it.each(["currentEditor", "bibliography"] as const)(
+    "does not expose graph actions when %s access is off",
+    async (permission) => {
+      const filter = vi.fn(async () => "filtered");
+      vi.mocked(generateStep).mockResolvedValueOnce({
+        type: "tool_calls",
+        content: "",
+        toolCalls: [
+          { id: "graph", name: "filter_knowledge_graph", args: { mode: "all" } },
+        ],
+      });
+      const { result } = setup(
+        { access: { ...defaultAiConfig.access, [permission]: false } },
+        "private-graph",
+        {
+          workspaceTab: () => ({
+            id: "graph",
+            label: "Knowledge Graph",
+            kind: "knowledge-graph",
+          }),
+          filterKnowledgeGraph: filter,
+        },
+      );
+      await act(async () => result.current.send("Show everything"));
+      expect(filter).not.toHaveBeenCalled();
+      expect(
+        vi.mocked(generateStep).mock.calls[0][0].tools.map((tool) => tool.name),
+      ).not.toContain("filter_knowledge_graph");
+    },
+  );
+
   it.each(["local", "ollama", "cloud"] as const)(
     "uses the %s runtime and persists a completed conversation",
     async (provider) => {

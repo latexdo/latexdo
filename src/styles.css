@@ -2777,9 +2777,65 @@ button {
   display: flex;
   flex-shrink: 0;
   min-width: 0;
-  overflow: hidden;
+  overflow-x: auto;
   border-bottom: 1px solid var(--editor-border);
   background: var(--editor-chrome-bg);
+}
+
+.workspace-tab-shell {
+  position: relative;
+  flex: 0 0 auto;
+}
+.workspace-tab-shell .document-tab {
+  padding-right: 30px;
+}
+.workspace-tab-shell.drop-target {
+  box-shadow: inset 3px 0 var(--accent);
+}
+.workspace-tab-close {
+  position: absolute;
+  right: 7px;
+  top: 9px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.knowledge-graph-tab {
+  display: flex;
+  grid-row: 1 / -1;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.ai-workspace-target {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.ai-workspace-target select {
+  width: 100%;
+  padding: 6px;
+  border: 1px solid var(--border-input);
+  border-radius: 5px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+.kg-filter-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
 }
 
 .document-tab {
@@ -15467,9 +15523,6 @@ button {
 }
 
 /* ---------- Knowledge graph ---------- */
-.kg-modal-content {
-  padding: 0;
-}
 .kg-view {
   display: flex;
   flex-direction: column;

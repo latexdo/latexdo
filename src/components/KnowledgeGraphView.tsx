@@ -27,13 +27,23 @@ import {
 } from "../features/graph/scholarlyDiscovery";
 import type { AiDiscoveryPlan } from "../features/graph/aiDiscoveryPlanner";
 
+import {
+  defaultGraphViewState,
+  type GraphViewState,
+  type GraphViewFilter,
+} from "../features/graph/graphWorkspace";
+
 interface KnowledgeGraphViewProps {
+  filter?: GraphViewFilter;
+  viewState?: GraphViewState;
+  onViewStateChange?: (state: GraphViewState) => void;
+  onClearFilter?: () => void;
   graph: KnowledgeGraph;
   params: KnowledgeGraphParams;
   onParamsChange: (params: KnowledgeGraphParams) => void;
   entriesByKey: Map<string, CitationEntry>;
   /** Insert the key at the cursor using the active document's citation style. */
-  onInsertCitation: (key: string) => void;
+  onInsertCitation?: (key: string) => void;
   /** Ask the AI to recommend citations for the current selection/paragraph. */
   onRecommendForSelection?: () => void;
   /** Project BibTeX files that can receive discovered online papers. */
@@ -80,6 +90,10 @@ function seededPosition(index: number, total: number): { x: number; y: number } 
 
 export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
   graph,
+  filter,
+  viewState,
+  onViewStateChange,
+  onClearFilter,
   params,
   onParamsChange,
   entriesByKey,
@@ -90,9 +104,23 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
   onOpenExternal,
   onPlanDiscoveryWithAi,
 }) => {
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [citedOnly, setCitedOnly] = useState(false);
+  const [localViewState, setLocalViewState] = useState(defaultGraphViewState);
+  const currentViewState = viewState ?? localViewState;
+  const { selectedKey, query, citedOnly } = currentViewState;
+  const updateViewState = useCallback(
+    (patch: Partial<GraphViewState>) => {
+      const next = { ...currentViewState, ...patch };
+      if (onViewStateChange) onViewStateChange(next);
+      else setLocalViewState(next);
+    },
+    [currentViewState, onViewStateChange],
+  );
+  const setSelectedKey = useCallback(
+    (selectedKey: string | null) => updateViewState({ selectedKey }),
+    [updateViewState],
+  );
+  const setQuery = (query: string) => updateViewState({ query });
+  const setCitedOnly = (citedOnly: boolean) => updateViewState({ citedOnly });
   const [showControls, setShowControls] = useState(false);
   const [onlineDiscovery, setOnlineDiscovery] = useState(false);
   const [onlineResult, setOnlineResult] = useState<ScholarlyDiscoveryResult>({
@@ -116,6 +144,10 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
   // Only the strongest-connected nodes are drawn when a library is huge.
   const rendered = useMemo(() => {
     let nodes = graph.nodes;
+    if (filter?.keys !== null && filter?.keys !== undefined) {
+      const keys = new Set(filter.keys);
+      nodes = nodes.filter((node) => keys.has(node.key));
+    }
     if (citedOnly) nodes = nodes.filter((node) => node.cited);
     if (nodes.length > maxRenderedNodes) {
       nodes = [...nodes].sort((a, b) => b.degree - a.degree).slice(0, maxRenderedNodes);
@@ -125,7 +157,7 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
       (edge) => keySet.has(edge.source) && keySet.has(edge.target),
     );
     return { nodes, edges, keySet };
-  }, [graph, citedOnly]);
+  }, [graph, citedOnly, filter]);
 
   const positions = useRef(new Map<string, NodePosition>());
   const dragging = useRef<string | null>(null);
@@ -329,7 +361,7 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
       setSelectedKey(key);
       reheat();
     },
-    [reheat],
+    [reheat, setSelectedKey],
   );
 
   const onPointerMove = useCallback(
@@ -359,10 +391,13 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
     panning.current = null;
   }, []);
 
-  const onBackgroundPointerDown = useCallback((event: React.PointerEvent) => {
-    panning.current = { x: event.clientX, y: event.clientY };
-    setSelectedKey(null);
-  }, []);
+  const onBackgroundPointerDown = useCallback(
+    (event: React.PointerEvent) => {
+      panning.current = { x: event.clientX, y: event.clientY };
+      setSelectedKey(null);
+    },
+    [setSelectedKey],
+  );
 
   const onWheel = useCallback((event: React.WheelEvent) => {
     const delta = -event.deltaY * 0.0015;
@@ -429,6 +464,23 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
 
   return (
     <div className="kg-view">
+      {filter?.keys !== null && filter?.keys !== undefined ? (
+        <div className="kg-filter-banner" role="status">
+          <span>
+            {filter.label} · {rendered.nodes.length} of {graph.nodes.length} entries
+          </span>
+          <button
+            type="button"
+            className="kg-btn"
+            onClick={() => {
+              setCitedOnly(false);
+              onClearFilter?.();
+            }}
+          >
+            Show all entries
+          </button>
+        </div>
+      ) : null}
       <div className="kg-toolbar">
         <div className="kg-search">
           <Search size={13} />
@@ -645,8 +697,14 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
       <div className="kg-canvas-wrap">
         {rendered.nodes.length === 0 ? (
           <div className="kg-empty">
-            No bibliography entries yet. Add a <code>.bib</code> file (or citations) to
-            build the knowledge graph.
+            {graph.nodes.length ? (
+              "No entries match the current filters. Try showing all entries."
+            ) : (
+              <>
+                No bibliography entries yet. Add a <code>.bib</code> file (or citations)
+                to build the knowledge graph.
+              </>
+            )}
           </div>
         ) : (
           <svg
@@ -755,7 +813,13 @@ export const KnowledgeGraphView: React.FC<KnowledgeGraphViewProps> = ({
               <button
                 type="button"
                 className="kg-cite-btn"
-                onClick={() => onInsertCitation(selectedNode.key)}
+                onClick={() => onInsertCitation?.(selectedNode.key)}
+                disabled={!onInsertCitation}
+                title={
+                  !onInsertCitation
+                    ? "Open a LaTeX document to insert a citation"
+                    : undefined
+                }
               >
                 <Quote size={13} /> Insert citation
               </button>
