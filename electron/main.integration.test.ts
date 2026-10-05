@@ -933,6 +933,41 @@ describe("signed update feed checks", () => {
       manualDownload: false,
     });
   });
+
+  it("checks both website documents freshly and selects the newer published installer version", async () => {
+    const payload = feed();
+    await serve(payload);
+    fetchMock.mockImplementation(
+      async (url: string) =>
+        new Response(
+          JSON.stringify(
+            url.includes("/updates/")
+              ? payload
+              : {
+                  schemaVersion: 1,
+                  product: "LatexDo",
+                  version: "0.5.0",
+                  files: [],
+                },
+          ),
+        ),
+    );
+    fetchMock.mockClear();
+    expect(await call("app:check-updates")).toMatchObject({
+      currentVersion: "0.3.0",
+      latestVersion: "0.5.0",
+      updateAvailable: true,
+    });
+    expect(await call("app:check-updates")).toMatchObject({ latestVersion: "0.5.0" });
+    const calls = fetchMock.mock.calls;
+    expect(calls).toHaveLength(4);
+    expect(new Set(calls.map(([url]) => url)).size).toBe(4);
+    for (const [url, options] of calls) {
+      expect(new URL(url).searchParams.has("_latexdo_check")).toBe(true);
+      expect(options.cache).toBe("no-store");
+      expect(options.headers["Cache-Control"]).toContain("no-cache");
+    }
+  });
 });
 
 describe("desktop recovery and hosted compilation", () => {

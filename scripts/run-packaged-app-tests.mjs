@@ -1,4 +1,5 @@
-import { access, readdir } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import os from "node:os";
 import { constants as fsConstants } from "node:fs";
 import { spawn } from "node:child_process";
 import path from "node:path";
@@ -107,6 +108,34 @@ function runPackagedTest(executable, args) {
 const runE2e = process.argv.includes("--e2e");
 const executable = await findPackagedExecutable();
 console.log(`[packaged-test] Using ${executable}`);
+const version = JSON.parse(
+  await readFile(path.join(root, "package.json"), "utf8"),
+).version;
+const probeDirectory = await mkdtemp(path.join(os.tmpdir(), "latexdo-packaged-probe-"));
+try {
+  const receipt = path.join(probeDirectory, "version-receipt");
+  await runPackagedTest(executable, ["--latexdo-verify-update", version, receipt]);
+  if ((await readFile(receipt, "utf8")) !== version) {
+    throw new Error("Packaged updater probe did not verify the actual app version.");
+  }
+  let rejectedMismatch = false;
+  try {
+    await runPackagedTest(executable, [
+      "--latexdo-verify-update",
+      "0.0.0-invalid-update",
+      path.join(probeDirectory, "wrong-version"),
+    ]);
+  } catch {
+    rejectedMismatch = true;
+  }
+  if (!rejectedMismatch)
+    throw new Error("Packaged updater probe accepted a wrong version.");
+  console.log(
+    `[packaged-test] Updater verified app.getVersion() = ${version} and rejected a mismatched version.`,
+  );
+} finally {
+  await rm(probeDirectory, { recursive: true, force: true });
+}
 await runPackagedTest(executable, ["--smoke-test"]);
 if (runE2e) {
   await runPackagedTest(executable, ["--e2e-test"]);

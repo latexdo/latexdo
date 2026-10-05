@@ -1683,6 +1683,48 @@ describe("App critical UI controls", () => {
     });
   });
 
+  it("checks the website immediately on launch and never calls a failed check up to date", async () => {
+    const api = installLatexDoMock({
+      updateResult: {
+        currentVersion: "1.5.0",
+        latestVersion: null,
+        releaseUrl: null,
+        updateAvailable: false,
+        error: "Website unavailable",
+      },
+    });
+    render(<App />);
+    expect(api.checkForUpdates).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByLabelText(/open settings/i));
+    fireEvent.click(screen.getByRole("button", { name: "Updates" }));
+    fireEvent.click(await screen.findByRole("button", { name: /check for updates/i }));
+    expect(
+      await screen.findByText("Update check failed: Website unavailable"),
+    ).toBeVisible();
+    expect(screen.queryByText("LatexDo 1.5.0 is up to date.")).not.toBeInTheDocument();
+  });
+
+  it("reports a failed handoff instead of saying the update is ready", async () => {
+    const updateResult = {
+      currentVersion: "1.4.0",
+      latestVersion: "1.5.0",
+      releaseUrl: null,
+      updateAvailable: true,
+    };
+    installLatexDoMock({
+      updateResult,
+      updateNowResult: { ...updateResult, installerPath: null, opened: false },
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /update now/i }));
+    expect(
+      await screen.findAllByText(
+        "Update failed: the installer for LatexDo 1.5.0 did not start.",
+      ),
+    ).not.toHaveLength(0);
+    expect(screen.queryByText(/update is ready/i)).not.toBeInTheDocument();
+  });
+
   it("shows the automatic installer handoff when the updater quits the old app", async () => {
     const updateResult: UpdateCheckResult = {
       currentVersion: "0.1.0",

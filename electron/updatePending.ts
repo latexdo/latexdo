@@ -24,12 +24,15 @@ export interface PendingUpdateRecord {
   lastFailure?: string | null;
   lastAttemptAt?: string | null;
   completedAt?: string | null;
+  installedPath?: string;
+  failurePath?: string;
 }
 
 export interface BeginPendingUpdateInput {
   fromVersion: string;
   expectedVersion: string;
   installerSha256: string;
+  installedPath?: string;
 }
 
 function pendingUpdateFilePath(dataDirectory: string): string {
@@ -88,6 +91,8 @@ export async function beginPendingUpdate(
     fromVersion: input.fromVersion,
     expectedVersion: input.expectedVersion,
     installerSha256: input.installerSha256,
+    installedPath: input.installedPath,
+    failurePath: path.join(dataDirectory, `update-failure-${randomUUID()}.txt`),
     startedAt: new Date().toISOString(),
     state: "installing",
     attempts: sameVersionAttempt ? (previous?.attempts ?? 0) : 0,
@@ -166,17 +171,35 @@ export async function describePendingUpdate(
 export async function resolvePendingUpdate(
   dataDirectory: string,
   currentVersion: string,
+  installedPath?: string,
 ): Promise<UpdateAttemptResolution> {
   const record = await loadPendingUpdate(dataDirectory);
   if (!record) {
     return resolutionFromRecord(null, currentVersion);
   }
 
-  if (record.state === "confirmed" || record.state === "failed") {
+  if (record.state === "failed") {
     return resolutionFromRecord(record, currentVersion);
   }
 
-  if (versionsEquivalent(currentVersion, record.expectedVersion)) {
+  const helperFailure = record.failurePath
+    ? await readFile(record.failurePath, "utf8").catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return "";
+          throw error;
+        },
+      )
+    : "";
+  const wrongPath = Boolean(
+    record.installedPath && record.installedPath !== installedPath,
+  );
+  if (
+    !helperFailure &&
+    !wrongPath &&
+    versionsEquivalent(currentVersion, record.expectedVersion)
+  ) {
+    if (record.state === "confirmed")
+      return resolutionFromRecord(record, currentVersion);
     const confirmed = await markPendingUpdateConfirmed(dataDirectory, record);
     return resolutionFromRecord(confirmed, currentVersion);
   }
@@ -184,7 +207,10 @@ export async function resolvePendingUpdate(
   const failed = await markPendingUpdateFailed(
     dataDirectory,
     record,
-    "installed-version-mismatch",
+    helperFailure.trim() ||
+      (wrongPath
+        ? "installed-application-path-mismatch"
+        : "installed-version-mismatch"),
   );
   return resolutionFromRecord(failed, currentVersion);
 }

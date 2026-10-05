@@ -102,6 +102,39 @@ describe("loadPendingUpdate", () => {
 });
 
 describe("resolvePendingUpdate", () => {
+  it("rejects a different installed path even when its version matches", async () => {
+    const directory = await temporaryDirectory();
+    await beginPendingUpdate(directory, {
+      fromVersion: "1.4.0",
+      expectedVersion: "1.5.0",
+      installerSha256: "abc",
+      installedPath: "/Applications/LatexDo.app",
+    });
+    const result = await resolvePendingUpdate(
+      directory,
+      "1.5.0",
+      "/Downloads/LatexDo.app",
+    );
+    expect(result.status).toBe("failed");
+    expect(result.error).toBe("installed-application-path-mismatch");
+  });
+
+  it("surfaces helper failures even if the running version matches", async () => {
+    const directory = await temporaryDirectory();
+    const record = await beginPendingUpdate(directory, {
+      fromVersion: "1.4.0",
+      expectedVersion: "1.5.0",
+      installerSha256: "abc",
+    });
+    await writeFile(
+      record.failurePath!,
+      "Update failed: could not verify installed files",
+    );
+    const result = await resolvePendingUpdate(directory, "1.5.0");
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("could not verify installed files");
+  });
+
   it("confirms when the running version matches the expected version", async () => {
     const directory = await temporaryDirectory();
     await beginPendingUpdate(directory, {
@@ -138,7 +171,7 @@ describe("resolvePendingUpdate", () => {
     expect(reloaded?.state).toBe("failed");
   });
 
-  it("leaves already resolved records unchanged", async () => {
+  it("invalidates a previous confirmation when an old build is reopened", async () => {
     const directory = await temporaryDirectory();
     let record = await beginPendingUpdate(directory, {
       fromVersion: "0.2.0",
@@ -148,8 +181,8 @@ describe("resolvePendingUpdate", () => {
     record = await markPendingUpdateConfirmed(directory, record);
 
     const resolution = await resolvePendingUpdate(directory, "0.0.1");
-    expect(resolution.status).toBe("confirmed");
-    expect((await loadPendingUpdate(directory))?.state).toBe("confirmed");
+    expect(resolution.status).toBe("failed");
+    expect((await loadPendingUpdate(directory))?.state).toBe("failed");
   });
 
   it("returns a none resolution when no record exists", async () => {

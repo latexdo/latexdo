@@ -525,7 +525,6 @@ interface AiChatTab {
   title: string;
 }
 const collaborationProjectReconciliationMs = 5 * 60_000;
-const startupUpdateCheckDelayMs = import.meta.env.MODE === "test" ? 0 : 2_000;
 const forceSetupWizardEveryDevLaunch = import.meta.env.MODE === "development";
 const aiChatTabsStorageKey = "latexdo.ai.chatTabs.v1";
 const aiChatStateStoragePrefix = "latexdo.ai.chatState.";
@@ -9447,7 +9446,9 @@ ${macroEnd}
     try {
       const result = await window.latexdo.checkForUpdates();
       setUpdateInfo(result);
-      if (result.updateAvailable && result.latestVersion) {
+      if (result.error) {
+        if (!options?.silent) setStatusMessage(`Update check failed: ${result.error}`);
+      } else if (result.updateAvailable && result.latestVersion) {
         setDismissedUpdateVersion((current) =>
           current && current !== result.latestVersion ? null : current,
         );
@@ -9478,6 +9479,7 @@ ${macroEnd}
 
   const updateNow = useCallback(async () => {
     setUpdatingNow(true);
+    setUpdateAttemptStatus(null);
     setUpdateProgress((current) => ({
       status: "checking",
       currentVersion:
@@ -9567,7 +9569,7 @@ ${macroEnd}
         );
       } else if (result.latestVersion) {
         setUpdateProgress((current) => ({
-          status: "done",
+          status: "error",
           currentVersion: result.currentVersion,
           latestVersion: result.latestVersion,
           fileName: current?.fileName ?? null,
@@ -9575,9 +9577,11 @@ ${macroEnd}
           transferredBytes: current?.transferredBytes ?? 1,
           totalBytes: current?.totalBytes ?? 1,
           percent: current?.percent ?? 100,
-          message: `LatexDo ${result.latestVersion} update is ready.`,
+          message: `Update failed: the installer for LatexDo ${result.latestVersion} did not start.`,
         }));
-        setStatusMessage(`LatexDo ${result.latestVersion} update is ready.`);
+        setStatusMessage(
+          `Update failed: the installer for LatexDo ${result.latestVersion} did not start.`,
+        );
       }
     } catch (error) {
       const message =
@@ -9881,7 +9885,7 @@ ${macroEnd}
         latestVersion: progress.latestVersion ?? current?.latestVersion ?? null,
         releaseUrl: current?.releaseUrl ?? null,
         updateAvailable:
-          progress.status === "done" ? false : (current?.updateAvailable ?? false),
+          progress.status === "confirmed" ? false : (current?.updateAvailable ?? false),
         automaticInstallAvailable: current?.automaticInstallAvailable,
         publishedAt: current?.publishedAt,
         channel: current?.channel,
@@ -9935,14 +9939,11 @@ ${macroEnd}
   }, []);
 
   useEffect(() => {
-    const startupTimer = window.setTimeout(() => {
-      void checkForUpdates({ silent: true });
-    }, startupUpdateCheckDelayMs);
+    void checkForUpdates({ silent: true });
     const interval = window.setInterval(() => {
       void checkForUpdates({ silent: true });
     }, updateCheckIntervalMs);
     return () => {
-      window.clearTimeout(startupTimer);
       window.clearInterval(interval);
     };
   }, [checkForUpdates]);

@@ -125,6 +125,8 @@ import {
   loadPendingUpdate,
   pendingUpdateAttemptLimitReached,
   resolvePendingUpdate,
+  markPendingUpdateFailed,
+  type PendingUpdateRecord,
 } from "./updatePending.js";
 import {
   isApprovedReleaseNotesFetchUrl,
@@ -138,6 +140,20 @@ import {
   recordConfirmedUpdate,
   shouldShowWhatsNew,
 } from "./updateExperience.js";
+
+import {
+  macUpdateHelper,
+  linuxUpdateHelper,
+  windowsUpdateHelper,
+} from "./updateHelpers.js";
+import { runUpdateVersionProbe } from "./updateVersionProbe.js";
+
+const probeExitCode = runUpdateVersionProbe(
+  process.argv,
+  app.isPackaged,
+  app.getVersion(),
+);
+if (probeExitCode !== null) app.exit(probeExitCode);
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -3329,7 +3345,8 @@ function updateResultFromDownloadsManifestPayload(
     ? compareLatexDoVersions(manifestVersion, currentVersion)
     : 0;
   const updateAvailable = comparison > 0;
-  const latestVersion = updateAvailable ? manifestVersion : currentVersion;
+  if (!manifestVersion) throw new Error("No website installer version found.");
+  const latestVersion = manifestVersion;
 
   return {
     currentVersion,
@@ -3561,7 +3578,17 @@ async function fetchWebsiteUpdateJson(
   const timeout = setTimeout(() => controller.abort(), updateFeedFetchTimeoutMs);
 
   try {
-    const response = await fetch(url, { headers, signal: controller.signal });
+    const freshUrl = new URL(url);
+    freshUrl.searchParams.set("_latexdo_check", randomUUID());
+    const response = await fetch(freshUrl.toString(), {
+      headers: {
+        ...headers,
+        "Cache-Control": "no-cache, no-store",
+        Pragma: "no-cache",
+      },
+      cache: "no-store",
+      signal: controller.signal,
+    });
 
     if (!response.ok) {
       throw new Error(`${url} returned ${response.status}`);
@@ -3594,7 +3621,17 @@ async function fetchWebsiteDownloadsManifestJson(
   const timeout = setTimeout(() => controller.abort(), updateFeedFetchTimeoutMs);
 
   try {
-    const response = await fetch(url, { headers, signal: controller.signal });
+    const freshUrl = new URL(url);
+    freshUrl.searchParams.set("_latexdo_check", randomUUID());
+    const response = await fetch(freshUrl.toString(), {
+      headers: {
+        ...headers,
+        "Cache-Control": "no-cache, no-store",
+        Pragma: "no-cache",
+      },
+      cache: "no-store",
+      signal: controller.signal,
+    });
 
     if (!response.ok) {
       throw new Error(`${url} returned ${response.status}`);
@@ -3692,17 +3729,34 @@ async function resolveWebsiteUpdate(
 ): Promise<ResolvedWebsiteUpdate> {
   const errors: string[] = [];
 
-  try {
-    return await fetchWebsiteUpdatePayload(updatesFeedUrl, currentVersion, headers);
-  } catch (error) {
-    errors.push(error instanceof Error ? error.message : String(error));
+  // Fetch both on every check. A still-valid signed feed can lag behind the
+  // website's installable packages during publication.
+  const responses = await Promise.allSettled([
+    fetchWebsiteUpdatePayload(updatesFeedUrl, currentVersion, headers),
+    fetchDownloadsManifestUpdatePayload(currentVersion, headers),
+  ]);
+  let newest: ResolvedWebsiteUpdate | null = null;
+  for (const response of responses) {
+    if (response.status === "rejected") {
+      errors.push(
+        response.reason instanceof Error
+          ? response.reason.message
+          : String(response.reason),
+      );
+      continue;
+    }
+    const candidate = response.value;
+    if (
+      !newest ||
+      compareLatexDoVersions(
+        candidate.result.latestVersion!,
+        newest.result.latestVersion!,
+      ) > 0
+    ) {
+      newest = candidate;
+    }
   }
-
-  try {
-    return await fetchDownloadsManifestUpdatePayload(currentVersion, headers);
-  } catch (error) {
-    errors.push(error instanceof Error ? error.message : String(error));
-  }
+  if (newest) return newest;
 
   return {
     result: {
@@ -3994,6 +4048,7 @@ async function spawnDetachedUpdater(
 async function launchMacDmgUpdater(
   installerPath: string,
   expectedVersion: string,
+  failurePath: string,
 ): Promise<void> {
   const appBundlePath = currentMacAppBundlePath();
   if (!appBundlePath) {
@@ -4005,68 +4060,7 @@ async function launchMacDmgUpdater(
   await mkdir(logsDirectory, { recursive: true });
   const helperPath = await writeUpdaterHelperScript(
     "latexdo-mac-updater-",
-    [
-      "#!/bin/sh",
-      "set -eu",
-      "",
-      'log_file="${LATEXDO_UPDATE_LOG:?}"',
-      'mkdir -p "$(dirname "$log_file")"',
-      'exec >>"$log_file" 2>&1',
-      "",
-      "echo \"[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Starting macOS update helper\"",
-      'echo "ExpectedVersion=${LATEXDO_UPDATE_EXPECTED_VERSION:-}"',
-      "",
-      'while kill -0 "${LATEXDO_UPDATE_APP_PID:?}" 2>/dev/null; do',
-      "  sleep 0.2",
-      "done",
-      "",
-      'mount_dir="$(mktemp -d "${TMPDIR:-/tmp}/latexdo-update-mount.XXXXXX")"',
-      'target_app="${LATEXDO_UPDATE_TARGET_APP:?}"',
-      'target_name="$(basename "$target_app")"',
-      'target_dir="$(dirname "$target_app")"',
-      'staged_app="$target_dir/.$target_name.update.$$"',
-      'backup_app="$target_dir/.$target_name.previous.$$"',
-      "",
-      "finish() {",
-      "  status=$?",
-      '  hdiutil detach "$mount_dir" -quiet >/dev/null 2>&1 || true',
-      '  rm -rf "$mount_dir" "$staged_app" "$(dirname "$0")"',
-      '  if [ "$status" -ne 0 ]; then',
-      '    open "${LATEXDO_UPDATE_DMG:?}" >/dev/null 2>&1 || true',
-      "  fi",
-      '  exit "$status"',
-      "}",
-      "trap finish EXIT",
-      "",
-      'hdiutil attach "${LATEXDO_UPDATE_DMG:?}" -nobrowse -readonly -mountpoint "$mount_dir"',
-      'source_app="$(find "$mount_dir" -maxdepth 1 -type d -name \'*.app\' -print -quit)"',
-      'if [ -z "$source_app" ]; then',
-      '  echo "The mounted update image does not contain an app bundle."',
-      "  exit 1",
-      "fi",
-      "",
-      'rm -rf "$staged_app" "$backup_app"',
-      'ditto "$source_app" "$staged_app"',
-      'if [ ! -x "$staged_app/Contents/MacOS/${LATEXDO_UPDATE_EXECUTABLE_NAME:?}" ]; then',
-      '  echo "The staged update does not contain the expected executable."',
-      "  exit 1",
-      "fi",
-      "",
-      'mv "$target_app" "$backup_app"',
-      'if mv "$staged_app" "$target_app"; then',
-      '  rm -rf "$backup_app"',
-      "else",
-      '  mv "$backup_app" "$target_app" >/dev/null 2>&1 || true',
-      "  exit 1",
-      "fi",
-      "",
-      'installed_version="$(/usr/libexec/PlistBuddy -c \'Print :CFBundleShortVersionString\' "$target_app/Contents/Info.plist" 2>/dev/null || true)"',
-      'echo "InstalledVersion=${installed_version:-unknown}"',
-      'hdiutil detach "$mount_dir" -quiet >/dev/null 2>&1 || true',
-      'open "$target_app"',
-      "echo \"[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] macOS update helper finished\"",
-      "",
-    ].join("\n"),
+    macUpdateHelper,
   );
 
   await spawnDetachedUpdater("/bin/sh", [helperPath], {
@@ -4078,6 +4072,7 @@ async function launchMacDmgUpdater(
       LATEXDO_UPDATE_LOG: path.join(logsDirectory, "updater.log"),
       LATEXDO_UPDATE_TARGET_APP: appBundlePath,
       LATEXDO_UPDATE_EXPECTED_VERSION: expectedVersion,
+      LATEXDO_UPDATE_FAILURE_FILE: failurePath,
     },
   });
 }
@@ -4085,6 +4080,7 @@ async function launchMacDmgUpdater(
 async function launchLinuxAppImageUpdater(
   installerPath: string,
   expectedVersion: string,
+  failurePath: string,
 ): Promise<void> {
   const currentAppImage = process.env.APPIMAGE;
   if (!currentAppImage) {
@@ -4098,59 +4094,7 @@ async function launchLinuxAppImageUpdater(
   await chmod(installerPath, 0o755);
   const helperPath = await writeUpdaterHelperScript(
     "latexdo-linux-updater-",
-    [
-      "#!/bin/sh",
-      "set -eu",
-      "",
-      'log_file="${LATEXDO_UPDATE_LOG:?}"',
-      'mkdir -p "$(dirname "$log_file")"',
-      'exec >>"$log_file" 2>&1',
-      "",
-      "echo \"[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Starting Linux update helper\"",
-      'echo "ExpectedVersion=${LATEXDO_UPDATE_EXPECTED_VERSION:-}"',
-      "",
-      'while kill -0 "${LATEXDO_UPDATE_APP_PID:?}" 2>/dev/null; do',
-      "  sleep 0.2",
-      "done",
-      "",
-      'target="${LATEXDO_UPDATE_TARGET_APPIMAGE:?}"',
-      'replacement="${LATEXDO_UPDATE_APPIMAGE:?}"',
-      'target_name="$(basename "$target")"',
-      'target_dir="$(dirname "$target")"',
-      'staged="$target_dir/.$target_name.update.$$"',
-      'backup="$target_dir/.$target_name.previous.$$"',
-      "",
-      "finish() {",
-      "  status=$?",
-      '  rm -f "$staged"',
-      '  rm -rf "$(dirname "$0")"',
-      '  if [ "$status" -ne 0 ]; then',
-      '    if [ -x "$backup" ] && [ ! -e "$target" ]; then',
-      '      mv "$backup" "$target" >/dev/null 2>&1 || true',
-      "    fi",
-      '    if [ -x "$target" ]; then',
-      '      "$target" >/dev/null 2>&1 &',
-      "    fi",
-      "  fi",
-      '  exit "$status"',
-      "}",
-      "trap finish EXIT",
-      "",
-      'rm -f "$staged" "$backup"',
-      'cp "$replacement" "$staged"',
-      'chmod +x "$staged"',
-      'mv "$target" "$backup"',
-      'if mv "$staged" "$target"; then',
-      '  rm -f "$backup"',
-      '  rm -f "$replacement"',
-      '  "$target" >/dev/null 2>&1 &',
-      "  echo \"[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Linux update helper finished\"",
-      "else",
-      '  mv "$backup" "$target" >/dev/null 2>&1 || true',
-      "  exit 1",
-      "fi",
-      "",
-    ].join("\n"),
+    linuxUpdateHelper,
   );
 
   await spawnDetachedUpdater("/bin/sh", [helperPath], {
@@ -4161,6 +4105,7 @@ async function launchLinuxAppImageUpdater(
       LATEXDO_UPDATE_LOG: path.join(logsDirectory, "updater.log"),
       LATEXDO_UPDATE_TARGET_APPIMAGE: currentAppImage,
       LATEXDO_UPDATE_EXPECTED_VERSION: expectedVersion,
+      LATEXDO_UPDATE_FAILURE_FILE: failurePath,
     },
   });
 }
@@ -4168,6 +4113,7 @@ async function launchLinuxAppImageUpdater(
 async function launchWindowsNsisUpdater(
   installerPath: string,
   expectedVersion: string,
+  failurePath: string,
 ): Promise<void> {
   if (process.platform !== "win32" || !app.isPackaged) {
     throw new Error("Automatic Windows updates require a packaged app.");
@@ -4180,131 +4126,7 @@ async function launchWindowsNsisUpdater(
   const helperPath = await writeUpdaterHelperFile(
     "latexdo-windows-updater-",
     "run.ps1",
-    [
-      "$ErrorActionPreference = 'Stop'",
-      "$logFile = $env:LATEXDO_UPDATE_LOG",
-      "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $logFile) | Out-Null",
-      "function Write-Log {",
-      "  param([string]$Message)",
-      '  Add-Content -LiteralPath $logFile -Value ("[{0:u}] {1}" -f (Get-Date), $Message)',
-      "}",
-      "function Test-LatexDoVersionMatch {",
-      "  param([string]$Installed, [string]$Expected)",
-      "  function Get-VersionParts {",
-      "    param([string]$Value)",
-      "    $normalized = $Value.Trim()",
-      "    if ($normalized -match '^[vV]') { $normalized = $normalized.Substring(1) }",
-      "    $hyphenIndex = $normalized.IndexOf('-')",
-      "    if ($hyphenIndex -ge 0) {",
-      "      $coreText = $normalized.Substring(0, $hyphenIndex)",
-      "      $prereleaseText = $normalized.Substring($hyphenIndex + 1)",
-      "    } else {",
-      "      $coreText = $normalized",
-      "      $prereleaseText = ''",
-      "    }",
-      "    $prerelease = @()",
-      "    if ($prereleaseText -ne '') {",
-      "      $prerelease = @($prereleaseText -split '[.-]' | Where-Object { $_ -ne '' })",
-      "    }",
-      "    return @{ Core = @($coreText -split '\\.' | Where-Object { $_ -ne '' }); Prerelease = @($prerelease) }",
-      "  }",
-      "  function Compare-VersionPart {",
-      "    param([string]$Left, [string]$Right)",
-      "    $leftLong = 0L",
-      "    $rightLong = 0L",
-      "    $leftNumeric = [long]::TryParse($Left, [ref]$leftLong)",
-      "    $rightNumeric = [long]::TryParse($Right, [ref]$rightLong)",
-      "    if ($leftNumeric -and $rightNumeric) {",
-      "      if ($leftLong -eq $rightLong) { return 0 }",
-      "      if ($leftLong -gt $rightLong) { return 1 }",
-      "      return -1",
-      "    }",
-      "    if ($Left -eq $Right) { return 0 }",
-      "    if ($Left -gt $Right) { return 1 }",
-      "    return -1",
-      "  }",
-      "  $installedParts = Get-VersionParts -Value $Installed",
-      "  $expectedParts = Get-VersionParts -Value $Expected",
-      "  $coreLength = [Math]::Max($installedParts.Core.Count, $expectedParts.Core.Count)",
-      "  for ($index = 0; $index -lt $coreLength; $index += 1) {",
-      "    $leftPart = if ($index -lt $installedParts.Core.Count) { $installedParts.Core[$index] } else { '0' }",
-      "    $rightPart = if ($index -lt $expectedParts.Core.Count) { $expectedParts.Core[$index] } else { '0' }",
-      "    if ((Compare-VersionPart -Left $leftPart -Right $rightPart) -ne 0) { return $false }",
-      "  }",
-      "  if ($installedParts.Prerelease.Count -eq 0 -or $expectedParts.Prerelease.Count -eq 0) {",
-      "    return $installedParts.Prerelease.Count -eq $expectedParts.Prerelease.Count",
-      "  }",
-      "  $prereleaseLength = [Math]::Max($installedParts.Prerelease.Count, $expectedParts.Prerelease.Count)",
-      "  for ($preIndex = 0; $preIndex -lt $prereleaseLength; $preIndex += 1) {",
-      "    if ($preIndex -ge $installedParts.Prerelease.Count) { return $false }",
-      "    if ($preIndex -ge $expectedParts.Prerelease.Count) { return $false }",
-      "    if ((Compare-VersionPart -Left $installedParts.Prerelease[$preIndex] -Right $expectedParts.Prerelease[$preIndex]) -ne 0) { return $false }",
-      "  }",
-      "  return $true",
-      "}",
-      "$helperRoot = $PSScriptRoot",
-      "try {",
-      "  Write-Log 'Starting Windows update helper'",
-      '  Write-Log ("CurrentProcess={0}" -f $PID)',
-      '  Write-Log ("ExpectedVersion={0}" -f $env:LATEXDO_UPDATE_EXPECTED_VERSION)',
-      '  Write-Log ("Installer={0}" -f $env:LATEXDO_UPDATE_INSTALLER)',
-      '  Write-Log ("TargetExe={0}" -f $env:LATEXDO_UPDATE_TARGET_EXE)',
-      "  $expectedVersion = $env:LATEXDO_UPDATE_EXPECTED_VERSION",
-      "  if (-not $expectedVersion) {",
-      '    throw "Expected update version was not provided (LATEXDO_UPDATE_EXPECTED_VERSION)."',
-      "  }",
-      "  $appPid = [int]$env:LATEXDO_UPDATE_APP_PID",
-      '  Write-Log ("Waiting for PID {0}" -f $appPid)',
-      "  Wait-Process -Id $appPid -ErrorAction SilentlyContinue",
-      "  $installer = $env:LATEXDO_UPDATE_INSTALLER",
-      "  $targetExe = $env:LATEXDO_UPDATE_TARGET_EXE",
-      "  if (-not (Test-Path -LiteralPath $installer)) {",
-      '    throw "Installer is missing: $installer"',
-      "  }",
-      "  $installStartedAt = Get-Date",
-      "  $process = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru",
-      '  Write-Log ("InstallStart={0:u}" -f $installStartedAt)',
-      '  Write-Log ("InstallFinish={0:u}" -f (Get-Date))',
-      '  Write-Log ("InstallerExitCode={0}" -f $process.ExitCode)',
-      "  if ($process.ExitCode -ne 0) {",
-      '    throw "Installer exited with code $($process.ExitCode)"',
-      "  }",
-      "  if (-not (Test-Path -LiteralPath $targetExe)) {",
-      '    throw "Installed executable was not found: $targetExe"',
-      "  }",
-      "  $item = Get-Item -LiteralPath $targetExe",
-      "  $installedVersion = $item.VersionInfo.ProductVersion",
-      "  $installedFileVersion = $item.VersionInfo.FileVersion",
-      '  Write-Log ("TargetProductVersion={0}" -f $installedVersion)',
-      '  Write-Log ("TargetFileVersion={0}" -f $installedFileVersion)',
-      "  if (-not $installedVersion) {",
-      '    throw "Could not determine installed executable version."',
-      "  }",
-      "  $versionMatches = Test-LatexDoVersionMatch -Installed $installedVersion -Expected $expectedVersion",
-      '  Write-Log ("VersionMatch={0} ExpectedVersion={1} InstalledVersion={2}" -f $versionMatches, $expectedVersion, $installedVersion)',
-      "  if (-not $versionMatches) {",
-      '    throw "Installed executable ProductVersion $installedVersion does not match expected update version $expectedVersion."',
-      "  }",
-      '  Write-Log ("Verification=PASS ExpectedVersion={0} InstalledVersion={1}" -f $expectedVersion, $installedVersion)',
-      "  $relaunched = Start-Process -FilePath $targetExe -PassThru",
-      '  Write-Log ("RelaunchedPid={0}" -f $relaunched.Id)',
-      '  Write-Log ("Verified and launched LatexDo {0}" -f $installedVersion)',
-      "  Write-Log 'Windows update helper finished'",
-      "} catch {",
-      '  Write-Log ("Verification=FAIL Reason={0}" -f $_.Exception.Message)',
-      '  Write-Log ("Windows update helper failed: {0}" -f $_.Exception.Message)',
-      "  try {",
-      "    Start-Process -FilePath $env:LATEXDO_UPDATE_INSTALLER",
-      "  } catch {",
-      '    Write-Log ("Could not open interactive installer: {0}" -f $_.Exception.Message)',
-      "  }",
-      "  exit 1",
-      "} finally {",
-      "  Start-Sleep -Seconds 2",
-      "  Remove-Item -LiteralPath $helperRoot -Recurse -Force -ErrorAction SilentlyContinue",
-      "}",
-      "",
-    ].join("\r\n"),
+    windowsUpdateHelper,
   );
 
   await spawnDetachedUpdater(
@@ -4319,6 +4141,7 @@ async function launchWindowsNsisUpdater(
         LATEXDO_UPDATE_LOG: path.join(logsDirectory, "updater.log"),
         LATEXDO_UPDATE_TARGET_EXE: targetExePath,
         LATEXDO_UPDATE_EXPECTED_VERSION: expectedVersion,
+        LATEXDO_UPDATE_FAILURE_FILE: failurePath,
       },
     },
   );
@@ -4328,30 +4151,41 @@ async function launchDownloadedUpdateInstaller(
   file: WebsiteUpdateFile,
   installerPath: string,
   expectedVersion: string,
+  failurePath: string,
 ): Promise<void> {
   if (!(await canInstallUpdateFileAutomatically(file))) {
     throw new Error("This update package cannot be installed automatically.");
   }
 
   if (process.platform === "darwin") {
-    await launchMacDmgUpdater(installerPath, expectedVersion);
+    await launchMacDmgUpdater(installerPath, expectedVersion, failurePath);
     scheduleApplicationQuit();
     return;
   }
 
   if (process.platform === "linux") {
-    await launchLinuxAppImageUpdater(installerPath, expectedVersion);
+    await launchLinuxAppImageUpdater(installerPath, expectedVersion, failurePath);
     scheduleApplicationQuit();
     return;
   }
 
   if (process.platform === "win32") {
-    await launchWindowsNsisUpdater(installerPath, expectedVersion);
+    await launchWindowsNsisUpdater(installerPath, expectedVersion, failurePath);
     scheduleApplicationQuit();
     return;
   }
 
   throw new Error("Automatic updates are not supported on this platform.");
+}
+
+let updateInstallationInProgress = false;
+
+function installedApplicationPath(): string {
+  return (
+    currentMacAppBundlePath() ??
+    (process.platform === "linux" ? process.env.APPIMAGE : undefined) ??
+    app.getPath("exe")
+  );
 }
 
 async function updateNow(
@@ -4386,6 +4220,17 @@ async function updateNow(
     checkedAt: new Date().toISOString(),
   };
 
+  if (updateInstallationInProgress) {
+    return {
+      ...result,
+      installerPath: null,
+      opened: false,
+      error: "An update installation is already in progress.",
+    };
+  }
+  updateInstallationInProgress = true;
+  let attempt: PendingUpdateRecord | null = null;
+  let handedOff = false;
   try {
     const resolved = await resolveWebsiteUpdate(currentVersion, requestHeaders);
     result = resolved.result;
@@ -4542,6 +4387,8 @@ async function updateNow(
         restartScheduled: false,
         manualDownload: true,
         phase: "failed",
+        error:
+          "Update failed: automatic installation could not be verified after three attempts. The downloads page has been opened for manual installation.",
       };
     }
 
@@ -4551,10 +4398,11 @@ async function updateNow(
       result.latestVersion,
       onProgress,
     );
-    await beginPendingUpdate(app.getPath("userData"), {
+    attempt = await beginPendingUpdate(app.getPath("userData"), {
       fromVersion: currentVersion,
       expectedVersion: result.latestVersion,
       installerSha256: updateFile.sha256,
+      installedPath: installedApplicationPath(),
     });
     onProgress?.(
       updateProgressPayload({
@@ -4573,7 +4421,9 @@ async function updateNow(
       updateFile,
       installerPath,
       result.latestVersion,
+      attempt.failurePath!,
     );
+    handedOff = true;
 
     return {
       ...result,
@@ -4587,6 +4437,9 @@ async function updateNow(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (attempt) {
+      await markPendingUpdateFailed(app.getPath("userData"), attempt, message);
+    }
     onProgress?.(
       updateProgressPayload({
         status: "error",
@@ -4601,12 +4454,15 @@ async function updateNow(
     );
     return {
       ...result,
+      phase: "failed",
       error: message,
       installerPath: null,
       opened: false,
       restartScheduled: false,
       manualDownload: false,
     };
+  } finally {
+    if (!handedOff) updateInstallationInProgress = false;
   }
 }
 
@@ -5835,6 +5691,7 @@ async function startApp(): Promise<void> {
     lastUpdateResolution = await resolvePendingUpdate(
       app.getPath("userData"),
       app.getVersion(),
+      installedApplicationPath(),
     );
     if (lastUpdateResolution?.status === "confirmed") {
       console.log(

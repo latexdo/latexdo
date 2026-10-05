@@ -67,7 +67,7 @@ export function formatUpdateAttempt(status: UpdateAttemptResolution): string | n
       } from ${status.fromVersion ?? "the previous build"} and verified after restart.`;
     case "failed":
       return [
-        `The update to ${status.expectedVersion ?? "the latest build"} could not be verified.`,
+        `Update failed: the update to ${status.expectedVersion ?? "the latest build"} could not be verified.`,
         `LatexDo is still running ${status.currentVersion}.`,
         status.attempts ? `Attempt ${status.attempts} of 3.` : null,
         status.error ? `Reason: ${status.error}` : null,
